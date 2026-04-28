@@ -1,180 +1,56 @@
 # Grudge GameForge
 
-A browser-based 3D game prototyping environment — a Unity / Godot-flavoured editor that runs entirely in the browser. Build scenes by composing primitives, attach physics + scripts, hit Play, and iterate. Catalog data (weapons, items, enemies, quests) is pulled live from Grudge Studio's open data feed.
+## Overview
 
-## Brand — Grudge Studio "Warlord Crafting Suite"
+Grudge GameForge is a browser-based 3D game prototyping environment, akin to Unity or Godot, designed to run entirely in the browser. It allows users to build scenes by composing primitives, applying physics, and attaching scripts for rapid iteration. The platform integrates with Grudge Studio's open data feed for cataloging game assets (weapons, items, enemies, quests). The project aims to provide a comprehensive, accessible tool for game development, enhancing the creative workflow for game designers.
 
-Reference: https://molochdagod.github.io/ObjectStore/brand
+## User Preferences
 
-Palette tokens live in `artifacts/game-forge/src/index.css` (`:root` and `.dark`). Source colors:
+I prefer iterative development and want to be able to quickly test changes.
+I like clear and concise explanations for complex features.
+I want to be asked before any major architectural changes are made.
+I prefer to have direct control over asset management and scene composition.
+I want to easily integrate external assets and scripts into my projects.
+I expect the in-editor AI assistant to be helpful and directly manipulate the editor for scene changes.
+I need full traceability for AI-driven changes, with expandable chips showing input and result JSON.
 
-| Role | Hex | CSS token |
-| --- | --- | --- |
-| BG base | `#0a0a0f` | `--background` |
-| Card / panel | `#12121a` | `--card`, `--sidebar` |
-| Surface | `#1a1a25` | `--secondary`, `--sidebar-accent` |
-| Border | `#2a2a3a` | `--border` |
-| **Primary gold** | `#d4af37` | `--primary`, `--ring`, `--sidebar-primary` |
-| Gold light | `#f4d03f` | `--accent` (Play button) |
-| Parchment | `#e8dfc8` | `--sidebar-foreground`, `--secondary-foreground` |
-| Destructive | `#cc3333` | `--destructive` |
+## System Architecture
 
-Fonts (loaded in `index.html`): `Cinzel Decorative` (display wordmark), `Cinzel` (headings), `Spectral SC` (lore/serif), `Inter` (body), `JetBrains Mono` (code).
+**UI/UX Decisions:**
+The editor features a dark theme with a "Warlord Crafting Suite" brand identity. It utilizes `Cinzel Decorative` for the wordmark, `Cinzel` for headings, `Spectral SC` for lore, `Inter` for body text, and `JetBrains Mono` for code. A distinct gold color (`#d4af37`) is used for primary accents, alongside gold glow effects for interactive elements. The UI is built with shadcn/ui and Tailwind v4, featuring resizable panels for a flexible layout.
 
-Brand utility classes (in `src/index.css`):
-- `font-display` / `font-heading` / `font-lore` — type stacks
-- `brand-gold` — gold-gradient text fill
-- `gold-glow` / `gold-glow-sm` / `gold-glow-lg` — signature `0 0 20px rgba(212,175,55,.2)` glow
-- `hover-gold-glow` — interactive elevation
+**Technical Implementations & Feature Specifications:**
 
-## Stack
+*   **Renderer:** three.js, @react-three/fiber, and @react-three/drei (for controls and GLTF loading) power the 3D viewport.
+*   **Physics:** Rapier (`@dimforge/rapier3d-compat`) is integrated via `@react-three/rapier` for 3D physics simulation.
+*   **Scripting:** Supports JavaScript with `new Function(...)` for `start` and `update` lifecycle hooks. A Unity-flavored C# transpiler (to JS) is included for in-editor previews, with an option to integrate full Blazor WebAssembly for .NET runtime support.
+*   **State Management:** Zustand manages the editor's state, including the scene graph, selection, play mode, and console.
+*   **Editor Layout:** A top-level layout includes a toolbar, hierarchy panel, 3D viewport, inspector, and a bottom panel with tabs for Console, Assets, Scripts, and Prefabs.
+*   **Asset Ingestion:** Supports drag-and-drop for `.glb`, `.gltf`, `.obj`, various image formats, audio formats, and scene JSON files. `.obj` files are transcoded to GLB.
+*   **Hierarchy & Prefabs:** The scene is structured as a tree using `SceneEntity.parentId`. The hierarchy panel supports drag-and-drop reparenting and prevents cyclic dependencies. Prefabs are reusable subtrees that can be saved, spawned as instances, and opened in a dedicated sub-scene editor mode.
+*   **AI Worker:** An in-editor chat assistant powered by Anthropic Claude (`claude-sonnet-4-6`) directly manipulates the editor state using predefined tools. Tool definitions and executors reside on the client-side to ensure undo capability and synchronous interaction with the Zustand store.
+*   **Model Entity Polish:** `ModelComponent` supports `clip` for animations, `tint` for recoloring models without affecting other instances, and `label` for floating sprite tags.
 
-| Layer | Technology |
-| --- | --- |
-| Renderer | three.js + @react-three/fiber + @react-three/drei (TransformControls, OrbitControls, GLTF loader) |
-| Physics | Rapier (`@dimforge/rapier3d-compat`) via `@react-three/rapier` |
-| Scripting (JS) | `new Function(...)` runtime with `start(entity, ctx)` / `update(entity, ctx)` lifecycle hooks |
-| Scripting (C#) | Unity-flavoured C# transpiled to JS in `src/scene/csTranspile.ts` for the in-editor Play Mode preview. The codebase is laid out so the user can drop a real Blazor WebAssembly compile into `public/_framework/` for full .NET runtime support — see "Real Blazor C#" below. |
-| State | Zustand (`src/store/editor.ts`) |
-| Editor UI | shadcn/ui + Tailwind v4, `react-resizable-panels`, Monaco editor |
-| Backend | Express + Drizzle ORM + Postgres |
-| Type-safe API | OpenAPI 3.1 → orval → React Query hooks (`@workspace/api-client-react`) + zod validators (`@workspace/api-zod`) |
-| External data | Grudge Studio object store proxy (5 min in-memory cache) |
-| Free CC0 library | Poly Haven proxy (`/api/polyhaven/{textures,hdris,models}` + `/files/:slug`, 30 min in-memory cache) — exposes ~440 GLTF models, ~756 PBR textures, ~965 HDRIs as Models / Textures / HDRIs tabs in the Asset Browser. The texture file resolver tries multiple key candidates (`Diffuse`, `col1`, `col_01`, `coll1`, `diff_png`, …) so single-variant patterns (e.g. `book_pattern`, `leather_red_02`) still resolve. Asset `source` enum extended to include `polyhaven`. |
-| Asset uploads | Replit App Storage (GCS-backed) via presigned PUT URLs — `@workspace/object-storage-web` `useUpload` hook on the client, `/api/storage/*` routes on the server |
+**System Design Choices:**
 
-## Layout
+*   **API Design:** An OpenAPI 3.1 specification (`openapi.yaml`) serves as the source of truth for the API, generating React Query hooks and Zod validators. ETag generation is disabled globally for small, frequently changing JSON list responses to avoid client-side issues.
+*   **Module Structure:** The frontend (GameForge) is a Vite + React application, while the backend is an Express server. Shared libraries include API specifications, React Query clients, Zod validators, and Drizzle schemas.
+*   **Performance:** In-memory caches are used for external data proxies (Grudge Studio object store, Poly Haven) to improve performance.
 
-```
-artifacts/
-  game-forge/        Vite + React frontend (the editor)
-    src/
-      App.tsx                  Top-level layout (toolbar / hierarchy / viewport / inspector / bottom panel)
-      store/editor.ts          Zustand store — scene graph, selection, play mode, console
-      scene/
-        types.ts               SceneEntity, Transform, Environment
-        EntityRenderer.tsx     Renders a SceneEntity in three.js (with optional Rapier RigidBody in play mode)
-        csTranspile.ts         C# → JS transpiler for the play-mode runtime
-        PlayRuntime.ts         Compiles + caches script modules, exposes `(entity, ctx)`
-      editor/
-        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play, scene export/import,
-                               Templates submenu, prefab-mode banner
-        Hierarchy.tsx          Scene list + indented entity TREE with expand/collapse, drag-drop
-                               reparenting (cycle-prevented via wouldCycle), per-row Save-as-Prefab
-        Inspector.tsx          Selected entity / environment editor (right)
-        Viewport.tsx           R3F canvas with edit & play modes, recursive RenderNode for parented
-                               entities (children inherit parent transforms), TransformControls, Stats
-        ProjectPicker.tsx      Open / create project dialog
-        AssetBrowser.tsx       Grudge tabs (weapons / items / enemies / quests) + project assets
-        AssetDropZone.tsx      Document-level drag-and-drop ingest (.glb/.gltf/.obj/img/audio/scene-json)
-        GlbInspectorDialog.tsx Modal that decodes the GLB binary container after upload
-        ScriptEditor.tsx       Monaco editor with JS / C# selector
-        Console.tsx            Debug.Log / engine output
-        BottomPanel.tsx        Tabbed (Console | Assets | Scripts | Prefabs)
-        PrefabsPanel.tsx       Project's prefab library — Spawn (instantiate into scene),
-                               Open (sub-scene editor), Save Prefab, Delete
-      lib/
-        queryClient.ts
-        grudge.ts              Grudge SDK wrapper (proxied through api-server)
-        keyboard.ts            useKeyboardState — keys map for play-mode scripts
-        glbInspect.ts          Pure-JS GLB binary decoder (header / chunks / counts)
-        converters.ts          OBJ → GLB transcoder via three's OBJLoader + GLTFExporter
-        hierarchy.ts           getDescendants (cycle-safe), wouldCycle, buildTree, cloneSubtree, reidTree
-        sceneTemplates.ts      TPS Zombie Graveyard + FPS Turret Arena scene templates
+## External Dependencies
 
-  api-server/        Express backend
-    src/
-      lib/
-        objectStorage.ts   GCS client wrapper + presigned URL generation (Replit sidecar auth)
-        objectAcl.ts       ACL framework for protected objects
-      routes/
-        projects.ts        /api/projects CRUD + summary
-        scenes.ts          /api/scenes CRUD nested under project
-        scripts.ts         /api/scripts CRUD with default JS / C# templates
-        assets.ts          /api/assets CRUD (uploaded + URL + grudge sources)
-        grudge.ts          /api/grudge/{weapons,items,enemies,quests} proxy + flattening + 5min cache
-        storage.ts         /api/storage/uploads/request-url + /api/storage/{public-objects,objects}/* serving
-
-lib/
-  api-spec/          OpenAPI 3.1 source of truth (openapi.yaml)
-  api-client-react/  Generated React Query hooks (orval)
-  api-zod/           Generated Zod request validators
-  db/                Drizzle schemas + migrations
-```
-
-## Hotkeys
-
-| Key | Action |
-| --- | --- |
-| `W` / `E` / `R` | Translate / rotate / scale gizmo |
-| `Space` | Toggle Play Mode |
-| `Click outside` | Deselect |
-
-## Asset ingest
-
-Drag any of the following onto the editor — `AssetDropZone` (mounted at the App root) routes them automatically:
-
-| Type | Pipeline |
-| --- | --- |
-| `.glb` | App Storage upload → `inspectGlb()` decodes magic / version / chunks / counts → Inspector dialog → "Add to Scene" creates a `model` entity |
-| `.gltf` | App Storage upload → Inspector (chunk view skipped) → "Add to Scene" |
-| `.obj` | `objToGlb()` transcodes via three's OBJLoader + GLTFExporter → upload as GLB → Inspector → "Add to Scene" |
-| `.png/.jpg/.webp/.ktx2` | App Storage upload → Project Asset record (image) |
-| `.mp3/.wav/.ogg/.m4a` | App Storage upload → Project Asset record (audio) |
-| `.json / .gfscene.json` | If the JSON has an `entities` array, it replaces the current scene (mark dirty; user must Save) |
-
-The Toolbar `⋮` menu also exposes **Export scene JSON** (downloads `<name>.gfscene.json`) and **Import scene JSON** (opens file picker; same routing as a JSON drop).
-
-## Real Blazor C#
-
-The shipped C# runtime is a JS transpiler that handles a Unity-flavoured subset (`MonoBehaviour`, `Transform.Position.X`, `Input.GetKey`, `Debug.Log`, basic loops/arithmetic). For the full .NET runtime path:
-
-1. Scaffold a Blazor WebAssembly project: `dotnet new blazorwasm -o csharp/GameForgeRuntime`
-2. Implement an interop module that exposes `start(entityJson, ctxJson)` / `update(entityJson, ctxJson)` to JS via `[JSInvokable]`.
-3. `dotnet publish -c Release` → copy `bin/Release/net9.0/publish/wwwroot/_framework/*` into `artifacts/game-forge/public/_framework/`.
-4. The editor calls `blazorRuntimeAvailable()` (`src/scene/csTranspile.ts`) on load — when the boot.json is present, swap `compileCs` to dispatch into the Blazor runtime instead.
-
-The transpiler path is intentionally "good enough" for in-browser iteration; the Blazor path is for shipping.
-
-## Hierarchy & Prefabs
-
-`SceneEntity.parentId` (string id of parent or `null` for root) makes the scene a tree:
-- **Edit mode** — children render inside their parent's `<group>` so transforms compose. `TransformControls` writes the *local* transform (relative to parent) back into `entity.transform`.
-- **Play mode** — same nesting; for physics children the initial spawn is parent-relative, then Rapier owns world coords from then on (parent moves do not drag children once both are alive).
-- The Hierarchy panel is an indented tree with chevron expand/collapse, draggable rows for reparenting, drop on the empty area to unparent, and `wouldCycle` prevents loops.
-- Cascade ops: `removeEntity`/`duplicateEntity` cover the whole subtree; `cloneSubtree` re-ids and remaps `parentId`s.
-
-**Prefabs** (`lib/db/src/schema/prefabs.ts`, `/api/prefabs` routes) are reusable subtrees:
-- **Save** — pick any entity in the hierarchy → click the package icon → enter a name → its subtree is snapshotted (`snapshotSubtree` strips outside parent links) and POSTed to `/api/prefabs`.
-- **Spawn** — Prefabs panel "+ Spawn" instantiates a fresh copy with new ids into the current scene; instances are tagged with `prefabId` (visible as a small "P" badge).
-- **Open** — Prefabs panel "Open" enters Unity-style sub-scene mode: the editor temporarily swaps `sceneData` for the prefab's entities, and a yellow banner appears in the Toolbar/Hierarchy. While in prefab mode, **Save** updates the prefab record (not a scene), Play is disabled, and the scenes list is hidden. Closing restores the snapshotted parent scene.
-
-**Templates** — Toolbar `⋮` → Load template offers `TPS — Zombie Graveyard` and `FPS — Turret Arena`, both built with parent/child entities (player + parented weapon/muzzle, arena root with parented walls, turrets with parented barrel/eye).
-
-## AI Worker (in-editor chat assistant)
-
-A built-in chat assistant powered by Anthropic Claude (`claude-sonnet-4-6`) that can directly manipulate the editor — opens from the gold "AI Worker" button in the toolbar.
-
-- Auth/transport: Replit AI Integrations proxy (env vars `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` / `AI_INTEGRATIONS_ANTHROPIC_API_KEY` — no own API key required).
-- Server endpoint: `artifacts/api-server/src/routes/ai.ts` exposes `POST /api/ai/chat` (Server-Sent Events). Stateless thin proxy: client sends `{ messages, tools, system }`, server streams `text_delta` events live and emits one `tool_use` event per tool block when the assistant turn completes.
-- Tool definitions + executors live on the **client** (`artifacts/game-forge/src/lib/aiTools.ts`) because only the browser owns the live Zustand store, R3F scene, and undo stack — tool calls run synchronously against `useEditor` and tools that mutate the scene go through the same commands a human Ctrl+Z can undo.
-- Conversation loop: `artifacts/game-forge/src/lib/aiClient.ts` parses the SSE stream, dispatches text deltas to the UI, executes tool calls, and POSTs back a `tool_result` user turn — looping until `stop_reason !== "tool_use"` (cap: 8 turns).
-- Available tools (see `AI_TOOLS` array): `get_scene_summary`, `list_entities`, `list_builtin_models`, `add_entity`, `add_model_entity`, `update_entity`, `delete_entity`, `set_environment`, `clear_scene`, `generate_map`, `spawn_vfx_prefab`, `list_vfx_prefabs`, `create_script`, `attach_script`, `list_scripts`, `set_player`.
-- UI: `artifacts/game-forge/src/editor/AIWorkerPanel.tsx` is a fixed slide-out panel (right edge, 400px) that does NOT block editor interaction — you can keep building while it streams. Each tool call renders as an expandable chip with input + result JSON for full traceability.
-
-## Model entity polish (PlayerImporter-inspired)
-
-`ModelComponent` (`scene/types.ts`) carries optional `clip` (named animation), `tint` (hex color), and `label` (floating sprite tag) fields, surfaced through the AI Worker's `add_model_entity` / `update_entity` tools and rendered by `LoadedModel` in `EntityRenderer.tsx`:
-- `clip` overrides the default idle/loop heuristic in `useAnimations`.
-- `tint` clones the GLB's MeshStandard/Phong/Basic materials before recoloring so coloring one entity doesn't bleed across other instances of the same builtin model.
-- `label` builds a `THREE.CanvasTexture` pill sprite (gold border, dark background) attached above the model's bounding box.
-
-## Database
-
-Run `pnpm --filter @workspace/db run push --force` after any schema change in `lib/db/src/schema/*.ts`.
-
-## API
-
-The OpenAPI spec at `lib/api-spec/openapi.yaml` is the source of truth. Run `pnpm --filter @workspace/api-spec run codegen` after editing it to regenerate the React Query client and Zod validators.
-
-ETag generation is intentionally disabled at the Express app level (`app.disable("etag")` in `artifacts/api-server/src/app.ts`). JSON list responses are small and change frequently — the revalidation round-trip and 304-with-empty-body responses created opportunities for client bugs (empty-body cases sliding past `data: x = []` destructure defaults, which only catch `undefined`, not `null`). If a future endpoint genuinely benefits from conditional caching (e.g., a large static catalog), opt in locally with explicit `Cache-Control` + `ETag` headers. List consumers should also coerce defensively (`Array.isArray(data) ? data : []`) rather than relying on the destructure default.
+*   **Backend Framework:** Express.js
+*   **Database:** PostgreSQL (with Drizzle ORM)
+*   **3D Graphics:** three.js, @react-three/fiber, @react-three/drei
+*   **Physics Engine:** Rapier (`@dimforge/rapier3d-compat`)
+*   **State Management:** Zustand
+*   **UI Components:** shadcn/ui
+*   **Styling:** Tailwind CSS v4
+*   **Code Editor:** Monaco editor
+*   **API Client Generation:** orval (for React Query hooks)
+*   **Data Validation:** Zod
+*   **AI Service:** Anthropic Claude (via Replit AI Integrations proxy)
+*   **Object Storage:** Replit App Storage (GCS-backed) for asset uploads
+*   **External Asset Libraries:**
+    *   Grudge Studio's open data feed (weapons, items, enemies, quests)
+    *   Poly Haven (proxied for GLTF models, PBR textures, HDRIs)

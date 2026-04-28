@@ -270,8 +270,15 @@ function ScriptedEntities({
 }
 
 function ScenePlayMode() {
-  const env = useEditor((s) => s.sceneData.environment);
-  const gravity = (env.gravity ?? [0, -9.81, 0]) as [number, number, number];
+  const envGravity = useEditor((s) => s.sceneData.environment.gravity);
+  // Memoise so <Physics> doesn't tear down + recreate the world (and orphan
+  // every RigidBody ref) every time a parent re-renders. The `?? [...]` would
+  // otherwise allocate a fresh tuple on every render → new prop reference →
+  // forced remount of the entire physics tree.
+  const gravity = useMemo<[number, number, number]>(
+    () => (envGravity ?? [0, -9.81, 0]) as [number, number, number],
+    [envGravity],
+  );
   const bodyRefs = useRef<Map<string, RapierRigidBody | THREE.Group>>(new Map());
 
   return (
@@ -421,6 +428,56 @@ const VIEWPORT_PRIMITIVES: { type: EntityType; label: string; Icon: typeof BoxIc
   { type: "light", label: "Light", Icon: LightIcon },
 ];
 
+/**
+ * Probe whether the browser tab can actually acquire a WebGL context BEFORE
+ * we hand off to R3F. Without this, a momentary GPU failure (Replit iframe
+ * sandbox throttling, the "too many active WebGL contexts" limit some
+ * browsers enforce, etc.) throws synchronously inside `new THREE.WebGLRenderer`
+ * and the @replit/vite-plugin-runtime-error-modal overlays the entire app —
+ * the user can't dismiss it without reloading. A tiny probe + graceful
+ * fallback keeps the editor shell usable and lets the user retry.
+ */
+function probeWebGL(): { ok: true } | { ok: false; reason: string } {
+  if (typeof document === "undefined") return { ok: false, reason: "No document" };
+  try {
+    const probe = document.createElement("canvas");
+    const gl =
+      (probe.getContext("webgl2") as WebGLRenderingContext | null) ??
+      (probe.getContext("webgl") as WebGLRenderingContext | null);
+    if (!gl) return { ok: false, reason: "WebGL is not supported by this browser context." };
+    // Release the probe context immediately so we don't burn one of the
+    // browser's per-page WebGL slots before R3F gets to allocate the real one.
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message ?? "Unknown WebGL error" };
+  }
+}
+
+function WebGLUnavailable({ reason, onRetry }: { reason: string; onRetry: () => void }) {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-background grid-pattern p-6">
+      <div className="max-w-md text-center space-y-4 p-6 rounded-md bg-card/90 border border-card-border shadow-lg">
+        <h3 className="text-base font-semibold text-destructive">3D viewport unavailable</h3>
+        <p className="text-xs text-muted-foreground font-mono break-words">{reason}</p>
+        <p className="text-xs text-muted-foreground">
+          Your browser couldn't acquire a WebGL context. This usually clears up
+          on its own — try the retry button. If it persists, close other tabs
+          using 3D / video, or reload the page.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="px-3 py-1.5 text-xs rounded-md bg-accent text-accent-foreground hover:opacity-90"
+          data-testid="button-webgl-retry"
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Viewport() {
   const env = useEditor((s) => s.sceneData.environment);
   const isPlaying = useEditor((s) => s.isPlaying);
@@ -439,6 +496,7 @@ export function Viewport() {
   // <Canvas> tree (with its broken WebGL context, dangling refs, half-mounted
   // post-processing passes, etc.) and rebuild it from scratch.
   const [viewportEpoch, setViewportEpoch] = useState(0);
+  const [webgl, setWebgl] = useState(() => probeWebGL());
 
   const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {
     query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -470,6 +528,23 @@ export function Viewport() {
     pushLog("info", `Spawned "${p.name}" via slot ${slotIndex + 1}.`);
   };
 
+  if (!webgl.ok) {
+    return (
+      <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
+        <WebGLUnavailable
+          reason={webgl.reason}
+          onRetry={() => {
+            const next = probeWebGL();
+            setWebgl(next);
+            // If the retry succeeded, also bump the viewport epoch so any
+            // stale boundary state from a prior crash is cleared.
+            if (next.ok) setViewportEpoch((n) => n + 1);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -481,7 +556,7 @@ export function Viewport() {
             <Canvas
               shadows
               camera={{ position: [8, 8, 12], fov: 45 }}
-              onPointerMissed={() => selectEntity(null)}
+              onPointerMissed={isPlaying ? undefined : () => selectEntity(null)}
               gl={{
                 antialias: false,
                 powerPreference: "high-performance",

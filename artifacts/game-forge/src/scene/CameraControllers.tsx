@@ -21,25 +21,74 @@ function isRapierBody(b: RapierRigidBody | THREE.Group | undefined): b is Rapier
   return !!b && "translation" in b && typeof (b as RapierRigidBody).translation === "function";
 }
 
+// Rapier RigidBodyType enum values (stable across rapier3d versions).
+// Dynamic = 0, Fixed = 1, KinematicPositionBased = 2, KinematicVelocityBased = 3.
+const RB_DYNAMIC = 0;
+const RB_FIXED = 1;
+const RB_KIN_POS = 2;
+const RB_KIN_VEL = 3;
+
+/**
+ * Drive a body horizontally at the desired velocity (m/s). `delta` is the
+ * frame's elapsed time in seconds.
+ *
+ * The previous implementation called BOTH setNextKinematicTranslation AND
+ * setTranslation every frame which:
+ *   • teleported dynamic bodies through walls (bypassed collision response,
+ *     overwrote velocity / gravity), and
+ *   • clobbered kinematicPosition's queued move with an immediate teleport,
+ *     defeating Rapier's character-controller-style collision sweep and
+ *     causing visible jitter / clipping.
+ *
+ * Branching on `body.bodyType()` lets us pick the correct API per body type
+ * so the controller never fights the physics solver.
+ */
 function moveBody(
   body: RapierRigidBody | THREE.Group | undefined,
-  next: THREE.Vector3,
+  desiredVel: { x: number; z: number },
+  delta: number,
 ) {
   if (!body) return;
-  if (isRapierBody(body)) {
-    // Rapier exposes both setNextKinematicTranslation (for kinematicPosition
-    // bodies) and setTranslation (immediate, valid for any body type). The
-    // first is a no-op for non-kinematic bodies, so prefer setTranslation
-    // when the body is not kinematic-position. We can't always detect type
-    // from the JS handle, so we set both: the kinematic call is harmless on
-    // dynamic bodies, and setTranslation(true) wakes the body so dynamic
-    // bodies still receive the new position immediately.
-    const v = { x: next.x, y: next.y, z: next.z };
-    body.setNextKinematicTranslation(v);
-    body.setTranslation(v, true);
-  } else {
-    body.position.copy(next);
+  if (!isRapierBody(body)) {
+    body.position.x += desiredVel.x * delta;
+    body.position.z += desiredVel.z * delta;
+    return;
   }
+  const type = body.bodyType() as unknown as number;
+  if (type === RB_KIN_POS) {
+    const cur = body.translation();
+    const target = {
+      x: cur.x + desiredVel.x * delta,
+      y: cur.y,
+      z: cur.z + desiredVel.z * delta,
+    };
+    // Prefer the queued kinematic helper. If the runtime is missing it (API
+    // drift / older Rapier build), fall back to a hard set so movement still
+    // happens — a one-frame teleport is much better than the body freezing.
+    if (typeof body.setNextKinematicTranslation === "function") {
+      body.setNextKinematicTranslation(target);
+    } else {
+      body.setTranslation(target, true);
+    }
+  } else if (type === RB_DYNAMIC || type === RB_KIN_VEL) {
+    // Preserve vertical velocity so gravity & jumps still work.
+    const v = body.linvel();
+    body.setLinvel({ x: desiredVel.x, y: v.y, z: desiredVel.z }, true);
+  } else if (type !== RB_FIXED) {
+    // Unknown body type (future Rapier additions, custom builds). Defensive
+    // fallback so the controller still drives the entity instead of silently
+    // doing nothing.
+    const cur = body.translation();
+    body.setTranslation(
+      {
+        x: cur.x + desiredVel.x * delta,
+        y: cur.y,
+        z: cur.z + desiredVel.z * delta,
+      },
+      true,
+    );
+  }
+  // Fixed bodies never move; intentional no-op.
 }
 
 function readBody(body: RapierRigidBody | THREE.Group | undefined): THREE.Vector3 | null {
@@ -51,18 +100,34 @@ function readBody(body: RapierRigidBody | THREE.Group | undefined): THREE.Vector
   return new THREE.Vector3(body.position.x, body.position.y, body.position.z);
 }
 
+/**
+ * Yaw-only rotation. Other axes are expected to be rotation-locked at the
+ * RigidBody level (see EntityRenderer's enabledRotations) so the player never
+ * tips over from a sideways collision impulse.
+ */
 function rotateBody(
   body: RapierRigidBody | THREE.Group | undefined,
   yaw: number,
 ) {
   if (!body) return;
-  const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
-  if (isRapierBody(body)) {
-    const r = { x: q.x, y: q.y, z: q.z, w: q.w };
-    body.setNextKinematicRotation(r);
-    body.setRotation(r, true);
-  } else {
+  if (!isRapierBody(body)) {
     body.rotation.y = yaw;
+    return;
+  }
+  const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
+  const r = { x: q.x, y: q.y, z: q.z, w: q.w };
+  const type = body.bodyType() as unknown as number;
+  if (type === RB_KIN_POS) {
+    if (typeof body.setNextKinematicRotation === "function") {
+      body.setNextKinematicRotation(r);
+    } else {
+      body.setRotation(r, true);
+    }
+  } else if (type === RB_DYNAMIC || type === RB_KIN_VEL) {
+    body.setRotation(r, true);
+    if (type === RB_DYNAMIC) body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  } else if (type !== RB_FIXED) {
+    body.setRotation(r, true);
   }
 }
 
@@ -218,7 +283,7 @@ export function ThirdPersonCameraController({
     const pos = readBody(body) ??
       new THREE.Vector3(...player.transform.position);
 
-    // WASD movement, relative to camera yaw
+    // WASD → desired horizontal velocity (m/s), relative to camera yaw.
     const k = keysRef.current;
     let mx = 0;
     let mz = 0;
@@ -227,24 +292,27 @@ export function ThirdPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
-    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1) * delta;
+    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    let vx = 0;
+    let vz = 0;
     if (mx !== 0 || mz !== 0) {
       const len = Math.hypot(mx, mz) || 1;
       const fx = mx / len;
       const fz = mz / len;
-      // rotate by yaw
       const sin = Math.sin(yawRef.current);
       const cos = Math.cos(yawRef.current);
-      const wx = fx * cos + fz * sin;
-      const wz = -fx * sin + fz * cos;
-      pos.x += wx * speed;
-      pos.z += wz * speed;
-      moveBody(body, pos);
-      const targetYaw = Math.atan2(wx, wz) + Math.PI;
-      rotateBody(body, targetYaw);
+      vx = (fx * cos + fz * sin) * speed;
+      vz = (-fx * sin + fz * cos) * speed;
+    }
+    // Always call moveBody — when no input it sets horizontal velocity to 0
+    // (preserving Y), which stops sliding on dynamic bodies cleanly.
+    moveBody(body, { x: vx, z: vz }, delta);
+    if (vx !== 0 || vz !== 0) {
+      rotateBody(body, Math.atan2(vx, vz) + Math.PI);
     }
 
-    // Camera follows orbit
+    // Camera follows orbit. `pos` was read at frame start; for dynamic bodies
+    // the next physics step will move them — the 1-frame lag is imperceptible.
     const d = distRef.current;
     const px = Math.sin(yawRef.current) * Math.cos(pitchRef.current) * d;
     const py = Math.sin(pitchRef.current) * d + 1.5;
@@ -317,19 +385,19 @@ export function FirstPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
-    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1) * delta;
+    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    let vx = 0;
+    let vz = 0;
     if (mx !== 0 || mz !== 0) {
       const len = Math.hypot(mx, mz) || 1;
       const fx = mx / len;
       const fz = mz / len;
       const sin = Math.sin(yawRef.current);
       const cos = Math.cos(yawRef.current);
-      const wx = fx * cos + fz * sin;
-      const wz = -fx * sin + fz * cos;
-      pos.x += wx * speed;
-      pos.z += wz * speed;
-      moveBody(body, pos);
+      vx = (fx * cos + fz * sin) * speed;
+      vz = (-fx * sin + fz * cos) * speed;
     }
+    moveBody(body, { x: vx, z: vz }, delta);
     rotateBody(body, yawRef.current + Math.PI);
 
     // Camera at "head" height

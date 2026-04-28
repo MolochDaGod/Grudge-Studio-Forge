@@ -378,12 +378,21 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     const isModel = entity.type === "model";
     const explicitForModel = isModel && (colliderShape === "cylinder" || colliderShape === "ball");
 
+    // Player-controlled bodies must yaw freely but never tip over from a
+    // sideways collision impulse. Allowing only Y-axis rotation gives us
+    // physics-friendly characters without needing a full kinematic-character
+    // controller. Non-player rigid bodies keep their default (full) rotation
+    // axes so prop physics looks natural.
+    const isPlayerControlled =
+      !!entity.controllerKind && entity.controllerKind !== "none";
+
     return (
       <RigidBody
         ref={ref as React.Ref<RapierRigidBody>}
         type={ph.bodyType ?? "dynamic"}
         position={tr.position}
         rotation={tr.rotation}
+        enabledRotations={isPlayerControlled ? [false, true, false] : undefined}
         colliders={
           explicitForModel
             ? false
