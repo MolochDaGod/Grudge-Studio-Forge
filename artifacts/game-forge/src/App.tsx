@@ -42,7 +42,14 @@ function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Hotkeys
+  // Editor hotkeys.
+  //
+  // IMPORTANT: We deliberately DO NOT bind Space here. Space is the canonical
+  // "jump" key in nearly every game and is exposed to user scripts via
+  // `ctx.keys[' ']` / `ctx.keys.Space` — if the editor swallowed it, jump
+  // would never reach the running game. Use `P` to toggle play/stop, and
+  // `Escape` as an emergency stop while in Play mode (matches three.js editor
+  // and most engines).
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
@@ -52,17 +59,24 @@ function EditorShell() {
       ) {
         return;
       }
-      if (e.key === "w") setTransformMode("translate");
-      if (e.key === "e") setTransformMode("rotate");
-      if (e.key === "r") setTransformMode("scale");
-      if (e.key === " " && !e.repeat) {
+      // Gizmo modes only make sense in edit mode.
+      if (!isPlaying) {
+        if (e.key === "w") setTransformMode("translate");
+        if (e.key === "e") setTransformMode("rotate");
+        if (e.key === "r") setTransformMode("scale");
+      }
+      if ((e.key === "p" || e.key === "P") && !e.repeat) {
+        e.preventDefault();
+        togglePlay();
+      }
+      if (e.key === "Escape" && isPlaying) {
         e.preventDefault();
         togglePlay();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [setTransformMode, togglePlay]);
+  }, [setTransformMode, togglePlay, isPlaying]);
 
   return (
     <AssetDropZone>
@@ -107,7 +121,7 @@ function EditorShell() {
 
       {isPlaying && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent/20 border border-accent text-accent text-xs font-mono pointer-events-none shadow-lg">
-          PLAY MODE · Space to stop
+          PLAY MODE · Esc or P to stop · Space is yours (jump)
         </div>
       )}
     </div>

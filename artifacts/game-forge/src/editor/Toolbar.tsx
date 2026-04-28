@@ -451,7 +451,7 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
           <TooltipContent>
             {prefabSubScene
               ? "Close the prefab sub-scene to play the main scene"
-              : "Enter Play Mode"}
+              : "Enter Play Mode (P)"}
           </TooltipContent>
         </Tooltip>
       ) : (
