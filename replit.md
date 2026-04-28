@@ -56,12 +56,14 @@ artifacts/
         csTranspile.ts         C# → JS transpiler for the play-mode runtime
         PlayRuntime.ts         Compiles + caches script modules, exposes `(entity, ctx)`
       editor/
-        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play
-        Hierarchy.tsx          Scene list + entity tree (left)
+        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play, scene export/import
+        Hierarchy.tsx          Scene list + filterable entity tree (left)
         Inspector.tsx          Selected entity / environment editor (right)
         Viewport.tsx           R3F canvas with edit & play modes, TransformControls, Stats
         ProjectPicker.tsx      Open / create project dialog
         AssetBrowser.tsx       Grudge tabs (weapons / items / enemies / quests) + project assets
+        AssetDropZone.tsx      Document-level drag-and-drop ingest (.glb/.gltf/.obj/img/audio/scene-json)
+        GlbInspectorDialog.tsx Modal that decodes the GLB binary container after upload
         ScriptEditor.tsx       Monaco editor with JS / C# selector
         Console.tsx            Debug.Log / engine output
         BottomPanel.tsx        Tabbed (Console | Assets | Scripts)
@@ -69,6 +71,8 @@ artifacts/
         queryClient.ts
         grudge.ts              Grudge SDK wrapper (proxied through api-server)
         keyboard.ts            useKeyboardState — keys map for play-mode scripts
+        glbInspect.ts          Pure-JS GLB binary decoder (header / chunks / counts)
+        converters.ts          OBJ → GLB transcoder via three's OBJLoader + GLTFExporter
 
   api-server/        Express backend
     src/
@@ -97,6 +101,21 @@ lib/
 | `W` / `E` / `R` | Translate / rotate / scale gizmo |
 | `Space` | Toggle Play Mode |
 | `Click outside` | Deselect |
+
+## Asset ingest
+
+Drag any of the following onto the editor — `AssetDropZone` (mounted at the App root) routes them automatically:
+
+| Type | Pipeline |
+| --- | --- |
+| `.glb` | App Storage upload → `inspectGlb()` decodes magic / version / chunks / counts → Inspector dialog → "Add to Scene" creates a `model` entity |
+| `.gltf` | App Storage upload → Inspector (chunk view skipped) → "Add to Scene" |
+| `.obj` | `objToGlb()` transcodes via three's OBJLoader + GLTFExporter → upload as GLB → Inspector → "Add to Scene" |
+| `.png/.jpg/.webp/.ktx2` | App Storage upload → Project Asset record (image) |
+| `.mp3/.wav/.ogg/.m4a` | App Storage upload → Project Asset record (audio) |
+| `.json / .gfscene.json` | If the JSON has an `entities` array, it replaces the current scene (mark dirty; user must Save) |
+
+The Toolbar `⋮` menu also exposes **Export scene JSON** (downloads `<name>.gfscene.json`) and **Import scene JSON** (opens file picker; same routing as a JSON drop).
 
 ## Real Blazor C#
 

@@ -1,7 +1,8 @@
-import { Box, Circle, Cylinder, Lightbulb, Square, PackageOpen, Trash2, Copy, Layers } from "lucide-react";
+import { Box, Circle, Cylinder, Lightbulb, Square, PackageOpen, Trash2, Copy, Layers, Search, X } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useListScenes, useCreateScene, useDeleteScene, useGetScene } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,7 +10,7 @@ import {
   getGetProjectSummaryQueryKey,
   getGetSceneQueryKey,
 } from "@workspace/api-client-react";
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import type { EntityType, SceneData } from "@/scene/types";
 
 const ICONS: Record<EntityType, typeof Box> = {
@@ -42,6 +43,17 @@ export function Hierarchy() {
   });
   const createScene = useCreateScene();
   const deleteScene = useDeleteScene();
+
+  const [filter, setFilter] = useState("");
+  const filteredEntities = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return entities;
+    return entities.filter(
+      (e) => e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q),
+    );
+  }, [entities, filter]);
+  const selectedHidden =
+    !!selectedId && !!filter.trim() && !filteredEntities.some((e) => e.id === selectedId);
 
   // Auto-load first scene when project changes
   useEffect(() => {
@@ -135,15 +147,48 @@ export function Hierarchy() {
 
       {/* Entities */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="px-3 py-2 border-b border-sidebar-border flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">
-            Hierarchy
-            <span className="ml-1.5 text-muted-foreground/70">({entities.length})</span>
+        <div className="px-3 py-2 border-b border-sidebar-border space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              Hierarchy
+              <span className="ml-1.5 text-muted-foreground/70">
+                ({filteredEntities.length}
+                {filter ? `/${entities.length}` : ""})
+              </span>
+            </div>
           </div>
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+            <Input
+              value={filter}
+              onChange={(ev) => setFilter(ev.target.value)}
+              placeholder="Filter entities…"
+              className="h-6 pl-6 pr-6 text-[11px]"
+              data-testid="input-hierarchy-filter"
+            />
+            {filter && (
+              <button
+                onClick={() => setFilter("")}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-muted-foreground hover:text-foreground"
+                title="Clear filter"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+          {selectedHidden && (
+            <button
+              onClick={() => setFilter("")}
+              className="w-full text-left text-[10px] text-amber-400/90 hover:text-amber-300"
+              title="Clear filter to reveal selected entity"
+            >
+              Selected entity is hidden by the filter — click to clear.
+            </button>
+          )}
         </div>
         <ScrollArea className="flex-1">
           <div className="p-1">
-            {entities.map((e) => {
+            {filteredEntities.map((e) => {
               const Icon = ICONS[e.type] ?? Box;
               const selected = selectedId === e.id;
               return (
@@ -188,6 +233,11 @@ export function Hierarchy() {
                 Empty scene.
                 <br />
                 Use <span className="text-foreground font-medium">+ Add</span> in the toolbar.
+              </p>
+            )}
+            {entities.length > 0 && filteredEntities.length === 0 && (
+              <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+                No entities match "{filter}".
               </p>
             )}
           </div>

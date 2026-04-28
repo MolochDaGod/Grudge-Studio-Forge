@@ -14,6 +14,7 @@ import { Inspector } from "@/editor/Inspector";
 import { Viewport } from "@/editor/Viewport";
 import { BottomPanel } from "@/editor/BottomPanel";
 import { ProjectPicker } from "@/editor/ProjectPicker";
+import { AssetDropZone } from "@/editor/AssetDropZone";
 import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles } from "lucide-react";
@@ -64,6 +65,7 @@ function EditorShell() {
   }, [setTransformMode, togglePlay]);
 
   return (
+    <AssetDropZone>
     <div className="h-screen w-screen flex flex-col overflow-hidden text-foreground">
       <Toolbar onOpenProjects={() => setPickerOpen(true)} />
 
@@ -109,6 +111,7 @@ function EditorShell() {
         </div>
       )}
     </div>
+    </AssetDropZone>
   );
 }
 

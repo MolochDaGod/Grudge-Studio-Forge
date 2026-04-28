@@ -19,7 +19,12 @@ import {
   Map as MapIcon,
   Orbit,
   User,
+  Download,
+  Upload,
+  MoreVertical,
 } from "lucide-react";
+import { useRef } from "react";
+import type { SceneData } from "@/scene/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -76,7 +81,47 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
   const setSceneName = useEditor((s) => s.setSceneName);
   const markSaved = useEditor((s) => s.markSaved);
   const loadScene = useEditor((s) => s.loadScene);
+  const setSceneData = useEditor((s) => s.setSceneData);
   const pushLog = useEditor((s) => s.pushLog);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const exportScene = () => {
+    let json: string;
+    try {
+      json = JSON.stringify(sceneData, null, 2);
+    } catch (err) {
+      pushLog("error", `Export failed: ${(err as Error).message}`);
+      return;
+    }
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const safeName = (sceneName || "scene").replace(/[^a-z0-9_-]+/gi, "_");
+    a.href = url;
+    a.download = `${safeName}.gfscene.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    pushLog("info", `Exported "${a.download}"`);
+  };
+
+  const onImportFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Partial<SceneData>;
+      if (!parsed || !Array.isArray(parsed.entities)) {
+        pushLog("error", `${file.name}: missing 'entities' array`);
+        return;
+      }
+      setSceneData({ entities: parsed.entities, environment: parsed.environment ?? {} });
+      const cleanName = file.name.replace(/\.(gfscene\.)?json$/i, "").replace(/\.gfscene$/i, "");
+      setSceneName(cleanName || "Imported Scene");
+      pushLog("info", `Imported "${file.name}" (${parsed.entities.length} entities). Save to keep.`);
+    } catch (err) {
+      pushLog("error", `Import failed: ${(err as Error).message}`);
+    }
+  };
 
   const qc = useQueryClient();
   const { data: project } = useGetProject(projectId ?? 0, {
@@ -249,6 +294,37 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
         {saving ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Save className="size-4 mr-1" />}
         Save
       </Button>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,.gfscene,.gfscene.json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onImportFile(f);
+          if (importInputRef.current) importInputRef.current.value = "";
+        }}
+      />
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="size-8" data-testid="button-scene-menu">
+            <MoreVertical className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={exportScene} data-testid="menu-export-scene">
+            <Download className="size-4 mr-2" /> Export scene JSON
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => importInputRef.current?.click()}
+            data-testid="menu-import-scene"
+          >
+            <Upload className="size-4 mr-2" /> Import scene JSON
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
