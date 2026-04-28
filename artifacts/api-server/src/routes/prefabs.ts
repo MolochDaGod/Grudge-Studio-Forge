@@ -33,7 +33,10 @@ router.post("/prefabs", async (req, res) => {
 router.get("/prefabs/:id", async (req, res) => {
   const { id } = GetPrefabParams.parse(req.params);
   const [row] = await db.select().from(prefabsTable).where(eq(prefabsTable.id, id));
-  if (!row) return res.status(404).json({ error: "Prefab not found" });
+  if (!row) {
+    res.status(404).json({ error: "Prefab not found" });
+    return;
+  }
   res.json(formatPrefab(row));
 });
 
@@ -45,7 +48,10 @@ router.put("/prefabs/:id", async (req, res) => {
     .set({ ...body, updatedAt: new Date() })
     .where(eq(prefabsTable.id, id))
     .returning();
-  if (!row) return res.status(404).json({ error: "Prefab not found" });
+  if (!row) {
+    res.status(404).json({ error: "Prefab not found" });
+    return;
+  }
   res.json(formatPrefab(row));
 });
 

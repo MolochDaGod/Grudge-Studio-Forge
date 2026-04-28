@@ -99,6 +99,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
 
       if (!projectId) {
         pushLog("warn", `Open a project before importing "${file.name}"`);
+        window.alert(`Open or create a project first — "${file.name}" can't be imported without one.`);
         return;
       }
 
@@ -113,7 +114,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
               pushLog("warn", `GLB header decode failed: ${(err as Error).message}`);
             }
           }
-          const res = await uploadFile(file);
+          const res = await uploadFile(file, { projectId, assetType: "model" });
           if (!res) return;
           const url = `/api/storage${res.objectPath}`;
           const asset = await recordAsset(file.name, url, "model");
@@ -144,7 +145,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
             /* ignore */
           }
           setBusy(`Uploading ${glbFile.name}…`);
-          const res = await uploadFile(glbFile);
+          const res = await uploadFile(glbFile, { projectId, assetType: "model" });
           if (!res) return;
           const url = `/api/storage${res.objectPath}`;
           const asset = await recordAsset(glbFile.name, url, "model");
@@ -160,10 +161,11 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
           }
         } else if (kind === "image" || kind === "audio") {
           setBusy(`Uploading ${file.name}…`);
-          const res = await uploadFile(file);
+          const assetType = kind === "image" ? "image" : "audio";
+          const res = await uploadFile(file, { projectId, assetType });
           if (!res) return;
           const url = `/api/storage${res.objectPath}`;
-          await recordAsset(file.name, url, kind === "image" ? "image" : "audio");
+          await recordAsset(file.name, url, assetType);
           pushLog("info", `Uploaded ${kind} "${file.name}"`);
         }
       } catch (err) {

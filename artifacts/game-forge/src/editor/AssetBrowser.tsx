@@ -76,7 +76,8 @@ function GrudgeGrid({
 
   const spawn = (it: GrudgeItem) => {
     if (!projectId) {
-      pushLog("warn", "Open a project first");
+      pushLog("warn", "Open a project first to spawn items into a scene.");
+      window.alert("Open or create a project first — items can only be spawned into a project's scene.");
       return;
     }
     const name = String(it.name ?? it.key ?? it.id ?? `Grudge ${type}`);
@@ -85,17 +86,29 @@ function GrudgeGrid({
       const e = addEntity("model", name);
       updateEntity(e.id, (d) => {
         d.model = { url };
+        // Lift slightly above origin so it isn't buried in the ground plane.
+        d.transform = { ...d.transform, position: [0, 1, 0] };
       });
+      pushLog("info", `Spawned model "${name}" at (0, 1, 0).`);
     } else {
+      // Fallback: tier-coloured cube floating above the floor where it's visible.
       const e = addEntity("box", name);
       const tierHex = typeof it.tier === "number" ? getTierColor(it.tier).hex : "#8b7355";
       updateEntity(e.id, (d) => {
         if (!d.material) d.material = {};
         d.material.color = tierHex;
         d.material.emissive = tierHex;
+        d.transform = {
+          ...d.transform,
+          position: [0, 1.2, 0],
+          scale: [0.6, 0.6, 0.6],
+        };
       });
+      pushLog(
+        "info",
+        `Spawned placeholder cube for "${name}" at (0, 1.2, 0). (No 3D model in the catalogue — assign one from the inspector.)`,
+      );
     }
-    pushLog("info", `Spawned "${name}" into the scene`);
   };
 
   if (loading) {
@@ -230,13 +243,14 @@ function ProjectAssets() {
 
   const onUpload = async (file: File) => {
     if (!projectId) {
-      pushLog("warn", "Open a project first");
+      pushLog("warn", "Open a project first to upload assets.");
+      window.alert("Open or create a project first — uploads are organised under each project.");
       return;
     }
     pushLog("info", `Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)…`);
-    const res = await uploadFile(file);
-    if (!res) return;
     const type = classifyAsset(file.name, file.type);
+    const res = await uploadFile(file, { projectId, assetType: type });
+    if (!res) return;
     const servingUrl = `/api/storage${res.objectPath}`;
     await createAsset.mutateAsync({
       data: {

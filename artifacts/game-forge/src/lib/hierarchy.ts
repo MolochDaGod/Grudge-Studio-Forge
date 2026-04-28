@@ -79,6 +79,70 @@ export function cloneSubtree(
   });
 }
 
+/** Defensively repair invalid hierarchy data on load/import. Three issues are
+ *  handled, each of which would otherwise cause entities to silently disappear
+ *  from both the Hierarchy panel and the Viewport (because `buildTree` only
+ *  surfaces entities reachable from the `null` root):
+ *
+ *    1. parentId points at an id that doesn't exist in the scene → re-root.
+ *    2. duplicate ids → keep the first, re-id later collisions, log a warning.
+ *    3. parent cycle (a → b → a) → break the cycle on the second link by
+ *       re-rooting the offending entity.
+ *
+ *  Returns the cleaned entity list and any human-readable warnings the caller
+ *  may want to surface in the console panel. */
+export function sanitizeEntities(
+  entities: SceneEntity[],
+): { entities: SceneEntity[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const seenIds = new Set<string>();
+  const cleaned: SceneEntity[] = [];
+
+  // Pass 1: dedupe ids (keep first occurrence; re-id later duplicates).
+  for (const e of entities) {
+    if (!seenIds.has(e.id)) {
+      seenIds.add(e.id);
+      cleaned.push(e);
+      continue;
+    }
+    const newId = nanoid(8);
+    warnings.push(`Duplicate entity id "${e.id}" → re-id'd to "${newId}"`);
+    cleaned.push({ ...e, id: newId });
+    seenIds.add(newId);
+  }
+
+  // Pass 2: re-root entities whose parentId points at a missing entity.
+  const idSet = new Set(cleaned.map((e) => e.id));
+  for (const e of cleaned) {
+    if (e.parentId && !idSet.has(e.parentId)) {
+      warnings.push(
+        `Entity "${e.name}" had missing parent "${e.parentId}" — re-rooted.`,
+      );
+      e.parentId = null;
+    }
+  }
+
+  // Pass 3: break cycles. Walk each entity's parent chain; if we revisit it,
+  // sever the link by re-rooting.
+  for (const e of cleaned) {
+    if (!e.parentId) continue;
+    const visited = new Set<string>([e.id]);
+    let cursor: string | null | undefined = e.parentId;
+    while (cursor) {
+      if (visited.has(cursor)) {
+        warnings.push(`Cycle detected at "${e.name}" — re-rooted.`);
+        e.parentId = null;
+        break;
+      }
+      visited.add(cursor);
+      const next = cleaned.find((x) => x.id === cursor);
+      cursor = next?.parentId ?? null;
+    }
+  }
+
+  return { entities: cleaned, warnings };
+}
+
 /** Re-id every entity in a tree (used when spawning a prefab into a scene).
  *  Returns the new entities and the id of the new root. */
 export function reidTree(

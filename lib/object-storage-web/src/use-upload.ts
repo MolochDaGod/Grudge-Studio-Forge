@@ -20,6 +20,13 @@ interface UseUploadOptions {
   onError?: (error: Error) => void;
 }
 
+export interface UploadFileOptions {
+  /** Project the file belongs to. Becomes part of the storage key. */
+  projectId?: number;
+  /** Asset class. Becomes part of the storage key. */
+  assetType?: "model" | "image" | "audio" | "texture" | "other";
+}
+
 /**
  * React hook for handling file uploads with presigned URLs.
  *
@@ -60,17 +67,19 @@ export function useUpload(options: UseUploadOptions = {}) {
   const [progress, setProgress] = useState(0);
 
   const requestUploadUrl = useCallback(
-    async (file: File): Promise<UploadResponse> => {
+    async (file: File, fileOpts: UploadFileOptions = {}): Promise<UploadResponse> => {
+      const body: Record<string, unknown> = {
+        name: file.name,
+        size: file.size,
+        contentType: file.type || "application/octet-stream",
+      };
+      if (typeof fileOpts.projectId === "number") body.projectId = fileOpts.projectId;
+      if (fileOpts.assetType) body.assetType = fileOpts.assetType;
+
       const response = await fetch(`${basePath}/uploads/request-url`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type || "application/octet-stream",
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -80,7 +89,7 @@ export function useUpload(options: UseUploadOptions = {}) {
 
       return response.json();
     },
-    []
+    [basePath]
   );
 
   const uploadToPresignedUrl = useCallback(
@@ -101,14 +110,14 @@ export function useUpload(options: UseUploadOptions = {}) {
   );
 
   const uploadFile = useCallback(
-    async (file: File): Promise<UploadResponse | null> => {
+    async (file: File, fileOpts: UploadFileOptions = {}): Promise<UploadResponse | null> => {
       setIsUploading(true);
       setError(null);
       setProgress(0);
 
       try {
         setProgress(10);
-        const uploadResponse = await requestUploadUrl(file);
+        const uploadResponse = await requestUploadUrl(file, fileOpts);
 
         setProgress(30);
         await uploadToPresignedUrl(file, uploadResponse.uploadURL);

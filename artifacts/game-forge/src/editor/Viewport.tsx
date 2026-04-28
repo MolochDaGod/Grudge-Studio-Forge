@@ -24,7 +24,13 @@ interface RenderNodeProps {
 }
 
 /** Renders an entity + recursively all of its children inside its group, so
- *  child transforms compose with the parent's (Unity-style hierarchy). */
+ *  child transforms compose with the parent's (Unity-style hierarchy).
+ *
+ *  IMPORTANT: We forward refs to EntityRenderer's *actual transformed group*
+ *  (not a separate wrapper). If we wrapped in a tracking group, TransformControls
+ *  would mutate the wrapper while EntityRenderer kept its inner group anchored
+ *  to entity.transform — the gizmo and the visual mesh would diverge after the
+ *  first drag. Forwarding directly keeps the gizmo, mesh, and store in sync. */
 function RenderNode({
   entity,
   childrenByParent,
@@ -48,37 +54,23 @@ function RenderNode({
     />
   ));
 
-  if (groupRefs) {
-    // Edit mode — wrap in tracking group so TransformControls can grab it.
-    return (
-      <group
-        ref={(el) => {
-          if (el) groupRefs.current.set(entity.id, el);
-          else groupRefs.current.delete(entity.id);
-        }}
-      >
-        <EntityRenderer
-          entity={entity}
-          selected={selectedId === entity.id}
-          onPick={() => onPick(entity.id)}
-          playMode={false}
-        >
-          {childNodes}
-        </EntityRenderer>
-      </group>
-    );
-  }
-
-  // Play mode — attach body/group ref directly on the EntityRenderer.
   return (
     <EntityRenderer
       entity={entity}
+      selected={selectedId === entity.id}
+      onPick={() => onPick(entity.id)}
+      playMode={playMode}
       ref={(el) => {
-        if (!bodyRefs) return;
-        if (el) bodyRefs.current.set(entity.id, el as RapierRigidBody | THREE.Group);
-        else bodyRefs.current.delete(entity.id);
+        if (groupRefs) {
+          // In edit mode the ref is always a THREE.Group (no physics).
+          if (el) groupRefs.current.set(entity.id, el as THREE.Group);
+          else groupRefs.current.delete(entity.id);
+        }
+        if (bodyRefs) {
+          if (el) bodyRefs.current.set(entity.id, el as RapierRigidBody | THREE.Group);
+          else bodyRefs.current.delete(entity.id);
+        }
       }}
-      playMode
     >
       {childNodes}
     </EntityRenderer>

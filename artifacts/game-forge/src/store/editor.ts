@@ -9,7 +9,7 @@ import {
   DEFAULT_ENV,
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
-import { cloneSubtree, getDescendants, wouldCycle, reidTree } from "@/lib/hierarchy";
+import { cloneSubtree, getDescendants, wouldCycle, reidTree, sanitizeEntities } from "@/lib/hierarchy";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type ConsoleLevel = "log" | "warn" | "error" | "info";
@@ -171,22 +171,35 @@ export const useEditor = create<EditorState>((set, get) => ({
       prefabSubScene: null,
     }),
 
-  loadScene: (sceneId, name, data) =>
+  loadScene: (sceneId, name, data) => {
+    const raw = Array.isArray(data?.entities) ? data.entities : [];
+    const { entities, warnings } = sanitizeEntities(raw);
     set({
       sceneId,
       sceneName: name,
       sceneData: {
-        entities: Array.isArray(data?.entities) ? data.entities : [],
+        entities,
         environment: { ...DEFAULT_ENV, ...(data?.environment ?? {}) },
       },
       selectedId: null,
       isDirty: false,
       isPlaying: false,
       isPaused: false,
-    }),
+    });
+    for (const w of warnings) get().pushLog("warn", `Scene load: ${w}`);
+  },
 
   setSceneName: (name) => set({ sceneName: name, isDirty: true }),
-  setSceneData: (data) => set({ sceneData: data, isDirty: true }),
+  setSceneData: (data) => {
+    const { entities, warnings } = sanitizeEntities(
+      Array.isArray(data?.entities) ? data.entities : [],
+    );
+    set({
+      sceneData: { entities, environment: data?.environment ?? {} },
+      isDirty: true,
+    });
+    for (const w of warnings) get().pushLog("warn", `Scene data: ${w}`);
+  },
   markSaved: () => set({ isDirty: false }),
 
   addEntity: (type, name, parentId) => {
@@ -367,37 +380,35 @@ export const useEditor = create<EditorState>((set, get) => ({
   clearConsole: () => set({ consoleMessages: [] }),
   setBottomTab: (t) => set({ bottomTab: t }),
 
-  openPrefabSubScene: (prefabId, name, prefabEntities) =>
-    set((s) => {
-      // Don't double-stack — if already in prefab mode, close it first.
-      if (s.prefabSubScene) return s;
-      // Strip parentId references that point outside this prefab tree (defensive).
-      const ids = new Set(prefabEntities.map((e) => e.id));
-      const cleaned = prefabEntities.map((e) => ({
-        ...e,
-        parentId: e.parentId && ids.has(e.parentId) ? e.parentId : null,
-      }));
-      return {
-        prefabSubScene: {
-          prefabId,
-          prefabName: name,
-          parentSnapshot: {
-            sceneId: s.sceneId,
-            sceneName: s.sceneName,
-            sceneData: s.sceneData,
-            selectedId: s.selectedId,
-            isDirty: s.isDirty,
-          },
+  openPrefabSubScene: (prefabId, name, prefabEntities) => {
+    // Don't double-stack — if already in prefab mode, just no-op.
+    if (get().prefabSubScene) return;
+    // Run the same hierarchy repair we use for normal scene loads:
+    // dedupe ids, re-root orphan parents, break cycles. Without this a
+    // corrupted prefab payload could hide entities in the sub-scene editor.
+    const { entities: cleaned, warnings } = sanitizeEntities(prefabEntities);
+    set((s) => ({
+      prefabSubScene: {
+        prefabId,
+        prefabName: name,
+        parentSnapshot: {
+          sceneId: s.sceneId,
+          sceneName: s.sceneName,
+          sceneData: s.sceneData,
+          selectedId: s.selectedId,
+          isDirty: s.isDirty,
         },
-        sceneId: null,
-        sceneName: `Prefab: ${name}`,
-        sceneData: { entities: cleaned, environment: { ...DEFAULT_ENV } },
-        selectedId: null,
-        isDirty: false,
-        isPlaying: false,
-        isPaused: false,
-      };
-    }),
+      },
+      sceneId: null,
+      sceneName: `Prefab: ${name}`,
+      sceneData: { entities: cleaned, environment: { ...DEFAULT_ENV } },
+      selectedId: null,
+      isDirty: false,
+      isPlaying: false,
+      isPaused: false,
+    }));
+    for (const w of warnings) get().pushLog("warn", `Prefab "${name}": ${w}`);
+  },
 
   closePrefabSubScene: () =>
     set((s) => {
