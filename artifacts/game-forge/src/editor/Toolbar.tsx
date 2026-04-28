@@ -23,8 +23,6 @@ import {
   Upload,
   MoreVertical,
   FileStack,
-  Package,
-  X,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -251,10 +249,13 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
       {isDirty && <span className="size-2 rounded-full bg-amber-400" title="Unsaved changes" />}
 
       {prefabSubScene && (
-        <div className="ml-1 flex items-center gap-2 px-2 py-1 rounded-md bg-amber-500/15 border border-amber-500/40">
-          <Package className="size-3.5 text-amber-400" />
-          <span className="text-[11px] font-medium text-amber-200">
-            Editing Prefab: <span className="font-mono">{prefabSubScene.prefabName}</span>
+        <div className="ml-1 flex items-center gap-2 pl-2.5 pr-1 py-1 rounded-md bg-primary/10 border border-primary/40 gold-glow-sm">
+          <span className="font-heading text-[10px] uppercase tracking-[0.22em] text-primary">
+            Editing Prefab
+          </span>
+          <span className="text-primary/40">·</span>
+          <span className="font-display text-[12px] tracking-wide brand-gold">
+            {prefabSubScene.prefabName}
           </span>
           <button
             onClick={() => {
@@ -262,7 +263,7 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
                 confirm("Close prefab sub-scene? Unsaved prefab changes will be lost.");
               if (ok) closePrefabSubScene();
             }}
-            className="text-amber-300/70 hover:text-amber-200"
+            className="ml-1 px-2 py-0.5 rounded font-heading text-[10px] uppercase tracking-[0.18em] text-primary/80 hover:text-primary hover:bg-primary/15"
             title={
               isDirty
                 ? "Close sub-scene (unsaved prefab changes will be lost)"
@@ -270,7 +271,7 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
             }
             data-testid="button-toolbar-close-prefab"
           >
-            <X className="size-3.5" />
+            Close
           </button>
         </div>
       )}

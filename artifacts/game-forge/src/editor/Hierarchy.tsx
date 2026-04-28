@@ -11,8 +11,6 @@ import {
   Search,
   X,
   ChevronRight,
-  Package,
-  CornerLeftUp,
 } from "lucide-react";
 import { useEditor } from "@/store/editor";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -135,10 +133,10 @@ function HierarchyRow({
       <span className="flex-1 truncate">{entity.name}</span>
       {isPrefabInstance && (
         <span
-          className="text-[9px] font-mono px-1 rounded bg-accent/15 text-accent border border-accent/40"
+          className="font-heading text-[9px] uppercase tracking-[0.18em] px-1.5 py-px rounded-sm bg-primary/15 text-primary border border-primary/40"
           title="Instance of a Prefab"
         >
-          P
+          Prefab
         </span>
       )}
       {entity.scriptId && <span className="text-[10px] text-accent font-mono">{"<>"}</span>}
@@ -149,10 +147,10 @@ function HierarchyRow({
               ev.stopPropagation();
               onUnparent();
             }}
-            className="p-1 rounded hover:bg-sidebar-accent text-muted-foreground"
+            className="px-1.5 py-0.5 rounded font-heading text-[9px] uppercase tracking-[0.18em] hover:bg-sidebar-accent text-muted-foreground hover:text-accent"
             title="Unparent (move to root)"
           >
-            <CornerLeftUp className="size-3" />
+            Unparent
           </button>
         )}
         <button
@@ -160,10 +158,10 @@ function HierarchyRow({
             ev.stopPropagation();
             onSavePrefab();
           }}
-          className="p-1 rounded hover:bg-sidebar-accent text-muted-foreground hover:text-accent"
+          className="px-1.5 py-0.5 rounded font-heading text-[9px] uppercase tracking-[0.18em] hover:bg-sidebar-accent text-muted-foreground hover:text-accent"
           title="Save subtree as Prefab"
         >
-          <Package className="size-3" />
+          Forge
         </button>
         <button
           onClick={(ev) => {
@@ -421,11 +419,11 @@ export function Hierarchy() {
       )}
 
       {prefabSubScene && (
-        <div className="px-3 py-2 border-b border-amber-500/50 bg-amber-500/10">
-          <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-amber-400">
-            <Package className="size-3" /> Editing Prefab
+        <div className="px-3 py-2 border-b border-primary/50 bg-primary/10 gold-glow-sm">
+          <div className="font-heading text-[10px] uppercase tracking-[0.22em] text-primary">
+            Editing Prefab
           </div>
-          <div className="mt-1 text-xs font-medium text-foreground truncate">
+          <div className="mt-1 font-display text-sm tracking-wide brand-gold truncate">
             {prefabSubScene.prefabName}
           </div>
         </div>

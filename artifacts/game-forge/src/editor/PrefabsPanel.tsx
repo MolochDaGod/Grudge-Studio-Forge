@@ -1,4 +1,4 @@
-import { Package, Trash2, Plus, ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   useListPrefabs,
   useDeletePrefab,
@@ -110,30 +110,33 @@ export function PrefabsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground">
-          <Package className="size-3" /> Prefabs ({prefabs.length})
+        <div className="flex items-baseline gap-2">
+          <span className="font-heading text-[11px] uppercase tracking-[0.22em] text-accent">
+            Prefabs
+          </span>
+          <span className="text-[10px] text-muted-foreground font-mono">
+            ({prefabs.length})
+          </span>
         </div>
         {prefabSubScene && (
           <div className="flex items-center gap-2">
             <Button
               variant="default"
               size="sm"
-              className="h-7 text-xs bg-accent text-accent-foreground hover:bg-accent/90"
+              className="h-7 px-3 text-[11px] font-heading uppercase tracking-[0.18em] bg-primary text-primary-foreground hover:bg-primary/90 hover-gold-glow"
               onClick={onSavePrefabBuffer}
               disabled={updatePrefab.isPending}
               data-testid="button-save-prefab-buffer"
             >
-              {updatePrefab.isPending ? (
-                <Loader2 className="size-3 mr-1 animate-spin" />
-              ) : (
-                <Package className="size-3 mr-1" />
+              {updatePrefab.isPending && (
+                <Loader2 className="size-3 mr-1.5 animate-spin" />
               )}
               Save Prefab
             </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
+              className="h-7 px-3 text-[11px] font-heading uppercase tracking-[0.18em]"
               onClick={onCloseSubScene}
               data-testid="button-close-prefab-subscene"
             >
@@ -148,10 +151,12 @@ export function PrefabsPanel() {
             <div className="text-xs text-muted-foreground">Loading prefabs…</div>
           )}
           {!isLoading && prefabs.length === 0 && (
-            <div className="text-xs text-muted-foreground py-6 text-center">
-              No prefabs yet. Select an entity in the hierarchy and click the
-              <Package className="size-3 inline mx-1 align-text-bottom" />
-              icon to save its subtree as a prefab.
+            <div className="text-xs text-muted-foreground py-6 text-center font-lore italic">
+              No prefabs forged yet.
+              <br />
+              Select an entity in the Hierarchy and choose
+              <span className="text-accent not-italic font-heading mx-1">Save as Prefab</span>
+              from its row actions.
             </div>
           )}
           {prefabs.map((p) => {
@@ -161,50 +166,62 @@ export function PrefabsPanel() {
             return (
               <div
                 key={p.id}
-                className={`flex items-center gap-2 px-2 py-2 rounded-md border ${
+                className={`relative flex items-center gap-3 pl-3 pr-2 py-2 rounded-md border transition-colors ${
                   editing
-                    ? "bg-amber-500/10 border-amber-500/50"
+                    ? "bg-primary/10 border-primary/50 gold-glow-sm"
                     : "bg-card border-card-border hover-elevate"
                 }`}
                 data-testid={`prefab-${p.id}`}
               >
-                <Package className="size-4 text-accent shrink-0" />
+                {/* Brand sigil — a thin gold bar marks each prefab card */}
+                <span
+                  className={`absolute left-0 top-2 bottom-2 w-[2px] rounded-r ${
+                    editing ? "bg-primary" : "bg-primary/40"
+                  }`}
+                  aria-hidden
+                />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{p.name}</div>
+                  <div className="font-heading text-[13px] tracking-wide text-foreground truncate">
+                    {p.name}
+                  </div>
                   <div className="text-[10px] text-muted-foreground font-mono">
                     {count} {count === 1 ? "entity" : "entities"} · #{p.id}
-                    {editing && <span className="ml-2 text-amber-400">· editing</span>}
+                    {editing && (
+                      <span className="ml-2 font-heading uppercase tracking-wider text-primary">
+                        · editing
+                      </span>
+                    )}
                   </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-7 px-2.5 text-[10px] font-heading uppercase tracking-[0.18em] text-muted-foreground hover:text-accent"
                   onClick={() => onSpawn(p)}
                   disabled={!!prefabSubScene}
-                  title="Spawn an instance into the current scene"
+                  title="Instantiate a copy in the current scene"
                   data-testid={`button-spawn-prefab-${p.id}`}
                 >
-                  <Plus className="size-3 mr-1" /> Spawn
+                  Spawn
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs"
+                  className="h-7 px-2.5 text-[10px] font-heading uppercase tracking-[0.18em] text-muted-foreground hover:text-accent"
                   onClick={() => onOpen(p)}
                   disabled={!!prefabSubScene && !editing}
                   title="Open prefab in its own sub-scene editor"
                   data-testid={`button-open-prefab-${p.id}`}
                 >
-                  <ExternalLink className="size-3 mr-1" /> Open
+                  Open
                 </Button>
                 <button
                   onClick={() => onDelete(p)}
-                  className="p-1.5 rounded hover:bg-destructive/15 text-muted-foreground hover:text-destructive"
+                  className="h-7 px-2 rounded text-[10px] font-heading uppercase tracking-[0.18em] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   title="Delete prefab"
                   data-testid={`button-delete-prefab-${p.id}`}
                 >
-                  <Trash2 className="size-3.5" />
+                  Delete
                 </button>
               </div>
             );
