@@ -32,7 +32,7 @@ export function EffectsRig({ highQuality = true }: EffectsRigProps) {
     );
   }
   return (
-    <EffectComposer multisampling={0}>
+    <EffectComposer multisampling={0} enableNormalPass>
       <SSAO
         blendFunction={BlendFunction.MULTIPLY}
         samples={16}
