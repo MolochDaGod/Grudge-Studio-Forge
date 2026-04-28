@@ -28,6 +28,58 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
  * top-level `src/editor/Viewport.tsx` so cartographer can keep instrumenting
  * the rest of the app — toolbar, hierarchy, inspector — for the visual editor.
  */
+/**
+ * Inject `<link rel="modulepreload">` tags into the built `index.html` for
+ * the lazy 3D viewport chunk and its sibling vendor chunk that Vite's own
+ * auto-injection misses (`vendor-postprocessing`, which is only reachable
+ * through the dynamic Viewport import).
+ *
+ * Vite's default behavior already preloads the vendor chunks that the
+ * entry's static import graph touches (`vendor-react`, `vendor-radix`,
+ * `vendor-three`, `vendor-r3f`, `vendor-rapier`). It does *not* preload:
+ *   - The lazy `viewportPreload` chunk itself (the small re-export entry
+ *     in `src/editor/viewportPreload.ts` that anchors the dynamic import).
+ *   - `vendor-postprocessing`, whose only consumer is reached through that
+ *     dynamic import.
+ *
+ * Without these hints the browser would not learn about those URLs until
+ * the runtime `__vitePreload` helper fires after React mounts, which costs
+ * one extra round-trip per chunk on a cold cache. Adding the static hints
+ * here lets the browser kick off all four downloads in parallel with the
+ * main entry, so by the time `requestIdleCallback` runs the prefetch in
+ * `src/lib/prefetch.ts` (or the user opens a project), the chunks are
+ * either already in cache or in flight.
+ */
+function preloadViewportCandidate(): Plugin {
+  const TARGET_CHUNK_NAMES = new Set(["viewportPreload", "vendor-postprocessing"]);
+  return {
+    name: "preload-viewport-candidate",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, ctx) {
+        const bundle = ctx.bundle;
+        if (!bundle) return;
+        const tags = [];
+        for (const [filename, chunk] of Object.entries(bundle)) {
+          if (chunk.type !== "chunk") continue;
+          if (!TARGET_CHUNK_NAMES.has(chunk.name)) continue;
+          tags.push({
+            tag: "link",
+            attrs: {
+              rel: "modulepreload",
+              crossorigin: "",
+              href: `${basePath.replace(/\/$/, "")}/${filename}`,
+            },
+            injectTo: "head" as const,
+          });
+        }
+        return tags;
+      },
+    },
+  };
+}
+
 function excludeR3FFromCartographer(plugin: Plugin): Plugin {
   const original = plugin.transform;
   if (!original || typeof original !== "object" || !("handler" in original)) {
@@ -87,6 +139,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    preloadViewportCandidate(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

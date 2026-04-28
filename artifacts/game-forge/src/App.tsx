@@ -26,9 +26,22 @@ import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
  * surrounding shell (toolbar, hierarchy, inspector, project picker) paint
  * immediately and shaves the time-to-interactive on first load. The Suspense
  * fallback below sits in the viewport pane while the chunk streams in.
+ *
+ * Two complementary mechanisms hide that fallback in practice:
+ *  1. `main.tsx` calls `schedulePrefetchViewport()` from
+ *     `@/lib/prefetch`, which fires this same dynamic import on the next
+ *     idle frame.
+ *  2. `vite.config.ts`'s `preloadViewportCandidate` plugin emits
+ *     `<link rel="modulepreload">` tags for the resulting chunks at
+ *     build time so the browser fetches them in parallel with the entry.
+ *
+ * Both routes go through `@/editor/viewportPreload`, the small re-export
+ * "preload candidate" entry. Vite dedupes the dynamic import by
+ * specifier, so all three call sites resolve to the same chunk and the
+ * second/third invocations hit the module cache on the same tick.
  */
 const Viewport = lazy(() =>
-  import("@/editor/Viewport").then((m) => ({ default: m.Viewport })),
+  import("@/editor/viewportPreload").then((m) => ({ default: m.Viewport })),
 );
 
 function ViewportFallback() {

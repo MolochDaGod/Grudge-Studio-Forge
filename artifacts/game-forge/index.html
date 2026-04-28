@@ -16,6 +16,17 @@
       href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@500;700&family=Spectral+SC:wght@400;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <!--
+      Modulepreload hints for the 3D viewport are injected at build time
+      by the `preloadViewportCandidate` plugin in `vite.config.ts`. The
+      plugin finds the bundled `viewportPreload` and `vendor-postprocessing`
+      chunks and emits `<link rel="modulepreload">` tags here so the
+      browser fetches them in parallel with the main entry — long before
+      React reaches the lazy `<Viewport />` import in `App.tsx`. See
+      `src/editor/viewportPreload.ts` for the re-export entry that anchors
+      the chunk name and `src/lib/prefetch.ts` for the complementary
+      idle-time prefetch.
+    -->
   </head>
   <body>
     <div id="root"></div>
