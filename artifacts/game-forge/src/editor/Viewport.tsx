@@ -11,7 +11,24 @@ import type { ScriptEntity } from "@/scene/csTranspile";
 import { useKeyboardState } from "@/lib/keyboard";
 import { PlayCameraController } from "@/scene/CameraControllers";
 import { buildTree } from "@/lib/hierarchy";
-import type { SceneEntity } from "@/scene/types";
+import type { SceneEntity, EntityType } from "@/scene/types";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Hotbar } from "@/editor/Hotbar";
+import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
+import { useListPrefabs, getListPrefabsQueryKey, type Prefab } from "@workspace/api-client-react";
+
+interface PrefabPayload {
+  entities?: SceneEntity[];
+}
 
 interface RenderNodeProps {
   entity: SceneEntity;
@@ -82,7 +99,9 @@ function SceneEditMode({ data }: { data?: { entities: SceneEntity[] } }) {
   const sceneData = data ?? liveData;
   const selectedId = useEditor((s) => s.selectedId);
   const selectEntity = useEditor((s) => s.selectEntity);
-  const setEntityTransform = useEditor((s) => s.setEntityTransform);
+  // Use the command-dispatching wrapper so a TransformControls drag becomes
+  // a single undo step (the command coalesces same-axis edits within ~800ms).
+  const cmdSetEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
   const transformMode = useEditor((s) => s.transformMode);
 
   const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
@@ -112,11 +131,11 @@ function SceneEditMode({ data }: { data?: { entities: SceneEntity[] } }) {
             if (!selectedId || !selectedRef) return;
             const o = selectedRef;
             if (transformMode === "translate") {
-              setEntityTransform(selectedId, "position", [o.position.x, o.position.y, o.position.z]);
+              cmdSetEntityTransform(selectedId, "position", [o.position.x, o.position.y, o.position.z]);
             } else if (transformMode === "rotate") {
-              setEntityTransform(selectedId, "rotation", [o.rotation.x, o.rotation.y, o.rotation.z]);
+              cmdSetEntityTransform(selectedId, "rotation", [o.rotation.x, o.rotation.y, o.rotation.z]);
             } else {
-              setEntityTransform(selectedId, "scale", [o.scale.x, o.scale.y, o.scale.z]);
+              cmdSetEntityTransform(selectedId, "scale", [o.scale.x, o.scale.y, o.scale.z]);
             }
           }}
         />
@@ -294,14 +313,70 @@ function ClickToDeselect() {
   return null;
 }
 
+/** Snap the orbit-controls target onto the selected entity whenever the user
+ *  presses F (or picks "Focus camera" from a context menu). We bump
+ *  `focusToken` in the store and the effect below re-runs.
+ *
+ *  The effect deliberately depends ONLY on `focusToken` — selecting a new
+ *  entity should NOT auto-focus (that's surprising). */
+function FocusCameraController() {
+  const focusToken = useEditor((s) => s.focusToken);
+  const { camera, controls } = useThree();
+  useEffect(() => {
+    if (focusToken === 0) return; // initial mount, don't snap
+    const { selectedId, sceneData } = useEditor.getState();
+    if (!selectedId) return;
+    const e = sceneData.entities.find((x) => x.id === selectedId);
+    if (!e) return;
+    const [x, y, z] = e.transform.position;
+    // OrbitControls extends EventDispatcher; useThree types `controls` as the
+    // base class. Cast through `unknown` to access the orbit-specific fields.
+    const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
+    if (c && c.target) {
+      const target = new THREE.Vector3(x, y, z);
+      // Keep the camera's current direction; move it to a fixed distance
+      // from the new target so the entity is centered.
+      const dir = camera.position.clone().sub(c.target).normalize();
+      const dist = Math.max(6, camera.position.distanceTo(c.target));
+      c.target.copy(target);
+      camera.position.copy(target.clone().add(dir.multiplyScalar(dist)));
+      c.update?.();
+    }
+  }, [focusToken, camera, controls]);
+  return null;
+}
+
+const VIEWPORT_PRIMITIVES: { type: EntityType; label: string; Icon: typeof BoxIcon }[] = [
+  { type: "box", label: "Box", Icon: BoxIcon },
+  { type: "sphere", label: "Sphere", Icon: CircleIcon },
+  { type: "cylinder", label: "Cylinder", Icon: CylinderIcon },
+  { type: "plane", label: "Plane", Icon: SquareIcon },
+  { type: "light", label: "Light", Icon: LightIcon },
+];
+
 export function Viewport() {
   const env = useEditor((s) => s.sceneData.environment);
   const isPlaying = useEditor((s) => s.isPlaying);
   const selectEntity = useEditor((s) => s.selectEntity);
+  const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
+  const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
+  const projectId = useEditor((s) => s.projectId);
+  const hotbar = useEditor((s) => s.hotbar);
+  const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
+  const pushLog = useEditor((s) => s.pushLog);
   const cameraMode = env.cameraMode ?? "editor";
 
+  const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {
+    query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
+  });
+  const prefabsById = useMemo(() => {
+    const m = new Map<number, Prefab>();
+    for (const p of prefabs) m.set(p.id, p);
+    return m;
+  }, [prefabs]);
+
   const hint = !isPlaying
-    ? "Edit Mode — drag the gizmo or click an object"
+    ? "Edit Mode — drag the gizmo · right-click for menu · F to focus selection"
     : cameraMode === "rts"
       ? "▶ RTS — WASD or edge of screen to pan · wheel to zoom"
       : cameraMode === "thirdPerson"
@@ -310,43 +385,108 @@ export function Viewport() {
           ? "▶ First-person — click to lock pointer · WASD + mouselook · Shift to sprint · Esc to release"
           : "▶ PLAY MODE — physics & scripts running";
 
-  return (
-    <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
-      <Canvas
-        shadows
-        camera={{ position: [8, 8, 12], fov: 45 }}
-        onPointerMissed={() => selectEntity(null)}
-      >
-        <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
-        <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
-        <Lights />
-        <Suspense fallback={null}>
-          {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
-        </Suspense>
-        {!isPlaying && (
-          <>
-            <Grid
-              args={[40, 40]}
-              cellSize={1}
-              cellThickness={0.5}
-              cellColor="#2a2a3e"
-              sectionSize={5}
-              sectionThickness={1}
-              sectionColor="#d4af37"
-              fadeDistance={40}
-              fadeStrength={1.4}
-              infiniteGrid
-              position={[0, -0.001, 0]}
-            />
-            <OrbitControls makeDefault />
-          </>
-        )}
-        <ClickToDeselect />
-      </Canvas>
+  const spawnFromHotbar = (slotIndex: number) => {
+    const id = hotbar[slotIndex];
+    if (id == null) return;
+    const p = prefabsById.get(id);
+    if (!p) return;
+    const data = p.data as PrefabPayload;
+    if (!data?.entities?.length) return;
+    spawnPrefabEntities(data.entities, p.id);
+    pushLog("info", `Spawned "${p.name}" via slot ${slotIndex + 1}.`);
+  };
 
-      <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
-        <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
-      </div>
-    </div>
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
+          <Canvas
+            shadows
+            camera={{ position: [8, 8, 12], fov: 45 }}
+            onPointerMissed={() => selectEntity(null)}
+          >
+            <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
+            <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
+            <Lights />
+            <Suspense fallback={null}>
+              {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
+            </Suspense>
+            {!isPlaying && (
+              <>
+                <Grid
+                  args={[40, 40]}
+                  cellSize={1}
+                  cellThickness={0.5}
+                  cellColor="#2a2a3e"
+                  sectionSize={5}
+                  sectionThickness={1}
+                  sectionColor="#d4af37"
+                  fadeDistance={40}
+                  fadeStrength={1.4}
+                  infiniteGrid
+                  position={[0, -0.001, 0]}
+                />
+                <OrbitControls makeDefault />
+                <FocusCameraController />
+              </>
+            )}
+            <ClickToDeselect />
+          </Canvas>
+
+          <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
+            <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
+          </div>
+
+          <Hotbar />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[200px]">
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Plus className="size-3.5 mr-2" /> Add primitive
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {VIEWPORT_PRIMITIVES.map((p) => (
+              <ContextMenuItem key={p.type} onClick={() => cmdAddEntity(p.type)}>
+                <p.Icon className="size-3.5 mr-2" /> {p.label}
+              </ContextMenuItem>
+            ))}
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={() => cmdAddEmptyChild(null)}>
+              <SquareIcon className="size-3.5 mr-2 opacity-60" /> Empty
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={hotbar.every((s) => s == null)}>
+            <Plus className="size-3.5 mr-2" /> Spawn from hotbar
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {hotbar.map((slotId, idx) => {
+              const p = slotId != null ? prefabsById.get(slotId) : undefined;
+              return (
+                <ContextMenuItem
+                  key={idx}
+                  disabled={!p}
+                  onClick={() => spawnFromHotbar(idx)}
+                >
+                  <span className="font-mono text-[10px] text-muted-foreground mr-2 w-4">
+                    {idx + 1}
+                  </span>
+                  {p ? p.name : <span className="opacity-50">empty</span>}
+                </ContextMenuItem>
+              );
+            })}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          disabled={!projectId}
+          onClick={() => window.dispatchEvent(new CustomEvent("gameforge:openMapGen"))}
+        >
+          <Wand2 className="size-3.5 mr-2" /> Generate map…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

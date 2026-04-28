@@ -1,0 +1,647 @@
+/**
+ * PlayerImporter - Three.js Player Importing System
+ * 
+ * Handles loading 3D player models (GLTF/GLB), managing animations,
+ * spawning networked players, and providing a clean API for game integration.
+ *
+ * Dependencies:
+ *   - three (r152+)
+ *   - three/addons/ (GLTFLoader, FBXLoader, AnimationMixer)
+ *
+ * Author: Grudge Studio
+ * License: MIT
+ */
+
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
+import { AnimationMixer, AnimationAction } from "three";
+
+// ──────────────────────────────────────────────
+// Types & Interfaces
+// ──────────────────────────────────────────────
+
+export type ModelFormat = "glb" | "gltf" | "fbx";
+
+export type PlayerAnimationState =
+  | "idle"
+  | "walk"
+  | "run"
+  | "jump"
+  | "fall"
+  | "attack"
+  | "hit"
+  | "death"
+  | "dance";
+
+export interface PlayerConfig {
+  /** Unique player ID (wallet address, socket ID, etc.) */
+  id: string;
+  /** Display name shown above the player */
+  name?: string;
+  /** Model file path or URL */
+  modelPath: string;
+  /** Model format */
+  format: ModelFormat;
+  /** Initial position */
+  position?: THREE.Vector3;
+  /** Initial rotation (Euler) */
+  rotation?: THREE.Euler;
+  /** Scale multiplier */
+  scale?: number;
+  /** Custom tint color for team/player differentiation */
+  tintColor?: string | number;
+}
+
+export interface AnimationClipMap {
+  idle: string;
+  walk: string;
+  run?: string;
+  jump?: string;
+  fall?: string;
+  attack?: string;
+  hit?: string;
+  death?: string;
+  dance?: string;
+}
+
+export interface PlayerLoadOptions {
+  /** Enable Draco compression (GLTF only) */
+  draco?: boolean;
+  /** Path to Draco decoder WASM */
+  dracoDecoderPath?: string;
+  /** Animation clip name mapping */
+  animations?: AnimationClipMap;
+  /** Enable frustum culling optimization */
+  frustumCulled?: boolean;
+  /** Receive shadows */
+  receiveShadow?: boolean;
+  /** Cast shadows */
+  castShadow?: boolean;
+}
+
+export interface PlayerLoadProgress {
+  /** Player ID */
+  id: string;
+  /** Progress 0–1 */
+  progress: number;
+  /** Status message */
+  message: string;
+}
+
+export interface PlayerInstance {
+  id: string;
+  config: PlayerConfig;
+  scene: THREE.Group;
+  mixer: AnimationMixer;
+  animations: Map<string, THREE.AnimationClip>;
+  actions: Map<string, AnimationAction>;
+  currentState: PlayerAnimationState;
+  nameLabel: THREE.Sprite | null;
+  healthBar?: THREE.Group;
+
+  // Helpers
+  update(delta: number): void;
+  playAnimation(state: PlayerAnimationState, fadeIn?: number): void;
+  setPosition(pos: THREE.Vector3): void;
+  setRotation(euler: THREE.Euler): void;
+  lookAt(target: THREE.Vector3): void;
+  dispose(): void;
+}
+
+// ──────────────────────────────────────────────
+// Default animation name mappings (Mixinamo/Ready Player Me style)
+// ──────────────────────────────────────────────
+
+const DEFAULT_ANIMATION_MAP: AnimationClipMap = {
+  idle: "idle",
+  walk: "walk",
+  run: "run",
+  jump: "jump",
+  fall: "fall",
+  attack: "attack",
+  hit: "hit",
+  death: "death",
+  dance: "dance",
+};
+
+// ──────────────────────────────────────────────
+// Main PlayerImporter Class
+// ──────────────────────────────────────────────
+
+export class PlayerImporter {
+  public readonly scene: THREE.Scene;
+  private gltfLoader: GLTFLoader;
+  private fbxLoader: FBXLoader;
+  private dracoLoader: DRACOLoader | null = null;
+
+  private players: Map<string, PlayerInstance> = new Map();
+  private loadingQueue: Map<string, Promise<PlayerInstance>> = new Map();
+  private onProgressCallbacks: Array<(p: PlayerLoadProgress) => void> = [];
+  private clock: THREE.Clock = new THREE.Clock();
+  private _enabled: boolean = true;
+
+  constructor(scene: THREE.Scene) {
+    this.scene = scene;
+
+    // Initialize loaders
+    this.gltfLoader = new GLTFLoader();
+    this.fbxLoader = new FBXLoader();
+  }
+
+  // ── Configuration ──────────────────────────
+
+  /**
+   * Enable Draco compression support for GLTF/GLB models.
+   * Must be called before any load operations.
+   */
+  enableDraco(decoderPath: string = "https://www.gstatic.com/draco/versioned/decoders/1.5.6/"): void {
+    this.dracoLoader = new DRACOLoader();
+    this.dracoLoader.setDecoderPath(decoderPath);
+    this.gltfLoader.setDRACOLoader(this.dracoLoader);
+  }
+
+  /**
+   * Register a progress callback.
+   */
+  onProgress(cb: (p: PlayerLoadProgress) => void): void {
+    this.onProgressCallbacks.push(cb);
+  }
+
+  // ── Loading ────────────────────────────────
+
+  /**
+   * Load a player model into the scene.
+   */
+  async loadPlayer(
+    config: PlayerConfig,
+    options: PlayerLoadOptions = {}
+  ): Promise<PlayerInstance> {
+    if (this.players.has(config.id)) {
+      throw new Error(`Player "${config.id}" is already loaded.`);
+    }
+
+    // Dedup concurrent loads for the same ID
+    if (this.loadingQueue.has(config.id)) {
+      return this.loadingQueue.get(config.id)!;
+    }
+
+    const loadPromise = this._loadPlayerInternal(config, options);
+    this.loadingQueue.set(config.id, loadPromise);
+
+    try {
+      const instance = await loadPromise;
+      this.players.set(config.id, instance);
+      return instance;
+    } finally {
+      this.loadingQueue.delete(config.id);
+    }
+  }
+
+  /**
+   * Unload and remove a player from the scene.
+   */
+  unloadPlayer(id: string): void {
+    const player = this.players.get(id);
+    if (!player) return;
+
+    player.dispose();
+    this.players.delete(id);
+  }
+
+  /**
+   * Unload all players.
+   */
+  unloadAll(): void {
+    for (const id of this.players.keys()) {
+      this.unloadPlayer(id);
+    }
+  }
+
+  // ── Retrieval ─────────────────────────────
+
+  getPlayer(id: string): PlayerInstance | undefined {
+    return this.players.get(id);
+  }
+
+  getAllPlayers(): PlayerInstance[] {
+    return Array.from(this.players.values());
+  }
+
+  getPlayerCount(): number {
+    return this.players.size;
+  }
+
+  // ── Update Loop ────────────────────────────
+
+  /**
+   * Call every frame in your animation loop.
+   * Automatically updates all player mixers and name label billboards.
+   */
+  update(delta?: number): void {
+    if (!this._enabled) return;
+
+    const dt = delta ?? this.clock.getDelta();
+
+    for (const player of this.players.values()) {
+      player.update(dt);
+    }
+  }
+
+  /**
+   * Enable or disable all player updates (useful for pause menus).
+   */
+  set enabled(value: boolean) {
+    this._enabled = value;
+  }
+
+  get enabled(): boolean {
+    return this._enabled;
+  }
+
+  // ── Cleanup ────────────────────────────────
+
+  dispose(): void {
+    this.unloadAll();
+    this.loadingQueue.clear();
+    this.onProgressCallbacks = [];
+    this.dracoLoader?.dispose();
+  }
+
+  // ── Internal Implementation ────────────────
+
+  private async _loadPlayerInternal(
+    config: PlayerConfig,
+    options: PlayerLoadOptions
+  ): Promise<PlayerInstance> {
+    this._emitProgress(config.id, 0.05, "Loading model...");
+
+    // 1. Load the model
+    const group = await this._loadModel(config, options);
+
+    this._emitProgress(config.id, 0.5, "Processing model...");
+
+    // 2. Configure node properties
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.frustumCulled = options.frustumCulled ?? true;
+        child.receiveShadow = options.receiveShadow ?? true;
+        child.castShadow = options.castShadow ?? true;
+      }
+    });
+
+    // 3. Apply tint if specified
+    if (config.tintColor) {
+      this._applyTint(group, config.tintColor);
+    }
+
+    // 4. Apply scale
+    const scale = config.scale ?? 1;
+    group.scale.set(scale, scale, scale);
+
+    // 5. Set initial position / rotation
+    if (config.position) {
+      group.position.copy(config.position);
+    }
+    if (config.rotation) {
+      group.rotation.copy(config.rotation);
+    }
+
+    this._emitProgress(config.id, 0.7, "Setting up animations...");
+
+    // 6. Setup animation system
+    const mixer = new THREE.AnimationMixer(group);
+    const animationClips = group.animations ?? [];
+    const animMap = options.animations ?? DEFAULT_ANIMATION_MAP;
+
+    const animations: Map<string, THREE.AnimationClip> = new Map();
+    const actions: Map<string, AnimationAction> = new Map();
+
+    // Build the animation map — find clips by name or index
+    for (const [state, clipName] of Object.entries(animMap) as [string, string][]) {
+      const clip = THREE.AnimationClip.findByName(animationClips, clipName);
+      if (clip) {
+        animations.set(state, clip);
+        const action = mixer.clipAction(clip);
+        action.setLoop(
+          state === "death" ? THREE.LoopOnce : THREE.LoopRepeat,
+          state === "death" ? 1 : Infinity
+        );
+        if (state === "death") {
+          action.clampWhenFinished = true;
+        }
+        actions.set(state, action);
+      }
+    }
+
+    this._emitProgress(config.id, 0.85, "Creating UI elements...");
+
+    // 7. Create name label
+    let nameLabel: THREE.Sprite | null = null;
+    if (config.name) {
+      nameLabel = this._createNameLabel(config.name, group);
+    }
+
+    // 8. Add to scene
+    this.scene.add(group);
+
+    this._emitProgress(config.id, 1.0, "Ready!");
+
+    // 9. Return the instance
+    const instance: PlayerInstance = {
+      id: config.id,
+      config,
+      scene: group,
+      mixer,
+      animations,
+      actions,
+      currentState: "idle",
+      nameLabel,
+
+      update(delta: number) {
+        this.mixer.update(delta);
+        // Billboard the name label
+        if (this.nameLabel) {
+          this.nameLabel.position.y = this._getHeight() + 0.3;
+        }
+      },
+
+      playAnimation(state: PlayerAnimationState, fadeIn: number = 0.2) {
+        const nextAction = this.actions.get(state);
+        if (!nextAction) return;
+
+        const currentAction = this.actions.get(this.currentState);
+
+        if (currentAction && currentAction !== nextAction) {
+          currentAction.fadeOut(fadeIn);
+        }
+
+        nextAction.reset().fadeIn(fadeIn).play();
+        this.currentState = state;
+      },
+
+      setPosition(pos: THREE.Vector3) {
+        this.scene.position.copy(pos);
+      },
+
+      setRotation(euler: THREE.Euler) {
+        this.scene.rotation.copy(euler);
+      },
+
+      lookAt(target: THREE.Vector3) {
+        this.scene.lookAt(target);
+      },
+
+      dispose() {
+        // Stop all actions
+        for (const action of this.actions.values()) {
+          action.stop();
+        }
+        this.mixer.stopAllAction();
+
+        // Remove from parent
+        if (this.scene.parent) {
+          this.scene.parent.remove(this.scene);
+        }
+
+        // Dispose geometries & materials
+        this.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose();
+            if (Array.isArray(child.material)) {
+              child.material.forEach((m) => m.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+
+        // Remove name label
+        if (this.nameLabel?.parent) {
+          this.nameLabel.parent.remove(this.nameLabel);
+          if (this.nameLabel.material) {
+            this.nameLabel.material.dispose();
+          }
+        }
+
+        this.animations.clear();
+        this.actions.clear();
+      },
+
+      // Private-ish helper to compute bounding height for label positioning
+      _getHeight(): number {
+        const box = new THREE.Box3().setFromObject(this.scene);
+        return box.max.y - box.min.y;
+      },
+    };
+
+    // Play idle by default
+    instance.playAnimation("idle", 0);
+
+    return instance;
+  }
+
+  private _loadModel(
+    config: PlayerConfig,
+    options: PlayerLoadOptions
+  ): Promise<THREE.Group> {
+    return new Promise((resolve, reject) => {
+      const path = config.modelPath;
+
+      switch (config.format) {
+        case "glb":
+        case "gltf":
+          this.gltfLoader.load(
+            path,
+            (gltf) => resolve(gltf.scene),
+            (xhr) => {
+              if (xhr.total > 0) {
+                const pct = xhr.loaded / xhr.total;
+                this._emitProgress(config.id, 0.05 + pct * 0.45, "Downloading model...");
+              }
+            },
+            (err) => reject(new Error(`GLTF load failed: ${err.message}`))
+          );
+          break;
+
+        case "fbx":
+          this.fbxLoader.load(
+            path,
+            (fbx) => resolve(fbx),
+            (xhr) => {
+              if (xhr.total > 0) {
+                const pct = xhr.loaded / xhr.total;
+                this._emitProgress(config.id, 0.05 + pct * 0.45, "Downloading model...");
+              }
+            },
+            (err) => reject(new Error(`FBX load failed: ${err.message}`))
+          );
+          break;
+
+        default:
+          reject(new Error(`Unsupported model format: ${config.format}`));
+      }
+    });
+  }
+
+  private _createNameLabel(name: string, parent: THREE.Object3D): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    canvas.width = 512;
+    canvas.height = 128;
+
+    // Background pill
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    const radius = 24;
+    this._roundRect(ctx, 4, 4, canvas.width - 8, canvas.height - 8, radius);
+    ctx.fill();
+
+    // Text
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 48px Inter, 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(name, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      sizeAttenuation: true,
+    });
+
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(2.5, 0.625, 1);
+    sprite.position.y = 2.5; // will be updated by update()
+
+    parent.add(sprite);
+    return sprite;
+  }
+
+  private _roundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  private _applyTint(group: THREE.Group, color: string | number): void {
+    const tintColor = new THREE.Color(color);
+
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mat = child.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((m) => {
+            if (m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshPhongMaterial) {
+              m.color.copy(tintColor);
+              m.needsUpdate = true;
+            }
+          });
+        } else if (
+          mat instanceof THREE.MeshStandardMaterial ||
+          mat instanceof THREE.MeshPhongMaterial
+        ) {
+          mat.color.copy(tintColor);
+          mat.needsUpdate = true;
+        }
+      }
+    });
+  }
+
+  private _emitProgress(id: string, progress: number, message: string): void {
+    for (const cb of this.onProgressCallbacks) {
+      cb({ id, progress, message });
+    }
+  }
+}
+
+// ──────────────────────────────────────────────
+// Usage Example
+// ──────────────────────────────────────────────
+/*
+import * as THREE from "three";
+import { PlayerImporter } from "./PlayerImporter";
+
+// Setup scene
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+
+// Create importer
+const importer = new PlayerImporter(scene);
+importer.enableDraco(); // if models use Draco compression
+
+// Track progress
+importer.onProgress((p) => {
+  console.log(`[${p.id}] ${(p.progress * 100).toFixed(0)}% - ${p.message}`);
+});
+
+// Load local player
+const localPlayer = await importer.loadPlayer(
+  {
+    id: "player_local",
+    name: "Racalvin",
+    modelPath: "/models/player.glb",
+    format: "glb",
+    position: new THREE.Vector3(0, 0, 0),
+  },
+  {
+    animations: {
+      idle: "Armature|mixamo.com|Layer0",
+      walk: "walk",
+      run: "run",
+      jump: "jump",
+    },
+  }
+);
+
+// Load other players (networked)
+for (const peer of networkPeers) {
+  await importer.loadPlayer({
+    id: peer.id,
+    name: peer.name,
+    modelPath: "/models/player.glb",
+    format: "glb",
+    position: new THREE.Vector3(peer.x, 0, peer.z),
+    tintColor: peer.team === "red" ? 0xff4444 : 0x4444ff,
+  });
+}
+
+// ── Animation loop ──
+function animate() {
+  requestAnimationFrame(animate);
+
+  importer.update();            // updates all player mixers
+  // ... your game logic ...
+
+  renderer.render(scene, camera);
+}
+
+// ── Switch animations ──
+localPlayer.playAnimation("walk");
+
+// ── Cleanup ──
+// importer.unloadPlayer("peer_123");
+// importer.unloadAll();
+// importer.dispose();
+*/

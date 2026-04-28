@@ -10,6 +10,16 @@ import {
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
 import { cloneSubtree, getDescendants, wouldCycle, reidTree, sanitizeEntities } from "@/lib/hierarchy";
+import {
+  CommandStack,
+  addEntityCommand,
+  addEntitiesCommand,
+  removeEntityCommand,
+  setTransformCommand,
+  renameEntityCommand,
+  setParentCommand,
+  type StoreLike,
+} from "@/lib/commands";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type ConsoleLevel = "log" | "warn" | "error" | "info";
@@ -53,6 +63,21 @@ interface EditorState {
    *  reflects the prefab buffer instead of the scene buffer. */
   prefabSubScene: PrefabSubScene | null;
 
+  /** Quick-access prefab slots (length 8). Each entry is a prefab id, or null
+   *  for an empty slot. Spawn via the Hotbar component or hotkeys 1-8. */
+  hotbar: (number | null)[];
+
+  /** Bumped whenever the user requests "focus camera on selection" (F hotkey
+   *  or context-menu). Components subscribe to this token and react when it
+   *  changes — we don't store the entity id because focus on the *currently
+   *  selected* entity is always what we want. */
+  focusToken: number;
+
+  /** Shared command stack for undo/redo. UI components dispatch commands
+   *  through `pushCommand()`; raw store mutations remain available but are
+   *  not undoable. */
+  commandStack: CommandStack;
+
   setProject: (projectId: number | null) => void;
   loadScene: (sceneId: number, name: string, data: SceneData) => void;
   setSceneName: (name: string) => void;
@@ -94,6 +119,29 @@ interface EditorState {
   snapshotSubtree: (rootId: string) => SceneEntity[];
   /** Spawn a prefab tree into the current scene (re-ids and adds). */
   spawnPrefabEntities: (entities: SceneEntity[], prefabId?: number) => SceneEntity | null;
+
+  // --- Hotbar / focus / undo plumbing ---
+  setHotbarSlot: (index: number, prefabId: number | null) => void;
+  setHotbar: (slots: (number | null)[]) => void;
+  requestFocus: () => void;
+  /** Replace the entire entities array (used by command undo/redo). */
+  setEntities: (entities: SceneEntity[]) => void;
+
+  // --- Command-dispatching wrappers (undoable) ---
+  /** Undoable: add a primitive entity. Defaults & parenting like addEntity. */
+  cmdAddEntity: (type: EntityType, name?: string, parentId?: string | null) => SceneEntity;
+  /** Undoable: remove an entity (cascades to descendants). */
+  cmdRemoveEntity: (id: string) => void;
+  /** Undoable: duplicate the subtree rooted at id. Returns new root id. */
+  cmdDuplicateEntity: (id: string) => string | null;
+  /** Undoable: set a transform key. Coalesces while a TransformControls drag is in flight. */
+  cmdSetEntityTransform: (id: string, key: "position" | "rotation" | "scale", value: Vec3) => void;
+  /** Undoable: rename an entity. Coalesces consecutive renames of the same id. */
+  cmdRenameEntity: (id: string, name: string) => void;
+  /** Undoable: reparent (or unparent when parentId === null). */
+  cmdSetEntityParent: (id: string, parentId: string | null) => void;
+  /** Undoable: add an empty entity as a child of `parentId`. */
+  cmdAddEmptyChild: (parentId: string | null) => SceneEntity;
 }
 
 const emptyScene = (): SceneData => ({
@@ -160,8 +208,15 @@ export const useEditor = create<EditorState>((set, get) => ({
   consoleMessages: [],
   bottomTab: "console",
   prefabSubScene: null,
+  hotbar: Array(8).fill(null) as (number | null)[],
+  focusToken: 0,
+  commandStack: new CommandStack(100),
 
-  setProject: (projectId) =>
+  setProject: (projectId) => {
+    // Switching project must reset undo history (commands captured against the
+    // previous project's entity ids would otherwise corrupt the new scene) and
+    // clear the hotbar (prefab ids are project-scoped).
+    get().commandStack.clear();
     set({
       projectId,
       sceneId: null,
@@ -169,11 +224,16 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedId: null,
       isDirty: false,
       prefabSubScene: null,
-    }),
+      hotbar: Array(8).fill(null) as (number | null)[],
+    });
+  },
 
   loadScene: (sceneId, name, data) => {
     const raw = Array.isArray(data?.entities) ? data.entities : [];
     const { entities, warnings } = sanitizeEntities(raw);
+    // New scene = new editing context; previous undo entries reference
+    // entity ids that no longer exist here.
+    get().commandStack.clear();
     set({
       sceneId,
       sceneName: name,
@@ -387,6 +447,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     // dedupe ids, re-root orphan parents, break cycles. Without this a
     // corrupted prefab payload could hide entities in the sub-scene editor.
     const { entities: cleaned, warnings } = sanitizeEntities(prefabEntities);
+    // Entering the prefab sub-scene is a context switch; clear undo so
+    // Ctrl+Z can't reach back into the parent scene's commands.
+    get().commandStack.clear();
     set((s) => ({
       prefabSubScene: {
         prefabId,
@@ -410,10 +473,13 @@ export const useEditor = create<EditorState>((set, get) => ({
     for (const w of warnings) get().pushLog("warn", `Prefab "${name}": ${w}`);
   },
 
-  closePrefabSubScene: () =>
+  closePrefabSubScene: () => {
+    if (!get().prefabSubScene) return;
+    // Leaving the sub-scene returns to the parent context; commands recorded
+    // inside the sub-scene reference its (now-discarded) entity ids.
+    get().commandStack.clear();
     set((s) => {
-      if (!s.prefabSubScene) return s;
-      const snap = s.prefabSubScene.parentSnapshot;
+      const snap = s.prefabSubScene!.parentSnapshot;
       return {
         prefabSubScene: null,
         sceneId: snap.sceneId,
@@ -424,7 +490,8 @@ export const useEditor = create<EditorState>((set, get) => ({
         isPlaying: false,
         isPaused: false,
       };
-    }),
+    });
+  },
 
   getPrefabBufferEntities: () => get().sceneData.entities,
 
@@ -442,11 +509,131 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (prefabId) {
       for (const e of next) e.prefabId = prefabId;
     }
-    set((s) => ({
-      sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, ...next] },
-      selectedId: rootIds[0] ?? null,
-      isDirty: true,
-    }));
+    // Push as a single undoable command so Ctrl+Z removes the entire spawned
+    // subtree (matching the behavior of generated maps and addEntities).
+    const store = makeStoreLike(get);
+    const root = next.find((e) => e.id === rootIds[0]) ?? next[0];
+    const label = `Spawn ${root.name}`;
+    get().commandStack.push(
+      addEntitiesCommand(store, next, label, rootIds[0] ?? null),
+    );
     return next.find((e) => e.id === rootIds[0]) ?? null;
   },
+
+  setHotbarSlot: (index, prefabId) =>
+    set((s) => {
+      if (index < 0 || index >= s.hotbar.length) return s;
+      const next = [...s.hotbar];
+      next[index] = prefabId;
+      return { hotbar: next };
+    }),
+
+  setHotbar: (slots) =>
+    set(() => ({
+      hotbar: slots.slice(0, 8).concat(Array(Math.max(0, 8 - slots.length)).fill(null)),
+    })),
+
+  requestFocus: () => set((s) => ({ focusToken: s.focusToken + 1 })),
+
+  setEntities: (entities) =>
+    set((s) => ({
+      sceneData: { ...s.sceneData, entities },
+      isDirty: true,
+    })),
+
+  // ---- Command-dispatching wrappers ----
+
+  cmdAddEntity: (type, name, parentId) => {
+    const entity = defaultsByType(type, name ?? `${type[0].toUpperCase()}${type.slice(1)}`);
+    if (parentId !== undefined && parentId !== null) entity.parentId = parentId;
+    const store = makeStoreLike(get);
+    get().commandStack.push(addEntityCommand(store, entity));
+    set({ isDirty: true });
+    return entity;
+  },
+
+  cmdRemoveEntity: (id) => {
+    const entities = get().sceneData.entities;
+    if (!entities.find((e) => e.id === id)) return;
+    const descendants = getDescendants(entities, id);
+    const store = makeStoreLike(get);
+    get().commandStack.push(removeEntityCommand(store, id, descendants));
+    set({ isDirty: true });
+  },
+
+  cmdDuplicateEntity: (id) => {
+    const entities = get().sceneData.entities;
+    const cloned = cloneSubtree(entities, id);
+    if (cloned.length === 0) return null;
+    cloned[0].transform = {
+      ...cloned[0].transform,
+      position: [
+        cloned[0].transform.position[0] + 1,
+        cloned[0].transform.position[1],
+        cloned[0].transform.position[2] + 1,
+      ],
+    };
+    cloned[0].name = `${cloned[0].name} Copy`;
+    const newRootId = cloned[0].id;
+    const store = makeStoreLike(get);
+    get().commandStack.push(
+      addEntitiesCommand(store, cloned, `Duplicate ${cloned[0].name}`, newRootId),
+    );
+    set({ isDirty: true });
+    return newRootId;
+  },
+
+  cmdSetEntityTransform: (id, key, value) => {
+    const entity = get().sceneData.entities.find((e) => e.id === id);
+    if (!entity) return;
+    const prev = [...entity.transform[key]] as Vec3;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setTransformCommand(store, id, key, prev, value));
+    set({ isDirty: true });
+  },
+
+  cmdRenameEntity: (id, name) => {
+    const entity = get().sceneData.entities.find((e) => e.id === id);
+    if (!entity || entity.name === name) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(renameEntityCommand(store, id, entity.name, name));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityParent: (id, parentId) => {
+    const entities = get().sceneData.entities;
+    const entity = entities.find((e) => e.id === id);
+    if (!entity) return;
+    if (id === parentId) return;
+    if (parentId !== null && wouldCycle(entities, id, parentId)) {
+      get().pushLog("warn", "Cannot reparent — would create a cycle.");
+      return;
+    }
+    const prev = entity.parentId ?? null;
+    if (prev === parentId) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setParentCommand(store, id, prev, parentId));
+    set({ isDirty: true });
+  },
+
+  cmdAddEmptyChild: (parentId) => {
+    const entity = defaultsByType("empty", "Empty");
+    if (parentId !== null) entity.parentId = parentId;
+    const store = makeStoreLike(get);
+    get().commandStack.push(addEntityCommand(store, entity));
+    set({ isDirty: true });
+    return entity;
+  },
 }));
+
+/** Build the StoreLike used by command factories.  We thread `get` through
+ *  every call (instead of capturing once) so commands always see the latest
+ *  store state — important because zustand `get` is stable but its returned
+ *  values are not. */
+function makeStoreLike(get: () => EditorState): StoreLike {
+  return {
+    getEntities: () => get().sceneData.entities,
+    setEntities: (next) => get().setEntities(next),
+    selectEntity: (id) => get().selectEntity(id),
+  };
+}

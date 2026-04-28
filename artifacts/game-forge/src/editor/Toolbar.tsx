@@ -17,6 +17,7 @@ import {
   Camera,
   Eye,
   Map as MapIcon,
+  Wand2,
   Orbit,
   User,
   Download,
@@ -41,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SCENE_TEMPLATES } from "@/lib/sceneTemplates";
 import { useEditor } from "@/store/editor";
+import { MapGenDialog } from "@/editor/MapGenDialog";
 import {
   useUpdateScene,
   useCreateScene,
@@ -88,7 +90,8 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
   const togglePlay = useEditor((s) => s.togglePlay);
   const setPaused = useEditor((s) => s.setPaused);
   const setPlaying = useEditor((s) => s.setPlaying);
-  const addEntity = useEditor((s) => s.addEntity);
+  const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
+  const [mapGenOpen, setMapGenOpen] = useState(false);
   const setEnvironment = useEditor((s) => s.setEnvironment);
   const cameraMode: CameraMode = sceneData.environment.cameraMode ?? "editor";
   const setSceneName = useEditor((s) => s.setSceneName);
@@ -203,6 +206,26 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
 
   const saving = updateScene.isPending || createScene.isPending || updatePrefab.isPending;
 
+  // Bridge for the centralized hotkey registry: Ctrl+S triggers a window
+  // event so the keyboard handler in App.tsx doesn't need to know about
+  // this component's mutation state.
+  useEffect(() => {
+    const onSaveEvt = () => {
+      if (saving || !projectId) return;
+      onSave();
+    };
+    const onOpenMapGen = () => setMapGenOpen(true);
+    window.addEventListener("gameforge:save", onSaveEvt);
+    window.addEventListener("gameforge:openMapGen", onOpenMapGen);
+    return () => {
+      window.removeEventListener("gameforge:save", onSaveEvt);
+      window.removeEventListener("gameforge:openMapGen", onOpenMapGen);
+    };
+    // onSave closes over store + mutation hooks; we re-register whenever
+    // those change so the latest implementation is invoked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, projectId, sceneId, sceneName, sceneData, prefabSubScene]);
+
   return (
     <div className="h-12 flex items-center gap-2 px-3 border-b border-border bg-sidebar shrink-0">
       <button
@@ -288,13 +311,13 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
           {PRIMITIVES.map((p) => (
             <DropdownMenuItem
               key={p.type}
-              onClick={() => addEntity(p.type)}
+              onClick={() => cmdAddEntity(p.type)}
               data-testid={`menu-add-${p.type}`}
             >
               <p.Icon className="size-4 mr-2" /> {p.label}
             </DropdownMenuItem>
           ))}
-          <DropdownMenuItem onClick={() => addEntity("model", "Model")}>
+          <DropdownMenuItem onClick={() => cmdAddEntity("model", "Model")}>
             <PackageOpen className="size-4 mr-2" /> Empty Model Slot
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -405,6 +428,13 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
             <Upload className="size-4 mr-2" /> Import scene JSON
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setMapGenOpen(true)}
+            disabled={!!prefabSubScene || !projectId}
+            data-testid="menu-generate-map"
+          >
+            <Wand2 className="size-4 mr-2" /> Generate map…
+          </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
               disabled={!!prefabSubScene}
@@ -469,6 +499,8 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
           </Button>
         </>
       )}
+
+      <MapGenDialog open={mapGenOpen} onOpenChange={setMapGenOpen} />
     </div>
   );
 }

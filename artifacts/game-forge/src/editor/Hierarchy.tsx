@@ -11,7 +11,18 @@ import {
   Search,
   X,
   ChevronRight,
+  Pencil,
+  Plus,
+  Crosshair,
+  Sparkles,
 } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useEditor } from "@/store/editor";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -58,6 +69,9 @@ interface RowProps {
   onDelete: () => void;
   onUnparent: () => void;
   onSavePrefab: () => void;
+  onRename: () => void;
+  onAddChild: () => void;
+  onFocus: () => void;
   onDragStart: (id: string) => void;
   onDragOverRow: (id: string, e: React.DragEvent) => void;
   onDragLeaveRow: (id: string) => void;
@@ -79,6 +93,9 @@ function HierarchyRow({
   onDelete,
   onUnparent,
   onSavePrefab,
+  onRename,
+  onAddChild,
+  onFocus,
   onDragStart,
   onDragOverRow,
   onDragLeaveRow,
@@ -89,7 +106,7 @@ function HierarchyRow({
   const Icon = ICONS[entity.type] ?? Box;
   const isDropTarget = dropTargetId === entity.id;
   const isPrefabInstance = !!entity.prefabId;
-  return (
+  const rowInner = (
     <div
       draggable
       onDragStart={(e) => {
@@ -105,6 +122,7 @@ function HierarchyRow({
         onDropRow(entity.id);
       }}
       onClick={onPick}
+      onContextMenu={onPick}
       style={{ paddingLeft: 6 + depth * 14 }}
       className={`group flex items-center gap-1 pr-2 py-1 rounded text-sm cursor-pointer hover-elevate ${
         selected ? "bg-primary/15 text-primary border border-primary/30" : ""
@@ -186,6 +204,43 @@ function HierarchyRow({
       </div>
     </div>
   );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{rowInner}</ContextMenuTrigger>
+      <ContextMenuContent className="min-w-[200px]">
+        <ContextMenuItem onClick={onRename}>
+          <Pencil className="size-3.5 mr-2" /> Rename
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onDuplicate}>
+          <Copy className="size-3.5 mr-2" /> Duplicate
+          <span className="ml-auto text-[10px] text-muted-foreground">⌘D</span>
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onDelete}>
+          <Trash2 className="size-3.5 mr-2" /> Delete
+          <span className="ml-auto text-[10px] text-muted-foreground">Del</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onAddChild}>
+          <Plus className="size-3.5 mr-2" /> Add empty child
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onSavePrefab}>
+          <Sparkles className="size-3.5 mr-2" /> Forge as prefab
+          <span className="ml-auto text-[10px] text-muted-foreground">⌘G</span>
+        </ContextMenuItem>
+        {entity.parentId && (
+          <ContextMenuItem onClick={onUnparent}>
+            <ChevronRight className="size-3.5 mr-2 -rotate-90" /> Unparent
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={onFocus}>
+          <Crosshair className="size-3.5 mr-2" /> Focus camera
+          <span className="ml-auto text-[10px] text-muted-foreground">F</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }
 
 export function Hierarchy() {
@@ -194,9 +249,12 @@ export function Hierarchy() {
   const entities = useEditor((s) => s.sceneData.entities);
   const selectedId = useEditor((s) => s.selectedId);
   const selectEntity = useEditor((s) => s.selectEntity);
-  const removeEntity = useEditor((s) => s.removeEntity);
-  const duplicateEntity = useEditor((s) => s.duplicateEntity);
-  const setEntityParent = useEditor((s) => s.setEntityParent);
+  const cmdRemoveEntity = useEditor((s) => s.cmdRemoveEntity);
+  const cmdDuplicateEntity = useEditor((s) => s.cmdDuplicateEntity);
+  const cmdSetEntityParent = useEditor((s) => s.cmdSetEntityParent);
+  const cmdRenameEntity = useEditor((s) => s.cmdRenameEntity);
+  const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
+  const requestFocus = useEditor((s) => s.requestFocus);
   const toggleCollapsed = useEditor((s) => s.toggleCollapsed);
   const snapshotSubtree = useEditor((s) => s.snapshotSubtree);
   const pushLog = useEditor((s) => s.pushLog);
@@ -258,17 +316,17 @@ export function Hierarchy() {
     if (wouldCycle(entities, draggedId, id)) {
       pushLog("warn", "Cannot reparent — would create a cycle.");
     } else {
-      setEntityParent(draggedId, id);
+      cmdSetEntityParent(draggedId, id);
     }
     setDraggedId(null);
     setDropTargetId(null);
   };
   const onDropRoot = useCallback(() => {
     if (!draggedId) return;
-    setEntityParent(draggedId, null);
+    cmdSetEntityParent(draggedId, null);
     setDraggedId(null);
     setDropTargetId(null);
-  }, [draggedId, setEntityParent]);
+  }, [draggedId, cmdSetEntityParent]);
 
   const onSavePrefab = async (rootId: string) => {
     if (!projectId) return;
@@ -303,6 +361,20 @@ export function Hierarchy() {
       loadScene(first.id, first.name, first.data as SceneData);
     }
   }, [projectId, sceneId, scenes, loadScene, prefabSubScene]);
+
+  // Bridge: Ctrl+G dispatches "gameforge:forgePrefab" with the selected
+  // entity id; we run the existing prefab-save flow.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ entityId?: string }>).detail;
+      const id = detail?.entityId ?? selectedId;
+      if (!id) return;
+      onSavePrefab(id);
+    };
+    window.addEventListener("gameforge:forgePrefab", handler);
+    return () => window.removeEventListener("gameforge:forgePrefab", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, projectId, entities]);
 
   useEffect(() => {
     if (!currentScene || !sceneId) return;
@@ -344,10 +416,19 @@ export function Hierarchy() {
         matchesFilter={matchesFilter}
         onPick={() => selectEntity(entity.id)}
         onToggle={() => toggleCollapsed(entity.id)}
-        onDuplicate={() => duplicateEntity(entity.id)}
-        onDelete={() => removeEntity(entity.id)}
-        onUnparent={() => setEntityParent(entity.id, null)}
+        onDuplicate={() => cmdDuplicateEntity(entity.id)}
+        onDelete={() => cmdRemoveEntity(entity.id)}
+        onUnparent={() => cmdSetEntityParent(entity.id, null)}
         onSavePrefab={() => onSavePrefab(entity.id)}
+        onRename={() => {
+          const next = window.prompt("Rename entity:", entity.name);
+          if (next && next.trim() && next !== entity.name) cmdRenameEntity(entity.id, next.trim());
+        }}
+        onAddChild={() => cmdAddEmptyChild(entity.id)}
+        onFocus={() => {
+          selectEntity(entity.id);
+          requestFocus();
+        }}
         onDragStart={onDragStart}
         onDragOverRow={onDragOverRow}
         onDragLeaveRow={onDragLeaveRow}

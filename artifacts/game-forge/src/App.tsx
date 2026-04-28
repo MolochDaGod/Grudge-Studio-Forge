@@ -18,6 +18,7 @@ import { AssetDropZone } from "@/editor/AssetDropZone";
 import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles } from "lucide-react";
+import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
 
 function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -42,7 +43,7 @@ function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Editor hotkeys.
+  // Centralized editor hotkeys.
   //
   // IMPORTANT: We deliberately DO NOT bind Space here. Space is the canonical
   // "jump" key in nearly every game and is exposed to user scripts via
@@ -50,33 +51,104 @@ function EditorShell() {
   // would never reach the running game. Use `P` to toggle play/stop, and
   // `Escape` as an emergency stop while in Play mode (matches three.js editor
   // and most engines).
+  //
+  // The list below is the single source of truth — it can later be rendered
+  // as a "?" cheatsheet without re-deriving anything from the handler.
   useEffect(() => {
+    const get = useEditor.getState;
+    const HOTKEYS: Hotkey[] = [
+      // --- Gizmo modes
+      { id: "gizmo.translate", label: "W", description: "Translate gizmo", key: "w",
+        action: () => { get().setTransformMode("translate"); } },
+      { id: "gizmo.rotate", label: "E", description: "Rotate gizmo", key: "e",
+        action: () => { get().setTransformMode("rotate"); } },
+      { id: "gizmo.scale", label: "R", description: "Scale gizmo", key: "r",
+        action: () => { get().setTransformMode("scale"); } },
+
+      // --- Playback
+      { id: "play.toggle", label: "P", description: "Toggle play / stop", key: "p",
+        whilePlaying: true,
+        action: (e) => {
+          if (e.repeat) return false;
+          get().togglePlay();
+          return true;
+        } },
+      { id: "play.escape", label: "Esc", description: "Stop play mode", key: "Escape",
+        whilePlaying: true,
+        action: () => {
+          if (!get().isPlaying) return false;
+          get().togglePlay();
+          return true;
+        } },
+
+      // --- Undo / redo (Ctrl+Y also accepted as Windows convention)
+      { id: "edit.undo", label: "Ctrl+Z", description: "Undo last action", key: "z",
+        ctrlOrMeta: true,
+        action: () => {
+          const label = get().commandStack.undo();
+          if (label) get().pushLog("info", `Undo: ${label}`);
+        } },
+      { id: "edit.redo.shift", label: "Ctrl+Shift+Z", description: "Redo", key: "z",
+        ctrlOrMeta: true, shift: true,
+        action: () => {
+          const label = get().commandStack.redo();
+          if (label) get().pushLog("info", `Redo: ${label}`);
+        } },
+      { id: "edit.redo.y", label: "Ctrl+Y", description: "Redo (alt)", key: "y",
+        ctrlOrMeta: true,
+        action: () => {
+          const label = get().commandStack.redo();
+          if (label) get().pushLog("info", `Redo: ${label}`);
+        } },
+
+      // --- Selection actions
+      { id: "edit.delete", label: "Delete", description: "Delete selected entity", key: "Delete",
+        action: () => {
+          const id = get().selectedId;
+          if (!id) return false;
+          get().cmdRemoveEntity(id);
+          return true;
+        } },
+      { id: "edit.duplicate", label: "Ctrl+D", description: "Duplicate selected entity", key: "d",
+        ctrlOrMeta: true,
+        action: () => {
+          const id = get().selectedId;
+          if (!id) return false;
+          get().cmdDuplicateEntity(id);
+          return true;
+        } },
+      { id: "view.focus", label: "F", description: "Focus camera on selection", key: "f",
+        action: () => {
+          if (!get().selectedId) return false;
+          get().requestFocus();
+          return true;
+        } },
+
+      // --- Save (handled by Toolbar, dispatched as a window event)
+      { id: "scene.save", label: "Ctrl+S", description: "Save scene / prefab", key: "s",
+        ctrlOrMeta: true,
+        action: () => { window.dispatchEvent(new CustomEvent("gameforge:save")); } },
+
+      // --- Forge selection as prefab (handled by Hierarchy)
+      { id: "scene.forgePrefab", label: "Ctrl+G", description: "Forge selection as prefab", key: "g",
+        ctrlOrMeta: true,
+        action: () => {
+          const id = get().selectedId;
+          if (!id) return false;
+          window.dispatchEvent(new CustomEvent("gameforge:forgePrefab", { detail: { entityId: id } }));
+          return true;
+        } },
+    ];
+
     const handler = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === "INPUT" ||
-        document.activeElement?.tagName === "TEXTAREA" ||
-        (document.activeElement as HTMLElement)?.isContentEditable
-      ) {
-        return;
-      }
-      // Gizmo modes only make sense in edit mode.
-      if (!isPlaying) {
-        if (e.key === "w") setTransformMode("translate");
-        if (e.key === "e") setTransformMode("rotate");
-        if (e.key === "r") setTransformMode("scale");
-      }
-      if ((e.key === "p" || e.key === "P") && !e.repeat) {
-        e.preventDefault();
-        togglePlay();
-      }
-      if (e.key === "Escape" && isPlaying) {
-        e.preventDefault();
-        togglePlay();
-      }
+      dispatchHotkey(HOTKEYS, e, {
+        isPlaying: get().isPlaying,
+        inInputField: isInputFocused(),
+      });
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [setTransformMode, togglePlay, isPlaying]);
+  }, []);
 
   return (
     <AssetDropZone>
