@@ -6,12 +6,11 @@ import {
   ResizablePanelGroup,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { Toolbar } from "@/editor/Toolbar";
 import { Hierarchy } from "@/editor/Hierarchy";
 import { Inspector } from "@/editor/Inspector";
-import { Viewport } from "@/editor/Viewport";
 import { BottomPanel } from "@/editor/BottomPanel";
 import { ProjectPicker } from "@/editor/ProjectPicker";
 import { AssetDropZone } from "@/editor/AssetDropZone";
@@ -20,6 +19,27 @@ import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles } from "lucide-react";
 import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
+
+/**
+ * The 3D viewport drags in three.js, R3F, drei, rapier, and postprocessing —
+ * by far the heaviest sub-tree in the editor. Loading it lazily lets the
+ * surrounding shell (toolbar, hierarchy, inspector, project picker) paint
+ * immediately and shaves the time-to-interactive on first load. The Suspense
+ * fallback below sits in the viewport pane while the chunk streams in.
+ */
+const Viewport = lazy(() =>
+  import("@/editor/Viewport").then((m) => ({ default: m.Viewport })),
+);
+
+function ViewportFallback() {
+  return (
+    <div className="w-full h-full flex items-center justify-center bg-background grid-pattern">
+      <div className="text-xs font-mono text-muted-foreground animate-pulse">
+        Loading 3D viewport…
+      </div>
+    </div>
+  );
+}
 
 function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -170,7 +190,9 @@ function EditorShell() {
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={62}>
-                <Viewport />
+                <Suspense fallback={<ViewportFallback />}>
+                  <Viewport />
+                </Suspense>
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={20} minSize={14} maxSize={32}>

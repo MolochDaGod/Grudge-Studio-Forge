@@ -6,10 +6,19 @@
  * loaders + GLTFExporter, then upload the resulting blob like any other
  * GLB asset. Conversion happens entirely in the browser; no server round
  * trip required.
+ *
+ * IMPORTANT: This module pulls in `three` + JSM loaders/exporters and is
+ * therefore lazy-imported by `AssetDropZone` only when an OBJ file is
+ * actually dropped. The cheap, dependency-free `classifyDroppedFile`
+ * lives in `lib/fileKind.ts` so the drop zone can run without dragging
+ * three.js into the initial bundle. Re-exported here too for any callers
+ * that were importing the original location.
  */
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
+
+export { classifyDroppedFile, type DroppedFileKind } from "@/lib/fileKind";
 
 /**
  * Parse an OBJ source (text) and re-encode it as a GLB blob. Materials
@@ -59,19 +68,6 @@ export async function objToGlb(text: string, fileName: string): Promise<File> {
   return new File([result], glbName, { type: "model/gltf-binary" });
 }
 
-/**
- * Detect the canonical kind of a dropped/picked file based on its name.
- * Returns null for unsupported types.
- */
-export type DroppedFileKind = "glb" | "gltf" | "obj" | "image" | "audio" | "scene-json";
-export function classifyDroppedFile(file: File): DroppedFileKind | null {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".glb")) return "glb";
-  if (name.endsWith(".gltf")) return "gltf";
-  if (name.endsWith(".obj")) return "obj";
-  if (/\.(png|jpe?g|webp|gif|bmp|ktx2)$/.test(name)) return "image";
-  if (/\.(mp3|wav|ogg|m4a|flac)$/.test(name)) return "audio";
-  if (name.endsWith(".json") || name.endsWith(".gfscene") || name.endsWith(".gfscene.json"))
-    return "scene-json";
-  return null;
-}
+// `classifyDroppedFile` and `DroppedFileKind` were moved to `lib/fileKind.ts`
+// (re-exported at the top of this file) so importers that only need the
+// classifier don't drag three.js into the initial bundle.

@@ -117,6 +117,90 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    /**
+     * Bumped from Vite's 500 kB default to accommodate two intentionally
+     * large *lazy* vendor chunks:
+     *
+     *   - `vendor-rapier` (~2.2 MB minified) — `@dimforge/rapier3d-compat`
+     *     embeds its 1.5 MB WASM binary directly inside the JS module, so
+     *     even with code-splitting there is no further reduction without
+     *     swapping to the non-`compat` package and wiring up custom WASM
+     *     loading (which @react-three/rapier doesn't currently support).
+     *   - `vendor-three` (~880 kB minified) — three.js itself.
+     *
+     * Both chunks load on-demand behind the lazy `Viewport` import, so they
+     * do NOT block the editor shell's first paint. The threshold is set to
+     * 2500 so any *new* dependency creeping past rapier still triggers the
+     * warning and forces us to reconsider.
+     */
+    chunkSizeWarningLimit: 2500,
+    rollupOptions: {
+      output: {
+        /**
+         * Split the heavy vendor libraries into their own chunks so:
+         *
+         *  1. The initial editor shell (toolbar / hierarchy / inspector)
+         *     doesn't drag the 3D + scripting stack into its first paint.
+         *  2. Each vendor lives in its own long-cacheable file — bumping
+         *     a UI dependency doesn't invalidate the megabyte of `three`
+         *     in the user's browser cache, and vice versa.
+         *  3. The lazy Viewport / ScriptEditor chunks stay small (just
+         *     the glue code) because their vendor weight is hoisted to
+         *     these named chunks instead.
+         *
+         * `manualChunks` runs against the *resolved id* of every module
+         * — including transitive deps inside `node_modules` — so we only
+         * need to enumerate the package roots.
+         */
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          // Normalize Windows paths so the substring checks below work.
+          const norm = id.replace(/\\/g, "/");
+          if (
+            norm.includes("/monaco-editor/") ||
+            norm.includes("/@monaco-editor/")
+          ) {
+            return "vendor-monaco";
+          }
+          if (norm.includes("/@dimforge/rapier3d-compat")) {
+            return "vendor-rapier";
+          }
+          if (
+            norm.includes("/postprocessing/") ||
+            norm.includes("/@react-three/postprocessing")
+          ) {
+            return "vendor-postprocessing";
+          }
+          if (
+            norm.includes("/@react-three/fiber") ||
+            norm.includes("/@react-three/drei") ||
+            norm.includes("/@react-three/rapier")
+          ) {
+            return "vendor-r3f";
+          }
+          if (
+            norm.includes("/three/") ||
+            norm.endsWith("/three") ||
+            norm.includes("/three-stdlib/") ||
+            norm.includes("/three-mesh-bvh/") ||
+            norm.includes("/maath/")
+          ) {
+            return "vendor-three";
+          }
+          if (norm.includes("/@radix-ui/")) {
+            return "vendor-radix";
+          }
+          if (
+            norm.includes("/react-dom/") ||
+            norm.includes("/react/") ||
+            norm.includes("/scheduler/")
+          ) {
+            return "vendor-react";
+          }
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port,

@@ -4,7 +4,7 @@ import { useCreateAsset, getListAssetsQueryKey, getGetProjectSummaryQueryKey } f
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
 import { inspectGlb, type GlbInfo } from "@/lib/glbInspect";
-import { classifyDroppedFile, objToGlb } from "@/lib/converters";
+import { classifyDroppedFile } from "@/lib/fileKind";
 import { GlbInspectorDialog, type InspectorPayload } from "./GlbInspectorDialog";
 import type { SceneData } from "@/scene/types";
 import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2 } from "lucide-react";
@@ -137,6 +137,9 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
           setBusy(`Converting ${file.name} → GLB…`);
           pushLog("info", `Converting OBJ → GLB in-browser…`);
           const text = await file.text();
+          // Lazy-load the three.js-based converter only when an OBJ is
+          // actually dropped — keeps three out of the initial bundle.
+          const { objToGlb } = await import("@/lib/converters");
           const glbFile = await objToGlb(text, file.name);
           let info: GlbInfo | undefined;
           try {

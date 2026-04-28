@@ -1,10 +1,29 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Console } from "./Console";
 import { AssetBrowser } from "./AssetBrowser";
-import { ScriptEditor } from "./ScriptEditor";
 import { PrefabsPanel } from "./PrefabsPanel";
 import { useEditor } from "@/store/editor";
-import { Terminal, Boxes, Code2, Package } from "lucide-react";
+import { Terminal, Boxes, Code2, Package, Loader2 } from "lucide-react";
+import { lazy, Suspense } from "react";
+
+/**
+ * Monaco's editor is the second-heaviest dependency in the bundle (and the
+ * only Tab content most users won't open every session). We mount the panel
+ * lazily so its chunk is only fetched when the Scripts tab is selected. The
+ * radix Tabs component already gates `TabsContent` rendering on the active
+ * value, so the import is naturally deferred to first reveal.
+ */
+const ScriptEditor = lazy(() =>
+  import("./ScriptEditor").then((m) => ({ default: m.ScriptEditor })),
+);
+
+function ScriptEditorFallback() {
+  return (
+    <div className="flex items-center justify-center h-full text-xs text-muted-foreground gap-2">
+      <Loader2 className="size-3 animate-spin" /> Loading script editor…
+    </div>
+  );
+}
 
 export function BottomPanel() {
   const tab = useEditor((s) => s.bottomTab);
@@ -34,7 +53,9 @@ export function BottomPanel() {
           <AssetBrowser />
         </TabsContent>
         <TabsContent value="scripts" className="m-0 h-full">
-          <ScriptEditor />
+          <Suspense fallback={<ScriptEditorFallback />}>
+            <ScriptEditor />
+          </Suspense>
         </TabsContent>
         <TabsContent value="prefabs" className="m-0 h-full">
           <PrefabsPanel />
