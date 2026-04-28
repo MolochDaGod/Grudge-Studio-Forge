@@ -17,7 +17,7 @@ import { AssetDropZone } from "@/editor/AssetDropZone";
 import { AIWorkerPanel } from "@/editor/AIWorkerPanel";
 import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Plus } from "lucide-react";
 import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
 
 /**
@@ -227,10 +227,21 @@ function EditorShell() {
       {!projectId && !pickerOpen && (
         <button
           onClick={() => setPickerOpen(true)}
-          className="absolute inset-0 m-auto h-fit w-fit px-6 py-4 rounded-lg bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center gap-2 shadow-2xl hover-elevate"
+          aria-label="Open or create a project"
+          title="Open or create a project"
+          data-testid="button-open-or-create-project"
+          style={{
+            position: "fixed",
+            right: 24,
+            top: "50%",
+            transform: "translateY(-50%)",
+            zIndex: 50,
+            width: 48,
+            height: 48,
+          }}
+          className="rounded-full bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center justify-center shadow-2xl hover-elevate"
         >
-          <Sparkles className="size-5" />
-          Open or create a project to begin
+          <Plus className="size-6" />
         </button>
       )}
 
