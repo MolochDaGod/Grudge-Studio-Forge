@@ -78,6 +78,15 @@ interface EditorState {
    *  not undoable. */
   commandStack: CommandStack;
 
+  /** Render preset — "high" turns on the full post-processing rig (SSAO,
+   *  bloom, vignette, ACES tone mapping, SMAA). "perf" runs only ACES + SMAA
+   *  so weak GPUs stay responsive. */
+  renderQuality: "high" | "perf";
+  /** Show the drei Stats overlay (FPS / ms / mem) in the corner. */
+  showStats: boolean;
+  setRenderQuality: (q: "high" | "perf") => void;
+  setShowStats: (v: boolean) => void;
+
   setProject: (projectId: number | null) => void;
   loadScene: (sceneId: number, name: string, data: SceneData) => void;
   setSceneName: (name: string) => void;
@@ -211,6 +220,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   hotbar: Array(8).fill(null) as (number | null)[],
   focusToken: 0,
   commandStack: new CommandStack(100),
+  renderQuality: "high",
+  showStats: false,
+  setRenderQuality: (q) => set({ renderQuality: q }),
+  setShowStats: (v) => set({ showStats: v }),
 
   setProject: (projectId) => {
     // Switching project must reset undo history (commands captured against the

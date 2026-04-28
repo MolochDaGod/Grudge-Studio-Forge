@@ -25,6 +25,8 @@ import {
   MoreVertical,
   FileStack,
   Sparkles as AISparkles,
+  Gauge,
+  Activity,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -110,6 +112,10 @@ export function Toolbar({
   const pushLog = useEditor((s) => s.pushLog);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
   const closePrefabSubScene = useEditor((s) => s.closePrefabSubScene);
+  const renderQuality = useEditor((s) => s.renderQuality);
+  const showStats = useEditor((s) => s.showStats);
+  const setRenderQuality = useEditor((s) => s.setRenderQuality);
+  const setShowStats = useEditor((s) => s.setShowStats);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const loadTemplate = (key: string) => {
@@ -465,6 +471,28 @@ export function Toolbar({
           >
             <Wand2 className="size-4 mr-2" /> Generate map…
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Render
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => setRenderQuality(renderQuality === "high" ? "perf" : "high")}
+            data-testid="menu-toggle-quality"
+          >
+            <Gauge className="size-4 mr-2" />
+            Quality:{" "}
+            <span className="ml-1 text-accent">
+              {renderQuality === "high" ? "Cinematic" : "Performance"}
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setShowStats(!showStats)}
+            data-testid="menu-toggle-stats"
+          >
+            <Activity className="size-4 mr-2" />
+            FPS overlay: <span className="ml-1 text-accent">{showStats ? "On" : "Off"}</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
               disabled={!!prefabSubScene}

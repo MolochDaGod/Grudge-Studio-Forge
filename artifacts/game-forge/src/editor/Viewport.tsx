@@ -1,5 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Grid, OrbitControls, TransformControls } from "@react-three/drei";
+import { Grid, OrbitControls, Stats, TransformControls } from "@react-three/drei";
+import { EffectsRig } from "@/scene/EffectsRig";
 import { Physics, type RapierRigidBody } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -357,6 +358,8 @@ const VIEWPORT_PRIMITIVES: { type: EntityType; label: string; Icon: typeof BoxIc
 export function Viewport() {
   const env = useEditor((s) => s.sceneData.environment);
   const isPlaying = useEditor((s) => s.isPlaying);
+  const renderQuality = useEditor((s) => s.renderQuality);
+  const showStats = useEditor((s) => s.showStats);
   const selectEntity = useEditor((s) => s.selectEntity);
   const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
   const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
@@ -404,6 +407,12 @@ export function Viewport() {
             shadows
             camera={{ position: [8, 8, 12], fov: 45 }}
             onPointerMissed={() => selectEntity(null)}
+            gl={{
+              antialias: false,
+              powerPreference: "high-performance",
+              toneMapping: THREE.NoToneMapping,
+            }}
+            dpr={[1, 2]}
           >
             <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
             <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
@@ -411,6 +420,8 @@ export function Viewport() {
             <Suspense fallback={null}>
               {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
             </Suspense>
+            <EffectsRig highQuality={renderQuality === "high"} />
+            {showStats && <Stats className="!left-auto !right-3 !top-3" />}
             {!isPlaying && (
               <>
                 <Grid
