@@ -28,7 +28,13 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
   const setProject = useEditor((s) => s.setProject);
   const projectId = useEditor((s) => s.projectId);
 
-  const { data: projects = [], isLoading } = useListProjects();
+  // Coerce to array defensively. The destructure pattern `data: projects = []`
+  // only fires when `data` is `undefined`; a `null` (from any future empty- or
+  // non-array success body the customFetch surfaces) would slip through and
+  // crash on `.map()`. `Array.isArray` is the only invariant that actually
+  // matches what the consumer needs.
+  const { data, isLoading } = useListProjects();
+  const projects = Array.isArray(data) ? data : [];
   const createProject = useCreateProject();
   const deleteProject = useDeleteProject();
 

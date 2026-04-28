@@ -176,3 +176,5 @@ Run `pnpm --filter @workspace/db run push --force` after any schema change in `l
 ## API
 
 The OpenAPI spec at `lib/api-spec/openapi.yaml` is the source of truth. Run `pnpm --filter @workspace/api-spec run codegen` after editing it to regenerate the React Query client and Zod validators.
+
+ETag generation is intentionally disabled at the Express app level (`app.disable("etag")` in `artifacts/api-server/src/app.ts`). JSON list responses are small and change frequently — the revalidation round-trip and 304-with-empty-body responses created opportunities for client bugs (empty-body cases sliding past `data: x = []` destructure defaults, which only catch `undefined`, not `null`). If a future endpoint genuinely benefits from conditional caching (e.g., a large static catalog), opt in locally with explicit `Cache-Control` + `ETag` headers. List consumers should also coerce defensively (`Array.isArray(data) ? data : []`) rather than relying on the destructure default.
