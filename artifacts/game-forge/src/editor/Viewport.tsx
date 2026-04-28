@@ -2,7 +2,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, Stats, TransformControls } from "@react-three/drei";
 import { EffectsRig } from "@/scene/EffectsRig";
 import { Physics, type RapierRigidBody } from "@react-three/rapier";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Component, Suspense, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey, type Script } from "@workspace/api-client-react";
@@ -347,6 +347,72 @@ function FocusCameraController() {
   return null;
 }
 
+/**
+ * Catches render-time exceptions from anything inside the 3D viewport (the
+ * `<Canvas>`, scripts, post-processing, GLB loaders, etc.) and shows a
+ * contained fallback in the viewport pane instead of letting the whole editor
+ * shell — toolbar, hierarchy, inspector — go down with it. The "Reload
+ * viewport" button bumps a key so the boundary remounts the entire subtree.
+ *
+ * React requires class components for error boundaries; there is no hook
+ * equivalent.
+ */
+interface ViewportErrorBoundaryState {
+  error: Error | null;
+}
+class ViewportErrorBoundary extends Component<
+  { children: ReactNode; onReset: () => void },
+  ViewportErrorBoundaryState
+> {
+  state: ViewportErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ViewportErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Surface to dev console; the editor's own log panel doesn't see render
+    // errors because they happen above the React tree the panel reads from.
+    // eslint-disable-next-line no-console
+    console.error("[Viewport] render error:", error, info.componentStack);
+  }
+
+  reset = () => {
+    this.setState({ error: null });
+    this.props.onReset();
+  };
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-background grid-pattern p-6">
+          <div className="max-w-md text-center space-y-3 p-6 rounded-md bg-card/90 border border-card-border shadow-lg">
+            <h3 className="text-base font-semibold text-destructive">
+              Viewport crashed
+            </h3>
+            <p className="text-xs text-muted-foreground font-mono break-words">
+              {this.state.error.message}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              The rest of the editor is still usable — open the console for the
+              full stack, then reload the viewport once you've fixed the issue.
+            </p>
+            <button
+              type="button"
+              onClick={this.reset}
+              className="px-3 py-1.5 text-xs rounded-md bg-accent text-accent-foreground hover:opacity-90"
+              data-testid="button-reload-viewport"
+            >
+              Reload viewport
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const VIEWPORT_PRIMITIVES: { type: EntityType; label: string; Icon: typeof BoxIcon }[] = [
   { type: "box", label: "Box", Icon: BoxIcon },
   { type: "sphere", label: "Sphere", Icon: CircleIcon },
@@ -368,6 +434,11 @@ export function Viewport() {
   const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
   const pushLog = useEditor((s) => s.pushLog);
   const cameraMode = env.cameraMode ?? "editor";
+
+  // Bumping `viewportEpoch` after a crash forces React to discard the old
+  // <Canvas> tree (with its broken WebGL context, dangling refs, half-mounted
+  // post-processing passes, etc.) and rebuild it from scratch.
+  const [viewportEpoch, setViewportEpoch] = useState(0);
 
   const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {
     query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -403,46 +474,51 @@ export function Viewport() {
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
-          <Canvas
-            shadows
-            camera={{ position: [8, 8, 12], fov: 45 }}
-            onPointerMissed={() => selectEntity(null)}
-            gl={{
-              antialias: false,
-              powerPreference: "high-performance",
-              toneMapping: THREE.NoToneMapping,
-            }}
-            dpr={[1, 2]}
+          <ViewportErrorBoundary
+            key={viewportEpoch}
+            onReset={() => setViewportEpoch((n) => n + 1)}
           >
-            <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
-            <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
-            <Lights />
-            <Suspense fallback={null}>
-              {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
-            </Suspense>
-            <EffectsRig highQuality={renderQuality === "high"} />
-            {showStats && <Stats className="!left-auto !right-3 !top-3" />}
-            {!isPlaying && (
-              <>
-                <Grid
-                  args={[40, 40]}
-                  cellSize={1}
-                  cellThickness={0.5}
-                  cellColor="#2a2a3e"
-                  sectionSize={5}
-                  sectionThickness={1}
-                  sectionColor="#d4af37"
-                  fadeDistance={40}
-                  fadeStrength={1.4}
-                  infiniteGrid
-                  position={[0, -0.001, 0]}
-                />
-                <OrbitControls makeDefault />
-                <FocusCameraController />
-              </>
-            )}
-            <ClickToDeselect />
-          </Canvas>
+            <Canvas
+              shadows
+              camera={{ position: [8, 8, 12], fov: 45 }}
+              onPointerMissed={() => selectEntity(null)}
+              gl={{
+                antialias: false,
+                powerPreference: "high-performance",
+                toneMapping: THREE.NoToneMapping,
+              }}
+              dpr={[1, 2]}
+            >
+              <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
+              <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
+              <Lights />
+              <Suspense fallback={null}>
+                {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
+              </Suspense>
+              <EffectsRig highQuality={renderQuality === "high"} />
+              {showStats && <Stats className="!left-auto !right-3 !top-3" />}
+              {!isPlaying && (
+                <>
+                  <Grid
+                    args={[40, 40]}
+                    cellSize={1}
+                    cellThickness={0.5}
+                    cellColor="#2a2a3e"
+                    sectionSize={5}
+                    sectionThickness={1}
+                    sectionColor="#d4af37"
+                    fadeDistance={40}
+                    fadeStrength={1.4}
+                    infiniteGrid
+                    position={[0, -0.001, 0]}
+                  />
+                  <OrbitControls makeDefault />
+                  <FocusCameraController />
+                </>
+              )}
+              <ClickToDeselect />
+            </Canvas>
+          </ViewportErrorBoundary>
 
           <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
             <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
