@@ -265,7 +265,7 @@ export function Inspector() {
               <Label className="text-xs text-muted-foreground mb-1.5 block">Color</Label>
               <Input
                 type="color"
-                value={entity.material.color ?? "#9b6dff"}
+                value={entity.material.color ?? "#d4af37"}
                 onChange={(e) =>
                   updateEntity(entity.id, (d) => {
                     if (!d.material) d.material = {};

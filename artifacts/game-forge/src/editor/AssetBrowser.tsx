@@ -88,7 +88,7 @@ function GrudgeGrid({
       });
     } else {
       const e = addEntity("box", name);
-      const tierHex = typeof it.tier === "number" ? getTierColor(it.tier).hex : "#9b6dff";
+      const tierHex = typeof it.tier === "number" ? getTierColor(it.tier).hex : "#8b7355";
       updateEntity(e.id, (d) => {
         if (!d.material) d.material = {};
         d.material.color = tierHex;

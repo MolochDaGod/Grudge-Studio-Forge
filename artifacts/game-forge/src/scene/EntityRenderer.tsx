@@ -18,9 +18,12 @@ const TYPE_GEOMETRY: Record<string, ReactElement> = {
   plane: <planeGeometry args={[1, 1, 1, 1]} />,
 };
 
+// Brand selection / wireframe color (Grudge Studio gold #d4af37)
+const SELECTION_COLOR = "#d4af37";
+
 function MeshBody({ entity, selected, onPick }: RenderProps) {
   const mat = entity.material ?? {};
-  const color = mat.color ?? "#9b6dff";
+  const color = mat.color ?? SELECTION_COLOR;
   const emissive = mat.emissive ?? "#000000";
 
   const meshProps = {
@@ -42,7 +45,7 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
     return (
       <mesh {...meshProps}>
         <boxGeometry args={[0.4, 0.4, 0.4]} />
-        <meshBasicMaterial color={selected ? "#9b6dff" : "#666"} wireframe />
+        <meshBasicMaterial color={selected ? SELECTION_COLOR : "#666"} wireframe />
       </mesh>
     );
   }
@@ -61,7 +64,7 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
       {selected && (
         <mesh>
           {TYPE_GEOMETRY[entity.type] ?? TYPE_GEOMETRY.box}
-          <meshBasicMaterial color="#9b6dff" wireframe transparent opacity={0.6} />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe transparent opacity={0.6} />
         </mesh>
       )}
     </mesh>
@@ -89,12 +92,12 @@ function LightEntity({ entity, selected, onPick }: RenderProps) {
       )}
       <mesh>
         <sphereGeometry args={[0.2, 16, 16]} />
-        <meshBasicMaterial color={selected ? "#9b6dff" : color} />
+        <meshBasicMaterial color={selected ? SELECTION_COLOR : color} />
       </mesh>
       {selected && (
         <mesh>
           <sphereGeometry args={[0.3, 16, 16]} />
-          <meshBasicMaterial color="#9b6dff" wireframe />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
         </mesh>
       )}
     </group>
@@ -144,7 +147,7 @@ function LoadedModel({ url, selected, onPick }: { url: string; selected?: boolea
       {selected && (
         <mesh>
           <boxGeometry args={[1.2, 1.2, 1.2]} />
-          <meshBasicMaterial color="#9b6dff" wireframe transparent opacity={0.4} />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe transparent opacity={0.4} />
         </mesh>
       )}
     </group>

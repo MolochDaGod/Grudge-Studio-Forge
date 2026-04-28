@@ -112,13 +112,22 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
     <div className="h-12 flex items-center gap-2 px-3 border-b border-border bg-sidebar shrink-0">
       <button
         onClick={onOpenProjects}
-        className="flex items-center gap-2 pl-1 pr-3 py-0.5 rounded-md hover-elevate text-sm font-semibold"
+        className="group flex items-center gap-2.5 pl-1 pr-3 py-0.5 rounded-md hover-elevate"
         data-testid="button-open-projects"
         title="Open / create a project"
       >
-        <img src="/logo.png" alt="" className="size-7 rounded-sm" />
-        <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">
-          GameForge
+        <img
+          src="/logo.png"
+          alt="Grudge Studio"
+          className="size-7 rounded-sm transition-shadow group-hover:gold-glow-sm"
+        />
+        <span className="flex flex-col leading-none items-start">
+          <span className="font-display text-[15px] font-bold brand-gold tracking-wider">
+            GAMEFORGE
+          </span>
+          <span className="font-heading text-[8px] uppercase tracking-[0.22em] text-muted-foreground -mt-0.5">
+            Grudge Studio
+          </span>
         </span>
       </button>
 

@@ -66,63 +66,68 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* GameForge — Dark editor theme with neon violet accent */
+/* GameForge — Grudge Studio "Warlord Crafting Suite" brand theme.
+   Dark parchment/obsidian surfaces with signature gold (#d4af37). */
 :root {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(212, 175, 55, .14);
+  --badge-outline: rgba(212, 175, 55, .10);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(255, 255, 255, .04);
+  --elevate-2: rgba(255, 255, 255, .08);
 
-  --background: 240 18% 6%;
-  --foreground: 240 10% 92%;
+  /* Brand surfaces — derived from Grudge Studio bg-base / panel / card / surface */
+  --background: 240 22% 5%;            /* #0a0a0f */
+  --foreground: 0 0% 91%;              /* #e8e8e8 */
 
-  --border: 240 12% 16%;
+  --border: 240 16% 20%;               /* #2a2a3a */
 
-  --card: 240 16% 9%;
-  --card-foreground: 240 10% 92%;
-  --card-border: 240 12% 16%;
+  --card: 240 17% 9%;                  /* #12121a */
+  --card-foreground: 0 0% 91%;
+  --card-border: 240 16% 20%;
 
-  --sidebar: 240 18% 7%;
-  --sidebar-foreground: 240 8% 80%;
-  --sidebar-border: 240 12% 14%;
-  --sidebar-primary: 268 90% 64%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 14% 13%;
-  --sidebar-accent-foreground: 240 10% 92%;
-  --sidebar-ring: 268 90% 64%;
+  --sidebar: 240 17% 9%;               /* #12121a */
+  --sidebar-foreground: 41 39% 85%;    /* parchment #e8dfc8 */
+  --sidebar-border: 240 16% 18%;
+  --sidebar-primary: 46 65% 52%;       /* brand gold #d4af37 */
+  --sidebar-primary-foreground: 240 22% 5%;
+  --sidebar-accent: 240 19% 12%;       /* #1a1a25 */
+  --sidebar-accent-foreground: 0 0% 91%;
+  --sidebar-ring: 46 65% 52%;
 
-  --popover: 240 18% 8%;
-  --popover-foreground: 240 10% 92%;
-  --popover-border: 240 12% 18%;
+  --popover: 240 19% 12%;
+  --popover-foreground: 0 0% 91%;
+  --popover-border: 240 16% 22%;
 
-  --primary: 268 90% 64%;
-  --primary-foreground: 0 0% 100%;
+  /* Brand accents */
+  --primary: 46 65% 52%;               /* gold #d4af37 */
+  --primary-foreground: 240 22% 5%;    /* obsidian text on gold */
 
-  --secondary: 240 14% 14%;
-  --secondary-foreground: 240 10% 90%;
+  --secondary: 240 19% 12%;            /* #1a1a25 */
+  --secondary-foreground: 41 39% 85%;
 
-  --muted: 240 12% 12%;
-  --muted-foreground: 240 6% 60%;
+  --muted: 226 30% 17%;                /* #1e2337 */
+  --muted-foreground: 0 0% 53%;        /* #888888 */
 
-  --accent: 174 80% 52%;
-  --accent-foreground: 240 18% 6%;
+  --accent: 49 89% 60%;                /* gold-light #f4d03f */
+  --accent-foreground: 240 22% 5%;
 
-  --destructive: 0 76% 56%;
+  --destructive: 0 60% 50%;            /* #cc3333 */
   --destructive-foreground: 0 0% 100%;
 
-  --input: 240 12% 18%;
-  --ring: 268 90% 64%;
+  --input: 240 16% 18%;
+  --ring: 46 65% 52%;
 
-  --chart-1: 268 90% 64%;
-  --chart-2: 174 80% 52%;
-  --chart-3: 38 95% 60%;
-  --chart-4: 340 80% 60%;
-  --chart-5: 120 60% 55%;
+  --chart-1: 46 65% 52%;               /* gold */
+  --chart-2: 49 89% 60%;               /* gold-light */
+  --chart-3: 36 24% 44%;               /* gold-dim #8b7355 */
+  --chart-4: 350 78% 65%;              /* brand red #e94560 */
+  --chart-5: 197 90% 60%;              /* brand cyan #38bdf8 */
 
   --app-font-sans: 'Inter', system-ui, sans-serif;
-  --app-font-serif: Georgia, serif;
+  --app-font-serif: 'Spectral SC', 'Cinzel', Georgia, serif;
   --app-font-mono: 'JetBrains Mono', Menlo, monospace;
+  --app-font-display: 'Cinzel Decorative', 'Cinzel', Georgia, serif;
+  --app-font-heading: 'Cinzel', Georgia, serif;
   --radius: .5rem;
   --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.20);
   --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.30);
@@ -152,46 +157,46 @@
 }
 
 .dark {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(212, 175, 55, .14);
+  --badge-outline: rgba(212, 175, 55, .10);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(255, 255, 255, .04);
+  --elevate-2: rgba(255, 255, 255, .08);
 
-  --background: 240 18% 6%;
-  --foreground: 240 10% 92%;
-  --border: 240 12% 16%;
-  --card: 240 16% 9%;
-  --card-foreground: 240 10% 92%;
-  --card-border: 240 12% 16%;
-  --sidebar: 240 18% 7%;
-  --sidebar-foreground: 240 8% 80%;
-  --sidebar-border: 240 12% 14%;
-  --sidebar-primary: 268 90% 64%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 14% 13%;
-  --sidebar-accent-foreground: 240 10% 92%;
-  --sidebar-ring: 268 90% 64%;
-  --popover: 240 18% 8%;
-  --popover-foreground: 240 10% 92%;
-  --popover-border: 240 12% 18%;
-  --primary: 268 90% 64%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 240 14% 14%;
-  --secondary-foreground: 240 10% 90%;
-  --muted: 240 12% 12%;
-  --muted-foreground: 240 6% 60%;
-  --accent: 174 80% 52%;
-  --accent-foreground: 240 18% 6%;
-  --destructive: 0 76% 56%;
+  --background: 240 22% 5%;
+  --foreground: 0 0% 91%;
+  --border: 240 16% 20%;
+  --card: 240 17% 9%;
+  --card-foreground: 0 0% 91%;
+  --card-border: 240 16% 20%;
+  --sidebar: 240 17% 9%;
+  --sidebar-foreground: 41 39% 85%;
+  --sidebar-border: 240 16% 18%;
+  --sidebar-primary: 46 65% 52%;
+  --sidebar-primary-foreground: 240 22% 5%;
+  --sidebar-accent: 240 19% 12%;
+  --sidebar-accent-foreground: 0 0% 91%;
+  --sidebar-ring: 46 65% 52%;
+  --popover: 240 19% 12%;
+  --popover-foreground: 0 0% 91%;
+  --popover-border: 240 16% 22%;
+  --primary: 46 65% 52%;
+  --primary-foreground: 240 22% 5%;
+  --secondary: 240 19% 12%;
+  --secondary-foreground: 41 39% 85%;
+  --muted: 226 30% 17%;
+  --muted-foreground: 0 0% 53%;
+  --accent: 49 89% 60%;
+  --accent-foreground: 240 22% 5%;
+  --destructive: 0 60% 50%;
   --destructive-foreground: 0 0% 100%;
-  --input: 240 12% 18%;
-  --ring: 268 90% 64%;
-  --chart-1: 268 90% 64%;
-  --chart-2: 174 80% 52%;
-  --chart-3: 38 95% 60%;
-  --chart-4: 340 80% 60%;
-  --chart-5: 120 60% 55%;
+  --input: 240 16% 18%;
+  --ring: 46 65% 52%;
+  --chart-1: 46 65% 52%;
+  --chart-2: 49 89% 60%;
+  --chart-3: 36 24% 44%;
+  --chart-4: 350 78% 65%;
+  --chart-5: 197 90% 60%;
 
   --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.20);
   --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.30);
@@ -284,6 +289,25 @@
       transparent
     );
   }
+
+  /* Brand utilities — Grudge Studio "Warlord Crafting Suite" */
+  .font-display { font-family: var(--app-font-display); letter-spacing: 0.02em; }
+  .font-heading { font-family: var(--app-font-heading); letter-spacing: 0.04em; }
+  .font-lore    { font-family: var(--app-font-serif); letter-spacing: 0.02em; }
+
+  .brand-gold {
+    background: linear-gradient(to right, #d4af37, #f4d03f, #e8dfc8);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .gold-glow { box-shadow: 0 0 20px rgba(212, 175, 55, .2); }
+  .gold-glow-sm { box-shadow: 0 0 10px rgba(212, 175, 55, .15); }
+  .gold-glow-lg { box-shadow: 0 0 36px rgba(212, 175, 55, .28); }
+
+  .hover-gold-glow { transition: box-shadow .2s ease, border-color .2s ease; }
+  .hover-gold-glow:hover { box-shadow: 0 0 20px rgba(212, 175, 55, .25); }
 
   /* Tiny scrollbars */
   ::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -77,13 +77,13 @@ const defaultsByType = (type: EntityType, name: string): SceneEntity => {
     case "box":
       return {
         ...base,
-        material: { color: "#9b6dff", metalness: 0.1, roughness: 0.6 },
+        material: { color: "#d4af37", metalness: 0.1, roughness: 0.6 },
         physics: { bodyType: "dynamic", colliderType: "cuboid", mass: 1, restitution: 0.4, friction: 0.6 },
       };
     case "sphere":
       return {
         ...base,
-        material: { color: "#5af0ff", metalness: 0.2, roughness: 0.4 },
+        material: { color: "#e8dfc8", metalness: 0.2, roughness: 0.4 },
         physics: { bodyType: "dynamic", colliderType: "ball", mass: 1, restitution: 0.6, friction: 0.4 },
       };
     case "cylinder":

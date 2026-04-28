@@ -2,6 +2,31 @@
 
 A browser-based 3D game prototyping environment — a Unity / Godot-flavoured editor that runs entirely in the browser. Build scenes by composing primitives, attach physics + scripts, hit Play, and iterate. Catalog data (weapons, items, enemies, quests) is pulled live from Grudge Studio's open data feed.
 
+## Brand — Grudge Studio "Warlord Crafting Suite"
+
+Reference: https://molochdagod.github.io/ObjectStore/brand
+
+Palette tokens live in `artifacts/game-forge/src/index.css` (`:root` and `.dark`). Source colors:
+
+| Role | Hex | CSS token |
+| --- | --- | --- |
+| BG base | `#0a0a0f` | `--background` |
+| Card / panel | `#12121a` | `--card`, `--sidebar` |
+| Surface | `#1a1a25` | `--secondary`, `--sidebar-accent` |
+| Border | `#2a2a3a` | `--border` |
+| **Primary gold** | `#d4af37` | `--primary`, `--ring`, `--sidebar-primary` |
+| Gold light | `#f4d03f` | `--accent` (Play button) |
+| Parchment | `#e8dfc8` | `--sidebar-foreground`, `--secondary-foreground` |
+| Destructive | `#cc3333` | `--destructive` |
+
+Fonts (loaded in `index.html`): `Cinzel Decorative` (display wordmark), `Cinzel` (headings), `Spectral SC` (lore/serif), `Inter` (body), `JetBrains Mono` (code).
+
+Brand utility classes (in `src/index.css`):
+- `font-display` / `font-heading` / `font-lore` — type stacks
+- `brand-gold` — gold-gradient text fill
+- `gold-glow` / `gold-glow-sm` / `gold-glow-lg` — signature `0 0 20px rgba(212,175,55,.2)` glow
+- `hover-gold-glow` — interactive elevation
+
 ## Stack
 
 | Layer | Technology |

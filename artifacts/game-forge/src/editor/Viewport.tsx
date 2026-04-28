@@ -264,7 +264,7 @@ export function Viewport() {
               cellColor="#2a2a3e"
               sectionSize={5}
               sectionThickness={1}
-              sectionColor="#9b6dff"
+              sectionColor="#d4af37"
               fadeDistance={40}
               fadeStrength={1.4}
               infiniteGrid
