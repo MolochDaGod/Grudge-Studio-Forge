@@ -11,11 +11,29 @@ import * as zod from "zod";
  * @summary Request a presigned URL for file upload
  */
 
+export const requestUploadUrlBodySizeMax = 52428800;
+
 export const RequestUploadUrlBody = zod.object({
   name: zod.string().min(1),
-  size: zod.number().min(1),
+  size: zod
+    .number()
+    .min(1)
+    .max(requestUploadUrlBodySizeMax)
+    .describe("File size in bytes. Max 50 MB."),
   contentType: zod.string().min(1),
+  projectId: zod
+    .number()
+    .optional()
+    .describe(
+      "Optional project the file belongs to. Used to organize the storage key as uploads\/<projectId>\/...",
+    ),
+  assetType: zod
+    .enum(["model", "image", "audio", "texture", "other"])
+    .optional()
+    .describe("Optional asset class. Used as a sub-folder in the storage key."),
 });
+
+export const requestUploadUrlResponseMetadataSizeMax = 52428800;
 
 export const RequestUploadUrlResponse = zod.object({
   uploadURL: zod.string().url(),
@@ -23,8 +41,24 @@ export const RequestUploadUrlResponse = zod.object({
   metadata: zod
     .object({
       name: zod.string().min(1),
-      size: zod.number().min(1),
+      size: zod
+        .number()
+        .min(1)
+        .max(requestUploadUrlResponseMetadataSizeMax)
+        .describe("File size in bytes. Max 50 MB."),
       contentType: zod.string().min(1),
+      projectId: zod
+        .number()
+        .optional()
+        .describe(
+          "Optional project the file belongs to. Used to organize the storage key as uploads\/<projectId>\/...",
+        ),
+      assetType: zod
+        .enum(["model", "image", "audio", "texture", "other"])
+        .optional()
+        .describe(
+          "Optional asset class. Used as a sub-folder in the storage key.",
+        ),
     })
     .optional(),
 });

@@ -45,4 +45,5 @@ export * from "./updateProjectBody";
 export * from "./updateSceneBody";
 export * from "./updateScriptBody";
 export * from "./uploadUrlRequest";
+export * from "./uploadUrlRequestAssetType";
 export * from "./uploadUrlResponse";

@@ -5,12 +5,21 @@
  * Grudge GameForge API — projects, scenes, scripts, assets, and Grudge Studio data proxy
  * OpenAPI spec version: 0.1.0
  */
+import type { UploadUrlRequestAssetType } from "./uploadUrlRequestAssetType";
 
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;
-  /** @minimum 1 */
+  /**
+   * File size in bytes. Max 50 MB.
+   * @minimum 1
+   * @maximum 52428800
+   */
   size: number;
   /** @minLength 1 */
   contentType: string;
+  /** Optional project the file belongs to. Used to organize the storage key as uploads/<projectId>/... */
+  projectId?: number;
+  /** Optional asset class. Used as a sub-folder in the storage key. */
+  assetType?: UploadUrlRequestAssetType;
 }

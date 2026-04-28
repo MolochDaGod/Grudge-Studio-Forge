@@ -300,13 +300,35 @@ export interface GrudgeCatalog {
   source: string;
 }
 
+/**
+ * Optional asset class. Used as a sub-folder in the storage key.
+ */
+export type UploadUrlRequestAssetType =
+  (typeof UploadUrlRequestAssetType)[keyof typeof UploadUrlRequestAssetType];
+
+export const UploadUrlRequestAssetType = {
+  model: "model",
+  image: "image",
+  audio: "audio",
+  texture: "texture",
+  other: "other",
+} as const;
+
 export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;
-  /** @minimum 1 */
+  /**
+   * File size in bytes. Max 50 MB.
+   * @minimum 1
+   * @maximum 52428800
+   */
   size: number;
   /** @minLength 1 */
   contentType: string;
+  /** Optional project the file belongs to. Used to organize the storage key as uploads/<projectId>/... */
+  projectId?: number;
+  /** Optional asset class. Used as a sub-folder in the storage key. */
+  assetType?: UploadUrlRequestAssetType;
 }
 
 export interface UploadUrlResponse {
