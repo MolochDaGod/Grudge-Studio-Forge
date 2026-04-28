@@ -166,6 +166,9 @@ importers:
       three:
         specifier: ^0.184.0
         version: 0.184.0
+      three-stdlib:
+        specifier: ^2.36.1
+        version: 2.36.1(three@0.184.0)
       zustand:
         specifier: ^5.0.12
         version: 5.0.12(@types/react@19.2.14)(immer@11.1.4)(react@19.1.0)(use-sync-external-store@1.6.0(react@19.1.0))

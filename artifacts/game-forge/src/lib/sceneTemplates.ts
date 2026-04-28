@@ -4,6 +4,14 @@ import { DEFAULT_ENV } from "@/scene/types";
 
 const id = () => nanoid(8);
 
+/** Stable references to bundled GLB assets. EntityRenderer resolves the
+ *  `builtin:` scheme to the actual Vite-hashed URL at render time, so saved
+ *  scenes survive rebuilds and work under path-based routing. */
+export const ASSETS = {
+  character: "builtin:character",
+  rifle: "builtin:rifle",
+} as const;
+
 interface BuildOpts {
   name: string;
   type: SceneEntity["type"];
@@ -18,6 +26,7 @@ interface BuildOpts {
   fixed?: boolean;
   controllerKind?: ControllerKind;
   light?: SceneEntity["light"];
+  modelUrl?: string;
   noPhysics?: boolean;
 }
 
@@ -42,6 +51,7 @@ const ent = (o: BuildOpts): SceneEntity => {
     };
   }
   if (o.light) e.light = o.light;
+  if (o.modelUrl) e.model = { url: o.modelUrl };
   if (o.controllerKind) e.controllerKind = o.controllerKind;
   if (!o.noPhysics && o.type !== "light" && o.type !== "camera" && o.type !== "empty") {
     e.physics = o.fixed
@@ -71,61 +81,64 @@ export function tpsZombieDemoScene(): SceneData {
     }),
   );
 
-  // Player root (kinematic capsule-shaped box)
+  // Player root: rigged character GLB drives the visuals; a kinematic cylinder
+  // collider drives movement/contacts (independent of the mesh).
   const playerId = id();
   entities.push({
     id: playerId,
     name: "Player",
-    type: "cylinder",
-    transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [0.6, 1.6, 0.6] },
-    material: { color: "#d4af37", metalness: 0.3, roughness: 0.5, emissive: "#3a2a08" },
+    type: "model",
+    model: { url: ASSETS.character },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "thirdPerson",
     parentId: null,
   });
 
-  // Weapon parented to player — child inherits player transform
-  entities.push(
-    ent({
-      name: "Weapon Slot",
-      type: "box",
-      parentId: playerId,
-      position: [0.6, 0.2, 0.4],
-      scale: [0.15, 0.15, 0.6],
-      color: "#2a2a36",
-      metalness: 0.7,
-      roughness: 0.3,
-      noPhysics: true,
-    }),
-  );
+  // Rifle parented to player — inherits player transform (held weapon).
+  // Position approximates a right-hand hold; rotated to point forward.
+  const rifleId = id();
+  entities.push({
+    id: rifleId,
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: { position: [0.32, 1.25, 0.25], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    parentId: playerId,
+  });
+  // Muzzle marker parented to the rifle — child of a child.
   entities.push(
     ent({
       name: "Muzzle",
       type: "sphere",
-      parentId: playerId,
-      position: [0.6, 0.2, 0.75],
-      scale: [0.08, 0.08, 0.08],
+      parentId: rifleId,
+      position: [0, 0, 0.55],
+      scale: [0.05, 0.05, 0.05],
       color: "#ff8a3d",
       emissive: "#ff5500",
       noPhysics: true,
     }),
   );
 
-  // Six zombies in a ring
+  // Six NPC zombies in a ring — same rigged character, slight scale variance.
   for (let i = 0; i < 6; i++) {
     const angle = (i / 6) * Math.PI * 2;
     const r = 8;
-    entities.push(
-      ent({
-        name: `Zombie ${i + 1}`,
-        type: "box",
-        position: [Math.cos(angle) * r, 1, Math.sin(angle) * r],
-        scale: [0.7, 1.8, 0.7],
-        color: "#5a6a3a",
-        emissive: "#1a2200",
-        roughness: 0.9,
-      }),
-    );
+    const s = 0.92 + (i % 3) * 0.07;
+    const npcId = id();
+    entities.push({
+      id: npcId,
+      name: `Zombie ${i + 1}`,
+      type: "model",
+      model: { url: ASSETS.character },
+      transform: {
+        position: [Math.cos(angle) * r, 0, Math.sin(angle) * r],
+        rotation: [0, angle + Math.PI, 0], // face the player
+        scale: [s, s, s],
+      },
+      physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
+      parentId: null,
+    });
   }
 
   // Crypt walls — 4 boxes parented to a "Crypt" empty
@@ -249,27 +262,24 @@ export function fpsArenaScene(): SceneData {
     controllerKind: "firstPerson",
     parentId: null,
   });
-  // Weapon group parented to player (FPS-style)
-  entities.push(
-    ent({
-      name: "Weapon Mount",
-      type: "box",
-      parentId: playerId,
-      position: [0.35, 0.1, -0.5],
-      scale: [0.18, 0.2, 0.7],
-      color: "#1a1a22",
-      metalness: 0.8,
-      roughness: 0.25,
-      noPhysics: true,
-    }),
-  );
+  // FPS rifle: real GLB rifle mounted in front of the player camera.
+  // Player keeps a cylinder body since you don't see your own avatar in FPS.
+  const rifleId = id();
+  entities.push({
+    id: rifleId,
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: { position: [0.3, 0.1, -0.6], rotation: [0, Math.PI, 0], scale: [1, 1, 1] },
+    parentId: playerId,
+  });
   entities.push(
     ent({
       name: "Muzzle Flash",
       type: "sphere",
-      parentId: playerId,
-      position: [0.35, 0.1, -0.9],
-      scale: [0.1, 0.1, 0.1],
+      parentId: rifleId,
+      position: [0, 0, -0.55],
+      scale: [0.06, 0.06, 0.06],
       color: "#ffd070",
       emissive: "#ff7a2a",
       noPhysics: true,
@@ -360,17 +370,90 @@ export function fpsArenaScene(): SceneData {
   };
 }
 
+/** Minimal showcase: a single rigged character holding the rifle, on a lit
+ *  ground plane. Useful as a quick reference of the bundled assets and as a
+ *  starting point for posing / animation work. */
+export function characterShowcaseScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  entities.push(
+    ent({
+      name: "Showcase Floor",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [20, 20, 1],
+      color: "#1a1a26",
+      roughness: 0.9,
+      fixed: true,
+    }),
+  );
+
+  const charId = id();
+  entities.push({
+    id: charId,
+    name: "Character",
+    type: "model",
+    model: { url: ASSETS.character },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: { position: [0.32, 1.25, 0.25], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    parentId: charId,
+  });
+
+  entities.push(
+    ent({
+      name: "Key Light",
+      type: "light",
+      position: [3, 4, 3],
+      light: { kind: "point", color: "#fff5d8", intensity: 16, distance: 18 },
+    }),
+  );
+  entities.push(
+    ent({
+      name: "Rim Light",
+      type: "light",
+      position: [-3, 3, -2],
+      light: { kind: "point", color: "#d4af37", intensity: 10, distance: 14 },
+    }),
+  );
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#0a0a14",
+      groundColor: "#1a1a26",
+      ambientIntensity: 0.35,
+      sunIntensity: 0.6,
+      cameraMode: "editor",
+      cameraTargetEntityId: null,
+    },
+  };
+}
+
 export const SCENE_TEMPLATES: { key: string; label: string; build: () => SceneData; description: string }[] = [
+  {
+    key: "character-showcase",
+    label: "Character + Rifle Showcase",
+    description: "A single rigged character holding the bundled rifle on a lit ground plane — quick asset reference.",
+    build: characterShowcaseScene,
+  },
   {
     key: "tps-zombies",
     label: "TPS — Zombie Graveyard",
-    description: "Third-person sandbox with a player, parented weapon, 6 zombies, crypt walls, and a brazier light.",
+    description: "Third-person sandbox: rigged character player with parented rifle, 6 NPC zombies, crypt walls, brazier light.",
     build: tpsZombieDemoScene,
   },
   {
     key: "fps-arena",
     label: "FPS — Turret Arena",
-    description: "First-person closed arena: player + parented weapon mount, 3 turrets with parented barrel/eye, crates.",
+    description: "First-person arena: cylinder player with parented rifle GLB, 3 turrets, crates, spotlight.",
     build: fpsArenaScene,
   },
 ];

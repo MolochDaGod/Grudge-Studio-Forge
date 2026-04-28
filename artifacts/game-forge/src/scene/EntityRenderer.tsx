@@ -1,8 +1,22 @@
-import { useGLTF } from "@react-three/drei";
+import { useAnimations, useGLTF } from "@react-three/drei";
 import { RigidBody, type RapierRigidBody } from "@react-three/rapier";
-import { Suspense, forwardRef, useMemo, type ReactElement, type ReactNode } from "react";
+import { Suspense, forwardRef, useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
+import { SkeletonUtils } from "three-stdlib";
+import { resolveBuiltinModel } from "@/lib/builtinModels";
 import type { SceneEntity } from "./types";
+
+/** Resolve a model URL. Order:
+ *   1. `builtin:<key>` → bundled Vite asset URL (works in dev + prod)
+ *   2. absolute http(s)/data/blob → returned as-is
+ *   3. anything else → treated as relative to the artifact BASE_URL */
+function resolveModelUrl(url: string): string {
+  const builtin = resolveBuiltinModel(url);
+  if (builtin) return builtin;
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
+  const base = import.meta.env.BASE_URL || "/";
+  return `${base}${url.replace(/^\/+/, "")}`;
+}
 
 interface RenderProps {
   entity: SceneEntity;
@@ -137,10 +151,33 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
 }
 
 function LoadedModel({ url, selected, onPick }: { url: string; selected?: boolean; onPick?: () => void }) {
-  const gltf = useGLTF(url);
-  const cloned = useMemo(() => gltf.scene.clone(true), [gltf]);
+  const resolved = useMemo(() => resolveModelUrl(url), [url]);
+  const gltf = useGLTF(resolved);
+  // SkeletonUtils.clone preserves bone bindings for skinned meshes (regular
+  // .clone() breaks them — would T-pose every instance after the first).
+  const cloned = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf]);
+  const groupRef = useRef<THREE.Group>(null);
+  const { actions, names } = useAnimations(gltf.animations, groupRef);
+
+  // Auto-play the first animation so rigged characters idle instead of T-posing.
+  // Prefers a clip whose name matches an idle hint when available.
+  useEffect(() => {
+    if (!names.length) return;
+    const idle =
+      names.find((n) => /idle/i.test(n)) ??
+      names.find((n) => /loop/i.test(n)) ??
+      names[0];
+    const action = actions[idle];
+    if (!action) return;
+    action.reset().fadeIn(0.2).play();
+    return () => {
+      action.fadeOut(0.2);
+    };
+  }, [actions, names]);
+
   return (
     <group
+      ref={groupRef}
       onClick={(e) => {
         e.stopPropagation();
         onPick?.();
