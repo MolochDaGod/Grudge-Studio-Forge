@@ -5,6 +5,7 @@ import {
   type SceneEntity,
   type EntityType,
   type Vec3,
+  type ControllerKind,
   DEFAULT_ENV,
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
@@ -46,6 +47,7 @@ interface EditorState {
   setEntityTransform: (id: string, key: "position" | "rotation" | "scale", value: Vec3) => void;
   renameEntity: (id: string, name: string) => void;
   setEntityScript: (id: string, scriptId: number | null) => void;
+  setEntityController: (id: string, kind: ControllerKind) => void;
 
   setEnvironment: (env: Partial<SceneData["environment"]>) => void;
 
@@ -225,6 +227,41 @@ export const useEditor = create<EditorState>((set, get) => ({
       },
       isDirty: true,
     })),
+
+  setEntityController: (id, kind) =>
+    set((s) => {
+      // Only one entity may be the active player at a time. Promote `id` and
+      // demote any others to "none" if a real controller is being assigned.
+      // Also force the player body to kinematicPosition so the camera
+      // controller can drive it without physics fighting back.
+      const next = s.sceneData.entities.map((e) => {
+        if (e.id === id) {
+          const updated: SceneEntity = { ...e, controllerKind: kind };
+          if (kind !== "none") {
+            updated.physics = {
+              ...(e.physics ?? {}),
+              bodyType: "kinematicPosition",
+              colliderType: e.physics?.colliderType ?? "cuboid",
+            };
+          }
+          return updated;
+        }
+        if (kind !== "none" && e.controllerKind && e.controllerKind !== "none") {
+          return { ...e, controllerKind: "none" as ControllerKind };
+        }
+        return e;
+      });
+      const env = { ...s.sceneData.environment };
+      if (kind === "none") {
+        if (env.cameraTargetEntityId === id) env.cameraTargetEntityId = null;
+      } else {
+        env.cameraTargetEntityId = id;
+      }
+      return {
+        sceneData: { ...s.sceneData, entities: next, environment: env },
+        isDirty: true,
+      };
+    }),
 
   setEnvironment: (env) =>
     set((s) => ({

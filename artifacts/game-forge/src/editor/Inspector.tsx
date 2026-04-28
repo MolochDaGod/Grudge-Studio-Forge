@@ -6,8 +6,8 @@ import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
-import type { Vec3 } from "@/scene/types";
-import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2 } from "lucide-react";
+import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
+import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2, User, Camera } from "lucide-react";
 
 function NumberInput({
   value,
@@ -103,6 +103,8 @@ export function Inspector() {
   const setEntityTransform = useEditor((s) => s.setEntityTransform);
   const renameEntity = useEditor((s) => s.renameEntity);
   const setEntityScript = useEditor((s) => s.setEntityScript);
+  const setEntityController = useEditor((s) => s.setEntityController);
+  const entities = useEditor((s) => s.sceneData.entities);
 
   const { data: scripts = [] } = useListScripts(projectId ?? 0, {
     query: { queryKey: getListScriptsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -155,6 +157,64 @@ export function Inspector() {
               onChange={(v) => setEnv({ gravity: v })}
               step={0.1}
             />
+
+            <Separator />
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block flex items-center gap-1">
+                <Camera className="size-3" /> Play-Mode Camera
+              </Label>
+              <Select
+                value={env.cameraMode ?? "editor"}
+                onValueChange={(v) => setEnv({ cameraMode: v as CameraMode })}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="editor">Editor (orbit)</SelectItem>
+                  <SelectItem value="rts">RTS top-down</SelectItem>
+                  <SelectItem value="thirdPerson">Third-person</SelectItem>
+                  <SelectItem value="firstPerson">First-person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Camera Target</Label>
+              <Select
+                value={env.cameraTargetEntityId ?? "__auto"}
+                onValueChange={(v) =>
+                  setEnv({ cameraTargetEntityId: v === "__auto" ? null : v })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto">Auto (first player)</SelectItem>
+                  {entities.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Move Speed: {(env.playerMoveSpeed ?? 6).toFixed(1)} m/s
+              </Label>
+              <Slider
+                value={[env.playerMoveSpeed ?? 6]}
+                min={1}
+                max={20}
+                step={0.5}
+                onValueChange={([v]) => setEnv({ playerMoveSpeed: v })}
+              />
+            </div>
+
             <p className="text-[11px] text-muted-foreground pt-2">
               Select an entity in the hierarchy to edit its components.
             </p>
@@ -421,6 +481,30 @@ export function Inspector() {
             </div>
           </Section>
         )}
+
+        <Section title="Player Controller" Icon={User}>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Role</Label>
+            <Select
+              value={entity.controllerKind ?? "none"}
+              onValueChange={(v) => setEntityController(entity.id, v as ControllerKind)}
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-controller">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (passive object)</SelectItem>
+                <SelectItem value="thirdPerson">Player — Third-person</SelectItem>
+                <SelectItem value="firstPerson">Player — First-person</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Marks this entity as the player. Camera in Play Mode will follow it
+              and WASD will drive it. Use kinematic body type to avoid physics
+              fighting the controller.
+            </p>
+          </div>
+        </Section>
 
         <Section title="Script" Icon={Code2}>
           <div>

@@ -9,6 +9,7 @@ import { EntityRenderer } from "@/scene/EntityRenderer";
 import { getCompiledScript, makeContext } from "@/scene/PlayRuntime";
 import type { ScriptEntity } from "@/scene/csTranspile";
 import { useKeyboardState } from "@/lib/keyboard";
+import { PlayCameraController } from "@/scene/CameraControllers";
 
 function SceneEditMode() {
   const sceneData = useEditor((s) => s.sceneData);
@@ -59,7 +60,11 @@ function SceneEditMode() {
   );
 }
 
-function ScriptedEntities() {
+function ScriptedEntities({
+  bodyRefs,
+}: {
+  bodyRefs: React.MutableRefObject<Map<string, RapierRigidBody | THREE.Group>>;
+}) {
   const sceneData = useEditor((s) => s.sceneData);
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
@@ -69,7 +74,6 @@ function ScriptedEntities() {
   });
   const keysRef = useKeyboardState(true);
 
-  const bodyRefs = useRef<Map<string, RapierRigidBody | THREE.Group>>(new Map());
   const startedRef = useRef<Set<string>>(new Set());
   const elapsedRef = useRef(0);
 
@@ -180,10 +184,12 @@ function ScriptedEntities() {
 function ScenePlayMode() {
   const env = useEditor((s) => s.sceneData.environment);
   const gravity = (env.gravity ?? [0, -9.81, 0]) as [number, number, number];
+  const bodyRefs = useRef<Map<string, RapierRigidBody | THREE.Group>>(new Map());
 
   return (
     <Physics gravity={gravity}>
-      <ScriptedEntities />
+      <ScriptedEntities bodyRefs={bodyRefs} />
+      <PlayCameraController bodyRefs={bodyRefs} />
     </Physics>
   );
 }
@@ -224,6 +230,17 @@ export function Viewport() {
   const env = useEditor((s) => s.sceneData.environment);
   const isPlaying = useEditor((s) => s.isPlaying);
   const selectEntity = useEditor((s) => s.selectEntity);
+  const cameraMode = env.cameraMode ?? "editor";
+
+  const hint = !isPlaying
+    ? "Edit Mode — drag the gizmo or click an object"
+    : cameraMode === "rts"
+      ? "▶ RTS — WASD or edge of screen to pan · wheel to zoom"
+      : cameraMode === "thirdPerson"
+        ? "▶ Third-person — drag to orbit · WASD to move · Shift to sprint"
+        : cameraMode === "firstPerson"
+          ? "▶ First-person — click to lock pointer · WASD + mouselook · Shift to sprint · Esc to release"
+          : "▶ PLAY MODE — physics & scripts running";
 
   return (
     <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
@@ -239,31 +256,29 @@ export function Viewport() {
           {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
         </Suspense>
         {!isPlaying && (
-          <Grid
-            args={[40, 40]}
-            cellSize={1}
-            cellThickness={0.5}
-            cellColor="#2a2a3e"
-            sectionSize={5}
-            sectionThickness={1}
-            sectionColor="#9b6dff"
-            fadeDistance={40}
-            fadeStrength={1.4}
-            infiniteGrid
-            position={[0, -0.001, 0]}
-          />
+          <>
+            <Grid
+              args={[40, 40]}
+              cellSize={1}
+              cellThickness={0.5}
+              cellColor="#2a2a3e"
+              sectionSize={5}
+              sectionThickness={1}
+              sectionColor="#9b6dff"
+              fadeDistance={40}
+              fadeStrength={1.4}
+              infiniteGrid
+              position={[0, -0.001, 0]}
+            />
+            <OrbitControls makeDefault />
+          </>
         )}
-        <OrbitControls makeDefault />
         <ClickToDeselect />
         <Stats className="!left-auto !right-3 !top-3" />
       </Canvas>
 
       <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
-        {isPlaying ? (
-          <span className="text-accent">▶ PLAY MODE — physics & scripts running</span>
-        ) : (
-          <span>Edit Mode — drag the gizmo or click an object</span>
-        )}
+        <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
       </div>
     </div>
   );

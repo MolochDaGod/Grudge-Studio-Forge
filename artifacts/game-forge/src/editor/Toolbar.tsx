@@ -14,6 +14,11 @@ import {
   Maximize,
   Loader2,
   PackageOpen,
+  Camera,
+  Eye,
+  Map as MapIcon,
+  Orbit,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -32,7 +37,14 @@ import {
   getGetProjectSummaryQueryKey,
   getGetProjectQueryKey,
 } from "@workspace/api-client-react";
-import type { EntityType } from "@/scene/types";
+import type { EntityType, CameraMode } from "@/scene/types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
@@ -59,6 +71,8 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
   const setPaused = useEditor((s) => s.setPaused);
   const setPlaying = useEditor((s) => s.setPlaying);
   const addEntity = useEditor((s) => s.addEntity);
+  const setEnvironment = useEditor((s) => s.setEnvironment);
+  const cameraMode: CameraMode = sceneData.environment.cameraMode ?? "editor";
   const setSceneName = useEditor((s) => s.setSceneName);
   const markSaved = useEditor((s) => s.markSaved);
   const loadScene = useEditor((s) => s.loadScene);
@@ -177,6 +191,42 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
           );
         })}
       </div>
+
+      <Separator orientation="vertical" className="h-6 mx-1" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div>
+            <Select
+              value={cameraMode}
+              onValueChange={(v) => setEnvironment({ cameraMode: v as CameraMode })}
+            >
+              <SelectTrigger
+                className="h-8 w-[170px] text-xs"
+                data-testid="select-camera-mode"
+              >
+                <Camera className="size-3.5 mr-1.5 opacity-70" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="editor">
+                  <Orbit className="size-3.5 mr-2 inline" /> Editor (orbit)
+                </SelectItem>
+                <SelectItem value="rts">
+                  <MapIcon className="size-3.5 mr-2 inline" /> RTS top-down
+                </SelectItem>
+                <SelectItem value="thirdPerson">
+                  <User className="size-3.5 mr-2 inline" /> Third-person
+                </SelectItem>
+                <SelectItem value="firstPerson">
+                  <Eye className="size-3.5 mr-2 inline" /> First-person
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Active camera in Play Mode</TooltipContent>
+      </Tooltip>
 
       <div className="flex-1" />
 

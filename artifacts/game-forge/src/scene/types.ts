@@ -45,6 +45,8 @@ export interface ModelComponent {
   assetId?: number;
 }
 
+export type ControllerKind = "none" | "thirdPerson" | "firstPerson";
+
 export interface SceneEntity {
   id: string;
   name: string;
@@ -55,7 +57,12 @@ export interface SceneEntity {
   light?: LightComponent;
   model?: ModelComponent;
   scriptId?: number | null;
+  /** Mark this entity as the player. The active camera controller will move it
+   *  in play mode (WASD + mouselook for FPS / orbit for TPS). */
+  controllerKind?: ControllerKind;
 }
+
+export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";
 
 export interface Environment {
   skyColor?: string;
@@ -63,6 +70,14 @@ export interface Environment {
   ambientIntensity?: number;
   sunIntensity?: number;
   gravity?: Vec3;
+  /** Active camera controller used in Play Mode. Editor uses orbit always. */
+  cameraMode?: CameraMode;
+  /** Entity id the play-mode camera should follow (TPS/FPS/RTS focus). */
+  cameraTargetEntityId?: string | null;
+  /** Player movement speed in m/s (WASD). */
+  playerMoveSpeed?: number;
+  /** Mouselook sensitivity (radians per pixel, default 0.0025). */
+  mouseSensitivity?: number;
 }
 
 export interface SceneData {
@@ -76,6 +91,10 @@ export const DEFAULT_ENV: Environment = {
   ambientIntensity: 0.4,
   sunIntensity: 1.2,
   gravity: [0, -9.81, 0],
+  cameraMode: "editor",
+  cameraTargetEntityId: null,
+  playerMoveSpeed: 6,
+  mouseSensitivity: 0.0025,
 };
 
 export const DEFAULT_TRANSFORM = (): Transform => ({
