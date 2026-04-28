@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 /**
  * Wrap `@replit/vite-plugin-cartographer` so its `transform` step skips files
@@ -140,6 +142,19 @@ export default defineConfig({
     tailwindcss(),
     runtimeErrorOverlay(),
     preloadViewportCandidate(),
+    /**
+     * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
+     * statement inside `@dimforge/rapier3d` natively, emitting the binary as
+     * a separate, browser-cacheable asset under `dist/public/assets/`. The
+     * companion `topLevelAwait` plugin wraps the resulting top-level
+     * `await WebAssembly.instantiateStreaming(...)` so the output still
+     * targets ES2020 (no native top-level await required in the browser).
+     *
+     * Together these replace the 1.5 MB base64 blob that ships inside the
+     * `-compat` package — see `src/lib/rapierShim.ts` for the alias wiring.
+     */
+    wasm(),
+    topLevelAwait(),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -160,33 +175,52 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      /**
+       * Redirect every import of `@dimforge/rapier3d-compat` — including the
+       * one buried inside `@react-three/rapier` — to a thin local shim that
+       * re-exports the streaming `@dimforge/rapier3d` build. See
+       * `src/lib/rapierShim.ts` for the rationale; this avoids forking the
+       * upstream `react-three-rapier` package.
+       */
+      "@dimforge/rapier3d-compat": path.resolve(
+        import.meta.dirname,
+        "src/lib/rapierShim.ts",
+      ),
     },
     dedupe: ["react", "react-dom", "three"],
   },
   optimizeDeps: {
     include: ["three"],
+    /**
+     * Esbuild (used by Vite's dep pre-bundler) can't natively resolve the
+     * `import * as wasm from "./rapier_wasm3d_bg.wasm"` statement inside
+     * `@dimforge/rapier3d`, and bails out re-exporting through the local
+     * shim. Excluding the entire Rapier chain — the streaming engine, the
+     * legacy `-compat` id (now aliased to the shim), and the React wrapper
+     * that pulls them in — lets every request flow through Vite's own
+     * plugin pipeline, where `vite-plugin-wasm` handles the binary.
+     */
+    exclude: [
+      "@dimforge/rapier3d",
+      "@dimforge/rapier3d-compat",
+      "@react-three/rapier",
+    ],
   },
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     /**
-     * Bumped from Vite's 500 kB default to accommodate two intentionally
-     * large *lazy* vendor chunks:
-     *
-     *   - `vendor-rapier` (~2.2 MB minified) — `@dimforge/rapier3d-compat`
-     *     embeds its 1.5 MB WASM binary directly inside the JS module, so
-     *     even with code-splitting there is no further reduction without
-     *     swapping to the non-`compat` package and wiring up custom WASM
-     *     loading (which @react-three/rapier doesn't currently support).
-     *   - `vendor-three` (~880 kB minified) — three.js itself.
-     *
-     * Both chunks load on-demand behind the lazy `Viewport` import, so they
-     * do NOT block the editor shell's first paint. The threshold is set to
-     * 2500 so any *new* dependency creeping past rapier still triggers the
-     * warning and forces us to reconsider.
+     * After moving Rapier off the `-compat` build (its WASM is now a
+     * separate ~1.5 MB asset, not inlined), the heaviest remaining JS
+     * chunk is `vendor-three` at ~1.1 MB minified. We bump Vite's 500 kB
+     * default up to 1100 kB to cover three.js without flagging it on every
+     * build, but keep it tight enough that any *new* multi-megabyte
+     * dependency triggers the warning and forces us to reconsider before
+     * shipping. (Down from the previous 2500 kB ceiling that masked the
+     * Rapier blob.)
      */
-    chunkSizeWarningLimit: 2500,
+    chunkSizeWarningLimit: 1100,
     rollupOptions: {
       output: {
         /**
@@ -215,7 +249,10 @@ export default defineConfig({
           ) {
             return "vendor-monaco";
           }
-          if (norm.includes("/@dimforge/rapier3d-compat")) {
+          if (
+            norm.includes("/@dimforge/rapier3d/") ||
+            norm.includes("/@dimforge/rapier3d-compat")
+          ) {
             return "vendor-rapier";
           }
           if (
