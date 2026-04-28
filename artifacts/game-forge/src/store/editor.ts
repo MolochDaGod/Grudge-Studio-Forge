@@ -9,6 +9,7 @@ import {
   DEFAULT_ENV,
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
+import { cloneSubtree, getDescendants, wouldCycle, reidTree } from "@/lib/hierarchy";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type ConsoleLevel = "log" | "warn" | "error" | "info";
@@ -18,6 +19,22 @@ export interface ConsoleMessage {
   level: ConsoleLevel;
   text: string;
   ts: number;
+}
+
+/** Sub-scene editing context for prefabs (Unity-style "Open Prefab" mode).
+ *  When active, the main editor's sceneData has been TEMPORARILY swapped
+ *  for the prefab's contents. On close we restore `parentSnapshot` so the
+ *  user is dropped back into the scene exactly where they left off. */
+export interface PrefabSubScene {
+  prefabId: number;
+  prefabName: string;
+  parentSnapshot: {
+    sceneId: number | null;
+    sceneName: string;
+    sceneData: SceneData;
+    selectedId: string | null;
+    isDirty: boolean;
+  };
 }
 
 interface EditorState {
@@ -31,7 +48,10 @@ interface EditorState {
   isPaused: boolean;
   transformMode: TransformMode;
   consoleMessages: ConsoleMessage[];
-  bottomTab: "console" | "assets" | "scripts";
+  bottomTab: "console" | "assets" | "scripts" | "prefabs";
+  /** When non-null, the editor is in Prefab Edit Mode and the viewport
+   *  reflects the prefab buffer instead of the scene buffer. */
+  prefabSubScene: PrefabSubScene | null;
 
   setProject: (projectId: number | null) => void;
   loadScene: (sceneId: number, name: string, data: SceneData) => void;
@@ -39,7 +59,8 @@ interface EditorState {
   setSceneData: (data: SceneData) => void;
   markSaved: () => void;
 
-  addEntity: (type: EntityType, name?: string) => SceneEntity;
+  addEntity: (type: EntityType, name?: string, parentId?: string | null) => SceneEntity;
+  addEntityRaw: (entity: SceneEntity) => SceneEntity;
   removeEntity: (id: string) => void;
   duplicateEntity: (id: string) => void;
   selectEntity: (id: string | null) => void;
@@ -48,6 +69,8 @@ interface EditorState {
   renameEntity: (id: string, name: string) => void;
   setEntityScript: (id: string, scriptId: number | null) => void;
   setEntityController: (id: string, kind: ControllerKind) => void;
+  setEntityParent: (id: string, parentId: string | null) => void;
+  toggleCollapsed: (id: string) => void;
 
   setEnvironment: (env: Partial<SceneData["environment"]>) => void;
 
@@ -58,7 +81,19 @@ interface EditorState {
 
   pushLog: (level: ConsoleLevel, text: string) => void;
   clearConsole: () => void;
-  setBottomTab: (t: "console" | "assets" | "scripts") => void;
+  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs") => void;
+
+  // Prefab sub-scene editing — temporarily swap sceneData for a prefab's
+  // entities, then restore the original scene on close.
+  openPrefabSubScene: (prefabId: number, name: string, prefabEntities: SceneEntity[]) => void;
+  closePrefabSubScene: () => void;
+  /** Capture the current (prefab) scene's entities for saving. */
+  getPrefabBufferEntities: () => SceneEntity[];
+
+  /** Snapshot a scene-entity subtree → standalone tree of entities (re-rooted). */
+  snapshotSubtree: (rootId: string) => SceneEntity[];
+  /** Spawn a prefab tree into the current scene (re-ids and adds). */
+  spawnPrefabEntities: (entities: SceneEntity[], prefabId?: number) => SceneEntity | null;
 }
 
 const emptyScene = (): SceneData => ({
@@ -124,9 +159,17 @@ export const useEditor = create<EditorState>((set, get) => ({
   transformMode: "translate",
   consoleMessages: [],
   bottomTab: "console",
+  prefabSubScene: null,
 
   setProject: (projectId) =>
-    set({ projectId, sceneId: null, sceneData: emptyScene(), selectedId: null, isDirty: false }),
+    set({
+      projectId,
+      sceneId: null,
+      sceneData: emptyScene(),
+      selectedId: null,
+      isDirty: false,
+      prefabSubScene: null,
+    }),
 
   loadScene: (sceneId, name, data) =>
     set({
@@ -146,8 +189,18 @@ export const useEditor = create<EditorState>((set, get) => ({
   setSceneData: (data) => set({ sceneData: data, isDirty: true }),
   markSaved: () => set({ isDirty: false }),
 
-  addEntity: (type, name) => {
+  addEntity: (type, name, parentId) => {
     const entity = defaultsByType(type, name ?? `${type[0].toUpperCase()}${type.slice(1)}`);
+    if (parentId !== undefined) entity.parentId = parentId;
+    set((s) => ({
+      sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, entity] },
+      selectedId: entity.id,
+      isDirty: true,
+    }));
+    return entity;
+  },
+
+  addEntityRaw: (entity) => {
     set((s) => ({
       sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, entity] },
       selectedId: entity.id,
@@ -157,29 +210,39 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   removeEntity: (id) =>
-    set((s) => ({
-      sceneData: { ...s.sceneData, entities: s.sceneData.entities.filter((e) => e.id !== id) },
-      selectedId: s.selectedId === id ? null : s.selectedId,
-      isDirty: true,
-    })),
+    set((s) => {
+      const descendants = getDescendants(s.sceneData.entities, id);
+      const toRemove = new Set([id, ...descendants]);
+      return {
+        sceneData: {
+          ...s.sceneData,
+          entities: s.sceneData.entities.filter((e) => !toRemove.has(e.id)),
+        },
+        selectedId: toRemove.has(s.selectedId ?? "") ? null : s.selectedId,
+        isDirty: true,
+      };
+    }),
 
-  duplicateEntity: (id) => {
-    const e = get().sceneData.entities.find((x) => x.id === id);
-    if (!e) return;
-    const clone: SceneEntity = JSON.parse(JSON.stringify(e));
-    clone.id = nanoid(8);
-    clone.name = `${e.name} Copy`;
-    clone.transform.position = [
-      e.transform.position[0] + 1,
-      e.transform.position[1],
-      e.transform.position[2] + 1,
-    ];
-    set((s) => ({
-      sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, clone] },
-      selectedId: clone.id,
-      isDirty: true,
-    }));
-  },
+  duplicateEntity: (id) =>
+    set((s) => {
+      const cloned = cloneSubtree(s.sceneData.entities, id);
+      if (cloned.length === 0) return s;
+      // Offset only the new root, descendants stay relative to it.
+      cloned[0].transform = {
+        ...cloned[0].transform,
+        position: [
+          cloned[0].transform.position[0] + 1,
+          cloned[0].transform.position[1],
+          cloned[0].transform.position[2] + 1,
+        ],
+      };
+      cloned[0].name = `${cloned[0].name} Copy`;
+      return {
+        sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, ...cloned] },
+        selectedId: cloned[0].id,
+        isDirty: true,
+      };
+    }),
 
   selectEntity: (id) => set({ selectedId: id }),
 
@@ -202,9 +265,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       sceneData: {
         ...s.sceneData,
         entities: s.sceneData.entities.map((e) =>
-          e.id === id
-            ? { ...e, transform: { ...e.transform, [key]: value } }
-            : e,
+          e.id === id ? { ...e, transform: { ...e.transform, [key]: value } } : e,
         ),
       },
       isDirty: true,
@@ -230,10 +291,6 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setEntityController: (id, kind) =>
     set((s) => {
-      // Only one entity may be the active player at a time. Promote `id` and
-      // demote any others to "none" if a real controller is being assigned.
-      // Also force the player body to kinematicPosition so the camera
-      // controller can drive it without physics fighting back.
       const next = s.sceneData.entities.map((e) => {
         if (e.id === id) {
           const updated: SceneEntity = { ...e, controllerKind: kind };
@@ -263,6 +320,34 @@ export const useEditor = create<EditorState>((set, get) => ({
       };
     }),
 
+  setEntityParent: (id, parentId) =>
+    set((s) => {
+      if (id === parentId) return s;
+      if (wouldCycle(s.sceneData.entities, id, parentId)) {
+        get().pushLog("warn", `Cannot reparent — would create a cycle.`);
+        return s;
+      }
+      return {
+        sceneData: {
+          ...s.sceneData,
+          entities: s.sceneData.entities.map((e) =>
+            e.id === id ? { ...e, parentId: parentId ?? null } : e,
+          ),
+        },
+        isDirty: true,
+      };
+    }),
+
+  toggleCollapsed: (id) =>
+    set((s) => ({
+      sceneData: {
+        ...s.sceneData,
+        entities: s.sceneData.entities.map((e) =>
+          e.id === id ? { ...e, collapsed: !e.collapsed } : e,
+        ),
+      },
+    })),
+
   setEnvironment: (env) =>
     set((s) => ({
       sceneData: { ...s.sceneData, environment: { ...s.sceneData.environment, ...env } },
@@ -281,4 +366,76 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   clearConsole: () => set({ consoleMessages: [] }),
   setBottomTab: (t) => set({ bottomTab: t }),
+
+  openPrefabSubScene: (prefabId, name, prefabEntities) =>
+    set((s) => {
+      // Don't double-stack — if already in prefab mode, close it first.
+      if (s.prefabSubScene) return s;
+      // Strip parentId references that point outside this prefab tree (defensive).
+      const ids = new Set(prefabEntities.map((e) => e.id));
+      const cleaned = prefabEntities.map((e) => ({
+        ...e,
+        parentId: e.parentId && ids.has(e.parentId) ? e.parentId : null,
+      }));
+      return {
+        prefabSubScene: {
+          prefabId,
+          prefabName: name,
+          parentSnapshot: {
+            sceneId: s.sceneId,
+            sceneName: s.sceneName,
+            sceneData: s.sceneData,
+            selectedId: s.selectedId,
+            isDirty: s.isDirty,
+          },
+        },
+        sceneId: null,
+        sceneName: `Prefab: ${name}`,
+        sceneData: { entities: cleaned, environment: { ...DEFAULT_ENV } },
+        selectedId: null,
+        isDirty: false,
+        isPlaying: false,
+        isPaused: false,
+      };
+    }),
+
+  closePrefabSubScene: () =>
+    set((s) => {
+      if (!s.prefabSubScene) return s;
+      const snap = s.prefabSubScene.parentSnapshot;
+      return {
+        prefabSubScene: null,
+        sceneId: snap.sceneId,
+        sceneName: snap.sceneName,
+        sceneData: snap.sceneData,
+        selectedId: snap.selectedId,
+        isDirty: snap.isDirty,
+        isPlaying: false,
+        isPaused: false,
+      };
+    }),
+
+  getPrefabBufferEntities: () => get().sceneData.entities,
+
+  snapshotSubtree: (rootId) => {
+    const entities = get().sceneData.entities;
+    const subtree = cloneSubtree(entities, rootId, null);
+    // The subtree's new root becomes the prefab root (parentId = null).
+    return subtree;
+  },
+
+  spawnPrefabEntities: (entities, prefabId) => {
+    if (!entities || entities.length === 0) return null;
+    const { entities: next, rootIds } = reidTree(entities, null);
+    // Tag instantiated entities with the prefab id so the UI can highlight.
+    if (prefabId) {
+      for (const e of next) e.prefabId = prefabId;
+    }
+    set((s) => ({
+      sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, ...next] },
+      selectedId: rootIds[0] ?? null,
+      isDirty: true,
+    }));
+    return next.find((e) => e.id === rootIds[0]) ?? null;
+  },
 }));

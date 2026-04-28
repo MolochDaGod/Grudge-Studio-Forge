@@ -60,6 +60,14 @@ export interface SceneEntity {
   /** Mark this entity as the player. The active camera controller will move it
    *  in play mode (WASD + mouselook for FPS / orbit for TPS). */
   controllerKind?: ControllerKind;
+  /** Parent entity id for the scene hierarchy (null/undefined → root). Children
+   *  inherit their parent's transform in edit mode; in play mode physics-enabled
+   *  bodies stay world-space (rapier RigidBody owns its transform). */
+  parentId?: string | null;
+  /** When this entity was instantiated from a Prefab, this is the prefab id. */
+  prefabId?: number | null;
+  /** UI: collapsed in the hierarchy panel. */
+  collapsed?: boolean;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";

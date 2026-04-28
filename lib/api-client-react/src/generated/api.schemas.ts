@@ -111,6 +111,15 @@ export interface ModelComponent {
   assetId?: number;
 }
 
+export type EntityControllerKind =
+  (typeof EntityControllerKind)[keyof typeof EntityControllerKind];
+
+export const EntityControllerKind = {
+  none: "none",
+  thirdPerson: "thirdPerson",
+  firstPerson: "firstPerson",
+} as const;
+
 export interface Entity {
   id: string;
   name: string;
@@ -121,6 +130,13 @@ export interface Entity {
   light?: LightComponent;
   model?: ModelComponent;
   scriptId?: number | null;
+  /** Parent entity id within this scene (null/undefined → root). */
+  parentId?: string | null;
+  /** If this entity was instantiated from a Prefab, its id. */
+  prefabId?: number | null;
+  /** UI hint — collapsed in the hierarchy tree. */
+  collapsed?: boolean;
+  controllerKind?: EntityControllerKind;
 }
 
 export interface Environment {
@@ -250,6 +266,31 @@ export interface CreateAssetBody {
   url: string;
   type: CreateAssetBodyType;
   source: CreateAssetBodySource;
+}
+
+export interface PrefabData {
+  entities: Entity[];
+  rootId?: string | null;
+}
+
+export interface Prefab {
+  id: number;
+  projectId: number;
+  name: string;
+  data: PrefabData;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePrefabBody {
+  projectId: number;
+  name: string;
+  data?: PrefabData;
+}
+
+export interface UpdatePrefabBody {
+  name?: string;
+  data?: PrefabData;
 }
 
 export type GrudgeCatalogItemsItem = { [key: string]: unknown };

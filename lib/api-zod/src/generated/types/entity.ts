@@ -5,6 +5,7 @@
  * Grudge GameForge API — projects, scenes, scripts, assets, and Grudge Studio data proxy
  * OpenAPI spec version: 0.1.0
  */
+import type { EntityControllerKind } from "./entityControllerKind";
 import type { EntityType } from "./entityType";
 import type { LightComponent } from "./lightComponent";
 import type { MaterialComponent } from "./materialComponent";
@@ -22,4 +23,11 @@ export interface Entity {
   light?: LightComponent;
   model?: ModelComponent;
   scriptId?: number | null;
+  /** Parent entity id within this scene (null/undefined → root). */
+  parentId?: string | null;
+  /** If this entity was instantiated from a Prefab, its id. */
+  prefabId?: number | null;
+  /** UI hint — collapsed in the hierarchy tree. */
+  collapsed?: boolean;
+  controllerKind?: EntityControllerKind;
 }

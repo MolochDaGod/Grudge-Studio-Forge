@@ -56,23 +56,30 @@ artifacts/
         csTranspile.ts         C# → JS transpiler for the play-mode runtime
         PlayRuntime.ts         Compiles + caches script modules, exposes `(entity, ctx)`
       editor/
-        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play, scene export/import
-        Hierarchy.tsx          Scene list + filterable entity tree (left)
+        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play, scene export/import,
+                               Templates submenu, prefab-mode banner
+        Hierarchy.tsx          Scene list + indented entity TREE with expand/collapse, drag-drop
+                               reparenting (cycle-prevented via wouldCycle), per-row Save-as-Prefab
         Inspector.tsx          Selected entity / environment editor (right)
-        Viewport.tsx           R3F canvas with edit & play modes, TransformControls, Stats
+        Viewport.tsx           R3F canvas with edit & play modes, recursive RenderNode for parented
+                               entities (children inherit parent transforms), TransformControls, Stats
         ProjectPicker.tsx      Open / create project dialog
         AssetBrowser.tsx       Grudge tabs (weapons / items / enemies / quests) + project assets
         AssetDropZone.tsx      Document-level drag-and-drop ingest (.glb/.gltf/.obj/img/audio/scene-json)
         GlbInspectorDialog.tsx Modal that decodes the GLB binary container after upload
         ScriptEditor.tsx       Monaco editor with JS / C# selector
         Console.tsx            Debug.Log / engine output
-        BottomPanel.tsx        Tabbed (Console | Assets | Scripts)
+        BottomPanel.tsx        Tabbed (Console | Assets | Scripts | Prefabs)
+        PrefabsPanel.tsx       Project's prefab library — Spawn (instantiate into scene),
+                               Open (sub-scene editor), Save Prefab, Delete
       lib/
         queryClient.ts
         grudge.ts              Grudge SDK wrapper (proxied through api-server)
         keyboard.ts            useKeyboardState — keys map for play-mode scripts
         glbInspect.ts          Pure-JS GLB binary decoder (header / chunks / counts)
         converters.ts          OBJ → GLB transcoder via three's OBJLoader + GLTFExporter
+        hierarchy.ts           getDescendants (cycle-safe), wouldCycle, buildTree, cloneSubtree, reidTree
+        sceneTemplates.ts      TPS Zombie Graveyard + FPS Turret Arena scene templates
 
   api-server/        Express backend
     src/
@@ -127,6 +134,21 @@ The shipped C# runtime is a JS transpiler that handles a Unity-flavoured subset 
 4. The editor calls `blazorRuntimeAvailable()` (`src/scene/csTranspile.ts`) on load — when the boot.json is present, swap `compileCs` to dispatch into the Blazor runtime instead.
 
 The transpiler path is intentionally "good enough" for in-browser iteration; the Blazor path is for shipping.
+
+## Hierarchy & Prefabs
+
+`SceneEntity.parentId` (string id of parent or `null` for root) makes the scene a tree:
+- **Edit mode** — children render inside their parent's `<group>` so transforms compose. `TransformControls` writes the *local* transform (relative to parent) back into `entity.transform`.
+- **Play mode** — same nesting; for physics children the initial spawn is parent-relative, then Rapier owns world coords from then on (parent moves do not drag children once both are alive).
+- The Hierarchy panel is an indented tree with chevron expand/collapse, draggable rows for reparenting, drop on the empty area to unparent, and `wouldCycle` prevents loops.
+- Cascade ops: `removeEntity`/`duplicateEntity` cover the whole subtree; `cloneSubtree` re-ids and remaps `parentId`s.
+
+**Prefabs** (`lib/db/src/schema/prefabs.ts`, `/api/prefabs` routes) are reusable subtrees:
+- **Save** — pick any entity in the hierarchy → click the package icon → enter a name → its subtree is snapshotted (`snapshotSubtree` strips outside parent links) and POSTed to `/api/prefabs`.
+- **Spawn** — Prefabs panel "+ Spawn" instantiates a fresh copy with new ids into the current scene; instances are tagged with `prefabId` (visible as a small "P" badge).
+- **Open** — Prefabs panel "Open" enters Unity-style sub-scene mode: the editor temporarily swaps `sceneData` for the prefab's entities, and a yellow banner appears in the Toolbar/Hierarchy. While in prefab mode, **Save** updates the prefab record (not a scene), Play is disabled, and the scenes list is hidden. Closing restores the snapshotted parent scene.
+
+**Templates** — Toolbar `⋮` → Load template offers `TPS — Zombie Graveyard` and `FPS — Turret Arena`, both built with parent/child entities (player + parented weapon/muzzle, arena root with parented walls, turrets with parented barrel/eye).
 
 ## Database
 

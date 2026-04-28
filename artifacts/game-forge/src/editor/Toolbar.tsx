@@ -22,6 +22,9 @@ import {
   Download,
   Upload,
   MoreVertical,
+  FileStack,
+  Package,
+  X,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -31,16 +34,28 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SCENE_TEMPLATES } from "@/lib/sceneTemplates";
 import { useEditor } from "@/store/editor";
-import { useUpdateScene, useCreateScene, useGetProject } from "@workspace/api-client-react";
+import {
+  useUpdateScene,
+  useCreateScene,
+  useGetProject,
+  useUpdatePrefab,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getListScenesQueryKey,
   getGetSceneQueryKey,
   getGetProjectSummaryQueryKey,
   getGetProjectQueryKey,
+  getListPrefabsQueryKey,
 } from "@workspace/api-client-react";
 import type { EntityType, CameraMode } from "@/scene/types";
 import {
@@ -83,7 +98,26 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
   const loadScene = useEditor((s) => s.loadScene);
   const setSceneData = useEditor((s) => s.setSceneData);
   const pushLog = useEditor((s) => s.pushLog);
+  const prefabSubScene = useEditor((s) => s.prefabSubScene);
+  const closePrefabSubScene = useEditor((s) => s.closePrefabSubScene);
   const importInputRef = useRef<HTMLInputElement>(null);
+
+  const loadTemplate = (key: string) => {
+    const tpl = SCENE_TEMPLATES.find((t) => t.key === key);
+    if (!tpl) return;
+    if (
+      sceneData.entities.length > 0 &&
+      !confirm(
+        `Replace the current scene with "${tpl.label}"?\n\n${tpl.description}\n\nThis cannot be undone (Save first if you want to keep changes).`,
+      )
+    ) {
+      return;
+    }
+    const data = tpl.build();
+    setSceneData(data);
+    setSceneName(tpl.label);
+    pushLog("info", `Loaded template "${tpl.label}" (${data.entities.length} entities).`);
+  };
 
   const exportScene = () => {
     let json: string;
@@ -129,12 +163,30 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
   });
   const updateScene = useUpdateScene();
   const createScene = useCreateScene();
+  const updatePrefab = useUpdatePrefab();
 
   const [editingName, setEditingName] = useState(sceneName);
   useEffect(() => setEditingName(sceneName), [sceneName]);
 
   const onSave = async () => {
     if (!projectId) return;
+    // In prefab sub-scene mode, "Save" persists the prefab buffer rather
+    // than touching scenes (which would create a stray scene from the
+    // prefab's contents).
+    if (prefabSubScene) {
+      const entities = sceneData.entities;
+      const res = await updatePrefab.mutateAsync({
+        id: prefabSubScene.prefabId,
+        data: {
+          name: prefabSubScene.prefabName,
+          data: { entities, rootId: entities[0]?.id ?? null },
+        },
+      });
+      qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      markSaved();
+      pushLog("info", `Saved prefab "${res.name}" (${entities.length} entities)`);
+      return;
+    }
     if (sceneId) {
       const res = await updateScene.mutateAsync({ id: sceneId, data: { name: sceneName, data: sceneData } });
       qc.invalidateQueries({ queryKey: getListScenesQueryKey(projectId) });
@@ -151,7 +203,7 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
     }
   };
 
-  const saving = updateScene.isPending || createScene.isPending;
+  const saving = updateScene.isPending || createScene.isPending || updatePrefab.isPending;
 
   return (
     <div className="h-12 flex items-center gap-2 px-3 border-b border-border bg-sidebar shrink-0">
@@ -197,6 +249,31 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
       />
 
       {isDirty && <span className="size-2 rounded-full bg-amber-400" title="Unsaved changes" />}
+
+      {prefabSubScene && (
+        <div className="ml-1 flex items-center gap-2 px-2 py-1 rounded-md bg-amber-500/15 border border-amber-500/40">
+          <Package className="size-3.5 text-amber-400" />
+          <span className="text-[11px] font-medium text-amber-200">
+            Editing Prefab: <span className="font-mono">{prefabSubScene.prefabName}</span>
+          </span>
+          <button
+            onClick={() => {
+              const ok = !isDirty ||
+                confirm("Close prefab sub-scene? Unsaved prefab changes will be lost.");
+              if (ok) closePrefabSubScene();
+            }}
+            className="text-amber-300/70 hover:text-amber-200"
+            title={
+              isDirty
+                ? "Close sub-scene (unsaved prefab changes will be lost)"
+                : "Close sub-scene (returns to your scene)"
+            }
+            data-testid="button-toolbar-close-prefab"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
@@ -313,7 +390,10 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
             <MoreVertical className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="min-w-[220px]">
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Scene
+          </DropdownMenuLabel>
           <DropdownMenuItem onClick={exportScene} data-testid="menu-export-scene">
             <Download className="size-4 mr-2" /> Export scene JSON
           </DropdownMenuItem>
@@ -323,20 +403,56 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
           >
             <Upload className="size-4 mr-2" /> Import scene JSON
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger
+              disabled={!!prefabSubScene}
+              data-testid="menu-templates"
+            >
+              <FileStack className="size-4 mr-2" /> Load template…
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-[260px]">
+              {SCENE_TEMPLATES.map((t) => (
+                <DropdownMenuItem
+                  key={t.key}
+                  onClick={() => loadTemplate(t.key)}
+                  className="flex flex-col items-start gap-0.5 py-2"
+                  data-testid={`menu-template-${t.key}`}
+                >
+                  <span className="text-sm font-medium">{t.label}</span>
+                  <span className="text-[10px] text-muted-foreground leading-tight whitespace-normal">
+                    {t.description}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
 
       <Separator orientation="vertical" className="h-6 mx-1" />
 
       {!isPlaying ? (
-        <Button
-          size="sm"
-          onClick={() => setPlaying(true)}
-          className="bg-accent text-accent-foreground hover:bg-accent/90"
-          data-testid="button-play"
-        >
-          <Play className="size-4 mr-1 fill-current" /> Play
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>
+              <Button
+                size="sm"
+                onClick={() => setPlaying(true)}
+                disabled={!!prefabSubScene}
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+                data-testid="button-play"
+              >
+                <Play className="size-4 mr-1 fill-current" /> Play
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {prefabSubScene
+              ? "Close the prefab sub-scene to play the main scene"
+              : "Enter Play Mode"}
+          </TooltipContent>
+        </Tooltip>
       ) : (
         <>
           <Button

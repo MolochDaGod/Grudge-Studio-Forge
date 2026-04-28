@@ -188,6 +188,23 @@ export const ListScenesResponseItem = zod.object({
           })
           .optional(),
         scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
       }),
     ),
     environment: zod.object({
@@ -268,6 +285,23 @@ export const CreateSceneBody = zod.object({
             })
             .optional(),
           scriptId: zod.number().nullish(),
+          parentId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Parent entity id within this scene (null\/undefined → root).",
+            ),
+          prefabId: zod
+            .number()
+            .nullish()
+            .describe("If this entity was instantiated from a Prefab, its id."),
+          collapsed: zod
+            .boolean()
+            .optional()
+            .describe("UI hint — collapsed in the hierarchy tree."),
+          controllerKind: zod
+            .enum(["none", "thirdPerson", "firstPerson"])
+            .optional(),
         }),
       ),
       environment: zod.object({
@@ -350,6 +384,23 @@ export const GetSceneResponse = zod.object({
           })
           .optional(),
         scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
       }),
     ),
     environment: zod.object({
@@ -432,6 +483,23 @@ export const UpdateSceneBody = zod.object({
             })
             .optional(),
           scriptId: zod.number().nullish(),
+          parentId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Parent entity id within this scene (null\/undefined → root).",
+            ),
+          prefabId: zod
+            .number()
+            .nullish()
+            .describe("If this entity was instantiated from a Prefab, its id."),
+          collapsed: zod
+            .boolean()
+            .optional()
+            .describe("UI hint — collapsed in the hierarchy tree."),
+          controllerKind: zod
+            .enum(["none", "thirdPerson", "firstPerson"])
+            .optional(),
         }),
       ),
       environment: zod.object({
@@ -510,6 +578,23 @@ export const UpdateSceneResponse = zod.object({
           })
           .optional(),
         scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
       }),
     ),
     environment: zod.object({
@@ -611,6 +696,470 @@ export const CreateAssetBody = zod.object({
 });
 
 export const DeleteAssetParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListPrefabsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListPrefabsResponseItem = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  name: zod.string(),
+  data: zod.object({
+    entities: zod.array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        type: zod.enum([
+          "box",
+          "sphere",
+          "cylinder",
+          "plane",
+          "light",
+          "camera",
+          "model",
+          "empty",
+        ]),
+        transform: zod.object({
+          position: zod.array(zod.number()),
+          rotation: zod.array(zod.number()),
+          scale: zod.array(zod.number()),
+        }),
+        physics: zod
+          .object({
+            bodyType: zod
+              .enum([
+                "fixed",
+                "dynamic",
+                "kinematicPosition",
+                "kinematicVelocity",
+              ])
+              .optional(),
+            colliderType: zod
+              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .optional(),
+            mass: zod.number().optional(),
+            restitution: zod.number().optional(),
+            friction: zod.number().optional(),
+          })
+          .optional(),
+        material: zod
+          .object({
+            color: zod.string().optional(),
+            metalness: zod.number().optional(),
+            roughness: zod.number().optional(),
+            emissive: zod.string().optional(),
+          })
+          .optional(),
+        light: zod
+          .object({
+            kind: zod.enum(["point", "directional", "spot"]).optional(),
+            color: zod.string().optional(),
+            intensity: zod.number().optional(),
+            distance: zod.number().optional(),
+          })
+          .optional(),
+        model: zod
+          .object({
+            url: zod.string().optional(),
+            assetId: zod.number().optional(),
+          })
+          .optional(),
+        scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
+      }),
+    ),
+    rootId: zod.string().nullish(),
+  }),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const ListPrefabsResponse = zod.array(ListPrefabsResponseItem);
+
+export const CreatePrefabBody = zod.object({
+  projectId: zod.number(),
+  name: zod.string(),
+  data: zod
+    .object({
+      entities: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum([
+            "box",
+            "sphere",
+            "cylinder",
+            "plane",
+            "light",
+            "camera",
+            "model",
+            "empty",
+          ]),
+          transform: zod.object({
+            position: zod.array(zod.number()),
+            rotation: zod.array(zod.number()),
+            scale: zod.array(zod.number()),
+          }),
+          physics: zod
+            .object({
+              bodyType: zod
+                .enum([
+                  "fixed",
+                  "dynamic",
+                  "kinematicPosition",
+                  "kinematicVelocity",
+                ])
+                .optional(),
+              colliderType: zod
+                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .optional(),
+              mass: zod.number().optional(),
+              restitution: zod.number().optional(),
+              friction: zod.number().optional(),
+            })
+            .optional(),
+          material: zod
+            .object({
+              color: zod.string().optional(),
+              metalness: zod.number().optional(),
+              roughness: zod.number().optional(),
+              emissive: zod.string().optional(),
+            })
+            .optional(),
+          light: zod
+            .object({
+              kind: zod.enum(["point", "directional", "spot"]).optional(),
+              color: zod.string().optional(),
+              intensity: zod.number().optional(),
+              distance: zod.number().optional(),
+            })
+            .optional(),
+          model: zod
+            .object({
+              url: zod.string().optional(),
+              assetId: zod.number().optional(),
+            })
+            .optional(),
+          scriptId: zod.number().nullish(),
+          parentId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Parent entity id within this scene (null\/undefined → root).",
+            ),
+          prefabId: zod
+            .number()
+            .nullish()
+            .describe("If this entity was instantiated from a Prefab, its id."),
+          collapsed: zod
+            .boolean()
+            .optional()
+            .describe("UI hint — collapsed in the hierarchy tree."),
+          controllerKind: zod
+            .enum(["none", "thirdPerson", "firstPerson"])
+            .optional(),
+        }),
+      ),
+      rootId: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+export const GetPrefabParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetPrefabResponse = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  name: zod.string(),
+  data: zod.object({
+    entities: zod.array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        type: zod.enum([
+          "box",
+          "sphere",
+          "cylinder",
+          "plane",
+          "light",
+          "camera",
+          "model",
+          "empty",
+        ]),
+        transform: zod.object({
+          position: zod.array(zod.number()),
+          rotation: zod.array(zod.number()),
+          scale: zod.array(zod.number()),
+        }),
+        physics: zod
+          .object({
+            bodyType: zod
+              .enum([
+                "fixed",
+                "dynamic",
+                "kinematicPosition",
+                "kinematicVelocity",
+              ])
+              .optional(),
+            colliderType: zod
+              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .optional(),
+            mass: zod.number().optional(),
+            restitution: zod.number().optional(),
+            friction: zod.number().optional(),
+          })
+          .optional(),
+        material: zod
+          .object({
+            color: zod.string().optional(),
+            metalness: zod.number().optional(),
+            roughness: zod.number().optional(),
+            emissive: zod.string().optional(),
+          })
+          .optional(),
+        light: zod
+          .object({
+            kind: zod.enum(["point", "directional", "spot"]).optional(),
+            color: zod.string().optional(),
+            intensity: zod.number().optional(),
+            distance: zod.number().optional(),
+          })
+          .optional(),
+        model: zod
+          .object({
+            url: zod.string().optional(),
+            assetId: zod.number().optional(),
+          })
+          .optional(),
+        scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
+      }),
+    ),
+    rootId: zod.string().nullish(),
+  }),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const UpdatePrefabParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePrefabBody = zod.object({
+  name: zod.string().optional(),
+  data: zod
+    .object({
+      entities: zod.array(
+        zod.object({
+          id: zod.string(),
+          name: zod.string(),
+          type: zod.enum([
+            "box",
+            "sphere",
+            "cylinder",
+            "plane",
+            "light",
+            "camera",
+            "model",
+            "empty",
+          ]),
+          transform: zod.object({
+            position: zod.array(zod.number()),
+            rotation: zod.array(zod.number()),
+            scale: zod.array(zod.number()),
+          }),
+          physics: zod
+            .object({
+              bodyType: zod
+                .enum([
+                  "fixed",
+                  "dynamic",
+                  "kinematicPosition",
+                  "kinematicVelocity",
+                ])
+                .optional(),
+              colliderType: zod
+                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .optional(),
+              mass: zod.number().optional(),
+              restitution: zod.number().optional(),
+              friction: zod.number().optional(),
+            })
+            .optional(),
+          material: zod
+            .object({
+              color: zod.string().optional(),
+              metalness: zod.number().optional(),
+              roughness: zod.number().optional(),
+              emissive: zod.string().optional(),
+            })
+            .optional(),
+          light: zod
+            .object({
+              kind: zod.enum(["point", "directional", "spot"]).optional(),
+              color: zod.string().optional(),
+              intensity: zod.number().optional(),
+              distance: zod.number().optional(),
+            })
+            .optional(),
+          model: zod
+            .object({
+              url: zod.string().optional(),
+              assetId: zod.number().optional(),
+            })
+            .optional(),
+          scriptId: zod.number().nullish(),
+          parentId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Parent entity id within this scene (null\/undefined → root).",
+            ),
+          prefabId: zod
+            .number()
+            .nullish()
+            .describe("If this entity was instantiated from a Prefab, its id."),
+          collapsed: zod
+            .boolean()
+            .optional()
+            .describe("UI hint — collapsed in the hierarchy tree."),
+          controllerKind: zod
+            .enum(["none", "thirdPerson", "firstPerson"])
+            .optional(),
+        }),
+      ),
+      rootId: zod.string().nullish(),
+    })
+    .optional(),
+});
+
+export const UpdatePrefabResponse = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  name: zod.string(),
+  data: zod.object({
+    entities: zod.array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        type: zod.enum([
+          "box",
+          "sphere",
+          "cylinder",
+          "plane",
+          "light",
+          "camera",
+          "model",
+          "empty",
+        ]),
+        transform: zod.object({
+          position: zod.array(zod.number()),
+          rotation: zod.array(zod.number()),
+          scale: zod.array(zod.number()),
+        }),
+        physics: zod
+          .object({
+            bodyType: zod
+              .enum([
+                "fixed",
+                "dynamic",
+                "kinematicPosition",
+                "kinematicVelocity",
+              ])
+              .optional(),
+            colliderType: zod
+              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .optional(),
+            mass: zod.number().optional(),
+            restitution: zod.number().optional(),
+            friction: zod.number().optional(),
+          })
+          .optional(),
+        material: zod
+          .object({
+            color: zod.string().optional(),
+            metalness: zod.number().optional(),
+            roughness: zod.number().optional(),
+            emissive: zod.string().optional(),
+          })
+          .optional(),
+        light: zod
+          .object({
+            kind: zod.enum(["point", "directional", "spot"]).optional(),
+            color: zod.string().optional(),
+            intensity: zod.number().optional(),
+            distance: zod.number().optional(),
+          })
+          .optional(),
+        model: zod
+          .object({
+            url: zod.string().optional(),
+            assetId: zod.number().optional(),
+          })
+          .optional(),
+        scriptId: zod.number().nullish(),
+        parentId: zod
+          .string()
+          .nullish()
+          .describe(
+            "Parent entity id within this scene (null\/undefined → root).",
+          ),
+        prefabId: zod
+          .number()
+          .nullish()
+          .describe("If this entity was instantiated from a Prefab, its id."),
+        collapsed: zod
+          .boolean()
+          .optional()
+          .describe("UI hint — collapsed in the hierarchy tree."),
+        controllerKind: zod
+          .enum(["none", "thirdPerson", "firstPerson"])
+          .optional(),
+      }),
+    ),
+    rootId: zod.string().nullish(),
+  }),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+export const DeletePrefabParams = zod.object({
   id: zod.coerce.number(),
 });
 

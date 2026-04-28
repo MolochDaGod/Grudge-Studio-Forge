@@ -10,9 +10,84 @@ import { getCompiledScript, makeContext } from "@/scene/PlayRuntime";
 import type { ScriptEntity } from "@/scene/csTranspile";
 import { useKeyboardState } from "@/lib/keyboard";
 import { PlayCameraController } from "@/scene/CameraControllers";
+import { buildTree } from "@/lib/hierarchy";
+import type { SceneEntity } from "@/scene/types";
 
-function SceneEditMode() {
-  const sceneData = useEditor((s) => s.sceneData);
+interface RenderNodeProps {
+  entity: SceneEntity;
+  childrenByParent: Map<string | null, SceneEntity[]>;
+  selectedId: string | null;
+  onPick: (id: string) => void;
+  groupRefs?: React.MutableRefObject<Map<string, THREE.Group>>;
+  bodyRefs?: React.MutableRefObject<Map<string, RapierRigidBody | THREE.Group>>;
+  playMode: boolean;
+}
+
+/** Renders an entity + recursively all of its children inside its group, so
+ *  child transforms compose with the parent's (Unity-style hierarchy). */
+function RenderNode({
+  entity,
+  childrenByParent,
+  selectedId,
+  onPick,
+  groupRefs,
+  bodyRefs,
+  playMode,
+}: RenderNodeProps) {
+  const kids = childrenByParent.get(entity.id) ?? [];
+  const childNodes = kids.map((c) => (
+    <RenderNode
+      key={c.id}
+      entity={c}
+      childrenByParent={childrenByParent}
+      selectedId={selectedId}
+      onPick={onPick}
+      groupRefs={groupRefs}
+      bodyRefs={bodyRefs}
+      playMode={playMode}
+    />
+  ));
+
+  if (groupRefs) {
+    // Edit mode — wrap in tracking group so TransformControls can grab it.
+    return (
+      <group
+        ref={(el) => {
+          if (el) groupRefs.current.set(entity.id, el);
+          else groupRefs.current.delete(entity.id);
+        }}
+      >
+        <EntityRenderer
+          entity={entity}
+          selected={selectedId === entity.id}
+          onPick={() => onPick(entity.id)}
+          playMode={false}
+        >
+          {childNodes}
+        </EntityRenderer>
+      </group>
+    );
+  }
+
+  // Play mode — attach body/group ref directly on the EntityRenderer.
+  return (
+    <EntityRenderer
+      entity={entity}
+      ref={(el) => {
+        if (!bodyRefs) return;
+        if (el) bodyRefs.current.set(entity.id, el as RapierRigidBody | THREE.Group);
+        else bodyRefs.current.delete(entity.id);
+      }}
+      playMode
+    >
+      {childNodes}
+    </EntityRenderer>
+  );
+}
+
+function SceneEditMode({ data }: { data?: { entities: SceneEntity[] } }) {
+  const liveData = useEditor((s) => s.sceneData);
+  const sceneData = data ?? liveData;
   const selectedId = useEditor((s) => s.selectedId);
   const selectEntity = useEditor((s) => s.selectEntity);
   const setEntityTransform = useEditor((s) => s.setEntityTransform);
@@ -21,23 +96,21 @@ function SceneEditMode() {
   const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
   const selectedRef = selectedId ? groupRefs.current.get(selectedId) : undefined;
 
+  const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
+  const roots = childrenByParent.get(null) ?? [];
+
   return (
     <>
-      {sceneData.entities.map((entity) => (
-        <group
+      {roots.map((entity) => (
+        <RenderNode
           key={entity.id}
-          ref={(el) => {
-            if (el) groupRefs.current.set(entity.id, el);
-            else groupRefs.current.delete(entity.id);
-          }}
-        >
-          <EntityRenderer
-            entity={entity}
-            selected={selectedId === entity.id}
-            onPick={() => selectEntity(entity.id)}
-            playMode={false}
-          />
-        </group>
+          entity={entity}
+          childrenByParent={childrenByParent}
+          selectedId={selectedId}
+          onPick={selectEntity}
+          groupRefs={groupRefs}
+          playMode={false}
+        />
       ))}
       {selectedRef && (
         <TransformControls
@@ -164,16 +237,19 @@ function ScriptedEntities({
     }
   });
 
+  const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
+  const roots = childrenByParent.get(null) ?? [];
+
   return (
     <>
-      {sceneData.entities.map((entity) => (
-        <EntityRenderer
+      {roots.map((entity) => (
+        <RenderNode
           key={entity.id}
           entity={entity}
-          ref={(el) => {
-            if (el) bodyRefs.current.set(entity.id, el as RapierRigidBody | THREE.Group);
-            else bodyRefs.current.delete(entity.id);
-          }}
+          childrenByParent={childrenByParent}
+          selectedId={null}
+          onPick={() => {}}
+          bodyRefs={bodyRefs}
           playMode
         />
       ))}

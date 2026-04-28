@@ -13,6 +13,7 @@ tags:
   - name: scenes
   - name: scripts
   - name: assets
+  - name: prefabs
   - name: grudge
   - name: storage
     description: Object storage upload and serving endpoints.
@@ -382,6 +383,80 @@ paths:
         "204":
           description: Deleted
 
+  /projects/{id}/prefabs:
+    get:
+      operationId: listPrefabs
+      tags: [prefabs]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Prefab"
+
+  /prefabs:
+    post:
+      operationId: createPrefab
+      tags: [prefabs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrefabBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prefab"
+
+  /prefabs/{id}:
+    get:
+      operationId: getPrefab
+      tags: [prefabs]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prefab"
+    put:
+      operationId: updatePrefab
+      tags: [prefabs]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrefabBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prefab"
+    delete:
+      operationId: deletePrefab
+      tags: [prefabs]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
   /grudge/weapons:
     get:
       operationId: getGrudgeWeapons
@@ -567,6 +642,20 @@ components:
         scriptId:
           type: integer
           nullable: true
+        parentId:
+          type: string
+          nullable: true
+          description: Parent entity id within this scene (null/undefined → root).
+        prefabId:
+          type: integer
+          nullable: true
+          description: If this entity was instantiated from a Prefab, its id.
+        collapsed:
+          type: boolean
+          description: UI hint — collapsed in the hierarchy tree.
+        controllerKind:
+          type: string
+          enum: [none, thirdPerson, firstPerson]
 
     Transform:
       type: object
@@ -732,6 +821,54 @@ components:
         source:
           type: string
           enum: [grudge, upload, url]
+
+    Prefab:
+      type: object
+      required: [id, projectId, name, data, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/PrefabData"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    PrefabData:
+      type: object
+      required: [entities]
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entity"
+        rootId:
+          type: string
+          nullable: true
+
+    CreatePrefabBody:
+      type: object
+      required: [projectId, name]
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/PrefabData"
+
+    UpdatePrefabBody:
+      type: object
+      properties:
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/PrefabData"
 
     GrudgeCatalog:
       type: object

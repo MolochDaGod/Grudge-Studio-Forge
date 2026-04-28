@@ -2,8 +2,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Console } from "./Console";
 import { AssetBrowser } from "./AssetBrowser";
 import { ScriptEditor } from "./ScriptEditor";
+import { PrefabsPanel } from "./PrefabsPanel";
 import { useEditor } from "@/store/editor";
-import { Terminal, Boxes, Code2 } from "lucide-react";
+import { Terminal, Boxes, Code2, Package } from "lucide-react";
 
 export function BottomPanel() {
   const tab = useEditor((s) => s.bottomTab);
@@ -21,6 +22,9 @@ export function BottomPanel() {
         <TabsTrigger value="scripts" className="text-xs gap-1.5" data-testid="tab-scripts">
           <Code2 className="size-3" /> Scripts
         </TabsTrigger>
+        <TabsTrigger value="prefabs" className="text-xs gap-1.5" data-testid="tab-prefabs">
+          <Package className="size-3" /> Prefabs
+        </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
         <TabsContent value="console" className="m-0 h-full">
@@ -31,6 +35,9 @@ export function BottomPanel() {
         </TabsContent>
         <TabsContent value="scripts" className="m-0 h-full">
           <ScriptEditor />
+        </TabsContent>
+        <TabsContent value="prefabs" className="m-0 h-full">
+          <PrefabsPanel />
         </TabsContent>
       </div>
     </Tabs>

@@ -1,6 +1,6 @@
 import { useGLTF } from "@react-three/drei";
 import { RigidBody, type RapierRigidBody } from "@react-three/rapier";
-import { Suspense, forwardRef, useMemo, type ReactElement } from "react";
+import { Suspense, forwardRef, useMemo, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import type { SceneEntity } from "./types";
 
@@ -9,6 +9,9 @@ interface RenderProps {
   selected?: boolean;
   onPick?: () => void;
   playMode: boolean;
+  /** Child entities rendered inside this entity's group so they inherit
+   *  its transform (Unity-style hierarchy). */
+  children?: ReactNode;
 }
 
 const TYPE_GEOMETRY: Record<string, ReactElement> = {
@@ -158,7 +161,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   props,
   ref,
 ) {
-  const { entity, playMode } = props;
+  const { entity, playMode, children } = props;
   const tr = entity.transform;
   const usePhysics = playMode && entity.physics && entity.type !== "light" && entity.type !== "camera";
 
@@ -190,6 +193,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       >
         <group scale={tr.scale}>
           <MeshBody {...props} />
+          {children}
         </group>
       </RigidBody>
     );
@@ -204,6 +208,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       userData={{ entityId: entity.id, name: entity.name }}
     >
       <MeshBody {...props} />
+      {children}
     </group>
   );
 });

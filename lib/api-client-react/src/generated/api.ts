@@ -19,15 +19,18 @@ import type {
 import type {
   Asset,
   CreateAssetBody,
+  CreatePrefabBody,
   CreateProjectBody,
   CreateSceneBody,
   CreateScriptBody,
   GrudgeCatalog,
   HealthStatus,
+  Prefab,
   Project,
   ProjectSummary,
   Scene,
   Script,
+  UpdatePrefabBody,
   UpdateProjectBody,
   UpdateSceneBody,
   UpdateScriptBody,
@@ -1899,6 +1902,403 @@ export const useDeleteAsset = <
   TContext
 > => {
   return useMutation(getDeleteAssetMutationOptions(options));
+};
+
+export const getListPrefabsUrl = (id: number) => {
+  return `/api/projects/${id}/prefabs`;
+};
+
+export const listPrefabs = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Prefab[]> => {
+  return customFetch<Prefab[]>(getListPrefabsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPrefabsQueryKey = (id: number) => {
+  return [`/api/projects/${id}/prefabs`] as const;
+};
+
+export const getListPrefabsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPrefabs>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPrefabs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPrefabsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPrefabs>>> = ({
+    signal,
+  }) => listPrefabs(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPrefabs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPrefabsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPrefabs>>
+>;
+export type ListPrefabsQueryError = ErrorType<unknown>;
+
+export function useListPrefabs<
+  TData = Awaited<ReturnType<typeof listPrefabs>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPrefabs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPrefabsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getCreatePrefabUrl = () => {
+  return `/api/prefabs`;
+};
+
+export const createPrefab = async (
+  createPrefabBody: CreatePrefabBody,
+  options?: RequestInit,
+): Promise<Prefab> => {
+  return customFetch<Prefab>(getCreatePrefabUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createPrefabBody),
+  });
+};
+
+export const getCreatePrefabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPrefab>>,
+    TError,
+    { data: BodyType<CreatePrefabBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPrefab>>,
+  TError,
+  { data: BodyType<CreatePrefabBody> },
+  TContext
+> => {
+  const mutationKey = ["createPrefab"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPrefab>>,
+    { data: BodyType<CreatePrefabBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPrefab(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePrefabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPrefab>>
+>;
+export type CreatePrefabMutationBody = BodyType<CreatePrefabBody>;
+export type CreatePrefabMutationError = ErrorType<unknown>;
+
+export const useCreatePrefab = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPrefab>>,
+    TError,
+    { data: BodyType<CreatePrefabBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPrefab>>,
+  TError,
+  { data: BodyType<CreatePrefabBody> },
+  TContext
+> => {
+  return useMutation(getCreatePrefabMutationOptions(options));
+};
+
+export const getGetPrefabUrl = (id: number) => {
+  return `/api/prefabs/${id}`;
+};
+
+export const getPrefab = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Prefab> => {
+  return customFetch<Prefab>(getGetPrefabUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPrefabQueryKey = (id: number) => {
+  return [`/api/prefabs/${id}`] as const;
+};
+
+export const getGetPrefabQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPrefab>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPrefab>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetPrefabQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPrefab>>> = ({
+    signal,
+  }) => getPrefab(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getPrefab>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetPrefabQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPrefab>>
+>;
+export type GetPrefabQueryError = ErrorType<unknown>;
+
+export function useGetPrefab<
+  TData = Awaited<ReturnType<typeof getPrefab>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPrefab>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPrefabQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getUpdatePrefabUrl = (id: number) => {
+  return `/api/prefabs/${id}`;
+};
+
+export const updatePrefab = async (
+  id: number,
+  updatePrefabBody: UpdatePrefabBody,
+  options?: RequestInit,
+): Promise<Prefab> => {
+  return customFetch<Prefab>(getUpdatePrefabUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updatePrefabBody),
+  });
+};
+
+export const getUpdatePrefabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePrefab>>,
+    TError,
+    { id: number; data: BodyType<UpdatePrefabBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePrefab>>,
+  TError,
+  { id: number; data: BodyType<UpdatePrefabBody> },
+  TContext
+> => {
+  const mutationKey = ["updatePrefab"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePrefab>>,
+    { id: number; data: BodyType<UpdatePrefabBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updatePrefab(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePrefabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePrefab>>
+>;
+export type UpdatePrefabMutationBody = BodyType<UpdatePrefabBody>;
+export type UpdatePrefabMutationError = ErrorType<unknown>;
+
+export const useUpdatePrefab = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePrefab>>,
+    TError,
+    { id: number; data: BodyType<UpdatePrefabBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePrefab>>,
+  TError,
+  { id: number; data: BodyType<UpdatePrefabBody> },
+  TContext
+> => {
+  return useMutation(getUpdatePrefabMutationOptions(options));
+};
+
+export const getDeletePrefabUrl = (id: number) => {
+  return `/api/prefabs/${id}`;
+};
+
+export const deletePrefab = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePrefabUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePrefabMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePrefab>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePrefab>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deletePrefab"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePrefab>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deletePrefab(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePrefabMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePrefab>>
+>;
+
+export type DeletePrefabMutationError = ErrorType<unknown>;
+
+export const useDeletePrefab = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePrefab>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePrefab>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeletePrefabMutationOptions(options));
 };
 
 /**
