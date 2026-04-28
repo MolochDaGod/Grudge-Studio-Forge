@@ -67,24 +67,37 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
     );
   }
 
+  // Selection overlay is a SIBLING (not a child) and slightly inflated so it
+  // is never coplanar with the underlying mesh — coplanar surfaces z-fight as
+  // the camera moves and looks like flicker. depthTest=false also means the
+  // wireframe renders cleanly on top regardless of view angle.
   return (
-    <mesh {...meshProps}>
-      {TYPE_GEOMETRY[entity.type] ?? TYPE_GEOMETRY.box}
-      <meshStandardMaterial
-        color={color}
-        metalness={mat.metalness ?? 0.1}
-        roughness={mat.roughness ?? 0.6}
-        emissive={emissive}
-        emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
-        side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
-      />
+    <>
+      <mesh {...meshProps}>
+        {TYPE_GEOMETRY[entity.type] ?? TYPE_GEOMETRY.box}
+        <meshStandardMaterial
+          color={color}
+          metalness={mat.metalness ?? 0.1}
+          roughness={mat.roughness ?? 0.6}
+          emissive={emissive}
+          emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
+          side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
+        />
+      </mesh>
       {selected && (
-        <mesh>
+        <mesh scale={1.04} renderOrder={999}>
           {TYPE_GEOMETRY[entity.type] ?? TYPE_GEOMETRY.box}
-          <meshBasicMaterial color={SELECTION_COLOR} wireframe transparent opacity={0.6} />
+          <meshBasicMaterial
+            color={SELECTION_COLOR}
+            wireframe
+            transparent
+            opacity={0.85}
+            depthTest={false}
+            depthWrite={false}
+          />
         </mesh>
       )}
-    </mesh>
+    </>
   );
 }
 
@@ -112,9 +125,16 @@ function LightEntity({ entity, selected, onPick }: RenderProps) {
         <meshBasicMaterial color={selected ? SELECTION_COLOR : color} />
       </mesh>
       {selected && (
-        <mesh>
+        <mesh renderOrder={999}>
           <sphereGeometry args={[0.3, 16, 16]} />
-          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
+          <meshBasicMaterial
+            color={SELECTION_COLOR}
+            wireframe
+            transparent
+            opacity={0.85}
+            depthTest={false}
+            depthWrite={false}
+          />
         </mesh>
       )}
     </group>
@@ -304,13 +324,35 @@ function LoadedModel({ url, clip, tint, label, selected, onPick }: LoadedModelPr
       }}
     >
       <primitive object={cloned} />
-      {selected && (
-        <mesh>
-          <boxGeometry args={[1.2, 1.2, 1.2]} />
-          <meshBasicMaterial color={SELECTION_COLOR} wireframe transparent opacity={0.4} />
-        </mesh>
-      )}
+      {selected && <ModelSelectionBox target={cloned} />}
     </group>
+  );
+}
+
+/** A wireframe box sized to the model's actual bounding box, rendered on top
+ *  with depthTest off so it never z-fights with the model surfaces. */
+function ModelSelectionBox({ target }: { target: THREE.Object3D }) {
+  const { center, size } = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(target);
+    const c = new THREE.Vector3();
+    const s = new THREE.Vector3();
+    box.getCenter(c);
+    box.getSize(s);
+    if (!isFinite(s.x) || s.x === 0) s.set(1, 1, 1);
+    return { center: c, size: s };
+  }, [target]);
+  return (
+    <mesh position={center} renderOrder={999}>
+      <boxGeometry args={[size.x * 1.05, size.y * 1.05, size.z * 1.05]} />
+      <meshBasicMaterial
+        color={SELECTION_COLOR}
+        wireframe
+        transparent
+        opacity={0.6}
+        depthTest={false}
+        depthWrite={false}
+      />
+    </mesh>
   );
 }
 
