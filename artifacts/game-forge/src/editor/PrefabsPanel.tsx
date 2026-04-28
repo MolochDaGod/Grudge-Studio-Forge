@@ -25,7 +25,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { SceneEntity } from "@/scene/types";
-import { STARTER_PREFABS, type StarterPrefabDef } from "@/lib/starterPrefabs";
+import { STARTER_PREFABS, STARTER_VFX, type StarterPrefabDef } from "@/lib/starterPrefabs";
 
 interface PrefabPayload {
   entities?: SceneEntity[];
@@ -193,6 +193,44 @@ export function PrefabsPanel() {
     }
   };
 
+  // Seed the built-in VFX prefabs (model entities pointing at public/builtin
+  // GLBs). Skips definitions whose name already exists so repeated clicks
+  // don't pile up duplicates.
+  const seedingVfxRef = useRef(false);
+  const onSeedVfx = async () => {
+    if (!projectId || seedingVfxRef.current) return;
+    seedingVfxRef.current = true;
+    const existingNames = new Set(prefabs.map((p) => p.name));
+    const todo = STARTER_VFX.filter((d) => !existingNames.has(d.name));
+    if (todo.length === 0) {
+      pushLog("info", "VFX prefabs already seeded.");
+      seedingVfxRef.current = false;
+      return;
+    }
+    pushLog("info", `Forging ${todo.length} VFX prefab${todo.length === 1 ? "" : "s"}…`);
+    let created = 0;
+    try {
+      for (const def of todo) {
+        try {
+          const entities = def.entities();
+          await createPrefab.mutateAsync({
+            data: {
+              projectId,
+              name: def.name,
+              data: { entities, rootId: entities[0]?.id ?? null },
+            },
+          });
+          created++;
+        } catch (err) {
+          pushLog("error", `VFX "${def.name}" failed: ${(err as Error).message}`);
+        }
+      }
+      qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      pushLog("info", `Seeded ${created}/${todo.length} VFX prefabs.`);
+    } finally {
+      seedingVfxRef.current = false;
+    }
+  };
   const createOne = async (def: StarterPrefabDef) => {
     if (!projectId) return null;
     const entities = def.entities();
@@ -251,22 +289,40 @@ export function PrefabsPanel() {
         </div>
         <div className="flex items-center gap-2">
           {!prefabSubScene && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2.5 text-[10px] font-heading uppercase tracking-[0.18em] text-accent hover:text-accent"
-              onClick={onSeedStarters}
-              disabled={seeding}
-              title="Create 8 ready-to-use starter prefabs and bind them to hotbar slots 1-8"
-              data-testid="button-seed-starters"
-            >
-              {seeding ? (
-                <Loader2 className="size-3 mr-1.5 animate-spin" />
-              ) : (
-                <Sparkles className="size-3 mr-1.5" />
-              )}
-              Seed Starters
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2.5 text-[10px] font-heading uppercase tracking-[0.18em] text-accent hover:text-accent"
+                onClick={onSeedStarters}
+                disabled={seeding}
+                title="Create 8 ready-to-use starter prefabs and bind them to hotbar slots 1-8"
+                data-testid="button-seed-starters"
+              >
+                {seeding ? (
+                  <Loader2 className="size-3 mr-1.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3 mr-1.5" />
+                )}
+                Seed Starters
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2.5 text-[10px] font-heading uppercase tracking-[0.18em] text-accent hover:text-accent"
+                onClick={onSeedVfx}
+                disabled={seeding}
+                title="Create the built-in VFX prefabs (animated GLB effects)"
+                data-testid="button-seed-vfx"
+              >
+                {seeding ? (
+                  <Loader2 className="size-3 mr-1.5 animate-spin" />
+                ) : (
+                  <Sparkles className="size-3 mr-1.5" />
+                )}
+                Seed VFX
+              </Button>
+            </>
           )}
           {prefabSubScene && (
             <>

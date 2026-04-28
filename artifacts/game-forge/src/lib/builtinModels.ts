@@ -16,10 +16,23 @@ function ensureBaseUrl(url: string): string {
 /** Registry of GLB assets bundled with GameForge. Scene data stores stable
  *  keys (e.g. `"builtin:character"`); EntityRenderer resolves them to the
  *  real URL at render time so saved scenes survive rebuilds and work under
- *  path-based routing in dev + prod. */
+ *  path-based routing in dev + prod.
+ *
+ *  Two flavors live here:
+ *   - Vite imports (`character`, `rifle`) — small enough to bundle.
+ *   - public/builtin/*.glb (Blake + VFX) — too large to ship through Vite's
+ *     asset graph, so they live in `public/` and are served as static files
+ *     under the artifact's base path. */
 export const BUILTIN_MODELS: Record<string, string> = {
   character: ensureBaseUrl(characterUrl),
   rifle: ensureBaseUrl(rifleUrl),
+  blake: ensureBaseUrl("builtin/blake.glb"),
+  "vfx-leaves": ensureBaseUrl("builtin/vfx-leaves.glb"),
+  "vfx-trail": ensureBaseUrl("builtin/vfx-trail.glb"),
+  "vfx-effect": ensureBaseUrl("builtin/vfx-effect.glb"),
+  "vfx-circuits": ensureBaseUrl("builtin/vfx-circuits.glb"),
+  "vfx-tornado": ensureBaseUrl("builtin/vfx-tornado.glb"),
+  "vfx-warning": ensureBaseUrl("builtin/vfx-warning.glb"),
 };
 
 export const BUILTIN_MODEL_KEY = (key: keyof typeof BUILTIN_MODELS | string) =>

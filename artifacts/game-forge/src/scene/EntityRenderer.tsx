@@ -1,5 +1,5 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
-import { RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import { CapsuleCollider, CylinderCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { Suspense, forwardRef, useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
@@ -208,6 +208,14 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       ph.colliderType ??
       (entity.type === "sphere" ? "ball" : entity.type === "cylinder" ? "cylinder" : "cuboid");
 
+    // For model entities we never want auto-generated colliders that wrap the
+    // mesh (a humanoid like Blake would produce a wonky convex hull). Instead,
+    // when the user picks a primitive collider type we attach an explicit
+    // primitive collider sized for a typical character, and for everything
+    // else we fall back to a coarse cuboid hull.
+    const isModel = entity.type === "model";
+    const explicitForModel = isModel && (colliderShape === "cylinder" || colliderShape === "ball");
+
     return (
       <RigidBody
         ref={ref as React.Ref<RapierRigidBody>}
@@ -215,19 +223,31 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         position={tr.position}
         rotation={tr.rotation}
         colliders={
-          colliderShape === "ball"
-            ? "ball"
-            : colliderShape === "cylinder"
-              ? "hull"
-              : colliderShape === "trimesh"
-                ? "trimesh"
-                : "cuboid"
+          explicitForModel
+            ? false
+            : colliderShape === "ball"
+              ? "ball"
+              : colliderShape === "cylinder"
+                ? "hull"
+                : colliderShape === "trimesh"
+                  ? "trimesh"
+                  : "cuboid"
         }
         restitution={ph.restitution ?? 0.4}
         friction={ph.friction ?? 0.6}
         mass={ph.mass ?? 1}
         userData={{ entityId: entity.id, name: entity.name }}
       >
+        {/* Capsule for character-shaped models, sphere for round ones.
+            Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
+            its feet (matches Blake). Position offset puts the collider center
+            at y=0.85 so the capsule's base aligns with the model's pivot. */}
+        {explicitForModel && colliderShape === "cylinder" && (
+          <CapsuleCollider args={[0.85, 0.4]} position={[0, 0.85, 0]} />
+        )}
+        {explicitForModel && colliderShape === "ball" && (
+          <CylinderCollider args={[0.5, 0.5]} position={[0, 0.5, 0]} />
+        )}
         <group scale={tr.scale}>
           <MeshBody {...props} />
           {children}

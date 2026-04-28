@@ -37,12 +37,16 @@ const id = () => nanoid(8);
  * Script sources
  * ---------------------------------------------------------------------- */
 
-const PLAYER_SCRIPT = `// Player Capsule — WASD to move, Space to jump.
+// Player movement script. Designed for a model whose pivot is at the feet
+// (Blake): ground level is y=0. If you swap in a centered-pivot mesh, raise
+// GROUND_Y to half the mesh height.
+const PLAYER_SCRIPT = `// Player — WASD to move, Space to jump.
 // Reads keyboard state from ctx.input.keys and writes to entity.position.
 let vy = 0;
 const SPEED = 6;
 const JUMP = 7;
 const GRAVITY = -18;
+const GROUND_Y = 0;
 
 export function update(entity, ctx) {
   const k = ctx.input.keys;
@@ -58,11 +62,11 @@ export function update(entity, ctx) {
 
   // Jump + simple gravity (visual only — physics body would handle this in a real game).
   vy += GRAVITY * ctx.time.delta;
-  if ((k[' '] || k['Space']) && entity.position[1] <= 1.05) {
+  if ((k[' '] || k['Space']) && entity.position[1] <= GROUND_Y + 0.05) {
     vy = JUMP;
   }
   entity.position[1] += vy * ctx.time.delta;
-  if (entity.position[1] < 1) { entity.position[1] = 1; vy = 0; }
+  if (entity.position[1] < GROUND_Y) { entity.position[1] = GROUND_Y; vy = 0; }
 }
 `;
 
@@ -133,8 +137,8 @@ export function update(entity, ctx) {
 export const STARTER_PREFABS: StarterPrefabDef[] = [
   {
     slot: 1,
-    name: "Player Capsule",
-    description: "WASD + Space jump. Kinematic capsule controller.",
+    name: "Player (Blake)",
+    description: "Blake character model with WASD + Space jump controller.",
     scriptName: "Player Controller",
     scriptSource: PLAYER_SCRIPT,
     scriptLanguage: "javascript",
@@ -143,11 +147,14 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
       {
         id: id(),
         name: "Player",
-        type: "cylinder",
+        type: "model",
         parentId: null,
         controllerKind: "thirdPerson",
-        transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [0.6, 1, 0.6] },
-        material: { color: "#d4af37", metalness: 0.2, roughness: 0.4 },
+        // Blake is rigged at ~1u tall; spawn at y=0 so the rig sits on the ground.
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:blake" },
+        // Capsule-ish proxy collider (cylinder ~1.7m tall, 0.4m radius) so the
+        // physics body doesn't hug the visual mesh exactly — keeps movement clean.
         physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, friction: 0.6, restitution: 0 },
       },
     ],
@@ -289,6 +296,109 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
         type: "empty",
         parentId: null,
         transform: { position: [-4, 1, -4], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      },
+    ],
+  },
+];
+
+/* ---------------------------------------------------------------------- *
+ * Built-in VFX prefabs (model entities backed by public/builtin/*.glb).
+ *
+ * Seeded by a separate "Seed VFX" button — they are NOT auto-bound to
+ * hotbar slots so they don't collide with the eight gameplay starters.
+ * Each entity points at a `builtin:vfx-*` key resolved by builtinModels.ts.
+ * Animations bundled inside the .glb auto-play (see EntityRenderer's
+ * `useAnimations` block).
+ * ---------------------------------------------------------------------- */
+
+export interface VfxPrefabDef {
+  name: string;
+  description: string;
+  entities: () => SceneEntity[];
+}
+
+export const STARTER_VFX: VfxPrefabDef[] = [
+  {
+    name: "VFX — Falling Leaves",
+    description: "Looping animated falling green leaves.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Falling Leaves",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-leaves" },
+      },
+    ],
+  },
+  {
+    name: "VFX — Trail",
+    description: "Animated motion trail mesh — attach to projectiles or moving entities.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Trail FX",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-trail" },
+      },
+    ],
+  },
+  {
+    name: "VFX — Animated Effect",
+    description: "Generic animated impact / pulse effect.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Effect",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-effect" },
+      },
+    ],
+  },
+  {
+    name: "VFX — Circuit Loop",
+    description: "Greeble circuits in motion — sci-fi panel decoration.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Circuits",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-circuits" },
+      },
+    ],
+  },
+  {
+    name: "VFX — Tornado",
+    description: "Animated tornado funnel — large ambient effect.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Tornado",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-tornado" },
+      },
+    ],
+  },
+  {
+    name: "VFX — Warning Marker",
+    description: "Local warning glyph — useful for hazard zones.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Warning",
+        type: "model",
+        parentId: null,
+        transform: { position: [0, 0.5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        model: { url: "builtin:vfx-warning" },
       },
     ],
   },
