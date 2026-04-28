@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Grid, OrbitControls, TransformControls, Stats } from "@react-three/drei";
+import { Grid, OrbitControls, TransformControls } from "@react-three/drei";
 import { Physics, type RapierRigidBody } from "@react-three/rapier";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -350,7 +350,6 @@ export function Viewport() {
           </>
         )}
         <ClickToDeselect />
-        <Stats className="!left-auto !right-3 !top-3" />
       </Canvas>
 
       <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
