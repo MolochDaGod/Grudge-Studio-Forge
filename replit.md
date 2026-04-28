@@ -1,27 +1,87 @@
-# Workspace
+# Grudge GameForge
 
-## Overview
-
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+A browser-based 3D game prototyping environment — a Unity / Godot-flavoured editor that runs entirely in the browser. Build scenes by composing primitives, attach physics + scripts, hit Play, and iterate. Catalog data (weapons, items, enemies, quests) is pulled live from Grudge Studio's open data feed.
 
 ## Stack
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+| Layer | Technology |
+| --- | --- |
+| Renderer | three.js + @react-three/fiber + @react-three/drei (TransformControls, OrbitControls, GLTF loader) |
+| Physics | Rapier (`@dimforge/rapier3d-compat`) via `@react-three/rapier` |
+| Scripting (JS) | `new Function(...)` runtime with `start(entity, ctx)` / `update(entity, ctx)` lifecycle hooks |
+| Scripting (C#) | Unity-flavoured C# transpiled to JS in `src/scene/csTranspile.ts` for the in-editor Play Mode preview. The codebase is laid out so the user can drop a real Blazor WebAssembly compile into `public/_framework/` for full .NET runtime support — see "Real Blazor C#" below. |
+| State | Zustand (`src/store/editor.ts`) |
+| Editor UI | shadcn/ui + Tailwind v4, `react-resizable-panels`, Monaco editor |
+| Backend | Express + Drizzle ORM + Postgres |
+| Type-safe API | OpenAPI 3.1 → orval → React Query hooks (`@workspace/api-client-react`) + zod validators (`@workspace/api-zod`) |
+| External data | Grudge Studio object store proxy (5 min in-memory cache) |
 
-## Key Commands
+## Layout
 
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- `pnpm --filter @workspace/api-server run dev` — run API server locally
+```
+artifacts/
+  game-forge/        Vite + React frontend (the editor)
+    src/
+      App.tsx                  Top-level layout (toolbar / hierarchy / viewport / inspector / bottom panel)
+      store/editor.ts          Zustand store — scene graph, selection, play mode, console
+      scene/
+        types.ts               SceneEntity, Transform, Environment
+        EntityRenderer.tsx     Renders a SceneEntity in three.js (with optional Rapier RigidBody in play mode)
+        csTranspile.ts         C# → JS transpiler for the play-mode runtime
+        PlayRuntime.ts         Compiles + caches script modules, exposes `(entity, ctx)`
+      editor/
+        Toolbar.tsx            Top bar — project, scene, gizmo mode, save, play
+        Hierarchy.tsx          Scene list + entity tree (left)
+        Inspector.tsx          Selected entity / environment editor (right)
+        Viewport.tsx           R3F canvas with edit & play modes, TransformControls, Stats
+        ProjectPicker.tsx      Open / create project dialog
+        AssetBrowser.tsx       Grudge tabs (weapons / items / enemies / quests) + project assets
+        ScriptEditor.tsx       Monaco editor with JS / C# selector
+        Console.tsx            Debug.Log / engine output
+        BottomPanel.tsx        Tabbed (Console | Assets | Scripts)
+      lib/
+        queryClient.ts
+        grudge.ts              Grudge SDK wrapper (proxied through api-server)
+        keyboard.ts            useKeyboardState — keys map for play-mode scripts
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+  api-server/        Express backend
+    src/routes/
+      projects.ts    /api/projects CRUD + summary
+      scenes.ts      /api/scenes CRUD nested under project
+      scripts.ts     /api/scripts CRUD with default JS / C# templates
+      assets.ts      /api/assets CRUD
+      grudge.ts      /api/grudge/{weapons,items,enemies,quests} proxy + flattening + cache
+
+lib/
+  api-spec/          OpenAPI 3.1 source of truth (openapi.yaml)
+  api-client-react/  Generated React Query hooks (orval)
+  api-zod/           Generated Zod request validators
+  db/                Drizzle schemas + migrations
+```
+
+## Hotkeys
+
+| Key | Action |
+| --- | --- |
+| `W` / `E` / `R` | Translate / rotate / scale gizmo |
+| `Space` | Toggle Play Mode |
+| `Click outside` | Deselect |
+
+## Real Blazor C#
+
+The shipped C# runtime is a JS transpiler that handles a Unity-flavoured subset (`MonoBehaviour`, `Transform.Position.X`, `Input.GetKey`, `Debug.Log`, basic loops/arithmetic). For the full .NET runtime path:
+
+1. Scaffold a Blazor WebAssembly project: `dotnet new blazorwasm -o csharp/GameForgeRuntime`
+2. Implement an interop module that exposes `start(entityJson, ctxJson)` / `update(entityJson, ctxJson)` to JS via `[JSInvokable]`.
+3. `dotnet publish -c Release` → copy `bin/Release/net9.0/publish/wwwroot/_framework/*` into `artifacts/game-forge/public/_framework/`.
+4. The editor calls `blazorRuntimeAvailable()` (`src/scene/csTranspile.ts`) on load — when the boot.json is present, swap `compileCs` to dispatch into the Blazor runtime instead.
+
+The transpiler path is intentionally "good enough" for in-browser iteration; the Blazor path is for shipping.
+
+## Database
+
+Run `pnpm --filter @workspace/db run push --force` after any schema change in `lib/db/src/schema/*.ts`.
+
+## API
+
+The OpenAPI spec at `lib/api-spec/openapi.yaml` is the source of truth. Run `pnpm --filter @workspace/api-spec run codegen` after editing it to regenerate the React Query client and Zod validators.

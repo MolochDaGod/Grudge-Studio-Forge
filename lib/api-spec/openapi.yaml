@@ -3,20 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Grudge GameForge API — projects, scenes, scripts, assets, and Grudge Studio data proxy
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: projects
+  - name: scenes
+  - name: scripts
+  - name: assets
+  - name: grudge
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +27,651 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "404":
+          description: Not Found
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/{id}/summary:
+    get:
+      operationId: getProjectSummary
+      tags: [projects]
+      summary: Aggregated stats for a project
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSummary"
+
+  /projects/{id}/scenes:
+    get:
+      operationId: listScenes
+      tags: [scenes]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scene"
+
+  /scenes:
+    post:
+      operationId: createScene
+      tags: [scenes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSceneBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+
+  /scenes/{id}:
+    get:
+      operationId: getScene
+      tags: [scenes]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+        "404":
+          description: Not Found
+    patch:
+      operationId: updateScene
+      tags: [scenes]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSceneBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+    delete:
+      operationId: deleteScene
+      tags: [scenes]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/{id}/scripts:
+    get:
+      operationId: listScripts
+      tags: [scripts]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Script"
+
+  /scripts:
+    post:
+      operationId: createScript
+      tags: [scripts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScriptBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Script"
+
+  /scripts/{id}:
+    get:
+      operationId: getScript
+      tags: [scripts]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Script"
+        "404":
+          description: Not Found
+    patch:
+      operationId: updateScript
+      tags: [scripts]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScriptBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Script"
+    delete:
+      operationId: deleteScript
+      tags: [scripts]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/{id}/assets:
+    get:
+      operationId: listAssets
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Asset"
+
+  /assets:
+    post:
+      operationId: createAsset
+      tags: [assets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssetBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+
+  /assets/{id}:
+    delete:
+      operationId: deleteAsset
+      tags: [assets]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /grudge/weapons:
+    get:
+      operationId: getGrudgeWeapons
+      tags: [grudge]
+      summary: Proxy to Grudge Studio weapons database
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrudgeCatalog"
+
+  /grudge/items:
+    get:
+      operationId: getGrudgeItems
+      tags: [grudge]
+      summary: Proxy to Grudge Studio items database
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrudgeCatalog"
+
+  /grudge/enemies:
+    get:
+      operationId: getGrudgeEnemies
+      tags: [grudge]
+      summary: Proxy to Grudge Studio enemy templates
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrudgeCatalog"
+
+  /grudge/quests:
+    get:
+      operationId: getGrudgeQuests
+      tags: [grudge]
+      summary: Proxy to Grudge Studio quests
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GrudgeCatalog"
+
 components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    Project:
+      type: object
+      required: [id, name, description, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    CreateProjectBody:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    ProjectSummary:
+      type: object
+      required: [projectId, sceneCount, scriptCount, assetCount, entityCount, lastUpdated]
+      properties:
+        projectId:
+          type: integer
+        sceneCount:
+          type: integer
+        scriptCount:
+          type: integer
+        assetCount:
+          type: integer
+        entityCount:
+          type: integer
+        lastUpdated:
+          type: string
+
+    Scene:
+      type: object
+      required: [id, projectId, name, data, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/SceneData"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    SceneData:
+      type: object
+      required: [entities, environment]
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Entity"
+        environment:
+          $ref: "#/components/schemas/Environment"
+
+    Environment:
+      type: object
+      properties:
+        skyColor:
+          type: string
+        groundColor:
+          type: string
+        ambientIntensity:
+          type: number
+        sunIntensity:
+          type: number
+        gravity:
+          type: array
+          items:
+            type: number
+
+    Entity:
+      type: object
+      required: [id, name, type, transform]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [box, sphere, cylinder, plane, light, camera, model, empty]
+        transform:
+          $ref: "#/components/schemas/Transform"
+        physics:
+          $ref: "#/components/schemas/PhysicsComponent"
+        material:
+          $ref: "#/components/schemas/MaterialComponent"
+        light:
+          $ref: "#/components/schemas/LightComponent"
+        model:
+          $ref: "#/components/schemas/ModelComponent"
+        scriptId:
+          type: integer
+          nullable: true
+
+    Transform:
+      type: object
+      required: [position, rotation, scale]
+      properties:
+        position:
+          type: array
+          items:
+            type: number
+        rotation:
+          type: array
+          items:
+            type: number
+        scale:
+          type: array
+          items:
+            type: number
+
+    PhysicsComponent:
+      type: object
+      properties:
+        bodyType:
+          type: string
+          enum: [fixed, dynamic, kinematicPosition, kinematicVelocity]
+        colliderType:
+          type: string
+          enum: [cuboid, ball, cylinder, trimesh]
+        mass:
+          type: number
+        restitution:
+          type: number
+        friction:
+          type: number
+
+    MaterialComponent:
+      type: object
+      properties:
+        color:
+          type: string
+        metalness:
+          type: number
+        roughness:
+          type: number
+        emissive:
+          type: string
+
+    LightComponent:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [point, directional, spot]
+        color:
+          type: string
+        intensity:
+          type: number
+        distance:
+          type: number
+
+    ModelComponent:
+      type: object
+      properties:
+        url:
+          type: string
+        assetId:
+          type: integer
+
+    CreateSceneBody:
+      type: object
+      required: [projectId, name]
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/SceneData"
+
+    UpdateSceneBody:
+      type: object
+      properties:
+        name:
+          type: string
+        data:
+          $ref: "#/components/schemas/SceneData"
+
+    Script:
+      type: object
+      required: [id, projectId, name, language, code, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        language:
+          type: string
+          enum: [js, ts, cs]
+        code:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    CreateScriptBody:
+      type: object
+      required: [projectId, name, language]
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        language:
+          type: string
+          enum: [js, ts, cs]
+        code:
+          type: string
+
+    UpdateScriptBody:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+
+    Asset:
+      type: object
+      required: [id, projectId, name, url, type, source, createdAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+        type:
+          type: string
+          enum: [model, texture, audio, image, other]
+        source:
+          type: string
+          enum: [grudge, upload, url]
+        createdAt:
+          type: string
+
+    CreateAssetBody:
+      type: object
+      required: [projectId, name, url, type, source]
+      properties:
+        projectId:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+        type:
+          type: string
+          enum: [model, texture, audio, image, other]
+        source:
+          type: string
+          enum: [grudge, upload, url]
+
+    GrudgeCatalog:
+      type: object
+      required: [items, source]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        source:
+          type: string
