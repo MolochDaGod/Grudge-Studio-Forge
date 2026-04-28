@@ -106,7 +106,11 @@ export class ObjectStorageService {
     return new Response(webStream, { headers });
   }
 
-  async getObjectEntityUploadURL(): Promise<string> {
+  async getObjectEntityUploadURL(opts: {
+    projectId?: number;
+    assetType?: string;
+    originalName?: string;
+  } = {}): Promise<string> {
     const privateObjectDir = this.getPrivateObjectDir();
     if (!privateObjectDir) {
       throw new Error(
@@ -116,7 +120,11 @@ export class ObjectStorageService {
     }
 
     const objectId = randomUUID();
-    const fullPath = `${privateObjectDir}/uploads/${objectId}`;
+    const projectFolder = opts.projectId ? String(opts.projectId) : "_loose";
+    const typeFolder = opts.assetType?.trim() || "other";
+    const safe = sanitizeFilename(opts.originalName || "");
+    const leaf = safe ? `${objectId}-${safe}` : objectId;
+    const fullPath = `${privateObjectDir}/uploads/${projectFolder}/${typeFolder}/${leaf}`;
 
     const { bucketName, objectName } = parseObjectPath(fullPath);
 
@@ -126,6 +134,11 @@ export class ObjectStorageService {
       method: "PUT",
       ttlSec: 900,
     });
+  }
+
+  async deleteObjectEntity(objectPath: string): Promise<void> {
+    const objectFile = await this.getObjectEntityFile(objectPath);
+    await objectFile.delete({ ignoreNotFound: true });
   }
 
   async getObjectEntityFile(objectPath: string): Promise<File> {
@@ -204,6 +217,17 @@ export class ObjectStorageService {
       requestedPermission: requestedPermission ?? ObjectPermission.READ,
     });
   }
+}
+
+function sanitizeFilename(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  const cleaned = base.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (cleaned.length === 0) return "";
+  if (cleaned.length <= 64) return cleaned;
+  const dot = cleaned.lastIndexOf(".");
+  if (dot === -1 || dot < cleaned.length - 10) return cleaned.slice(0, 64);
+  const ext = cleaned.slice(dot);
+  return cleaned.slice(0, 64 - ext.length) + ext;
 }
 
 function parseObjectPath(path: string): {

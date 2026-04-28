@@ -20,14 +20,27 @@ const objectStorageService = new ObjectStorageService();
 router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
   const parsed = RequestUploadUrlBody.safeParse(req.body);
   if (!parsed.success) {
+    const sizeIssue = parsed.error.issues.find(
+      (i) => i.path[0] === "size" && i.code === "too_big",
+    );
+    if (sizeIssue) {
+      res.status(413).json({
+        error: "File too large. Max upload size is 50 MB.",
+      });
+      return;
+    }
     res.status(400).json({ error: "Missing or invalid required fields" });
     return;
   }
 
   try {
-    const { name, size, contentType } = parsed.data;
+    const { name, size, contentType, projectId, assetType } = parsed.data;
 
-    const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+    const uploadURL = await objectStorageService.getObjectEntityUploadURL({
+      projectId: projectId ?? undefined,
+      assetType: assetType ?? undefined,
+      originalName: name,
+    });
     const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
 
     res.json(

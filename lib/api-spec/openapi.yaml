@@ -892,9 +892,18 @@ components:
         size:
           type: integer
           minimum: 1
+          maximum: 52428800
+          description: File size in bytes. Max 50 MB.
         contentType:
           type: string
           minLength: 1
+        projectId:
+          type: integer
+          description: Optional project the file belongs to. Used to organize the storage key as uploads/<projectId>/...
+        assetType:
+          type: string
+          enum: [model, image, audio, texture, other]
+          description: Optional asset class. Used as a sub-folder in the storage key.
 
     UploadUrlResponse:
       type: object
