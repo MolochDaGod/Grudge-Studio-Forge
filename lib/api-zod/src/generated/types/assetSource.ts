@@ -10,6 +10,7 @@ export type AssetSource = (typeof AssetSource)[keyof typeof AssetSource];
 
 export const AssetSource = {
   grudge: "grudge",
+  polyhaven: "polyhaven",
   upload: "upload",
   url: "url",
 } as const;

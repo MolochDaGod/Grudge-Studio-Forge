@@ -716,7 +716,7 @@ export const ListAssetsResponseItem = zod.object({
   name: zod.string(),
   url: zod.string(),
   type: zod.enum(["model", "texture", "audio", "image", "other"]),
-  source: zod.enum(["grudge", "upload", "url"]),
+  source: zod.enum(["grudge", "polyhaven", "upload", "url"]),
   createdAt: zod.string(),
 });
 export const ListAssetsResponse = zod.array(ListAssetsResponseItem);
@@ -726,7 +726,7 @@ export const CreateAssetBody = zod.object({
   name: zod.string(),
   url: zod.string(),
   type: zod.enum(["model", "texture", "audio", "image", "other"]),
-  source: zod.enum(["grudge", "upload", "url"]),
+  source: zod.enum(["grudge", "polyhaven", "upload", "url"]),
 });
 
 export const DeleteAssetParams = zod.object({

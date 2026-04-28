@@ -6,6 +6,7 @@ import scriptsRouter from "./scripts";
 import assetsRouter from "./assets";
 import prefabsRouter from "./prefabs";
 import grudgeRouter from "./grudge";
+import polyhavenRouter from "./polyhaven";
 import storageRouter from "./storage";
 import aiRouter from "./ai";
 
@@ -18,6 +19,7 @@ router.use(scriptsRouter);
 router.use(assetsRouter);
 router.use(prefabsRouter);
 router.use(grudgeRouter);
+router.use(polyhavenRouter);
 router.use(storageRouter);
 router.use(aiRouter);
 

@@ -17,8 +17,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library } from "lucide-react";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
+import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
 
 function classifyAsset(name: string, contentType: string): "model" | "image" | "audio" | "texture" | "other" {
   if (/\.(glb|gltf|fbx|obj)$/i.test(name)) return "model";
@@ -475,6 +476,311 @@ function ProjectAssets() {
   );
 }
 
+/**
+ * One Poly Haven asset card. Same visual language as `AssetCard` (grudge) so
+ * the two libraries feel like one unified browser, but the click behaviour is
+ * different per kind:
+ *
+ *   - models  → click spawns it directly into the scene (lazy-resolves the
+ *               GLTF URL via /api/polyhaven/files/:slug, then routes through
+ *               the existing model-entity path).
+ *   - textures + HDRIs → click imports the resolved download URL into the
+ *               project's Asset list (creating an `image` asset). Spawning a
+ *               texture as a scene object doesn't make sense; the user wires
+ *               it up later via the inspector.
+ *
+ * The thumbnail is served straight from Poly Haven's CDN — no proxy needed,
+ * their CDN is CORS-enabled.
+ */
+function PolyHavenCard({
+  asset,
+  busy,
+  onPrimary,
+  primaryLabel,
+  EmptyIcon,
+}: {
+  asset: PolyHavenAsset;
+  busy: boolean;
+  onPrimary: () => void;
+  primaryLabel: string;
+  EmptyIcon: typeof Box;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const tooltip = [
+    asset.name,
+    asset.categories.slice(0, 4).join(" · "),
+    `${(asset.download_count / 1000).toFixed(0)}k downloads`,
+    primaryLabel,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    <div
+      role="button"
+      tabIndex={busy ? -1 : 0}
+      onClick={busy ? undefined : onPrimary}
+      onKeyDown={(e) => {
+        if (busy) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPrimary();
+        }
+      }}
+      title={tooltip}
+      aria-label={`${primaryLabel} ${asset.name}`}
+      aria-busy={busy}
+      className="group relative bg-card border border-card-border rounded-md overflow-hidden hover-elevate focus:outline-none focus:ring-1 focus:ring-accent text-left cursor-pointer aria-busy:opacity-60 aria-busy:cursor-wait"
+      data-testid={`polyhaven-card-${asset.slug}`}
+    >
+      <div className="aspect-square flex items-center justify-center relative bg-muted/40">
+        {imgFailed ? (
+          <EmptyIcon className="size-7 text-muted-foreground" />
+        ) : (
+          <img
+            src={asset.thumbnail_url}
+            alt={asset.name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="size-full object-cover"
+            draggable={false}
+          />
+        )}
+        {busy && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/40">
+            <Loader2 className="size-4 animate-spin text-accent" />
+          </div>
+        )}
+      </div>
+      <div className="px-1.5 py-1 border-t border-card-border bg-card">
+        <div className="text-[11px] font-medium truncate leading-tight">
+          {asset.name}
+        </div>
+        <div className="text-[9px] text-muted-foreground/80 truncate leading-tight">
+          {asset.categories[0] ?? asset.kind}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Grid of Poly Haven assets for one kind (textures / hdris / models).
+ *
+ * The whole catalog is fetched once (it's small JSON — a few hundred KB
+ * uncompressed — and the api-server caches it for 30 minutes). Filtering and
+ * paging are client-side: `query` filters by name/category/tag, and we cap
+ * the rendered list at `PAGE` items with a "Show more" button so the initial
+ * paint stays fast (a 700-item grid with `<img>`s would chew through the
+ * thumbnail bandwidth budget on first open).
+ */
+function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
+  const PAGE = 60;
+  const projectId = useEditor((s) => s.projectId);
+  const pushLog = useEditor((s) => s.pushLog);
+  const addEntity = useEditor((s) => s.addEntity);
+  const updateEntity = useEditor((s) => s.updateEntity);
+  const qc = useQueryClient();
+  const createAsset = useCreateAsset();
+  const { data, isLoading, error } = usePolyHaven(kind);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [busySlug, setBusySlug] = useState<string | null>(null);
+
+  const items = data?.items ?? [];
+  const q = query.trim().toLowerCase();
+  // Score each candidate so that direct name matches outrank items whose only
+  // connection to the query is a shared tag (Poly Haven's tag taxonomy is
+  // intentionally broad — e.g. all seating shares the "chair" tag — so a raw
+  // includes() filter would surface sofas above actual chairs). Negative score
+  // means "no match" → filtered out.
+  const scored = items
+    .map((a) => {
+      if (!q) return { a, score: 0 };
+      const name = a.name.toLowerCase();
+      const slug = a.slug.toLowerCase();
+      if (name === q || slug === q) return { a, score: 100 };
+      if (name.startsWith(q) || slug.startsWith(q)) return { a, score: 80 };
+      if (name.includes(q) || slug.includes(q)) return { a, score: 60 };
+      if (a.categories.some((c) => c.toLowerCase().includes(q))) return { a, score: 40 };
+      if (a.tags.some((t) => t.toLowerCase().includes(q))) return { a, score: 20 };
+      return { a, score: -1 };
+    })
+    .filter((x) => x.score >= 0);
+  // Stable secondary sort by download_count keeps the catalogue's "popular
+  // first" ordering inside each score bucket.
+  if (q) scored.sort((x, y) => y.score - x.score);
+  const filtered = scored.map((x) => x.a);
+  const visible = filtered.slice(0, page * PAGE);
+
+  const requireProject = (): boolean => {
+    if (projectId) return true;
+    pushLog("warn", "Open a project first to use library assets.");
+    window.alert("Open or create a project first — assets are saved per project.");
+    return false;
+  };
+
+  const handleModel = async (asset: PolyHavenAsset) => {
+    if (!requireProject() || !projectId) return;
+    setBusySlug(asset.slug);
+    try {
+      const files = await fetchPolyHavenFiles(asset.slug);
+      const url = files.model?.url;
+      if (!url) {
+        pushLog("warn", `No GLTF available for "${asset.name}".`);
+        return;
+      }
+      await createAsset.mutateAsync({
+        data: {
+          projectId,
+          name: asset.name,
+          url,
+          type: "model",
+          source: "polyhaven",
+        },
+      });
+      qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
+      qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+      const e = addEntity("model", asset.name);
+      updateEntity(e.id, (d) => {
+        d.model = { url };
+        d.transform = { ...d.transform, position: [0, 0, 0] };
+      });
+      pushLog("info", `Spawned Poly Haven model "${asset.name}" (${files.model?.resolution}).`);
+    } catch (err) {
+      pushLog("error", `Failed to load "${asset.name}": ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  const handleImage = async (asset: PolyHavenAsset, kindLabel: string) => {
+    if (!requireProject() || !projectId) return;
+    setBusySlug(asset.slug);
+    try {
+      const files = await fetchPolyHavenFiles(asset.slug);
+      const url = kind === "hdris" ? files.hdri?.url : files.texture?.diffuse?.url;
+      if (!url) {
+        pushLog("warn", `No downloadable file for "${asset.name}".`);
+        return;
+      }
+      await createAsset.mutateAsync({
+        data: {
+          projectId,
+          name: kind === "hdris" ? `${asset.name} (HDRI)` : `${asset.name} (diffuse)`,
+          url,
+          type: kind === "hdris" ? "image" : "texture",
+          source: "polyhaven",
+        },
+      });
+      qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
+      qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+      pushLog("info", `Imported ${kindLabel} "${asset.name}" — assign it from the inspector.`);
+    } catch (err) {
+      pushLog("error", `Failed to import "${asset.name}": ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusySlug(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Fetching from Poly Haven…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-sm text-destructive">
+        Couldn't reach the Poly Haven library: {error instanceof Error ? error.message : String(error)}
+      </div>
+    );
+  }
+
+  const EmptyIcon = kind === "hdris" ? Sun : kind === "models" ? Box : ImageIcon;
+  const primaryLabel = kind === "models" ? "Spawn" : "Import";
+  const placeholderHint =
+    kind === "models"
+      ? "Search models (chair, sword, plant)…"
+      : kind === "hdris"
+        ? "Search HDRIs (sunset, studio, indoor)…"
+        : "Search textures (brick, wood, metal)…";
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-2 py-2 border-b border-border flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+            placeholder={placeholderHint}
+            className="h-7 pl-7 text-xs"
+            data-testid={`input-polyhaven-search-${kind}`}
+          />
+        </div>
+        <span className="text-[10px] text-muted-foreground font-mono">
+          {visible.length}/{filtered.length}
+        </span>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+          {visible.map((asset) => (
+            <PolyHavenCard
+              key={asset.slug}
+              asset={asset}
+              busy={busySlug === asset.slug}
+              onPrimary={() =>
+                kind === "models"
+                  ? handleModel(asset)
+                  : handleImage(asset, kind === "hdris" ? "HDRI" : "texture")
+              }
+              primaryLabel={primaryLabel}
+              EmptyIcon={EmptyIcon}
+            />
+          ))}
+          {filtered.length === 0 && (
+            <p className="col-span-full text-xs text-muted-foreground text-center py-8">
+              No matches.
+            </p>
+          )}
+        </div>
+        {visible.length < filtered.length && (
+          <div className="flex justify-center p-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => setPage((p) => p + 1)}
+              data-testid={`button-polyhaven-more-${kind}`}
+            >
+              Show {Math.min(PAGE, filtered.length - visible.length)} more
+            </Button>
+          </div>
+        )}
+        <p className="text-[10px] text-muted-foreground/70 text-center pb-3 px-3">
+          Free CC0 assets from{" "}
+          <a
+            href="https://polyhaven.com"
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-foreground"
+          >
+            polyhaven.com
+          </a>{" "}
+          — usable in any project, commercial or otherwise.
+        </p>
+      </ScrollArea>
+    </div>
+  );
+}
+
 export function AssetBrowser() {
   const weapons = useGetGrudgeWeapons();
   const items = useGetGrudgeItems();
@@ -483,7 +789,7 @@ export function AssetBrowser() {
 
   return (
     <Tabs defaultValue="weapons" className="flex flex-col h-full">
-      <TabsList className="rounded-none w-fit mx-2 mt-1.5">
+      <TabsList className="rounded-none w-fit mx-2 mt-1.5 flex-wrap h-auto">
         <TabsTrigger value="weapons" className="text-xs gap-1.5">
           <Sword className="size-3" /> Weapons
         </TabsTrigger>
@@ -496,8 +802,17 @@ export function AssetBrowser() {
         <TabsTrigger value="quests" className="text-xs gap-1.5">
           <Scroll className="size-3" /> Quests
         </TabsTrigger>
-        <TabsTrigger value="project" className="text-xs">
-          Project Assets
+        <TabsTrigger value="ph-models" className="text-xs gap-1.5" data-testid="tab-polyhaven-models">
+          <Box className="size-3" /> Models
+        </TabsTrigger>
+        <TabsTrigger value="ph-textures" className="text-xs gap-1.5" data-testid="tab-polyhaven-textures">
+          <ImageIcon className="size-3" /> Textures
+        </TabsTrigger>
+        <TabsTrigger value="ph-hdris" className="text-xs gap-1.5" data-testid="tab-polyhaven-hdris">
+          <Sun className="size-3" /> HDRIs
+        </TabsTrigger>
+        <TabsTrigger value="project" className="text-xs gap-1.5">
+          <Library className="size-3" /> Project Assets
         </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
@@ -512,6 +827,15 @@ export function AssetBrowser() {
         </TabsContent>
         <TabsContent value="quests" className="m-0 h-full">
           <GrudgeGrid loading={quests.isLoading} items={quests.data?.items ?? []} type="quest" EmptyIcon={Scroll} />
+        </TabsContent>
+        <TabsContent value="ph-models" className="m-0 h-full">
+          <PolyHavenGrid kind="models" />
+        </TabsContent>
+        <TabsContent value="ph-textures" className="m-0 h-full">
+          <PolyHavenGrid kind="textures" />
+        </TabsContent>
+        <TabsContent value="ph-hdris" className="m-0 h-full">
+          <PolyHavenGrid kind="hdris" />
         </TabsContent>
         <TabsContent value="project" className="m-0 h-full">
           <ProjectAssets />

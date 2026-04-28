@@ -801,7 +801,7 @@ components:
           enum: [model, texture, audio, image, other]
         source:
           type: string
-          enum: [grudge, upload, url]
+          enum: [grudge, polyhaven, upload, url]
         createdAt:
           type: string
 
@@ -820,7 +820,7 @@ components:
           enum: [model, texture, audio, image, other]
         source:
           type: string
-          enum: [grudge, upload, url]
+          enum: [grudge, polyhaven, upload, url]
 
     Prefab:
       type: object

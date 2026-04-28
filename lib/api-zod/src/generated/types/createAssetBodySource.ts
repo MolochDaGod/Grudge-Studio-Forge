@@ -11,6 +11,7 @@ export type CreateAssetBodySource =
 
 export const CreateAssetBodySource = {
   grudge: "grudge",
+  polyhaven: "polyhaven",
   upload: "upload",
   url: "url",
 } as const;

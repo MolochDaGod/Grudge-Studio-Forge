@@ -40,6 +40,7 @@ Brand utility classes (in `src/index.css`):
 | Backend | Express + Drizzle ORM + Postgres |
 | Type-safe API | OpenAPI 3.1 → orval → React Query hooks (`@workspace/api-client-react`) + zod validators (`@workspace/api-zod`) |
 | External data | Grudge Studio object store proxy (5 min in-memory cache) |
+| Free CC0 library | Poly Haven proxy (`/api/polyhaven/{textures,hdris,models}` + `/files/:slug`, 30 min in-memory cache) — exposes ~440 GLTF models, ~756 PBR textures, ~965 HDRIs as Models / Textures / HDRIs tabs in the Asset Browser. The texture file resolver tries multiple key candidates (`Diffuse`, `col1`, `col_01`, `coll1`, `diff_png`, …) so single-variant patterns (e.g. `book_pattern`, `leather_red_02`) still resolve. Asset `source` enum extended to include `polyhaven`. |
 | Asset uploads | Replit App Storage (GCS-backed) via presigned PUT URLs — `@workspace/object-storage-web` `useUpload` hook on the client, `/api/storage/*` routes on the server |
 
 ## Layout
