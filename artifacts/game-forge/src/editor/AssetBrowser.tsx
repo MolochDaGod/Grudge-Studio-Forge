@@ -28,6 +28,151 @@ function classifyAsset(name: string, contentType: string): "model" | "image" | "
   return "other";
 }
 
+/**
+ * Single asset card. Compact, click-to-spawn, with three layers of visual
+ * fallback so every card always shows *something* meaningful:
+ *
+ *   1. `imageUrl`  — real PNG sprite from Grudge (loaded lazily). If the
+ *                    request 404s or errors we silently swap to layer 2.
+ *   2. `emoji`     — the unicode glyph the catalog ships for the item
+ *                    (e.g. "⚔️" for swords, "🧪" for potions). This is the
+ *                    common case — the Grudge feed has no PNG sprites today.
+ *   3. `EmptyIcon` — the tab's category Lucide icon, tinted by tier. This
+ *                    catches items with neither image nor emoji.
+ *
+ * Clicking the card spawns; the small "save" overlay (top-right) imports the
+ * asset into the project's asset list without spawning. We keep the import
+ * action visible-on-hover so the dense grid stays readable, but the spawn
+ * action is the entire card so the cards feel like prefab tiles.
+ */
+function AssetCard({
+  it,
+  idx,
+  type,
+  EmptyIcon,
+  onSpawn,
+  onImport,
+}: {
+  it: GrudgeItem;
+  idx: number;
+  type: "weapon" | "item" | "enemy" | "quest";
+  EmptyIcon: typeof Sword;
+  onSpawn: (it: GrudgeItem) => void;
+  onImport: (it: GrudgeItem) => void;
+}) {
+  const name = String(it.name ?? it.key ?? it.id ?? `${type} ${idx}`);
+  const tier = typeof it.tier === "number" ? it.tier : null;
+  const tierColor = tier ? getTierColor(tier) : null;
+  const desc = typeof it.description === "string" ? it.description : "";
+  const emoji = typeof it.emoji === "string" ? it.emoji : "";
+  const imageUrl = typeof it.imageUrl === "string" ? it.imageUrl : "";
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = !!imageUrl && !imgFailed;
+
+  const tooltip = [name, desc, tier ? `Tier ${tier} · ${tierColor?.name}` : ""]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    // Card root is a div+role="button" instead of a real <button> so we can
+    // safely nest a real <button> for the import overlay. Nesting interactive
+    // elements inside a <button> is invalid HTML and breaks keyboard / screen
+    // reader behavior.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSpawn(it)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSpawn(it);
+        }
+      }}
+      title={tooltip}
+      aria-label={`Spawn ${name}`}
+      className="group relative bg-card border border-card-border rounded-md overflow-hidden hover-elevate focus:outline-none focus:ring-1 focus:ring-accent text-left cursor-pointer"
+      data-testid={`grudge-item-${idx}`}
+      style={
+        tierColor
+          ? { boxShadow: `inset 0 0 0 1px ${tierColor.hex}33` }
+          : undefined
+      }
+    >
+      <div
+        className="aspect-square flex items-center justify-center relative"
+        style={{
+          background: tierColor
+            ? `radial-gradient(circle at 50% 40%, ${tierColor.hex}33, ${tierColor.hex}0a 60%, transparent)`
+            : "hsl(var(--muted) / 0.4)",
+        }}
+      >
+        {showImage ? (
+          <img
+            src={imageUrl}
+            alt={name}
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="size-full object-contain p-1.5"
+            draggable={false}
+          />
+        ) : emoji ? (
+          <span
+            className="select-none leading-none"
+            style={{ fontSize: "clamp(20px, 3.2vw, 36px)" }}
+            aria-hidden
+          >
+            {emoji}
+          </span>
+        ) : (
+          <EmptyIcon
+            className="size-7"
+            style={{ color: tierColor?.hex ?? "hsl(var(--muted-foreground))" }}
+          />
+        )}
+        {tier && (
+          <span
+            className="absolute top-0.5 left-0.5 text-[9px] font-mono leading-none px-1 py-0.5 rounded-sm bg-background/80"
+            style={{ color: tierColor?.hex }}
+          >
+            T{tier}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onImport(it);
+          }}
+          onKeyDown={(e) => {
+            // Stop the keyboard event from bubbling to the card so Enter/Space
+            // on the import button doesn't *also* trigger spawn.
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+            }
+          }}
+          title="Save to project assets"
+          aria-label={`Save ${name} to project assets`}
+          className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded-sm bg-background/80 hover:bg-background text-muted-foreground hover:text-foreground"
+          data-testid={`button-import-${idx}`}
+        >
+          <ExternalLink className="size-3" />
+        </button>
+      </div>
+      <div className="px-1.5 py-1 border-t border-card-border bg-card">
+        <div className="text-[11px] font-medium truncate leading-tight">
+          {name}
+        </div>
+        {desc && (
+          <div className="text-[9px] text-muted-foreground/80 truncate leading-tight">
+            {desc}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GrudgeGrid({
   loading,
   items,
@@ -59,13 +204,13 @@ function GrudgeGrid({
       return;
     }
     const name = String(it.name ?? it.key ?? it.id ?? `Grudge ${type}`);
-    const url = String(it.model ?? it.icon ?? "");
+    const url = String(it.model ?? it.imageUrl ?? it.icon ?? "");
     await createAsset.mutateAsync({
       data: {
         projectId,
         name,
         url,
-        type: url.match(/\.(glb|gltf)$/i) ? "model" : "image",
+        type: /\.(glb|gltf)$/i.test(url) ? "model" : "image",
         source: "grudge",
       },
     });
@@ -86,7 +231,6 @@ function GrudgeGrid({
       const e = addEntity("model", name);
       updateEntity(e.id, (d) => {
         d.model = { url };
-        // Lift slightly above origin so it isn't buried in the ground plane.
         d.transform = { ...d.transform, position: [0, 1, 0] };
       });
       pushLog("info", `Spawned model "${name}" at (0, 1, 0).`);
@@ -134,66 +278,18 @@ function GrudgeGrid({
         <span className="text-[10px] text-muted-foreground font-mono">{filtered.length}/{items.length}</span>
       </div>
       <ScrollArea className="flex-1">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 p-2">
-          {filtered.map((it, idx) => {
-            const name = String(it.name ?? it.key ?? it.id ?? `${type} ${idx}`);
-            const tier = typeof it.tier === "number" ? it.tier : null;
-            const tierColor = tier ? getTierColor(tier) : null;
-            const desc = String(it.description ?? it.category ?? it.type ?? "");
-            return (
-              <div
-                key={`${name}-${idx}`}
-                className="group relative bg-card border border-card-border rounded-md p-2 hover-elevate"
-                data-testid={`grudge-item-${idx}`}
-              >
-                <div
-                  className="aspect-square rounded mb-2 flex items-center justify-center text-2xl border"
-                  style={{
-                    backgroundColor: tierColor ? `${tierColor.hex}22` : "hsl(var(--muted))",
-                    borderColor: tierColor ? `${tierColor.hex}66` : "hsl(var(--border))",
-                  }}
-                >
-                  <EmptyIcon className="size-8" style={{ color: tierColor?.hex ?? "hsl(var(--muted-foreground))" }} />
-                </div>
-                <div className="text-xs font-medium truncate" title={name}>
-                  {name}
-                </div>
-                {desc && (
-                  <div className="text-[10px] text-muted-foreground truncate" title={desc}>
-                    {desc}
-                  </div>
-                )}
-                {tier && (
-                  <div
-                    className="text-[10px] font-mono mt-1"
-                    style={{ color: tierColor?.hex }}
-                  >
-                    Tier {tier} · {tierColor?.name}
-                  </div>
-                )}
-                <div className="absolute inset-x-1 bottom-1 flex gap-1 opacity-0 group-hover:opacity-100">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="flex-1 h-6 text-[10px]"
-                    onClick={() => spawn(it)}
-                    data-testid={`button-spawn-${idx}`}
-                  >
-                    <Plus className="size-3 mr-1" /> Spawn
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-[10px] px-2"
-                    onClick={() => importAsset(it)}
-                    title="Save to project assets"
-                  >
-                    <ExternalLink className="size-3" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+          {filtered.map((it, idx) => (
+            <AssetCard
+              key={`${String(it.id ?? it.key ?? it.name ?? idx)}-${idx}`}
+              it={it}
+              idx={idx}
+              type={type}
+              EmptyIcon={EmptyIcon}
+              onSpawn={spawn}
+              onImport={importAsset}
+            />
+          ))}
           {filtered.length === 0 && (
             <p className="col-span-full text-xs text-muted-foreground text-center py-8">No matches.</p>
           )}

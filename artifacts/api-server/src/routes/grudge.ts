@@ -27,10 +27,14 @@ async function fetchGrudge(path: string): Promise<unknown> {
  */
 function toCatalog(raw: unknown, source: string) {
   const out: Record<string, unknown>[] = [];
-  const walk = (node: unknown, parentCategory: string | null) => {
+  const walk = (
+    node: unknown,
+    parentCategory: string | null,
+    parentIconBase: string | null,
+  ) => {
     if (!node) return;
     if (Array.isArray(node)) {
-      for (const v of node) walk(v, parentCategory);
+      for (const v of node) walk(v, parentCategory, parentIconBase);
       return;
     }
     if (typeof node !== "object") return;
@@ -40,15 +44,34 @@ function toCatalog(raw: unknown, source: string) {
       // not just a wrapper around `items`
       !(Array.isArray(obj.items) && Object.keys(obj).length <= 4);
     if (looksLikeItem) {
-      out.push({ ...obj, category: obj.category ?? parentCategory ?? undefined });
+      // Promote a few canonical fields the editor UI relies on so it doesn't
+      // have to know the Grudge schema's quirks:
+      //   `imageUrl`  — absolute URL of the sprite (resolved from spritePath)
+      //   `categoryIcon` — the category's iconBase (e.g. "Sword") used as a
+      //                    fallback when the sprite 404s and there's no emoji
+      //   `description` — folded in from `lore` so the card has something to
+      //                    show under the name
+      const spritePath = typeof obj.spritePath === "string" ? obj.spritePath : null;
+      const lore = typeof obj.lore === "string" ? obj.lore : null;
+      out.push({
+        ...obj,
+        category: obj.category ?? parentCategory ?? undefined,
+        categoryIcon: obj.categoryIcon ?? parentIconBase ?? undefined,
+        imageUrl: spritePath ? `${GRUDGE_BASE}${spritePath}` : (obj.imageUrl ?? undefined),
+        description: obj.description ?? lore ?? undefined,
+      });
     }
+    // Track iconBase as we descend; categories define it on their wrapper
+    // and it should propagate down to leaf items.
+    const childIconBase =
+      typeof obj.iconBase === "string" ? obj.iconBase : parentIconBase;
     for (const [k, v] of Object.entries(obj)) {
       if (k === "version" || k === "updated" || k === "tiers" || k === "iconBase" || k === "iconMax" || k === "total") continue;
       const nextParent = looksLikeItem ? parentCategory : (typeof v === "object" && v !== null && !Array.isArray(v) ? k : parentCategory);
-      walk(v, nextParent);
+      walk(v, nextParent, childIconBase);
     }
   };
-  walk(raw, null);
+  walk(raw, null, null);
   // Dedupe by id+name
   const seen = new Set<string>();
   const items = out.filter((it) => {

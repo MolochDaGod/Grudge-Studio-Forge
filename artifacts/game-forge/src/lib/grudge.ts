@@ -33,6 +33,16 @@ export type GrudgeItem = Record<string, unknown> & {
   category?: string;
   icon?: string;
   model?: string;
+  /** Emoji surfaced by the Grudge catalog (e.g. "⚔️"). Used as the primary
+   *  visual for an asset card when no real image exists. */
+  emoji?: string;
+  /** Absolute URL of the sprite image, resolved by the api-server from
+   *  `spritePath`. May 404 — the UI falls back to emoji or category icon. */
+  imageUrl?: string;
+  /** The Grudge category's iconBase (e.g. "Sword", "Axe"). Used as a hint
+   *  for picking a Lucide icon when no emoji or sprite is available. */
+  categoryIcon?: string;
+  /** Short flavor text — the api-server folds `lore` into this field. */
   description?: string;
 };
 
