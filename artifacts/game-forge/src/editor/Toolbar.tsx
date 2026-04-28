@@ -24,6 +24,7 @@ import {
   Upload,
   MoreVertical,
   FileStack,
+  Sparkles as AISparkles,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -77,7 +78,15 @@ const PRIMITIVES: { type: EntityType; label: string; Icon: typeof Box }[] = [
   { type: "light", label: "Light", Icon: Lightbulb },
 ];
 
-export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
+export function Toolbar({
+  onOpenProjects,
+  onToggleAIWorker,
+  aiWorkerOpen,
+}: {
+  onOpenProjects: () => void;
+  onToggleAIWorker: () => void;
+  aiWorkerOpen: boolean;
+}) {
   const projectId = useEditor((s) => s.projectId);
   const sceneId = useEditor((s) => s.sceneId);
   const sceneName = useEditor((s) => s.sceneName);
@@ -384,6 +393,27 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
       </Tooltip>
 
       <div className="flex-1" />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={aiWorkerOpen ? "default" : "ghost"}
+            size="sm"
+            onClick={onToggleAIWorker}
+            className={aiWorkerOpen ? "" : "text-primary hover:text-primary"}
+            data-testid="button-toggle-ai-worker"
+          >
+            <AISparkles className="size-4 mr-1.5" />
+            AI Worker
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          Open the AI assistant — it can build scenes, write scripts, generate
+          maps, and more.
+        </TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" className="h-6 mx-1" />
 
       <Button
         variant="ghost"

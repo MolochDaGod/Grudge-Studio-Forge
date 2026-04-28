@@ -15,6 +15,7 @@ import { Viewport } from "@/editor/Viewport";
 import { BottomPanel } from "@/editor/BottomPanel";
 import { ProjectPicker } from "@/editor/ProjectPicker";
 import { AssetDropZone } from "@/editor/AssetDropZone";
+import { AIWorkerPanel } from "@/editor/AIWorkerPanel";
 import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles } from "lucide-react";
@@ -22,6 +23,7 @@ import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
 
 function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const projectId = useEditor((s) => s.projectId);
   const setTransformMode = useEditor((s) => s.setTransformMode);
   const pushLog = useEditor((s) => s.pushLog);
@@ -153,7 +155,11 @@ function EditorShell() {
   return (
     <AssetDropZone>
     <div className="h-screen w-screen flex flex-col overflow-hidden text-foreground">
-      <Toolbar onOpenProjects={() => setPickerOpen(true)} />
+      <Toolbar
+        onOpenProjects={() => setPickerOpen(true)}
+        onToggleAIWorker={() => setAiOpen((v) => !v)}
+        aiWorkerOpen={aiOpen}
+      />
 
       <div className="flex-1 min-h-0">
         <ResizablePanelGroup direction="vertical">
@@ -180,6 +186,8 @@ function EditorShell() {
       </div>
 
       <ProjectPicker open={pickerOpen} onOpenChange={setPickerOpen} />
+
+      <AIWorkerPanel open={aiOpen} onClose={() => setAiOpen(false)} />
 
       {!projectId && !pickerOpen && (
         <button

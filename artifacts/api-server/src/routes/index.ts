@@ -7,6 +7,7 @@ import assetsRouter from "./assets";
 import prefabsRouter from "./prefabs";
 import grudgeRouter from "./grudge";
 import storageRouter from "./storage";
+import aiRouter from "./ai";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(assetsRouter);
 router.use(prefabsRouter);
 router.use(grudgeRouter);
 router.use(storageRouter);
+router.use(aiRouter);
 
 export default router;

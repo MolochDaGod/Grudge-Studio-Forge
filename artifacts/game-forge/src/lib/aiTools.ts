@@ -1,0 +1,715 @@
+/**
+ * AI Worker tools.
+ *
+ * Each tool pairs an Anthropic-compatible JSON-schema definition with a
+ * client-side executor that runs against the editor's Zustand store and
+ * the api-server REST endpoints.
+ *
+ * Why client-side?  The live editor (R3F scene graph, undo stack, selection,
+ * live materials) only exists in the browser. The server is a stateless
+ * proxy to Anthropic. This keeps tool execution synchronous with the UI:
+ * every change shows up in the viewport instantly, and the human can undo
+ * any AI action with Ctrl+Z just like a manual edit.
+ */
+import { useEditor } from "@/store/editor";
+import { BUILTIN_MODELS } from "@/lib/builtinModels";
+import { generateMap, type MapKind } from "@/lib/mapGen";
+import { STARTER_VFX } from "@/lib/starterPrefabs";
+import {
+  addEntityCommand,
+  addEntitiesCommand,
+  type StoreLike,
+} from "@/lib/commands";
+import type { SceneEntity, EntityType, ControllerKind, Vec3 } from "@/scene/types";
+
+/** Tool names that mutate the scene irrecoverably (or change global config /
+ *  spawn arbitrary code). The aiClient asks the user to confirm before
+ *  running any of these so the AI can never wipe / overwrite without sign-off.
+ */
+export const DESTRUCTIVE_TOOLS = new Set<string>([
+  "clear_scene",
+  "delete_entity",
+  "create_script",
+  "set_player",
+  "generate_map",
+]);
+
+/** Build the StoreLike adapter that the command factories need. We rebuild
+ *  it per command so the closures capture a stable getEntities/setEntities
+ *  pair against the live Zustand store. */
+function makeStoreLike(): StoreLike {
+  return {
+    getEntities: () => useEditor.getState().sceneData.entities,
+    setEntities: (next) => useEditor.getState().setEntities(next),
+    selectEntity: (id) => useEditor.getState().selectEntity(id),
+  };
+}
+
+const apiUrl = (path: string) => {
+  const base = import.meta.env.BASE_URL || "/";
+  // api-server lives at the root /api prefix (path-based routing); BASE_URL
+  // is the artifact path. Drop any leading slash to compose cleanly.
+  return `/api/${path.replace(/^\/+/, "")}`;
+};
+
+const newId = () => Math.random().toString(36).slice(2, 10);
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  ok: boolean;
+  data?: unknown;
+  error?: string;
+}
+
+export type ToolExecutor = (input: Record<string, unknown>) => Promise<ToolResult>;
+
+/** ────────────────────────────────────────────────────────────────────
+ *  Helpers for the executors below.
+ *  ──────────────────────────────────────────────────────────────────── */
+
+const asVec3 = (v: unknown, fallback: Vec3 = [0, 0, 0]): Vec3 => {
+  if (Array.isArray(v) && v.length >= 3 && v.every((n) => typeof n === "number")) {
+    return [v[0] as number, v[1] as number, v[2] as number];
+  }
+  return fallback;
+};
+
+/** Build a fresh SceneEntity from loose AI input. Fills in safe defaults
+ *  for transform / material / light / model based on the entity type. */
+function buildEntity(input: {
+  type: EntityType;
+  name?: string;
+  parentId?: string | null;
+  position?: unknown;
+  rotation?: unknown;
+  scale?: unknown;
+  color?: string;
+  emissive?: string;
+  metalness?: number;
+  roughness?: number;
+  light?: {
+    kind?: "point" | "directional" | "spot";
+    color?: string;
+    intensity?: number;
+    distance?: number;
+  };
+  model?: {
+    url?: string;
+    builtin?: string;
+    clip?: string;
+    tint?: string;
+    label?: string;
+  };
+  controllerKind?: ControllerKind;
+  scriptId?: number | null;
+}): SceneEntity {
+  const e: SceneEntity = {
+    id: newId(),
+    name: input.name ?? input.type[0].toUpperCase() + input.type.slice(1),
+    type: input.type,
+    parentId: input.parentId ?? null,
+    transform: {
+      position: asVec3(input.position),
+      rotation: asVec3(input.rotation),
+      scale: asVec3(input.scale, [1, 1, 1]),
+    },
+  };
+
+  if (
+    input.color ||
+    input.emissive ||
+    input.metalness !== undefined ||
+    input.roughness !== undefined
+  ) {
+    e.material = {
+      color: input.color,
+      emissive: input.emissive,
+      metalness: input.metalness,
+      roughness: input.roughness,
+    };
+  }
+
+  if (input.type === "light" && input.light) {
+    e.light = {
+      kind: input.light.kind ?? "point",
+      color: input.light.color ?? "#ffffff",
+      intensity: input.light.intensity ?? 4,
+      distance: input.light.distance ?? 20,
+    };
+  }
+
+  if (input.type === "model") {
+    const url = input.model?.builtin
+      ? `builtin:${input.model.builtin}`
+      : input.model?.url;
+    if (url) {
+      e.model = {
+        url,
+        clip: input.model?.clip,
+        tint: input.model?.tint,
+        label: input.model?.label,
+      };
+    }
+  }
+
+  if (input.controllerKind) e.controllerKind = input.controllerKind;
+  if (input.scriptId != null) e.scriptId = input.scriptId;
+
+  return e;
+}
+
+/** Trim a SceneEntity for AI consumption — full transforms are noisy. */
+function summarizeEntity(e: SceneEntity) {
+  return {
+    id: e.id,
+    name: e.name,
+    type: e.type,
+    parentId: e.parentId,
+    position: e.transform.position,
+    color: e.material?.color,
+    light: e.light?.kind,
+    modelUrl: e.model?.url,
+    modelClip: e.model?.clip,
+    controllerKind: e.controllerKind,
+    scriptId: e.scriptId ?? null,
+  };
+}
+
+/** ────────────────────────────────────────────────────────────────────
+ *  Tool definitions + executors.
+ *  ──────────────────────────────────────────────────────────────────── */
+
+export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
+  // ── Inspection ──────────────────────────────────────────────────────
+  {
+    def: {
+      name: "get_scene_summary",
+      description:
+        "Get a quick summary of the current scene: project id, scene name, entity count by type, environment settings, selection, play-mode state. Call this first when you need orientation.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => {
+      const s = useEditor.getState();
+      const counts: Record<string, number> = {};
+      for (const e of s.sceneData.entities) counts[e.type] = (counts[e.type] ?? 0) + 1;
+      return {
+        ok: true,
+        data: {
+          projectId: s.projectId,
+          sceneId: s.sceneId,
+          sceneName: s.sceneName,
+          isPlaying: s.isPlaying,
+          isDirty: s.isDirty,
+          selectedId: s.selectedId,
+          entityCount: s.sceneData.entities.length,
+          entitiesByType: counts,
+          environment: s.sceneData.environment,
+          availableBuiltinModels: Object.keys(BUILTIN_MODELS),
+        },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "list_entities",
+      description:
+        "List every entity in the current scene (id, name, type, position, parent, controller, script binding). Use this to discover entity ids before update_entity / delete_entity / attach_script.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => ({
+      ok: true,
+      data: useEditor.getState().sceneData.entities.map(summarizeEntity),
+    }),
+  },
+
+  {
+    def: {
+      name: "list_builtin_models",
+      description:
+        "List the names of bundled GLB models the editor can spawn instantly (no upload needed). Returns keys you can pass as model.builtin in add_model_entity.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => ({ ok: true, data: Object.keys(BUILTIN_MODELS) }),
+  },
+
+  // ── Entity CRUD ────────────────────────────────────────────────────
+  {
+    def: {
+      name: "add_entity",
+      description:
+        "Create a primitive entity (box, sphere, cylinder, plane, light, empty) with optional transform, material, and light component.",
+      input_schema: {
+        type: "object",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["box", "sphere", "cylinder", "plane", "light", "empty"],
+          },
+          name: { type: "string" },
+          parentId: { type: ["string", "null"] },
+          position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          rotation: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          scale: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          color: { type: "string", description: "Hex color e.g. #ff0044" },
+          emissive: { type: "string" },
+          metalness: { type: "number" },
+          roughness: { type: "number" },
+          light: {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["point", "directional", "spot"] },
+              color: { type: "string" },
+              intensity: { type: "number" },
+              distance: { type: "number" },
+            },
+          },
+        },
+        required: ["type"],
+      },
+    },
+    exec: async (input) => {
+      const e = buildEntity(input as Parameters<typeof buildEntity>[0]);
+      useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      return { ok: true, data: { id: e.id, name: e.name } };
+    },
+  },
+
+  {
+    def: {
+      name: "add_model_entity",
+      description:
+        "Spawn a GLB model entity. Use either model.builtin (one of list_builtin_models) or model.url (asset URL). Optionally set animation clip, tint color, floating label, and player controller. Returns the new entity id.",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          parentId: { type: ["string", "null"] },
+          position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          rotation: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          scale: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          model: {
+            type: "object",
+            properties: {
+              builtin: {
+                type: "string",
+                description: "Built-in key (e.g. 'blake', 'character', 'vfx-leaves').",
+              },
+              url: { type: "string", description: "Direct GLB url (alternative to builtin)." },
+              clip: { type: "string", description: "Animation clip name to play." },
+              tint: { type: "string", description: "Hex color tint, e.g. #ff0044." },
+              label: { type: "string", description: "Floating name label above the model." },
+            },
+          },
+          controllerKind: {
+            type: "string",
+            enum: ["none", "thirdPerson", "firstPerson"],
+          },
+        },
+        required: ["model"],
+      },
+    },
+    exec: async (input) => {
+      const e = buildEntity({
+        ...(input as Parameters<typeof buildEntity>[0]),
+        type: "model",
+      });
+      if (!e.model?.url) {
+        return {
+          ok: false,
+          error: "Need either model.builtin or model.url. Call list_builtin_models for valid keys.",
+        };
+      }
+      useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      return { ok: true, data: { id: e.id, name: e.name, modelUrl: e.model.url } };
+    },
+  },
+
+  {
+    def: {
+      name: "update_entity",
+      description:
+        "Patch fields on an existing entity. Only the fields you supply are changed (others preserved). Use list_entities to find ids.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          name: { type: "string" },
+          position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          rotation: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          scale: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          color: { type: "string" },
+          emissive: { type: "string" },
+          light: {
+            type: "object",
+            properties: {
+              color: { type: "string" },
+              intensity: { type: "number" },
+              distance: { type: "number" },
+              kind: { type: "string", enum: ["point", "directional", "spot"] },
+            },
+          },
+          model: {
+            type: "object",
+            properties: {
+              clip: { type: "string" },
+              tint: { type: "string" },
+              label: { type: "string" },
+            },
+          },
+          controllerKind: {
+            type: "string",
+            enum: ["none", "thirdPerson", "firstPerson"],
+          },
+        },
+        required: ["id"],
+      },
+    },
+    exec: async (input) => {
+      const id = input.id as string;
+      const s = useEditor.getState();
+      const ent = s.sceneData.entities.find((e) => e.id === id);
+      if (!ent) return { ok: false, error: `No entity with id "${id}"` };
+      s.updateEntity(id, (e) => {
+        if (typeof input.name === "string") e.name = input.name;
+        if (Array.isArray(input.position)) e.transform.position = asVec3(input.position);
+        if (Array.isArray(input.rotation)) e.transform.rotation = asVec3(input.rotation);
+        if (Array.isArray(input.scale)) e.transform.scale = asVec3(input.scale);
+        if (input.color || input.emissive) {
+          e.material = {
+            ...(e.material ?? {}),
+            ...(input.color ? { color: input.color as string } : {}),
+            ...(input.emissive ? { emissive: input.emissive as string } : {}),
+          };
+        }
+        const li = input.light as Record<string, unknown> | undefined;
+        if (li && e.light) {
+          e.light = { ...e.light, ...li };
+        }
+        const mi = input.model as Record<string, unknown> | undefined;
+        if (mi && e.model) {
+          e.model = { ...e.model, ...mi };
+        }
+        if (input.controllerKind) {
+          e.controllerKind = input.controllerKind as ControllerKind;
+        }
+      });
+      return { ok: true, data: { id } };
+    },
+  },
+
+  {
+    def: {
+      name: "delete_entity",
+      description:
+        "Delete an entity (and any children) from the scene. Returns the count removed.",
+      input_schema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+    exec: async (input) => {
+      const id = input.id as string;
+      const s = useEditor.getState();
+      const before = s.sceneData.entities.length;
+      const exists = s.sceneData.entities.some((e) => e.id === id);
+      if (!exists) return { ok: false, error: `No entity with id "${id}"` };
+      s.cmdRemoveEntity(id);
+      const after = useEditor.getState().sceneData.entities.length;
+      return { ok: true, data: { removed: before - after } };
+    },
+  },
+
+  // ── Environment / scene-wide ───────────────────────────────────────
+  {
+    def: {
+      name: "set_environment",
+      description:
+        "Update environment settings (sky color, ground color, ambient/sun lighting, gravity, fog, active camera mode).",
+      input_schema: {
+        type: "object",
+        properties: {
+          skyColor: { type: "string" },
+          groundColor: { type: "string" },
+          ambientColor: { type: "string" },
+          ambientIntensity: { type: "number" },
+          sunColor: { type: "string" },
+          sunIntensity: { type: "number" },
+          gravity: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+          cameraMode: {
+            type: "string",
+            enum: ["editor", "rts", "thirdPerson", "firstPerson"],
+          },
+        },
+      },
+    },
+    exec: async (input) => {
+      // setEnvironment merges into existing env; cast through unknown because
+      // the AI's loose JSON schema can't perfectly mirror SceneEnvironment.
+      useEditor.getState().setEnvironment(input as Parameters<ReturnType<typeof useEditor.getState>["setEnvironment"]>[0]);
+      return { ok: true, data: useEditor.getState().sceneData.environment };
+    },
+  },
+
+  {
+    def: {
+      name: "clear_scene",
+      description:
+        "Wipe ALL entities from the current scene (environment is preserved). Destructive — only call when the user has clearly asked to clear / reset / start over.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => {
+      const s = useEditor.getState();
+      const removed = s.sceneData.entities.length;
+      s.setSceneData({ entities: [], environment: s.sceneData.environment });
+      return { ok: true, data: { removed } };
+    },
+  },
+
+  // ── Procedural map generation ──────────────────────────────────────
+  {
+    def: {
+      name: "generate_map",
+      description:
+        "Procedurally generate a layout (cityGrid / openArena / dungeonRooms / maze) and add the resulting entities to the scene. Optional size, density, and rng seed.",
+      input_schema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["cityGrid", "openArena", "dungeonRooms", "maze"],
+          },
+          size: { type: "number", description: "Grid extent in meters (default 40)." },
+          density: { type: "number", description: "0..1 density of obstacles (default 0.5)." },
+          seed: { type: "number" },
+        },
+        required: ["kind"],
+      },
+    },
+    exec: async (input) => {
+      const kind = input.kind as MapKind;
+      const entities = generateMap({
+        kind,
+        size: typeof input.size === "number" ? input.size : 40,
+        density: typeof input.density === "number" ? input.density : 0.5,
+        seed: typeof input.seed === "number" ? input.seed : Date.now() & 0xffff,
+      });
+      const s = useEditor.getState();
+      for (const e of entities) s.addEntityRaw(e);
+      return { ok: true, data: { added: entities.length, kind } };
+    },
+  },
+
+  {
+    def: {
+      name: "spawn_vfx_prefab",
+      description:
+        "Add one of the built-in VFX prefabs (animated GLB) directly into the scene at the chosen position. Use list_vfx_prefabs to see options.",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Exact prefab name from list_vfx_prefabs.",
+          },
+          position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+        },
+        required: ["name"],
+      },
+    },
+    exec: async (input) => {
+      const def = STARTER_VFX.find((d) => d.name === input.name);
+      if (!def) return { ok: false, error: `Unknown VFX prefab "${input.name}"` };
+      const entities = def.entities();
+      if (Array.isArray(input.position) && entities[0]) {
+        entities[0].transform.position = asVec3(input.position);
+      }
+      const s = useEditor.getState();
+      const root = s.spawnPrefabEntities(entities);
+      return { ok: true, data: { rootId: root?.id ?? null, count: entities.length } };
+    },
+  },
+
+  {
+    def: {
+      name: "list_vfx_prefabs",
+      description: "List the built-in VFX prefab names available to spawn_vfx_prefab.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => ({
+      ok: true,
+      data: STARTER_VFX.map((d) => ({ name: d.name, description: d.description })),
+    }),
+  },
+
+  // ── Scripts (gameplay logic) ───────────────────────────────────────
+  {
+    def: {
+      name: "create_script",
+      description:
+        "Create a new gameplay script in the current project. Provide JS source that exports `start(entity, ctx)` and/or `update(entity, ctx)`. Available context: time.delta, time.elapsed, input.keys, scene.findByName(name). Returns the new script id (use attach_script to bind it).",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          code: { type: "string", description: "JavaScript module source." },
+          language: {
+            type: "string",
+            enum: ["js", "cs"],
+            description: "Default 'js'.",
+          },
+        },
+        required: ["name", "code"],
+      },
+    },
+    exec: async (input) => {
+      const projectId = useEditor.getState().projectId;
+      if (!projectId) return { ok: false, error: "No project open." };
+      const res = await fetch(apiUrl("scripts"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          name: input.name,
+          language: input.language ?? "js",
+          code: input.code,
+        }),
+      });
+      if (!res.ok) return { ok: false, error: `Script create failed: ${res.status}` };
+      const script = (await res.json()) as { id: number; name: string };
+      return { ok: true, data: { id: script.id, name: script.name } };
+    },
+  },
+
+  {
+    def: {
+      name: "attach_script",
+      description:
+        "Bind an existing script (by id from create_script or list_scripts) to an entity. Pass scriptId=null to detach.",
+      input_schema: {
+        type: "object",
+        properties: {
+          entityId: { type: "string" },
+          scriptId: { type: ["number", "null"] },
+        },
+        required: ["entityId"],
+      },
+    },
+    exec: async (input) => {
+      const eid = input.entityId as string;
+      const s = useEditor.getState();
+      const ent = s.sceneData.entities.find((e) => e.id === eid);
+      if (!ent) return { ok: false, error: `No entity with id "${eid}"` };
+      const sid =
+        typeof input.scriptId === "number" ? input.scriptId : input.scriptId === null ? null : null;
+      s.setEntityScript(eid, sid);
+      return { ok: true, data: { entityId: eid, scriptId: sid } };
+    },
+  },
+
+  {
+    def: {
+      name: "list_scripts",
+      description: "List all scripts in the current project (id, name, language).",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => {
+      const projectId = useEditor.getState().projectId;
+      if (!projectId) return { ok: false, error: "No project open." };
+      const res = await fetch(apiUrl(`projects/${projectId}/scripts`));
+      if (!res.ok) return { ok: false, error: `List failed: ${res.status}` };
+      const scripts = (await res.json()) as Array<{
+        id: number;
+        name: string;
+        language: string;
+      }>;
+      return {
+        ok: true,
+        data: scripts.map((s) => ({ id: s.id, name: s.name, language: s.language })),
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "set_player",
+      description:
+        "Mark an entity as the player by setting its controllerKind. 'thirdPerson' / 'firstPerson' use the editor's built-in WASD camera-relative controller.",
+      input_schema: {
+        type: "object",
+        properties: {
+          entityId: { type: "string" },
+          controllerKind: {
+            type: "string",
+            enum: ["none", "thirdPerson", "firstPerson"],
+          },
+        },
+        required: ["entityId", "controllerKind"],
+      },
+    },
+    exec: async (input) => {
+      const eid = input.entityId as string;
+      const kind = input.controllerKind as ControllerKind;
+      const s = useEditor.getState();
+      const ent = s.sceneData.entities.find((e) => e.id === eid);
+      if (!ent) return { ok: false, error: `No entity with id "${eid}"` };
+      s.setEntityController(eid, kind);
+      return { ok: true, data: { entityId: eid, controllerKind: kind } };
+    },
+  },
+];
+
+export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
+
+const TOOL_INDEX: Record<string, ToolExecutor> = Object.fromEntries(
+  AI_TOOLS.map((t) => [t.def.name, t.exec]),
+);
+
+export async function runTool(
+  name: string,
+  input: Record<string, unknown>,
+): Promise<ToolResult> {
+  const exec = TOOL_INDEX[name];
+  if (!exec) return { ok: false, error: `Unknown tool "${name}"` };
+  try {
+    return await exec(input ?? {});
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Build the system prompt with live editor context. */
+export function buildSystemPrompt(): string {
+  const s = useEditor.getState();
+  const counts: Record<string, number> = {};
+  for (const e of s.sceneData.entities) counts[e.type] = (counts[e.type] ?? 0) + 1;
+  const env = s.sceneData.environment;
+
+  return [
+    `You are the AI Worker for "Grudge GameForge" — an in-browser 3D game prototyping editor (Three.js + React Three Fiber + Rapier physics + Zustand state).`,
+    `You can directly manipulate the editor through the provided tools: create / edit / delete entities, set environment, generate procedural maps, spawn VFX prefabs, write & attach gameplay scripts, mark a player, etc.`,
+    ``,
+    `Coordinate space: Y is UP, units are meters. Default sky color is the editor's gold-on-charcoal theme (brand: #d4af37).`,
+    ``,
+    `LIVE CONTEXT:`,
+    `- projectId: ${s.projectId ?? "(none — most tools will fail until a project is open)"}`,
+    `- sceneName: "${s.sceneName}"  isPlaying: ${s.isPlaying}`,
+    `- entityCount: ${s.sceneData.entities.length}  byType: ${JSON.stringify(counts)}`,
+    `- environment.cameraMode: ${env.cameraMode ?? "editor"}  gravity: ${JSON.stringify(env.gravity ?? [0, -9.81, 0])}`,
+    `- selectedId: ${s.selectedId ?? "(none)"}`,
+    `- builtin models available: ${Object.keys(BUILTIN_MODELS).join(", ")}`,
+    ``,
+    `WORKING STYLE:`,
+    `- Take initiative. If the user asks for a "playable scene", combine multiple tools (generate_map → add_model_entity for player → set_player → maybe set_environment).`,
+    `- Use list_entities to look up real ids before update_entity / delete_entity / attach_script — never guess ids.`,
+    `- For player characters prefer the built-in 'blake' model.`,
+    `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,
+    `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,
+  ].join("\n");
+}

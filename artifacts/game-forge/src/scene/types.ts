@@ -43,6 +43,14 @@ export interface LightComponent {
 export interface ModelComponent {
   url?: string;
   assetId?: number;
+  /** Animation clip name to play (matches THREE.AnimationClip.name). When
+   *  unset, EntityRenderer auto-picks a clip preferring "idle" / "loop". */
+  clip?: string;
+  /** Hex color tint applied to all MeshStandard/Phong materials in the GLB
+   *  (mirrors PlayerImporter's tint feature for team / variant colors). */
+  tint?: string;
+  /** Floating sprite label shown above the model (player name, NPC tag, etc.). */
+  label?: string;
 }
 
 export type ControllerKind = "none" | "thirdPerson" | "firstPerson";

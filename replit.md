@@ -150,6 +150,24 @@ The transpiler path is intentionally "good enough" for in-browser iteration; the
 
 **Templates** — Toolbar `⋮` → Load template offers `TPS — Zombie Graveyard` and `FPS — Turret Arena`, both built with parent/child entities (player + parented weapon/muzzle, arena root with parented walls, turrets with parented barrel/eye).
 
+## AI Worker (in-editor chat assistant)
+
+A built-in chat assistant powered by Anthropic Claude (`claude-sonnet-4-6`) that can directly manipulate the editor — opens from the gold "AI Worker" button in the toolbar.
+
+- Auth/transport: Replit AI Integrations proxy (env vars `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` / `AI_INTEGRATIONS_ANTHROPIC_API_KEY` — no own API key required).
+- Server endpoint: `artifacts/api-server/src/routes/ai.ts` exposes `POST /api/ai/chat` (Server-Sent Events). Stateless thin proxy: client sends `{ messages, tools, system }`, server streams `text_delta` events live and emits one `tool_use` event per tool block when the assistant turn completes.
+- Tool definitions + executors live on the **client** (`artifacts/game-forge/src/lib/aiTools.ts`) because only the browser owns the live Zustand store, R3F scene, and undo stack — tool calls run synchronously against `useEditor` and tools that mutate the scene go through the same commands a human Ctrl+Z can undo.
+- Conversation loop: `artifacts/game-forge/src/lib/aiClient.ts` parses the SSE stream, dispatches text deltas to the UI, executes tool calls, and POSTs back a `tool_result` user turn — looping until `stop_reason !== "tool_use"` (cap: 8 turns).
+- Available tools (see `AI_TOOLS` array): `get_scene_summary`, `list_entities`, `list_builtin_models`, `add_entity`, `add_model_entity`, `update_entity`, `delete_entity`, `set_environment`, `clear_scene`, `generate_map`, `spawn_vfx_prefab`, `list_vfx_prefabs`, `create_script`, `attach_script`, `list_scripts`, `set_player`.
+- UI: `artifacts/game-forge/src/editor/AIWorkerPanel.tsx` is a fixed slide-out panel (right edge, 400px) that does NOT block editor interaction — you can keep building while it streams. Each tool call renders as an expandable chip with input + result JSON for full traceability.
+
+## Model entity polish (PlayerImporter-inspired)
+
+`ModelComponent` (`scene/types.ts`) carries optional `clip` (named animation), `tint` (hex color), and `label` (floating sprite tag) fields, surfaced through the AI Worker's `add_model_entity` / `update_entity` tools and rendered by `LoadedModel` in `EntityRenderer.tsx`:
+- `clip` overrides the default idle/loop heuristic in `useAnimations`.
+- `tint` clones the GLB's MeshStandard/Phong/Basic materials before recoloring so coloring one entity doesn't bleed across other instances of the same builtin model.
+- `label` builds a `THREE.CanvasTexture` pill sprite (gold border, dark background) attached above the model's bounding box.
+
 ## Database
 
 Run `pnpm --filter @workspace/db run push --force` after any schema change in `lib/db/src/schema/*.ts`.
