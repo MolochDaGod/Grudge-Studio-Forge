@@ -158,3 +158,10 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Pin every transitive `three` request to a single version so the GameForge
+  # editor never bundles or instantiates more than one copy of three.js. Any
+  # downstream R3F lib (drei, fiber, postprocessing, rapier, three-stdlib,
+  # three-mesh-bvh, troika, etc.) declares `three` as a peer; this override
+  # guarantees they all resolve to the exact same physical module even if
+  # their accepted ranges drift in the future.
+  three: "0.184.0"

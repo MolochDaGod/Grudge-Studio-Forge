@@ -108,7 +108,10 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
     },
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "three"],
+  },
+  optimizeDeps: {
+    include: ["three"],
   },
   root: path.resolve(import.meta.dirname),
   build: {
