@@ -39,3 +39,5 @@ export * from "./transform";
 export * from "./updateProjectBody";
 export * from "./updateSceneBody";
 export * from "./updateScriptBody";
+export * from "./uploadUrlRequest";
+export * from "./uploadUrlResponse";

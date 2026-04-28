@@ -15,6 +15,7 @@ A browser-based 3D game prototyping environment — a Unity / Godot-flavoured ed
 | Backend | Express + Drizzle ORM + Postgres |
 | Type-safe API | OpenAPI 3.1 → orval → React Query hooks (`@workspace/api-client-react`) + zod validators (`@workspace/api-zod`) |
 | External data | Grudge Studio object store proxy (5 min in-memory cache) |
+| Asset uploads | Replit App Storage (GCS-backed) via presigned PUT URLs — `@workspace/object-storage-web` `useUpload` hook on the client, `/api/storage/*` routes on the server |
 
 ## Layout
 
@@ -45,12 +46,17 @@ artifacts/
         keyboard.ts            useKeyboardState — keys map for play-mode scripts
 
   api-server/        Express backend
-    src/routes/
-      projects.ts    /api/projects CRUD + summary
-      scenes.ts      /api/scenes CRUD nested under project
-      scripts.ts     /api/scripts CRUD with default JS / C# templates
-      assets.ts      /api/assets CRUD
-      grudge.ts      /api/grudge/{weapons,items,enemies,quests} proxy + flattening + cache
+    src/
+      lib/
+        objectStorage.ts   GCS client wrapper + presigned URL generation (Replit sidecar auth)
+        objectAcl.ts       ACL framework for protected objects
+      routes/
+        projects.ts        /api/projects CRUD + summary
+        scenes.ts          /api/scenes CRUD nested under project
+        scripts.ts         /api/scripts CRUD with default JS / C# templates
+        assets.ts          /api/assets CRUD (uploaded + URL + grudge sources)
+        grudge.ts          /api/grudge/{weapons,items,enemies,quests} proxy + flattening + 5min cache
+        storage.ts         /api/storage/uploads/request-url + /api/storage/{public-objects,objects}/* serving
 
 lib/
   api-spec/          OpenAPI 3.1 source of truth (openapi.yaml)

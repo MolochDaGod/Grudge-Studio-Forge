@@ -14,7 +14,6 @@ import {
   Maximize,
   Loader2,
   PackageOpen,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -99,11 +98,14 @@ export function Toolbar({ onOpenProjects }: { onOpenProjects: () => void }) {
     <div className="h-12 flex items-center gap-2 px-3 border-b border-border bg-sidebar shrink-0">
       <button
         onClick={onOpenProjects}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md hover-elevate text-sm font-semibold"
+        className="flex items-center gap-2 pl-1 pr-3 py-0.5 rounded-md hover-elevate text-sm font-semibold"
         data-testid="button-open-projects"
+        title="Open / create a project"
       >
-        <Sparkles className="size-4 text-primary" />
-        <span>GameForge</span>
+        <img src="/logo.png" alt="" className="size-7 rounded-sm" />
+        <span className="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-200 bg-clip-text text-transparent">
+          GameForge
+        </span>
       </button>
 
       <Separator orientation="vertical" className="h-6 mx-1" />

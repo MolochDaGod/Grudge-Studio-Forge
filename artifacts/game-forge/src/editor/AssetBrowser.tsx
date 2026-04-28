@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,18 @@ import {
   getGetProjectSummaryQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload } from "lucide-react";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
+
+function classifyAsset(name: string, contentType: string): "model" | "image" | "audio" | "texture" | "other" {
+  if (/\.(glb|gltf|fbx|obj)$/i.test(name)) return "model";
+  if (/^audio\//.test(contentType) || /\.(mp3|wav|ogg|m4a)$/i.test(name)) return "audio";
+  if (/\.(png|jpe?g|webp|ktx2)$/i.test(name) && /texture|normal|albedo|roughness/i.test(name)) return "texture";
+  if (/^image\//.test(contentType)) return "image";
+  return "other";
+}
 
 function GrudgeGrid({
   loading,
@@ -194,6 +203,11 @@ function ProjectAssets() {
   const deleteAsset = useDeleteAsset();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { uploadFile, isUploading, progress } = useUpload({
+    onError: (err: Error) => pushLog("error", `Upload failed: ${err.message}`),
+  });
 
   const onAdd = async () => {
     if (!projectId || !name.trim() || !url.trim()) return;
@@ -214,25 +228,79 @@ function ProjectAssets() {
     pushLog("info", `Added asset "${name}"`);
   };
 
+  const onUpload = async (file: File) => {
+    if (!projectId) {
+      pushLog("warn", "Open a project first");
+      return;
+    }
+    pushLog("info", `Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)…`);
+    const res = await uploadFile(file);
+    if (!res) return;
+    const type = classifyAsset(file.name, file.type);
+    const servingUrl = `/api/storage${res.objectPath}`;
+    await createAsset.mutateAsync({
+      data: {
+        projectId,
+        name: file.name,
+        url: servingUrl,
+        type,
+        source: "upload",
+      },
+    });
+    qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
+    qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+    pushLog("info", `Uploaded "${file.name}" → ${servingUrl}`);
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="px-2 py-2 border-b border-border flex gap-2">
+      <div className="px-2 py-2 border-b border-border flex flex-wrap gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          accept=".glb,.gltf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.ogg"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUpload(f);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+          }}
+          data-testid="input-file-upload"
+        />
+        <Button
+          size="sm"
+          variant="default"
+          className="h-7"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!projectId || isUploading}
+          data-testid="button-upload-file"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="size-3 mr-1 animate-spin" /> {progress}%
+            </>
+          ) : (
+            <>
+              <Upload className="size-3 mr-1" /> Upload File
+            </>
+          )}
+        </Button>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Asset name"
-          className="h-7 text-xs flex-1"
+          className="h-7 text-xs flex-1 min-w-[120px]"
           data-testid="input-asset-name"
         />
         <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://...glb"
-          className="h-7 text-xs flex-[2]"
+          className="h-7 text-xs flex-[2] min-w-[160px]"
           data-testid="input-asset-url"
         />
-        <Button size="sm" className="h-7" onClick={onAdd} disabled={!projectId || !name || !url}>
-          <Plus className="size-3 mr-1" /> Add
+        <Button size="sm" variant="outline" className="h-7" onClick={onAdd} disabled={!projectId || !name || !url}>
+          <Plus className="size-3 mr-1" /> Add URL
         </Button>
       </div>
       <ScrollArea className="flex-1">
@@ -266,6 +334,17 @@ function ProjectAssets() {
                 >
                   <Plus className="size-3 mr-1" /> Spawn
                 </Button>
+              )}
+              {a.source === "upload" && a.url && (
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground"
+                  title="Open uploaded file"
+                >
+                  <ExternalLink className="size-3" />
+                </a>
               )}
               <button
                 onClick={async () => {
