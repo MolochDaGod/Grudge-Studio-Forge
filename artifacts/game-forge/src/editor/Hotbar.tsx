@@ -23,6 +23,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { SceneEntity } from "@/scene/types";
+import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
 
 interface PrefabPayload {
   entities?: SceneEntity[];
@@ -73,6 +74,19 @@ export function Hotbar() {
   };
   spawnSlotRef.current = onSpawnSlot;
 
+  /** Warm the GLB cache for the prefab assigned to a slot. Called from
+   *  `onMouseEnter` / `onFocus` / `onPointerDown` of the slot button so
+   *  the first spawn of a heavy starter (e.g. Blake at slot 1) feels
+   *  instant. No-op for empty slots or prefabs without builtin models. */
+  const onWarmSlot = (slot: number) => {
+    const id = hotbar[slot];
+    if (id == null) return;
+    const p = prefabsById.get(id);
+    if (!p) return;
+    const data = p.data as PrefabPayload;
+    warmBuiltinModelsForEntities(data?.entities);
+  };
+
   // Keys 1..8 spawn the corresponding hotbar slot. We only bind the listener
   // when the hotbar is actually active (not playing, not in the prefab
   // sub-scene editor, and a project is loaded) so digit keys don't leak into
@@ -109,6 +123,9 @@ export function Hotbar() {
             <ContextMenuTrigger asChild>
               <button
                 onClick={() => onSpawnSlot(idx)}
+                onMouseEnter={() => onWarmSlot(idx)}
+                onFocus={() => onWarmSlot(idx)}
+                onPointerDown={() => onWarmSlot(idx)}
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes("text/prefab-id")) {
                     e.preventDefault();

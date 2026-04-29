@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/context-menu";
 import type { SceneEntity } from "@/scene/types";
 import { STARTER_PREFABS, STARTER_VFX, type StarterPrefabDef } from "@/lib/starterPrefabs";
+import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
 
 interface PrefabPayload {
   entities?: SceneEntity[];
@@ -381,6 +382,11 @@ export function PrefabsPanel() {
                       e.dataTransfer.setData("text/prefab-id", String(p.id));
                       e.dataTransfer.effectAllowed = "copy";
                     }}
+                    // Warm the GLB cache on intent signals so the first
+                    // Spawn click of a heavy model-backed prefab feels
+                    // instant. No-op for primitive-only prefabs.
+                    onMouseEnter={() => warmBuiltinModelsForEntities(data?.entities)}
+                    onFocus={() => warmBuiltinModelsForEntities(data?.entities)}
                     className={`relative flex items-center gap-3 pl-3 pr-2 py-2 rounded-md border transition-colors ${
                       editing
                         ? "bg-primary/10 border-primary/50 gold-glow-sm"
