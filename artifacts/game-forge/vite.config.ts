@@ -53,7 +53,7 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * either already in cache or in flight.
  */
 function preloadViewportCandidate(): Plugin {
-  const TARGET_CHUNK_NAMES = new Set(["viewportPreload", "vendor-postprocessing"]);
+  const TARGET_CHUNK_NAMES = new Set(["viewportPreload"]);
   return {
     name: "preload-viewport-candidate",
     apply: "build",
@@ -256,15 +256,11 @@ export default defineConfig({
             return "vendor-rapier";
           }
           if (
-            norm.includes("/postprocessing/") ||
-            norm.includes("/@react-three/postprocessing")
-          ) {
-            return "vendor-postprocessing";
-          }
-          if (
             norm.includes("/@react-three/fiber") ||
             norm.includes("/@react-three/drei") ||
-            norm.includes("/@react-three/rapier")
+            norm.includes("/@react-three/rapier") ||
+            norm.includes("/@react-three/postprocessing") ||
+            norm.includes("/postprocessing/")
           ) {
             return "vendor-r3f";
           }
