@@ -17,7 +17,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon } from "lucide-react";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
 import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
 
@@ -27,6 +27,146 @@ function classifyAsset(name: string, contentType: string): "model" | "image" | "
   if (/\.(png|jpe?g|webp|ktx2)$/i.test(name) && /texture|normal|albedo|roughness/i.test(name)) return "texture";
   if (/^image\//.test(contentType)) return "image";
   return "other";
+}
+
+type ViewMode = "list" | "grid";
+
+function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+  return (
+    <div className="inline-flex rounded-md border border-border bg-background overflow-hidden shrink-0">
+      <button
+        type="button"
+        onClick={() => onChange("list")}
+        title="List view"
+        aria-label="List view"
+        aria-pressed={value === "list"}
+        data-testid="button-view-list"
+        className={`h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground ${
+          value === "list" ? "bg-accent/15 text-accent" : ""
+        }`}
+      >
+        <ListIcon className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange("grid")}
+        title="Grid view"
+        aria-label="Grid view"
+        aria-pressed={value === "grid"}
+        data-testid="button-view-grid"
+        className={`h-7 w-7 flex items-center justify-center text-muted-foreground hover:text-foreground border-l border-border ${
+          value === "grid" ? "bg-accent/15 text-accent" : ""
+        }`}
+      >
+        <LayoutGrid className="size-3.5" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Compact "Windows Explorer details view" row for a Grudge catalogue item.
+ * Mirrors the click-to-spawn / hover-to-import affordances of `AssetCard`
+ * but in a single dense line so dozens of items fit in the panel without
+ * the user having to scroll a wall of thumbnails.
+ */
+function AssetRow({
+  it,
+  idx,
+  type,
+  EmptyIcon,
+  onSpawn,
+  onImport,
+}: {
+  it: GrudgeItem;
+  idx: number;
+  type: "weapon" | "item" | "enemy" | "quest";
+  EmptyIcon: typeof Sword;
+  onSpawn: (it: GrudgeItem) => void;
+  onImport: (it: GrudgeItem) => void;
+}) {
+  const name = String(it.name ?? it.key ?? it.id ?? `${type} ${idx}`);
+  const tier = typeof it.tier === "number" ? it.tier : null;
+  const tierColor = tier ? getTierColor(tier) : null;
+  const desc = typeof it.description === "string" ? it.description : "";
+  const emoji = typeof it.emoji === "string" ? it.emoji : "";
+  const imageUrl = typeof it.imageUrl === "string" ? it.imageUrl : "";
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = !!imageUrl && !imgFailed;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSpawn(it)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSpawn(it);
+        }
+      }}
+      title={[name, desc, tier ? `Tier ${tier} · ${tierColor?.name}` : ""].filter(Boolean).join("\n")}
+      aria-label={`Spawn ${name}`}
+      className="group flex items-center gap-2 h-7 px-2 rounded-sm hover-elevate focus:outline-none focus:ring-1 focus:ring-accent text-left cursor-pointer text-xs"
+      data-testid={`grudge-row-${idx}`}
+    >
+      <div
+        className="size-5 shrink-0 flex items-center justify-center rounded-sm overflow-hidden bg-muted/40"
+        style={tierColor ? { boxShadow: `inset 0 0 0 1px ${tierColor.hex}55` } : undefined}
+      >
+        {showImage ? (
+          <img
+            src={imageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="size-full object-contain"
+            draggable={false}
+          />
+        ) : emoji ? (
+          <span className="leading-none text-[12px]" aria-hidden>
+            {emoji}
+          </span>
+        ) : (
+          <EmptyIcon
+            className="size-3.5"
+            style={{ color: tierColor?.hex ?? "hsl(var(--muted-foreground))" }}
+          />
+        )}
+      </div>
+      <span className="font-medium truncate flex-1">{name}</span>
+      {tier && (
+        <span
+          className="font-mono text-[9px] px-1 py-0.5 rounded-sm bg-background/60 shrink-0"
+          style={{ color: tierColor?.hex }}
+        >
+          T{tier}
+        </span>
+      )}
+      {desc && (
+        <span className="text-[10px] text-muted-foreground/70 truncate hidden md:inline max-w-[40%]">
+          {desc}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onImport(it);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        }}
+        title="Save to project assets"
+        aria-label={`Save ${name} to project assets`}
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded-sm text-muted-foreground hover:text-foreground shrink-0"
+        data-testid={`button-import-row-${idx}`}
+      >
+        <ExternalLink className="size-3" />
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -192,6 +332,7 @@ function GrudgeGrid({
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const filtered = items.filter((it) => {
     if (!query.trim()) return true;
@@ -277,24 +418,44 @@ function GrudgeGrid({
           />
         </div>
         <span className="text-[10px] text-muted-foreground font-mono">{filtered.length}/{items.length}</span>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
       </div>
       <ScrollArea className="flex-1">
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
-          {filtered.map((it, idx) => (
-            <AssetCard
-              key={`${String(it.id ?? it.key ?? it.name ?? idx)}-${idx}`}
-              it={it}
-              idx={idx}
-              type={type}
-              EmptyIcon={EmptyIcon}
-              onSpawn={spawn}
-              onImport={importAsset}
-            />
-          ))}
-          {filtered.length === 0 && (
-            <p className="col-span-full text-xs text-muted-foreground text-center py-8">No matches.</p>
-          )}
-        </div>
+        {viewMode === "grid" ? (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+            {filtered.map((it, idx) => (
+              <AssetCard
+                key={`${String(it.id ?? it.key ?? it.name ?? idx)}-${idx}`}
+                it={it}
+                idx={idx}
+                type={type}
+                EmptyIcon={EmptyIcon}
+                onSpawn={spawn}
+                onImport={importAsset}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <p className="col-span-full text-xs text-muted-foreground text-center py-8">No matches.</p>
+            )}
+          </div>
+        ) : (
+          <div className="p-1.5">
+            {filtered.map((it, idx) => (
+              <AssetRow
+                key={`${String(it.id ?? it.key ?? it.name ?? idx)}-${idx}`}
+                it={it}
+                idx={idx}
+                type={type}
+                EmptyIcon={EmptyIcon}
+                onSpawn={spawn}
+                onImport={importAsset}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-8">No matches.</p>
+            )}
+          </div>
+        )}
       </ScrollArea>
     </div>
   );
@@ -421,16 +582,16 @@ function ProjectAssets() {
             No assets yet. Import from Grudge Studio or paste a URL above.
           </p>
         )}
-        <div className="p-2 space-y-1">
+        <div className="p-1.5">
           {assets.map((a) => (
             <div
               key={a.id}
-              className="group flex items-center gap-2 p-1.5 rounded hover-elevate text-xs"
+              className="group flex items-center gap-2 h-7 px-2 rounded-sm hover-elevate text-xs"
               data-testid={`asset-row-${a.id}`}
             >
-              <span className="font-mono text-[10px] uppercase text-muted-foreground w-12 shrink-0">{a.type}</span>
+              <span className="font-mono text-[9px] uppercase text-muted-foreground/70 w-10 shrink-0 tracking-wider">{a.type}</span>
               <span className="font-medium truncate flex-1">{a.name}</span>
-              <span className="text-[10px] text-muted-foreground/70 truncate max-w-[200px]">{a.url}</span>
+              <span className="text-[10px] text-muted-foreground/60 truncate max-w-[200px] hidden md:inline">{a.url}</span>
               {a.type === "model" && a.url && (
                 <Button
                   size="sm"
@@ -565,6 +726,65 @@ function PolyHavenCard({
   );
 }
 
+function PolyHavenRow({
+  asset,
+  busy,
+  onPrimary,
+  primaryLabel,
+  EmptyIcon,
+}: {
+  asset: PolyHavenAsset;
+  busy: boolean;
+  onPrimary: () => void;
+  primaryLabel: string;
+  EmptyIcon: typeof Box;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={busy ? -1 : 0}
+      onClick={busy ? undefined : onPrimary}
+      onKeyDown={(e) => {
+        if (busy) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onPrimary();
+        }
+      }}
+      title={`${primaryLabel} ${asset.name}\n${asset.categories.slice(0, 4).join(" · ")}`}
+      aria-label={`${primaryLabel} ${asset.name}`}
+      aria-busy={busy}
+      className="group flex items-center gap-2 h-7 px-2 rounded-sm hover-elevate focus:outline-none focus:ring-1 focus:ring-accent text-left cursor-pointer text-xs aria-busy:opacity-60 aria-busy:cursor-wait"
+      data-testid={`polyhaven-row-${asset.slug}`}
+    >
+      <div className="size-5 shrink-0 flex items-center justify-center rounded-sm overflow-hidden bg-muted/40">
+        {imgFailed ? (
+          <EmptyIcon className="size-3.5 text-muted-foreground" />
+        ) : (
+          <img
+            src={asset.thumbnail_url}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgFailed(true)}
+            className="size-full object-cover"
+            draggable={false}
+          />
+        )}
+      </div>
+      <span className="font-medium truncate flex-1">{asset.name}</span>
+      <span className="text-[10px] text-muted-foreground/70 truncate hidden md:inline max-w-[35%]">
+        {asset.categories[0] ?? asset.kind}
+      </span>
+      <span className="font-mono text-[9px] text-muted-foreground/60 shrink-0">
+        {(asset.download_count / 1000).toFixed(0)}k
+      </span>
+      {busy && <Loader2 className="size-3 animate-spin text-accent shrink-0" />}
+    </div>
+  );
+}
+
 /**
  * Grid of Poly Haven assets for one kind (textures / hdris / models).
  *
@@ -588,6 +808,7 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
   const [page, setPage] = useState(1);
   const [busySlug, setBusySlug] = useState<string | null>(null);
 
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const items = data?.items ?? [];
   const q = query.trim().toLowerCase();
   // Score each candidate so that direct name matches outrank items whose only
@@ -728,29 +949,52 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
         <span className="text-[10px] text-muted-foreground font-mono">
           {visible.length}/{filtered.length}
         </span>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
       </div>
       <ScrollArea className="flex-1">
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
-          {visible.map((asset) => (
-            <PolyHavenCard
-              key={asset.slug}
-              asset={asset}
-              busy={busySlug === asset.slug}
-              onPrimary={() =>
-                kind === "models"
-                  ? handleModel(asset)
-                  : handleImage(asset, kind === "hdris" ? "HDRI" : "texture")
-              }
-              primaryLabel={primaryLabel}
-              EmptyIcon={EmptyIcon}
-            />
-          ))}
-          {filtered.length === 0 && (
-            <p className="col-span-full text-xs text-muted-foreground text-center py-8">
-              No matches.
-            </p>
-          )}
-        </div>
+        {viewMode === "grid" ? (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+            {visible.map((asset) => (
+              <PolyHavenCard
+                key={asset.slug}
+                asset={asset}
+                busy={busySlug === asset.slug}
+                onPrimary={() =>
+                  kind === "models"
+                    ? handleModel(asset)
+                    : handleImage(asset, kind === "hdris" ? "HDRI" : "texture")
+                }
+                primaryLabel={primaryLabel}
+                EmptyIcon={EmptyIcon}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <p className="col-span-full text-xs text-muted-foreground text-center py-8">
+                No matches.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="p-1.5">
+            {visible.map((asset) => (
+              <PolyHavenRow
+                key={asset.slug}
+                asset={asset}
+                busy={busySlug === asset.slug}
+                onPrimary={() =>
+                  kind === "models"
+                    ? handleModel(asset)
+                    : handleImage(asset, kind === "hdris" ? "HDRI" : "texture")
+                }
+                primaryLabel={primaryLabel}
+                EmptyIcon={EmptyIcon}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-8">No matches.</p>
+            )}
+          </div>
+        )}
         {visible.length < filtered.length && (
           <div className="flex justify-center p-3">
             <Button
