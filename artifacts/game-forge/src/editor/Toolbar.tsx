@@ -71,6 +71,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
+import { InstallAppButton } from "@/editor/InstallAppButton";
 
 const PRIMITIVES: { type: EntityType; label: string; Icon: typeof Box }[] = [
   { type: "box", label: "Box", Icon: Box },
@@ -399,6 +400,8 @@ export function Toolbar({
       </Tooltip>
 
       <div className="flex-1" />
+
+      <InstallAppButton />
 
       <Tooltip>
         <TooltipTrigger asChild>

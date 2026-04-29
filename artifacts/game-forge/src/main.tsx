@@ -1,8 +1,10 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { schedulePrefetchViewport } from "@/lib/prefetch";
+import { registerPwa } from "@/lib/pwa";
 import "./index.css";
 
+registerPwa();
 createRoot(document.getElementById("root")!).render(<App />);
 
 // Warm the heavy 3D viewport chunk in the background once the editor
