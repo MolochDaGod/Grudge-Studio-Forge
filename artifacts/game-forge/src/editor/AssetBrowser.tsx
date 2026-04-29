@@ -422,7 +422,7 @@ function GrudgeGrid({
       </div>
       <ScrollArea className="flex-1">
         {viewMode === "grid" ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1 p-1.5">
             {filtered.map((it, idx) => (
               <AssetCard
                 key={`${String(it.id ?? it.key ?? it.name ?? idx)}-${idx}`}
@@ -953,7 +953,7 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
       </div>
       <ScrollArea className="flex-1">
         {viewMode === "grid" ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-1.5 p-2">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1 p-1.5">
             {visible.map((asset) => (
               <PolyHavenCard
                 key={asset.slug}
