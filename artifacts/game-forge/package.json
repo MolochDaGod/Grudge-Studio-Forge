@@ -89,6 +89,7 @@
     "@react-three/fiber": "^9.6.0",
     "@react-three/postprocessing": "^3.0.4",
     "@react-three/rapier": "^2.2.0",
+    "@xyflow/react": "^12.10.2",
     "immer": "^11.1.4",
     "leva": "^0.10.1",
     "maath": "^0.10.8",

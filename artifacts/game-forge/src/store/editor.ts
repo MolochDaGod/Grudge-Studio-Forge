@@ -58,7 +58,7 @@ interface EditorState {
   isPaused: boolean;
   transformMode: TransformMode;
   consoleMessages: ConsoleMessage[];
-  bottomTab: "console" | "assets" | "scripts" | "prefabs";
+  bottomTab: "console" | "assets" | "scripts" | "prefabs" | "nodes";
   /** When non-null, the editor is in Prefab Edit Mode and the viewport
    *  reflects the prefab buffer instead of the scene buffer. */
   prefabSubScene: PrefabSubScene | null;
@@ -115,7 +115,7 @@ interface EditorState {
 
   pushLog: (level: ConsoleLevel, text: string) => void;
   clearConsole: () => void;
-  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs") => void;
+  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes") => void;
 
   // Prefab sub-scene editing — temporarily swap sceneData for a prefab's
   // entities, then restore the original scene on close.

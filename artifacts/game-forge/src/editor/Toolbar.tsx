@@ -527,7 +527,10 @@ export function Toolbar({
             <span>
               <Button
                 size="sm"
-                onClick={() => setPlaying(true)}
+                onClick={() => {
+                  void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
+                  setPlaying(true);
+                }}
                 disabled={!!prefabSubScene}
                 className="bg-accent text-accent-foreground hover:bg-accent/90"
                 data-testid="button-play"

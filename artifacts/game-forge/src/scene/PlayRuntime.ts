@@ -1,9 +1,17 @@
 import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext } from "./csTranspile";
+import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
 
 export type Compiled = CompiledScript & { error?: string };
 
 const cache = new Map<string, Compiled>();
+
+let blazorWarmed = false;
+export function warmBlazorRuntime(): void {
+  if (blazorWarmed) return;
+  blazorWarmed = true;
+  void loadBlazorRuntime();
+}
 
 function compileJs(code: string): Compiled {
   try {

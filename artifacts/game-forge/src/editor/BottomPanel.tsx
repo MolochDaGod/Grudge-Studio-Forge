@@ -3,7 +3,7 @@ import { Console } from "./Console";
 import { AssetBrowser } from "./AssetBrowser";
 import { PrefabsPanel } from "./PrefabsPanel";
 import { useEditor } from "@/store/editor";
-import { Terminal, Boxes, Code2, Package, Loader2 } from "lucide-react";
+import { Terminal, Boxes, Code2, Package, Loader2, Network } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 /**
@@ -15,6 +15,15 @@ import { lazy, Suspense } from "react";
  */
 const ScriptEditor = lazy(() =>
   import("./ScriptEditor").then((m) => ({ default: m.ScriptEditor })),
+);
+
+/**
+ * The Nodes panel pulls in @xyflow/react (~120 KB gzipped) plus the scene-graph
+ * compiler. Lazy so it stays out of the initial bundle for users who don't open
+ * the visual editor.
+ */
+const NodesPanel = lazy(() =>
+  import("./NodesPanel").then((m) => ({ default: m.NodesPanel })),
 );
 
 function ScriptEditorFallback() {
@@ -44,6 +53,9 @@ export function BottomPanel() {
         <TabsTrigger value="prefabs" className="text-xs gap-1.5" data-testid="tab-prefabs">
           <Package className="size-3" /> Prefabs
         </TabsTrigger>
+        <TabsTrigger value="nodes" className="text-xs gap-1.5" data-testid="tab-nodes">
+          <Network className="size-3" /> Nodes
+        </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
         <TabsContent value="console" className="m-0 h-full">
@@ -59,6 +71,11 @@ export function BottomPanel() {
         </TabsContent>
         <TabsContent value="prefabs" className="m-0 h-full">
           <PrefabsPanel />
+        </TabsContent>
+        <TabsContent value="nodes" className="m-0 h-full">
+          <Suspense fallback={<ScriptEditorFallback />}>
+            <NodesPanel />
+          </Suspense>
         </TabsContent>
       </div>
     </Tabs>

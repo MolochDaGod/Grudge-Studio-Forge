@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>GameForge</RootNamespace>
+    <AssemblyName>GameForgeRuntime</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
+    <WasmEnableSIMD>false</WasmEnableSIMD>
+    <!-- Skip the emscripten / native WASM relink step. Replit's Nix
+         environment doesn't ship libatomic.so.1, which the bundled
+         emscripten node binary requires. Mono's pre-built browser-wasm
+         runtime is used as-is, so no project-specific native build is
+         needed for our use case. -->
+    <WasmBuildNative>false</WasmBuildNative>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <!-- Strip PDB symbols from the publish output. The Blazor publish target
+         records every PDB in `blazor.boot.json` and the runtime then tries
+         to fetch them up-front; if any are missing (e.g. trimmed by our
+         build script to keep the bundle small) the entire boot fails with
+         "TypeError: Failed to fetch". Disabling debugger support skips the
+         PDB emission and the resource references that go with it. -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <DebuggerSupport>false</DebuggerSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.11" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
