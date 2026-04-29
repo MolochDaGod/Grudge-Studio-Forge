@@ -203,9 +203,30 @@ function EditorShell() {
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={62}>
-                <Suspense fallback={<ViewportFallback />}>
-                  <Viewport />
-                </Suspense>
+                <div className="relative w-full h-full">
+                  <Suspense fallback={<ViewportFallback />}>
+                    <Viewport />
+                  </Suspense>
+                  {!projectId && !pickerOpen && (
+                    <button
+                      onClick={() => setPickerOpen(true)}
+                      aria-label="Open or create a project"
+                      title="Open or create a project"
+                      data-testid="button-open-or-create-project"
+                      style={{
+                        position: "absolute",
+                        right: 16,
+                        bottom: 16,
+                        zIndex: 50,
+                        width: 48,
+                        height: 48,
+                      }}
+                      className="rounded-full bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center justify-center shadow-2xl hover-elevate"
+                    >
+                      <Plus className="size-6" />
+                    </button>
+                  )}
+                </div>
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={20} minSize={14} maxSize={32}>
@@ -223,27 +244,6 @@ function EditorShell() {
       <ProjectPicker open={pickerOpen} onOpenChange={setPickerOpen} />
 
       <AIWorkerPanel open={aiOpen} onClose={() => setAiOpen(false)} />
-
-      {!projectId && !pickerOpen && (
-        <button
-          onClick={() => setPickerOpen(true)}
-          aria-label="Open or create a project"
-          title="Open or create a project"
-          data-testid="button-open-or-create-project"
-          style={{
-            position: "fixed",
-            right: 24,
-            top: "50%",
-            transform: "translateY(-50%)",
-            zIndex: 50,
-            width: 48,
-            height: 48,
-          }}
-          className="rounded-full bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center justify-center shadow-2xl hover-elevate"
-        >
-          <Plus className="size-6" />
-        </button>
-      )}
 
       {isPlaying && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent/20 border border-accent text-accent text-xs font-mono pointer-events-none shadow-lg">
