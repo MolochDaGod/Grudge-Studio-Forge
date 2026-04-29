@@ -24,6 +24,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Hotbar } from "@/editor/Hotbar";
+import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
 import { useListPrefabs, getListPrefabsQueryKey, type Prefab } from "@workspace/api-client-react";
 
@@ -648,6 +649,8 @@ export function Viewport() {
         >
           <Wand2 className="size-3.5 mr-2" /> Generate map…
         </ContextMenuItem>
+        <ContextMenuSeparator />
+        <BestPracticesSubMenu context="viewport" label="Scene best practices" />
       </ContextMenuContent>
     </ContextMenu>
   );

@@ -17,9 +17,19 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye } from "lucide-react";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
 import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
+import type { BestPracticeContext } from "@/lib/bestPractices";
 
 function classifyAsset(name: string, contentType: string): "model" | "image" | "audio" | "texture" | "other" {
   if (/\.(glb|gltf|fbx|obj)$/i.test(name)) return "model";
@@ -94,7 +104,7 @@ function AssetRow({
   const [imgFailed, setImgFailed] = useState(false);
   const showImage = !!imageUrl && !imgFailed;
 
-  return (
+  const row = (
     <div
       role="button"
       tabIndex={0}
@@ -167,6 +177,13 @@ function AssetRow({
       </button>
     </div>
   );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <GrudgeAssetMenu it={it} type={type} onSpawn={onSpawn} onImport={onImport} />
+    </ContextMenu>
+  );
 }
 
 /**
@@ -214,7 +231,7 @@ function AssetCard({
     .filter(Boolean)
     .join("\n");
 
-  return (
+  const card = (
     // Card root is a div+role="button" instead of a real <button> so we can
     // safely nest a real <button> for the import overlay. Nesting interactive
     // elements inside a <button> is invalid HTML and breaks keyboard / screen
@@ -311,6 +328,82 @@ function AssetCard({
         )}
       </div>
     </div>
+  );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+      <GrudgeAssetMenu it={it} type={type} onSpawn={onSpawn} onImport={onImport} />
+    </ContextMenu>
+  );
+}
+
+function GrudgeAssetMenu({
+  it,
+  type,
+  onSpawn,
+  onImport,
+}: {
+  it: GrudgeItem;
+  type: "weapon" | "item" | "enemy" | "quest";
+  onSpawn: (it: GrudgeItem) => void;
+  onImport: (it: GrudgeItem) => void;
+}) {
+  const pushLog = useEditor((s) => s.pushLog);
+  const name = String(it.name ?? it.key ?? it.id ?? type);
+  const url = String(it.model ?? it.imageUrl ?? it.icon ?? "");
+  const tier = typeof it.tier === "number" ? it.tier : null;
+  const ctx: BestPracticeContext = type;
+
+  const copy = (text: string, label: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => pushLog("info", `Copied ${label}: ${text}`))
+      .catch(() => pushLog("warn", `Could not copy ${label} to clipboard.`));
+  };
+
+  return (
+    <ContextMenuContent className="min-w-[220px]">
+      <ContextMenuLabel className="flex flex-col items-start gap-0.5">
+        <span className="text-xs font-medium truncate max-w-[260px]">{name}</span>
+        <span className="text-[10px] text-muted-foreground font-mono uppercase">
+          {type}
+          {tier ? ` · T${tier}` : ""}
+        </span>
+      </ContextMenuLabel>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={() => onSpawn(it)}>
+        <Plus className="size-3.5 mr-2" /> Spawn into scene
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => onImport(it)}>
+        <Library className="size-3.5 mr-2" /> Import to project assets
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
+        disabled={!url}
+        onClick={() => copy(url, "URL")}
+      >
+        <Copy className="size-3.5 mr-2" /> Copy resource URL
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={!url}
+        onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+      >
+        <Eye className="size-3.5 mr-2" /> Open resource in new tab
+      </ContextMenuItem>
+      <ContextMenuItem
+        onClick={() =>
+          pushLog(
+            "info",
+            `${name} — ${JSON.stringify(it, null, 2)}`,
+          )
+        }
+      >
+        <ExternalLink className="size-3.5 mr-2" /> Dump to console
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <BestPracticesSubMenu context={ctx} label={`${type} best practices`} />
+    </ContextMenuContent>
   );
 }
 
@@ -676,7 +769,7 @@ function PolyHavenCard({
     .filter(Boolean)
     .join("\n");
 
-  return (
+  const card = (
     <div
       role="button"
       tabIndex={busy ? -1 : 0}
@@ -724,6 +817,64 @@ function PolyHavenCard({
       </div>
     </div>
   );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{card}</ContextMenuTrigger>
+      <PolyHavenAssetMenu asset={asset} onPrimary={onPrimary} primaryLabel={primaryLabel} />
+    </ContextMenu>
+  );
+}
+
+function PolyHavenAssetMenu({
+  asset,
+  onPrimary,
+  primaryLabel,
+}: {
+  asset: PolyHavenAsset;
+  onPrimary: () => void;
+  primaryLabel: string;
+}) {
+  const pushLog = useEditor((s) => s.pushLog);
+  const phUrl = `https://polyhaven.com/a/${asset.slug}`;
+  const ctx: BestPracticeContext =
+    asset.kind === "hdris" ? "hdri" : asset.kind === "textures" ? "texture" : "model";
+
+  const copy = (text: string, label: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => pushLog("info", `Copied ${label}: ${text}`))
+      .catch(() => pushLog("warn", `Could not copy ${label} to clipboard.`));
+  };
+
+  return (
+    <ContextMenuContent className="min-w-[220px]">
+      <ContextMenuLabel className="flex flex-col items-start gap-0.5">
+        <span className="text-xs font-medium truncate max-w-[260px]">{asset.name}</span>
+        <span className="text-[10px] text-muted-foreground font-mono uppercase">
+          {asset.kind} · {(asset.download_count / 1000).toFixed(0)}k downloads
+        </span>
+      </ContextMenuLabel>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={onPrimary}>
+        <Plus className="size-3.5 mr-2" /> {primaryLabel}
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onClick={() => copy(asset.thumbnail_url, "thumbnail URL")}>
+        <Copy className="size-3.5 mr-2" /> Copy thumbnail URL
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => copy(asset.slug, "slug")}>
+        <Copy className="size-3.5 mr-2" /> Copy slug
+      </ContextMenuItem>
+      <ContextMenuItem
+        onClick={() => window.open(phUrl, "_blank", "noopener,noreferrer")}
+      >
+        <Eye className="size-3.5 mr-2" /> Open on Poly Haven
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <BestPracticesSubMenu context={ctx} label={`${ctx} best practices`} />
+    </ContextMenuContent>
+  );
 }
 
 function PolyHavenRow({
@@ -740,7 +891,7 @@ function PolyHavenRow({
   EmptyIcon: typeof Box;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
-  return (
+  const row = (
     <div
       role="button"
       tabIndex={busy ? -1 : 0}
@@ -782,6 +933,13 @@ function PolyHavenRow({
       </span>
       {busy && <Loader2 className="size-3 animate-spin text-accent shrink-0" />}
     </div>
+  );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <PolyHavenAssetMenu asset={asset} onPrimary={onPrimary} primaryLabel={primaryLabel} />
+    </ContextMenu>
   );
 }
 
