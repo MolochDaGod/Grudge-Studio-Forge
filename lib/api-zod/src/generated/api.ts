@@ -11,7 +11,7 @@ import * as zod from "zod";
  * @summary Request a presigned URL for file upload
  */
 
-export const requestUploadUrlBodySizeMax = 52428800;
+export const requestUploadUrlBodySizeMax = 1073741824;
 
 export const RequestUploadUrlBody = zod.object({
   name: zod.string().min(1),
@@ -19,7 +19,7 @@ export const RequestUploadUrlBody = zod.object({
     .number()
     .min(1)
     .max(requestUploadUrlBodySizeMax)
-    .describe("File size in bytes. Max 50 MB."),
+    .describe("File size in bytes. Max 1 GB."),
   contentType: zod.string().min(1),
   projectId: zod
     .number()
@@ -33,7 +33,7 @@ export const RequestUploadUrlBody = zod.object({
     .describe("Optional asset class. Used as a sub-folder in the storage key."),
 });
 
-export const requestUploadUrlResponseMetadataSizeMax = 52428800;
+export const requestUploadUrlResponseMetadataSizeMax = 1073741824;
 
 export const RequestUploadUrlResponse = zod.object({
   uploadURL: zod.string().url(),
@@ -45,7 +45,7 @@ export const RequestUploadUrlResponse = zod.object({
         .number()
         .min(1)
         .max(requestUploadUrlResponseMetadataSizeMax)
-        .describe("File size in bytes. Max 50 MB."),
+        .describe("File size in bytes. Max 1 GB."),
       contentType: zod.string().min(1),
       projectId: zod
         .number()

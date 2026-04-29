@@ -25,7 +25,7 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
     );
     if (sizeIssue) {
       res.status(413).json({
-        error: "File too large. Max upload size is 50 MB.",
+        error: "File too large. Max upload size is 1 GB.",
       });
       return;
     }

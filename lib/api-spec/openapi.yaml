@@ -892,8 +892,8 @@ components:
         size:
           type: integer
           minimum: 1
-          maximum: 52428800
-          description: File size in bytes. Max 50 MB.
+          maximum: 1073741824
+          description: File size in bytes. Max 1 GB.
         contentType:
           type: string
           minLength: 1

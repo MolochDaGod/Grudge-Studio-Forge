@@ -320,9 +320,9 @@ export interface UploadUrlRequest {
   /** @minLength 1 */
   name: string;
   /**
-   * File size in bytes. Max 50 MB.
+   * File size in bytes. Max 1 GB.
    * @minimum 1
-   * @maximum 52428800
+   * @maximum 1073741824
    */
   size: number;
   /** @minLength 1 */
