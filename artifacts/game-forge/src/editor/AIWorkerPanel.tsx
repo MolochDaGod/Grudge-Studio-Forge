@@ -42,6 +42,52 @@ const SUGGESTIONS: string[] = [
   "Set the sky to a dusk gradient with warm sun",
 ];
 
+/** Cap stored history per project so localStorage stays under a few hundred KB
+ *  even for power users — older messages drop off the front, FIFO. */
+const MAX_PERSISTED_MESSAGES = 100;
+
+const STORAGE_PREFIX = "gameforge.aiWorker.history.v1.";
+
+function storageKey(projectId: number | string | null | undefined): string | null {
+  return projectId != null ? STORAGE_PREFIX + String(projectId) : null;
+}
+
+function loadHistory(projectId: number | string | null | undefined): UIMessage[] {
+  const key = storageKey(projectId);
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Trust nothing — coerce each entry into the UIMessage shape so a
+    // corrupted blob can't crash the panel.
+    return parsed
+      .filter((m) => m && (m.role === "user" || m.role === "assistant"))
+      .map((m) => ({
+        role: m.role,
+        text: typeof m.text === "string" ? m.text : "",
+        tools: Array.isArray(m.tools) ? m.tools : [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(projectId: number | string | null | undefined, history: UIMessage[]): void {
+  const key = storageKey(projectId);
+  if (!key) return;
+  try {
+    const trimmed =
+      history.length > MAX_PERSISTED_MESSAGES
+        ? history.slice(history.length - MAX_PERSISTED_MESSAGES)
+        : history;
+    localStorage.setItem(key, JSON.stringify(trimmed));
+  } catch {
+    // QuotaExceeded etc. — silently drop persistence rather than crash the UI.
+  }
+}
+
 export function AIWorkerPanel({
   open,
   onClose,
@@ -57,6 +103,42 @@ export function AIWorkerPanel({
   const streamingTextRef = useRef("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Live ref to the current projectId so async send() callbacks can
+  // detect a mid-turn project switch without going stale.
+  const projectIdRef = useRef(projectId);
+  useEffect(() => {
+    projectIdRef.current = projectId;
+  }, [projectId]);
+
+  // Per-project transcript persistence.
+  //
+  // `projectId` flips whenever the user opens a different project, so we
+  // re-hydrate from localStorage on every change. Persisting on each
+  // `setHistory` write would interleave badly with the streaming bubble
+  // (which mutates state mid-turn), so we save in an effect instead — the
+  // last commit for any given projectId always wins.
+  useEffect(() => {
+    setHistory(loadHistory(projectId));
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (streaming) return; // wait for the turn to finish before persisting
+    saveHistory(projectId, history);
+  }, [projectId, history, streaming]);
+
+  const clearHistory = () => {
+    setHistory([]);
+    const key = storageKey(projectId);
+    if (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // ignore — we already cleared in-memory state
+      }
+    }
+  };
 
   // Auto-scroll on new content. ScrollArea wraps content in a viewport div;
   // we walk up to the nearest scrollable ancestor and pin it to the bottom.
@@ -87,6 +169,14 @@ export function AIWorkerPanel({
       pushLog("warn", "Open or create a project before chatting with the AI Worker.");
       return;
     }
+
+    // Pin the project for the entire turn. If the user switches projects
+    // mid-stream, we route the final assistant turn (and persistence) to
+    // the project the request was issued under — not whichever project
+    // happens to be active when the response lands. The in-memory
+    // `history` is per-project state, so we only setHistory when we're
+    // still on the same project; otherwise we patch localStorage directly.
+    const requestProjectId = projectId;
 
     const userMsg: UIMessage = { role: "user", text: trimmed, tools: [] };
     setHistory((h) => [...h, userMsg]);
@@ -151,11 +241,26 @@ export function AIWorkerPanel({
       setStreaming(false);
       streamingTextRef.current = "";
       setLiveText("");
-      // Final assistant bubble: any text the model produced + every tool it ran.
-      setHistory((h) => [
-        ...h,
-        { role: "assistant", text: turnText, tools: turnTools },
-      ]);
+      const assistantMsg: UIMessage = {
+        role: "assistant",
+        text: turnText,
+        tools: turnTools,
+      };
+      if (projectIdRef.current === requestProjectId) {
+        // Same project: normal path — append to live history; the
+        // persistence effect will save it on the next tick.
+        setHistory((h) => [...h, assistantMsg]);
+      } else {
+        // Project switched mid-turn. Don't pollute the now-visible
+        // history. Patch the original project's persisted transcript
+        // directly so the user sees the AI's reply when they return.
+        const stored = loadHistory(requestProjectId);
+        // The user message was appended to the in-memory history of
+        // requestProjectId before the switch happened, but the auto-save
+        // effect was suppressed during streaming, so the persisted blob
+        // doesn't include it yet. Reconstruct: stored + user + assistant.
+        saveHistory(requestProjectId, [...stored, userMsg, assistantMsg]);
+      }
     }
   };
 
@@ -190,7 +295,7 @@ export function AIWorkerPanel({
               variant="ghost"
               size="icon"
               className="size-7"
-              onClick={() => setHistory([])}
+              onClick={clearHistory}
               title="Clear conversation"
               data-testid="button-ai-clear"
             >

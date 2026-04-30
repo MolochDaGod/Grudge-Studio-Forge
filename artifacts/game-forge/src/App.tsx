@@ -20,6 +20,7 @@ import { ViewportTabBar } from "@/editor/ViewportTabBar";
 import { ViewportHost } from "@/editor/ViewportHost";
 import { useViewportLaunchQueue } from "@/lib/launchQueue";
 import { useEditor } from "@/store/editor";
+import { startEcsSync } from "@/lib/ecs";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles, Plus } from "lucide-react";
 import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
@@ -57,6 +58,14 @@ function EditorShell() {
   // mount; failures are non-fatal (the user just stays anonymous).
   useEffect(() => {
     void bootstrapAuth();
+  }, []);
+
+  // Mirror the scene store into the miniplex ECS so AI bulk queries
+  // (count_entities / query_entities) stay O(1) regardless of how many
+  // entities the user / AI spawn. Idempotent + cleans up on unmount so
+  // StrictMode's double-invocation is safe.
+  useEffect(() => {
+    return startEcsSync();
   }, []);
 
   // Centralized editor hotkeys.

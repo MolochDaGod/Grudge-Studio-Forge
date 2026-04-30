@@ -21,6 +21,15 @@ import {
   type StoreLike,
 } from "@/lib/commands";
 import type { SceneEntity, EntityType, ControllerKind, Vec3 } from "@/scene/types";
+import {
+  listTunableParams,
+  setTunableParam,
+} from "@/lib/tunableParams";
+import {
+  countEntities as ecsCountEntities,
+  queryEntities as ecsQueryEntities,
+  type EcsFilter,
+} from "@/lib/ecs";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -663,6 +672,177 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       return { ok: true, data: { entityId: eid, controllerKind: kind } };
     },
   },
+
+  // ── Tunable params (feel knobs) ────────────────────────────────────
+  {
+    def: {
+      name: "list_tunable_params",
+      description:
+        "List every named 'feel knob' you can tweak (sun intensity, sky color, gravity, player speed, mouse sensitivity, camera mode, …). Returns each param's id, description, value range / allowed options, and current value. Call this BEFORE set_tunable_param so you pick a sensible value within range.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => ({ ok: true, data: listTunableParams() }),
+  },
+  {
+    def: {
+      name: "set_tunable_param",
+      description:
+        "Set a single named tunable param (see list_tunable_params for the catalog). Numeric values are clamped to the param's range; colors must be #rrggbb hex; enums must match an allowed option. Use this for 'make the sun warmer', 'lower gravity', 'switch to first person', etc. — never for scene-graph changes (use add_entity / update_entity for those).",
+      input_schema: {
+        type: "object",
+        required: ["id", "value"],
+        properties: {
+          id: {
+            type: "string",
+            description:
+              "Param id from list_tunable_params (e.g. 'sun_intensity').",
+          },
+          value: {
+            description:
+              "New value. Numeric for number params, hex string for color params, exact enum string for enum params.",
+          },
+        },
+      },
+    },
+    exec: async (args) => {
+      const id = String(args["id"] ?? "");
+      if (!id) return { ok: false, error: "id is required" };
+      try {
+        const result = setTunableParam(id, args["value"]);
+        return { ok: true, data: result };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+  },
+
+  // ── ECS-backed bulk queries ────────────────────────────────────────
+  {
+    def: {
+      name: "query_entities",
+      description:
+        "Query entities by structural filters (type, has-controller, has-script, has-physics, body type, light kind, name substring, position bounds). Backed by an in-memory ECS index so it stays fast even at thousands of entities. Returns id/name/type/position for each match — call get_scene_summary or list_entities for richer snapshots.",
+      input_schema: {
+        type: "object",
+        properties: {
+          type: {
+            description:
+              "Single entity type or array (one of: box, sphere, cylinder, plane, light, camera, model, empty).",
+            anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          },
+          hasController: { type: "boolean" },
+          hasScript: { type: "boolean" },
+          hasPhysics: { type: "boolean" },
+          bodyType: {
+            type: "string",
+            enum: ["fixed", "dynamic", "kinematicPosition", "kinematicVelocity"],
+          },
+          hasLight: { type: "boolean" },
+          lightKind: { type: "string", enum: ["point", "directional", "spot"] },
+          nameContains: { type: "string" },
+          positionMin: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" },
+            },
+          },
+          positionMax: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" },
+            },
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 500,
+            description:
+              "Cap on returned entities (default 50). Use count_entities for cardinality only.",
+          },
+        },
+      },
+    },
+    exec: async (args) => {
+      const limit = Number(args["limit"] ?? 50);
+      const filter = { ...args } as EcsFilter & { limit?: number };
+      delete (filter as { limit?: number }).limit;
+      const results = ecsQueryEntities(filter).slice(
+        0,
+        Math.min(500, Math.max(1, limit)),
+      );
+      return {
+        ok: true,
+        data: {
+          total: ecsCountEntities(filter),
+          returned: results.length,
+          entities: results.map((e) => ({
+            id: e.id,
+            name: e.name,
+            type: e.type,
+            position: e.position,
+            parentId: e.parentId,
+            hasPhysics: !!e.physics,
+            bodyType: e.bodyType,
+            hasLight: !!e.light,
+            lightKind: e.lightKind,
+            hasModel: !!e.model,
+            modelKind: e.modelKind,
+            controller: e.controller,
+            hasScript: !!e.script,
+          })),
+        },
+      };
+    },
+  },
+  {
+    def: {
+      name: "count_entities",
+      description:
+        "Count entities matching a filter (same shape as query_entities). Cheaper than query_entities when you only need cardinality — e.g. 'are there any dynamic bodies without a script?'.",
+      input_schema: {
+        type: "object",
+        properties: {
+          type: {
+            anyOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+          },
+          hasController: { type: "boolean" },
+          hasScript: { type: "boolean" },
+          hasPhysics: { type: "boolean" },
+          bodyType: {
+            type: "string",
+            enum: ["fixed", "dynamic", "kinematicPosition", "kinematicVelocity"],
+          },
+          hasLight: { type: "boolean" },
+          lightKind: { type: "string", enum: ["point", "directional", "spot"] },
+          nameContains: { type: "string" },
+          positionMin: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" },
+            },
+          },
+          positionMax: {
+            type: "object",
+            properties: {
+              x: { type: "number" },
+              y: { type: "number" },
+              z: { type: "number" },
+            },
+          },
+        },
+      },
+    },
+    exec: async (args) => ({
+      ok: true,
+      data: { count: ecsCountEntities(args as EcsFilter) },
+    }),
+  },
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -707,6 +887,8 @@ export function buildSystemPrompt(): string {
     ``,
     `WORKING STYLE:`,
     `- Take initiative. If the user asks for a "playable scene", combine multiple tools (generate_map → add_model_entity for player → set_player → maybe set_environment).`,
+    `- For "feel" tweaks ("warmer", "snappier", "more floaty", "first person") prefer set_tunable_param — call list_tunable_params first to see the current value and the allowed range.`,
+    `- For bulk questions about the scene ("how many enemies?", "any dynamic bodies without a script?") use count_entities / query_entities — they read from a denormalized ECS mirror with rich structural filters, so they're far more ergonomic than reasoning over list_entities output.`,
     `- Use list_entities to look up real ids before update_entity / delete_entity / attach_script — never guess ids.`,
     `- For player characters prefer the built-in 'blake' model.`,
     `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,
