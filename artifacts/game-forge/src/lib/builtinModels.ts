@@ -33,6 +33,9 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "vfx-circuits": ensureBaseUrl("builtin/vfx-circuits.glb"),
   "vfx-tornado": ensureBaseUrl("builtin/vfx-tornado.glb"),
   "vfx-warning": ensureBaseUrl("builtin/vfx-warning.glb"),
+  "map-cyberpunk": ensureBaseUrl("builtin/map-cyberpunk.glb"),
+  "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
+  "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
 };
 
 export const BUILTIN_MODEL_KEY = (key: keyof typeof BUILTIN_MODELS | string) =>

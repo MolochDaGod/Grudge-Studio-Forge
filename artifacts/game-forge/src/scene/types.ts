@@ -55,6 +55,16 @@ export interface ModelComponent {
 
 export type ControllerKind = "none" | "thirdPerson" | "firstPerson";
 
+/** Built-in deathmatch behaviors run by the script runtime in play mode.
+ *  These are equivalent to attaching a pre-written script — they live in
+ *  `lib/deathmatchBehaviors.ts` and are compiled through the same JS pipeline
+ *  as user scripts. They run *in addition to* a user-attached `scriptId`. */
+export type BehaviorKind =
+  | "player-deathmatch"
+  | "enemy-deathmatch"
+  | "gamemode-deathmatch"
+  | "spawnpoint";
+
 export interface SceneEntity {
   id: string;
   name: string;
@@ -65,6 +75,8 @@ export interface SceneEntity {
   light?: LightComponent;
   model?: ModelComponent;
   scriptId?: number | null;
+  /** Built-in behavior — see {@link BehaviorKind}. */
+  behavior?: BehaviorKind;
   /** Mark this entity as the player. The active camera controller will move it
    *  in play mode (WASD + mouselook for FPS / orbit for TPS). */
   controllerKind?: ControllerKind;
@@ -94,6 +106,13 @@ export interface Environment {
   playerMoveSpeed?: number;
   /** Mouselook sensitivity (radians per pixel, default 0.0025). */
   mouseSensitivity?: number;
+  /** Game mode driving the play HUD. `deathmatch` shows the kill counter,
+   *  damage flash, hit indicators, respawn timer, win/lose banner. */
+  gameMode?: "sandbox" | "deathmatch";
+  /** Deathmatch: score required to win (default 10). */
+  scoreLimit?: number;
+  /** Deathmatch: respawn delay in seconds (default 5). */
+  respawnDelay?: number;
 }
 
 export interface SceneData {

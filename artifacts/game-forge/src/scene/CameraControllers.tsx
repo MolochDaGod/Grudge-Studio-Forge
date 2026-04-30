@@ -6,6 +6,33 @@ import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useKeyboardState } from "@/lib/keyboard";
 import type { CameraMode, SceneEntity } from "@/scene/types";
+import { getPlaySession } from "@/scene/playSession";
+
+/**
+ * Returns true when an external system (the deathmatch script runtime) has
+ * asked the camera controller to LEAVE the body alone for the current frame.
+ *
+ * Two reasons:
+ *   1. {@link PlaySession.frozenBodies} — the script has explicitly frozen
+ *      the body (e.g. dead player).
+ *   2. {@link PlaySession.pendingTeleportFrame} — the script queued a
+ *      teleport on THIS frame. Comparing the stamp to the caller's
+ *      `state.clock.elapsedTime` makes the arbitration ORDER-INDEPENDENT:
+ *      no matter whether ScriptedEntities or the camera controller runs
+ *      first within the same frame, the stamp matches "now" once
+ *      setPosition has been called for that id, and is "stale" otherwise.
+ *
+ * INVARIANT: never call `state.clock.getDelta()` or `state.clock.start/stop`
+ * inside a useFrame callback — R3F advances the clock once per frame and
+ * dispatches subscribers; mutating it mid-tick would break the equality
+ * check above. Use the `delta` arg from useFrame's signature instead.
+ */
+function isExternallyOwned(entityId: string, elapsedTime: number): boolean {
+  const s = getPlaySession();
+  if (s.frozenBodies.has(entityId)) return true;
+  const stamp = s.pendingTeleportFrame.get(entityId);
+  return stamp !== undefined && stamp === elapsedTime;
+}
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -276,7 +303,7 @@ export function ThirdPersonCameraController({
     };
   }, [gl, env.mouseSensitivity]);
 
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     const player = findPlayer(sceneData.entities, env.cameraTargetEntityId);
     if (!player) return;
     const body = bodyRefs.current?.get(player.id);
@@ -306,9 +333,15 @@ export function ThirdPersonCameraController({
     }
     // Always call moveBody — when no input it sets horizontal velocity to 0
     // (preserving Y), which stops sliding on dynamic bodies cleanly.
-    moveBody(body, { x: vx, z: vz }, delta);
-    if (vx !== 0 || vz !== 0) {
-      rotateBody(body, Math.atan2(vx, vz) + Math.PI);
+    // EXCEPT when the body is externally owned this frame (frozen by a
+    // script, or has a teleport queued THIS frame). isExternallyOwned uses
+    // the frame stamp so callback order doesn't matter. The camera still
+    // follows the body either way.
+    if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
+      moveBody(body, { x: vx, z: vz }, delta);
+      if (vx !== 0 || vz !== 0) {
+        rotateBody(body, Math.atan2(vx, vz) + Math.PI);
+      }
     }
 
     // Camera follows orbit. `pos` was read at frame start; for dynamic bodies
@@ -370,7 +403,7 @@ export function FirstPersonCameraController({
     };
   }, [gl, env.mouseSensitivity]);
 
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     const player = findPlayer(sceneData.entities, env.cameraTargetEntityId);
     if (!player) return;
     const body = bodyRefs.current?.get(player.id);
@@ -397,8 +430,10 @@ export function FirstPersonCameraController({
       vx = (fx * cos + fz * sin) * speed;
       vz = (-fx * sin + fz * cos) * speed;
     }
-    moveBody(body, { x: vx, z: vz }, delta);
-    rotateBody(body, yawRef.current + Math.PI);
+    if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
+      moveBody(body, { x: vx, z: vz }, delta);
+      rotateBody(body, yawRef.current + Math.PI);
+    }
 
     // Camera at "head" height
     const headY = pos.y + 0.6;

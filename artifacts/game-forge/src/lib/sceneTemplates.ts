@@ -437,6 +437,210 @@ export function characterShowcaseScene(): SceneData {
   };
 }
 
+// ─── Deathmatch starter scenes ───────────────────────────────────────────────
+// Three first-to-10-kills deathmatch maps, each built from one of the bundled
+// large-format GLB maps. Players spawn at random Spawn_* points, AI enemies
+// (Yuka SeekBehavior) chase the player, both sides respawn after 5s. The HUD
+// (kill counter, damage flash, hit indicator, win/lose banner) is wired up
+// automatically when `environment.gameMode === "deathmatch"`.
+//
+// Each scene shares the same authoring shape:
+//   • Map model entity at origin, no physics (decorative only)
+//   • Large flat ground plane (fixed cuboid) at y=0 so the player + AI have
+//     real collision while the map model provides the visuals
+//   • 1 Player entity (rigged character GLB) with controllerKind:thirdPerson
+//     and behavior:player-deathmatch
+//   • 6 enemy entities (rigged character GLB) with behavior:enemy-deathmatch
+//   • 6 Spawn_<N> empties scattered around the play area
+//   • 1 GameManager empty with behavior:gamemode-deathmatch
+//   • Lighting tuned per setting (cyberpunk = neon, encampment = warm, desert = harsh sun)
+function buildDeathmatch(opts: {
+  mapKey: "map-cyberpunk" | "map-encampment" | "map-deserttown";
+  mapScale: number;
+  mapRotationY?: number;
+  spawnRadius: number;
+  enemyCount: number;
+  env: Partial<typeof DEFAULT_ENV>;
+  brazierLights?: { pos: [number, number, number]; color: string; intensity: number; distance: number }[];
+}): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // Visible map (no physics). The big GLB drives the look; physics is handled
+  // by the invisible ground plane below so the player can't fall through.
+  entities.push({
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: `builtin:${opts.mapKey}` },
+    transform: {
+      position: [0, 0, 0],
+      rotation: [0, opts.mapRotationY ?? 0, 0],
+      scale: [opts.mapScale, opts.mapScale, opts.mapScale],
+    },
+    parentId: null,
+  });
+
+  // Invisible collision ground.
+  entities.push(
+    ent({
+      name: "Ground",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [200, 200, 1],
+      color: "#0a0a14",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+    }),
+  );
+
+  // Player.
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: ASSETS.character },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    parentId: null,
+  });
+
+  // Spawn points (six on a ring; each enemy + player picks one at respawn).
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    entities.push({
+      id: id(),
+      name: `Spawn_${i + 1}`,
+      type: "empty",
+      transform: {
+        position: [Math.cos(a) * opts.spawnRadius, 0, Math.sin(a) * opts.spawnRadius],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+      behavior: "spawnpoint",
+      parentId: null,
+    });
+  }
+
+  // Enemies.
+  for (let i = 0; i < opts.enemyCount; i++) {
+    const a = (i / opts.enemyCount) * Math.PI * 2 + Math.PI / opts.enemyCount;
+    const r = opts.spawnRadius * 0.85;
+    const s = 0.95 + (i % 3) * 0.05;
+    entities.push({
+      id: id(),
+      name: `Enemy_${i + 1}`,
+      type: "model",
+      model: { url: ASSETS.character, tint: "#ff5050" },
+      transform: {
+        position: [Math.cos(a) * r, 0, Math.sin(a) * r],
+        rotation: [0, a + Math.PI, 0],
+        scale: [s, s, s],
+      },
+      physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
+      behavior: "enemy-deathmatch",
+      parentId: null,
+    });
+  }
+
+  // Mood lights specific to the setting.
+  for (const bl of opts.brazierLights ?? []) {
+    entities.push(
+      ent({
+        name: `Mood Light`,
+        type: "light",
+        position: bl.pos,
+        light: { kind: "point", color: bl.color, intensity: bl.intensity, distance: bl.distance },
+      }),
+    );
+  }
+
+  // Hidden game manager.
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: null,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      ...opts.env,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+      respawnDelay: 5,
+    },
+  };
+}
+
+export function cyberpunkDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-cyberpunk",
+    mapScale: 0.6,
+    spawnRadius: 14,
+    enemyCount: 6,
+    env: {
+      skyColor: "#06061a",
+      groundColor: "#0a0a18",
+      ambientIntensity: 0.32,
+      sunIntensity: 0.28,
+    },
+    brazierLights: [
+      { pos: [10, 5, 0], color: "#ff2d8a", intensity: 22, distance: 28 },
+      { pos: [-10, 5, 0], color: "#21d4ff", intensity: 22, distance: 28 },
+      { pos: [0, 6, 12], color: "#a020f0", intensity: 18, distance: 26 },
+      { pos: [0, 6, -12], color: "#39ff14", intensity: 18, distance: 26 },
+    ],
+  });
+}
+
+export function encampmentDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-encampment",
+    mapScale: 0.5,
+    spawnRadius: 16,
+    enemyCount: 7,
+    env: {
+      skyColor: "#0c1018",
+      groundColor: "#1f1a14",
+      ambientIntensity: 0.28,
+      sunIntensity: 0.5,
+    },
+    brazierLights: [
+      { pos: [8, 4, 6], color: "#ff8a3d", intensity: 16, distance: 24 },
+      { pos: [-8, 4, -6], color: "#ff8a3d", intensity: 16, distance: 24 },
+      { pos: [0, 6, 0], color: "#ffe6a8", intensity: 12, distance: 32 },
+    ],
+  });
+}
+
+export function deserttownDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-deserttown",
+    mapScale: 0.6,
+    spawnRadius: 14,
+    enemyCount: 6,
+    env: {
+      skyColor: "#e6c489",
+      groundColor: "#b08754",
+      ambientIntensity: 0.6,
+      sunIntensity: 1.6,
+    },
+    brazierLights: [
+      { pos: [0, 8, 0], color: "#fff2c0", intensity: 8, distance: 40 },
+    ],
+  });
+}
+
 export const SCENE_TEMPLATES: { key: string; label: string; build: () => SceneData; description: string }[] = [
   {
     key: "character-showcase",
@@ -455,5 +659,23 @@ export const SCENE_TEMPLATES: { key: string; label: string; build: () => SceneDa
     label: "FPS — Turret Arena",
     description: "First-person arena: cylinder player with parented rifle GLB, 3 turrets, crates, spotlight.",
     build: fpsArenaScene,
+  },
+  {
+    key: "dm-cyberpunk",
+    label: "Deathmatch — Cyberpunk City",
+    description: "First-to-10 deathmatch on the neon cyberpunk map. 6 Yuka-driven AI enemies, multi-spawn respawn, full HUD.",
+    build: cyberpunkDeathmatchScene,
+  },
+  {
+    key: "dm-encampment",
+    label: "Deathmatch — Forest Encampment",
+    description: "First-to-10 deathmatch in the wooded encampment. 7 AI enemies, warm firelight, full HUD.",
+    build: encampmentDeathmatchScene,
+  },
+  {
+    key: "dm-deserttown",
+    label: "Deathmatch — Desert Town",
+    description: "First-to-10 deathmatch in the sun-baked desert town. 6 AI enemies, harsh midday sun, full HUD.",
+    build: deserttownDeathmatchScene,
   },
 ];

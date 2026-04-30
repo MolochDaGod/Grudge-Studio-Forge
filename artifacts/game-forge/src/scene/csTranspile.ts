@@ -39,10 +39,85 @@ export interface ScriptEntity {
   scale: [number, number, number];
 }
 
+export interface MouseState {
+  /** Pointer x in CSS pixels relative to the canvas. */
+  x: number;
+  /** Pointer y in CSS pixels relative to the canvas. */
+  y: number;
+  /** Pointer movement since last frame (pointer-locked or not). */
+  dx: number;
+  dy: number;
+  left: boolean;
+  right: boolean;
+  middle: boolean;
+  /** True when the canvas has captured the pointer (FPS mouselook). */
+  locked: boolean;
+}
+
+export interface RaycastHit {
+  /** Entity id of the closest object hit, or null for terrain (no entity). */
+  entityId: string | null;
+  /** World-space hit point. */
+  point: [number, number, number];
+  /** Distance from the ray origin to the hit point. */
+  distance: number;
+  /** World-space surface normal at the hit point. */
+  normal: [number, number, number];
+}
+
 export interface ScriptContext {
   time: { delta: number; elapsed: number };
-  input: { keys: Record<string, boolean> };
-  scene: { find: (name: string) => ScriptEntity | undefined };
+  input: {
+    keys: Record<string, boolean>;
+    mouse: MouseState;
+  };
+  scene: {
+    find: (name: string) => ScriptEntity | undefined;
+    findAll: (predicate: (e: ScriptEntity) => boolean) => ScriptEntity[];
+    findById: (id: string) => ScriptEntity | undefined;
+    /** Teleport an entity (works for kinematic + dynamic Rapier bodies and
+     *  plain THREE.Group nodes). Returns true if the entity was found. */
+    setPosition: (id: string, position: [number, number, number]) => boolean;
+    /** Cast a ray through the THREE scene graph; returns the closest mesh hit
+     *  (excluding entities in `excludeIds`). Mesh-level raycast — respects map
+     *  geometry occlusion. */
+    castRay: (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      maxDistance?: number,
+      excludeIds?: string[],
+    ) => RaycastHit | null;
+    /** Send a typed message to another entity's inbox (delivered next frame).
+     *  Recipient reads with `scene.on(event, handler)`. */
+    send: (targetId: string, event: string, payload?: unknown) => void;
+    /** Subscribe to messages addressed to *this* entity. Handler is invoked
+     *  during the current frame's update. Idempotent — calling with the same
+     *  event name replaces the previous handler. */
+    on: (event: string, handler: (payload: unknown, fromId: string) => void) => void;
+    /** Position of the active play-mode camera (head position for FPS, orbit
+     *  position for TPS). Useful as a ray origin for player shooting. */
+    cameraPosition: () => [number, number, number];
+    /** Forward direction the active camera is looking (unit vector). */
+    cameraDirection: () => [number, number, number];
+    /** Mark an entity's body as "frozen" — external systems (e.g. the play-
+     *  mode camera controller) skip writing to it. Used by the deathmatch
+     *  player to disable input while dead and to guarantee respawn teleports
+     *  win the frame. */
+    freeze: (id: string) => void;
+    /** Inverse of {@link freeze}. */
+    unfreeze: (id: string) => void;
+  };
+  /** Global game event bus — used to drive the HUD (kill counter, damage flash,
+   *  hit indicator, win/lose banner). */
+  events: {
+    emit: (event: string, payload?: unknown) => void;
+    on: (event: string, handler: (payload: unknown) => void) => void;
+  };
+  /** Per-entity persistent state bag. Survives across update calls (start to
+   *  stop of play mode). */
+  state: Record<string, unknown>;
+  /** Yuka AI library namespace — `ctx.yuka.SteeringEntity`, `ctx.yuka.SeekBehavior`, etc. */
+  yuka: typeof import("yuka");
   log: (...args: unknown[]) => void;
 }
 

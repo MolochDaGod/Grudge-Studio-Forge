@@ -7,12 +7,16 @@ import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey, type Script } from "@workspace/api-client-react";
 import { EntityRenderer } from "@/scene/EntityRenderer";
-import { getCompiledScript, makeContext } from "@/scene/PlayRuntime";
+import { getCompiledBehavior, getCompiledScript, makeContext, raycastEntities, type Compiled } from "@/scene/PlayRuntime";
 import type { ScriptEntity } from "@/scene/csTranspile";
 import { useKeyboardState } from "@/lib/keyboard";
+import { useMouseState } from "@/scene/useMouseState";
 import { PlayCameraController } from "@/scene/CameraControllers";
 import { buildTree } from "@/lib/hierarchy";
 import type { SceneEntity, EntityType } from "@/scene/types";
+import { BUILTIN_BEHAVIORS } from "@/lib/deathmatchBehaviors";
+import { getPlaySession, resetPlaySession } from "@/scene/playSession";
+import { PlayHUD } from "@/editor/PlayHUD";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -160,9 +164,30 @@ function ScriptedEntities({
     query: { queryKey: getListScriptsQueryKey(projectId ?? 0), enabled: !!projectId },
   });
   const keysRef = useKeyboardState(true);
+  const { gl, scene: threeScene, camera } = useThree();
+  const mouseRef = useMouseState(gl.domElement);
+  const session = useMemo(() => getPlaySession(), []);
 
   const startedRef = useRef<Set<string>>(new Set());
   const elapsedRef = useRef(0);
+  /** Pending teleports queued by `scene.setPosition` — applied after all
+   *  scripts run so a script that moves another entity doesn't observe a
+   *  half-applied state mid-iteration. The corresponding entity-ids are
+   *  also frame-stamped into `session.pendingTeleportFrame` so other
+   *  writers (PlayCameraController) can compare stamp === current frame
+   *  elapsedTime and skip their write — order-independent. */
+  const pendingTeleports = useRef<Map<string, [number, number, number]>>(new Map());
+
+  // Tear down the play session when this component unmounts (i.e., user
+  // toggles play off). Resetting clears the bus, inboxes, and per-entity
+  // state so the next play-through starts clean.
+  useEffect(() => {
+    startedRef.current.clear();
+    elapsedRef.current = 0;
+    return () => {
+      resetPlaySession();
+    };
+  }, []);
 
   const scriptMap = useMemo(() => {
     const m = new Map<number, Script>();
@@ -170,85 +195,213 @@ function ScriptedEntities({
     return m;
   }, [scripts]);
 
-  useFrame((_state, delta) => {
+  // Snapshot helper — turns a SceneEntity into the smaller ScriptEntity the
+  // script runtime sees, with live position/rotation pulled from the active
+  // rigid body or group when available.
+  const snapshot = (entity: SceneEntity): ScriptEntity => {
+    const se: ScriptEntity = {
+      id: entity.id,
+      name: entity.name,
+      position: [...entity.transform.position] as [number, number, number],
+      rotation: [...entity.transform.rotation] as [number, number, number],
+      scale: [...entity.transform.scale] as [number, number, number],
+    };
+    const bodyOrGroup = bodyRefs.current.get(entity.id);
+    if (bodyOrGroup) {
+      if ("translation" in bodyOrGroup) {
+        const t = bodyOrGroup.translation();
+        se.position = [t.x, t.y, t.z];
+      } else {
+        se.position = [bodyOrGroup.position.x, bodyOrGroup.position.y, bodyOrGroup.position.z];
+        se.rotation = [bodyOrGroup.rotation.x, bodyOrGroup.rotation.y, bodyOrGroup.rotation.z];
+      }
+    }
+    return se;
+  };
+
+  // Direct teleport helper — used both by setPosition() and by the player
+  // respawn path. Rapier RigidBodyType: Dynamic=0, Fixed=1,
+  // KinematicPositionBased=2, KinematicVelocityBased=3. Kinematic bodies use
+  // setNextKinematicTranslation; dynamic bodies use setTranslation; plain
+  // groups just set position.
+  const teleport = (id: string, position: [number, number, number]): boolean => {
+    const bodyOrGroup = bodyRefs.current.get(id);
+    if (!bodyOrGroup) return false;
+    if ("setNextKinematicTranslation" in bodyOrGroup) {
+      const body = bodyOrGroup;
+      const t = body.bodyType?.() ?? 0;
+      const isKinematic = t === 2 || t === 3;
+      if (isKinematic) {
+        body.setNextKinematicTranslation({ x: position[0], y: position[1], z: position[2] });
+      } else {
+        body.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
+      }
+    } else {
+      bodyOrGroup.position.set(position[0], position[1], position[2]);
+    }
+    return true;
+  };
+
+  useFrame((state, delta) => {
     if (isPaused) return;
     elapsedRef.current += delta;
-    for (const entity of sceneData.entities) {
-      if (!entity.scriptId) continue;
-      const script = scriptMap.get(entity.scriptId);
-      if (!script) continue;
-      const compiled = getCompiledScript(script);
-      if (compiled.error) continue;
 
-      const bodyOrGroup = bodyRefs.current.get(entity.id);
-      const scriptEntity: ScriptEntity = {
-        id: entity.id,
-        name: entity.name,
-        position: [...entity.transform.position] as [number, number, number],
-        rotation: [...entity.transform.rotation] as [number, number, number],
-        scale: [...entity.transform.scale] as [number, number, number],
-      };
-
-      // Pull current transform from the live rigid body / group if available
-      if (bodyOrGroup) {
-        if ("translation" in bodyOrGroup) {
-          const t = bodyOrGroup.translation();
-          const r = bodyOrGroup.rotation();
-          scriptEntity.position = [t.x, t.y, t.z];
-          // approximate quaternion -> euler isn't worth the complexity in the script context; we leave rotation as scene-time
-          void r;
-        } else {
-          scriptEntity.position = [bodyOrGroup.position.x, bodyOrGroup.position.y, bodyOrGroup.position.z];
-          scriptEntity.rotation = [bodyOrGroup.rotation.x, bodyOrGroup.rotation.y, bodyOrGroup.rotation.z];
-        }
+    // Pre-build helpers reused across all scripts this frame.
+    const findEntity = (name: string): ScriptEntity | undefined => {
+      const found = sceneData.entities.find((e) => e.name === name);
+      return found ? snapshot(found) : undefined;
+    };
+    const findEntityById = (id: string): ScriptEntity | undefined => {
+      const found = sceneData.entities.find((e) => e.id === id);
+      return found ? snapshot(found) : undefined;
+    };
+    const findEntities = (predicate: (e: ScriptEntity) => boolean): ScriptEntity[] => {
+      const out: ScriptEntity[] = [];
+      for (const e of sceneData.entities) {
+        const se = snapshot(e);
+        if (predicate(se)) out.push(se);
       }
+      return out;
+    };
+    const setEntityPosition = (id: string, pos: [number, number, number]): boolean => {
+      // Defer the actual write — see pendingTeleports comment above. We also
+      // stamp the id with THIS frame's elapsedTime on the play session.
+      // External writers (camera controller) compare their own state.clock
+      // .elapsedTime against this stamp and skip their write if equal —
+      // making the arbitration order-independent across useFrame callbacks.
+      pendingTeleports.current.set(id, [pos[0], pos[1], pos[2]]);
+      session.pendingTeleportFrame.set(id, state.clock.elapsedTime);
+      return bodyRefs.current.has(id);
+    };
+    const freeze = (id: string) => session.frozenBodies.add(id);
+    const unfreeze = (id: string) => session.frozenBodies.delete(id);
+    const cameraPosition = (): [number, number, number] => [
+      camera.position.x,
+      camera.position.y,
+      camera.position.z,
+    ];
+    const cameraDirection = (): [number, number, number] => {
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      return [dir.x, dir.y, dir.z];
+    };
+    const castRay = (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      maxDistance: number,
+      excludeIds: string[] | undefined,
+    ) => raycastEntities(threeScene, origin, direction, maxDistance, excludeIds);
 
+    for (const entity of sceneData.entities) {
+      // Resolve up to two compiled scripts: the built-in behavior (if any)
+      // and the user-attached scriptId. Both run, behavior first, so the
+      // user can layer custom logic on top of a stock player/enemy.
+      const behaviorSrc = entity.behavior ? BUILTIN_BEHAVIORS[entity.behavior] : null;
+      const userScript = entity.scriptId ? scriptMap.get(entity.scriptId) : null;
+      const behaviorCompiled: Compiled | null =
+        behaviorSrc && entity.behavior ? getCompiledBehavior(entity.behavior, behaviorSrc) : null;
+      const userCompiled: Compiled | null = userScript ? getCompiledScript(userScript) : null;
+
+      if (!behaviorCompiled && !userCompiled) continue;
+
+      const scriptEntity = snapshot(entity);
       const ctx = makeContext({
+        entityId: entity.id,
         delta,
         elapsed: elapsedRef.current,
         keys: keysRef.current,
+        mouse: mouseRef.state,
         log: (level, text) => pushLog(level, `[${entity.name}] ${text}`),
-        findEntity: (name) => {
-          const found = sceneData.entities.find((e) => e.name === name);
-          if (!found) return undefined;
-          return {
-            id: found.id,
-            name: found.name,
-            position: [...found.transform.position] as [number, number, number],
-            rotation: [...found.transform.rotation] as [number, number, number],
-            scale: [...found.transform.scale] as [number, number, number],
-          };
-        },
+        findEntity,
+        findEntities,
+        findEntityById,
+        setEntityPosition,
+        castRay,
+        cameraPosition,
+        cameraDirection,
+        inboxes: session.inboxes,
+        bus: session.bus,
+        states: session.states,
+        freeze,
+        unfreeze,
       });
 
+      // Run start() once — for either source. Both run on the same frame.
+      // We MUST register start before the first inbox flush, otherwise any
+      // message addressed to this entity on frame N would be dropped because
+      // the handler hasn't been registered yet.
+      const startedKey = `${entity.id}:${entity.behavior ?? ""}:${entity.scriptId ?? ""}`;
       try {
-        if (!startedRef.current.has(entity.id) && compiled.start) {
-          compiled.start(scriptEntity, ctx);
-          startedRef.current.add(entity.id);
+        if (!startedRef.current.has(startedKey)) {
+          // Seed env-tunable knobs into per-entity state before start() so
+          // built-in deathmatch behaviors can read e.g. ctx.state.respawnDelay
+          // / ctx.state.scoreLimit. Behaviors fall back to hardcoded defaults
+          // if these are unset.
+          if (sceneData.environment.respawnDelay !== undefined) {
+            ctx.state.respawnDelay = sceneData.environment.respawnDelay;
+          }
+          if (sceneData.environment.scoreLimit !== undefined) {
+            ctx.state.scoreLimit = sceneData.environment.scoreLimit;
+          }
+          if (behaviorCompiled?.start) behaviorCompiled.start(scriptEntity, ctx);
+          if (userCompiled?.start && !userCompiled.error) userCompiled.start(scriptEntity, ctx);
+          startedRef.current.add(startedKey);
         }
-        if (compiled.update) {
-          compiled.update(scriptEntity, ctx);
-        }
+        // Now that start() has registered any scene.on() handlers, flush
+        // pending inbox messages so they're delivered before update().
+        session.inboxes.flush(entity.id);
+        if (behaviorCompiled?.update) behaviorCompiled.update(scriptEntity, ctx);
+        if (userCompiled?.update && !userCompiled.error) userCompiled.update(scriptEntity, ctx);
       } catch (err) {
         pushLog("error", `[${entity.name}] ${(err as Error).message}`);
         continue;
       }
 
-      // Apply mutations back to the rigid body / group
-      if (bodyOrGroup) {
+      // Apply transform mutations back to the body / group (script may have
+      // moved the entity by writing entity.position directly).
+      //
+      // Skip controller-driven entities: PlayCameraController owns their
+      // body each frame, and ours would clobber its setNextKinematicTranslation
+      // queue. Behavior scripts on a controller-driven entity (e.g. the
+      // player-deathmatch behavior) interact with the world via inbox/events/
+      // setPosition(), not by mutating entity.position directly.
+      const isControllerDriven = !!entity.controllerKind && entity.controllerKind !== "none";
+      const bodyOrGroup = bodyRefs.current.get(entity.id);
+      if (bodyOrGroup && !isControllerDriven) {
         if ("setNextKinematicTranslation" in bodyOrGroup) {
           const body = bodyOrGroup;
-          body.setNextKinematicTranslation({
-            x: scriptEntity.position[0],
-            y: scriptEntity.position[1],
-            z: scriptEntity.position[2],
-          });
+          const bt = body.bodyType?.() ?? 0;
+          // Only write back to KINEMATIC bodies (2 or 3). Dynamic bodies
+          // (0) are owned by the solver — scripts that need to teleport a
+          // dynamic body should call ctx.scene.setPosition() instead, which
+          // routes through the kinematic-aware teleport() helper.
+          if (bt === 2 || bt === 3) {
+            body.setNextKinematicTranslation({
+              x: scriptEntity.position[0],
+              y: scriptEntity.position[1],
+              z: scriptEntity.position[2],
+            });
+          }
         } else {
           bodyOrGroup.position.set(...scriptEntity.position);
           bodyOrGroup.rotation.set(...scriptEntity.rotation);
         }
       }
     }
+
+    // Apply queued teleports (scene.setPosition calls). Doing this AFTER the
+    // per-entity transform write-back ensures setPosition wins over the
+    // entity-position write for the same id. The frame-stamp on
+    // session.pendingTeleportFrame remains until the next frame — since
+    // external readers compare against `state.clock.elapsedTime`, stale
+    // entries are auto-ignored once a new frame begins.
+    for (const [id, pos] of pendingTeleports.current) {
+      teleport(id, pos);
+    }
+    pendingTeleports.current.clear();
+
+    // Reset per-frame pointer delta.
+    mouseRef.consumeDelta();
   });
 
   const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
@@ -661,6 +814,10 @@ export function Viewport() {
           <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
             <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
           </div>
+
+          {isPlaying && env.gameMode === "deathmatch" && (
+            <PlayHUD bus={getPlaySession().bus} />
+          )}
 
           <Hotbar />
         </div>
