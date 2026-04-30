@@ -9,6 +9,7 @@ import prefabsRouter from "./prefabs";
 import grudgeRouter from "./grudge";
 import polyhavenRouter from "./polyhaven";
 import storageRouter from "./storage";
+import templatesRouter from "./templates";
 import aiRouter from "./ai";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use(prefabsRouter);
 router.use(grudgeRouter);
 router.use(polyhavenRouter);
 router.use(storageRouter);
+router.use(templatesRouter);
 router.use(aiRouter);
 
 export default router;

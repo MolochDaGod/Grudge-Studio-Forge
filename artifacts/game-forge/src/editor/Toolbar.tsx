@@ -46,14 +46,16 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SCENE_TEMPLATES } from "@/lib/sceneTemplates";
 import { useEditor } from "@/store/editor";
 import { MapGenDialog } from "@/editor/MapGenDialog";
+import { TemplateLoadingDialog } from "@/editor/TemplateLoadingDialog";
+import { useTemplateLoader } from "@/editor/useTemplateLoader";
 import {
   useUpdateScene,
   useCreateScene,
   useGetProject,
   useUpdatePrefab,
+  useListTemplates,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -136,8 +138,15 @@ export function Toolbar({
   const setShowStats = useEditor((s) => s.setShowStats);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  // Templates now stream from the api-server (backed by object storage)
+  // instead of being bundled into the editor JS. The picker reads the
+  // manifest via React Query; selecting one streams the SceneData JSON
+  // with a real progress bar.
+  const { data: templateManifest = [] } = useListTemplates();
+  const templateLoader = useTemplateLoader();
+
   const loadTemplate = (key: string) => {
-    const tpl = SCENE_TEMPLATES.find((t) => t.key === key);
+    const tpl = templateManifest.find((t) => t.key === key);
     if (!tpl) return;
     if (
       sceneData.entities.length > 0 &&
@@ -147,10 +156,7 @@ export function Toolbar({
     ) {
       return;
     }
-    const data = tpl.build();
-    setSceneData(data);
-    setSceneName(tpl.label);
-    pushLog("info", `Loaded template "${tpl.label}" (${data.entities.length} entities).`);
+    templateLoader.start(tpl.key, tpl.label);
   };
 
   const exportScene = () => {
@@ -662,19 +668,25 @@ export function Toolbar({
               <FileStack className="size-4 mr-2" /> Load template…
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[260px]">
-              {SCENE_TEMPLATES.map((t) => (
-                <DropdownMenuItem
-                  key={t.key}
-                  onClick={() => loadTemplate(t.key)}
-                  className="flex flex-col items-start gap-0.5 py-2"
-                  data-testid={`menu-template-${t.key}`}
-                >
-                  <span className="text-sm font-medium">{t.label}</span>
-                  <span className="text-[10px] text-muted-foreground leading-tight whitespace-normal">
-                    {t.description}
-                  </span>
+              {templateManifest.length === 0 ? (
+                <DropdownMenuItem disabled className="text-xs">
+                  Loading template list…
                 </DropdownMenuItem>
-              ))}
+              ) : (
+                templateManifest.map((t) => (
+                  <DropdownMenuItem
+                    key={t.key}
+                    onClick={() => loadTemplate(t.key)}
+                    className="flex flex-col items-start gap-0.5 py-2"
+                    data-testid={`menu-template-${t.key}`}
+                  >
+                    <span className="text-sm font-medium">{t.label}</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight whitespace-normal">
+                      {t.description}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         </DropdownMenuContent>
@@ -720,6 +732,13 @@ export function Toolbar({
       )}
 
       <MapGenDialog open={mapGenOpen} onOpenChange={setMapGenOpen} />
+
+      <TemplateLoadingDialog
+        open={templateLoader.isLoading}
+        label={templateLoader.activeLabel}
+        progress={templateLoader.progress}
+        onCancel={templateLoader.cancel}
+      />
 
       <Dialog
         open={!!publishResult || !!publishError}

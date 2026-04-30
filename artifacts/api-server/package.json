@@ -14,6 +14,8 @@
     "@google-cloud/storage": "^7.19.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/scene-schema": "workspace:*",
+    "@workspace/scene-templates": "workspace:*",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",

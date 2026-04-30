@@ -43,6 +43,8 @@ export * from "./scene";
 export * from "./sceneData";
 export * from "./script";
 export * from "./scriptLanguage";
+export * from "./templateManifestEntry";
+export * from "./templateScene";
 export * from "./transform";
 export * from "./updatePrefabBody";
 export * from "./updateProjectBody";

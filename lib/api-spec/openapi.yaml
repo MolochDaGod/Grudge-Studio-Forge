@@ -19,6 +19,8 @@ tags:
   - name: grudge
   - name: storage
     description: Object storage upload and serving endpoints.
+  - name: templates
+    description: Built-in starter scenes ("example maps") materialized into object storage on server boot and streamed to the editor on demand.
 paths:
   /storage/uploads/request-url:
     post:
@@ -564,6 +566,60 @@ paths:
               schema:
                 $ref: "#/components/schemas/GrudgeCatalog"
 
+  /templates:
+    get:
+      operationId: listTemplates
+      tags: [templates]
+      summary: List built-in scene templates
+      description: |
+        Returns the manifest for every starter scene shipped with the editor.
+        Each entry includes byte size and entity count so the picker UI can
+        render an accurate progress bar before issuing the download request.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TemplateManifestEntry"
+
+  /templates/{key}:
+    get:
+      operationId: getTemplate
+      tags: [templates]
+      summary: Download a template's scene JSON
+      description: |
+        Streams the template's full SceneData payload from object storage.
+        Response sets `Content-Length` so the editor can drive a determinate
+        loading bar. The `key` matches the manifest entry's `key` field.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z0-9-]+$"
+      responses:
+        "200":
+          description: OK
+          headers:
+            Content-Length:
+              description: Byte length of the JSON payload — used to drive client-side progress UI.
+              schema:
+                type: integer
+            Cache-Control:
+              description: Versioned object keys make this safe to cache aggressively.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateScene"
+        "404":
+          description: Unknown template key.
+
 components:
   parameters:
     IdParam:
@@ -1057,3 +1113,32 @@ components:
           type: string
         metadata:
           $ref: '#/components/schemas/UploadUrlRequest'
+
+    TemplateManifestEntry:
+      type: object
+      required: [key, label, description, entityCount, byteSize, storagePath, version]
+      properties:
+        key:
+          type: string
+          description: Stable URL-safe identifier matching the picker UI button.
+        label:
+          type: string
+          description: User-facing template title.
+        description:
+          type: string
+          description: One-line summary shown under the title in the picker.
+        entityCount:
+          type: integer
+          description: Total number of entities (root + descendants) in the scene.
+        byteSize:
+          type: integer
+          description: Stringified JSON byte length — drives the determinate progress bar in the editor.
+        storagePath:
+          type: string
+          description: Versioned object-storage path the download endpoint reads from. Informational only.
+        version:
+          type: string
+          description: Templates schema version this entry was built against.
+
+    TemplateScene:
+      $ref: "#/components/schemas/SceneData"

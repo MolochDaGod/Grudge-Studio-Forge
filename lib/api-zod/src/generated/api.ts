@@ -1331,3 +1331,139 @@ export const GetGrudgeQuestsResponse = zod.object({
   items: zod.array(zod.record(zod.string(), zod.unknown())),
   source: zod.string(),
 });
+
+/**
+ * Returns the manifest for every starter scene shipped with the editor.
+Each entry includes byte size and entity count so the picker UI can
+render an accurate progress bar before issuing the download request.
+
+ * @summary List built-in scene templates
+ */
+export const ListTemplatesResponseItem = zod.object({
+  key: zod
+    .string()
+    .describe("Stable URL-safe identifier matching the picker UI button."),
+  label: zod.string().describe("User-facing template title."),
+  description: zod
+    .string()
+    .describe("One-line summary shown under the title in the picker."),
+  entityCount: zod
+    .number()
+    .describe("Total number of entities (root + descendants) in the scene."),
+  byteSize: zod
+    .number()
+    .describe(
+      "Stringified JSON byte length — drives the determinate progress bar in the editor.",
+    ),
+  storagePath: zod
+    .string()
+    .describe(
+      "Versioned object-storage path the download endpoint reads from. Informational only.",
+    ),
+  version: zod
+    .string()
+    .describe("Templates schema version this entry was built against."),
+});
+export const ListTemplatesResponse = zod.array(ListTemplatesResponseItem);
+
+/**
+ * Streams the template's full SceneData payload from object storage.
+Response sets `Content-Length` so the editor can drive a determinate
+loading bar. The `key` matches the manifest entry's `key` field.
+
+ * @summary Download a template's scene JSON
+ */
+export const getTemplatePathKeyRegExp = new RegExp("^[a-z0-9-]+$");
+
+export const GetTemplateParams = zod.object({
+  key: zod.coerce.string().regex(getTemplatePathKeyRegExp),
+});
+
+export const GetTemplateResponse = zod.object({
+  entities: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.enum([
+        "box",
+        "sphere",
+        "cylinder",
+        "plane",
+        "light",
+        "camera",
+        "model",
+        "empty",
+      ]),
+      transform: zod.object({
+        position: zod.array(zod.number()),
+        rotation: zod.array(zod.number()),
+        scale: zod.array(zod.number()),
+      }),
+      physics: zod
+        .object({
+          bodyType: zod
+            .enum([
+              "fixed",
+              "dynamic",
+              "kinematicPosition",
+              "kinematicVelocity",
+            ])
+            .optional(),
+          colliderType: zod
+            .enum(["cuboid", "ball", "cylinder", "trimesh"])
+            .optional(),
+          mass: zod.number().optional(),
+          restitution: zod.number().optional(),
+          friction: zod.number().optional(),
+        })
+        .optional(),
+      material: zod
+        .object({
+          color: zod.string().optional(),
+          metalness: zod.number().optional(),
+          roughness: zod.number().optional(),
+          emissive: zod.string().optional(),
+        })
+        .optional(),
+      light: zod
+        .object({
+          kind: zod.enum(["point", "directional", "spot"]).optional(),
+          color: zod.string().optional(),
+          intensity: zod.number().optional(),
+          distance: zod.number().optional(),
+        })
+        .optional(),
+      model: zod
+        .object({
+          url: zod.string().optional(),
+          assetId: zod.number().optional(),
+        })
+        .optional(),
+      scriptId: zod.number().nullish(),
+      parentId: zod
+        .string()
+        .nullish()
+        .describe(
+          "Parent entity id within this scene (null\/undefined → root).",
+        ),
+      prefabId: zod
+        .number()
+        .nullish()
+        .describe("If this entity was instantiated from a Prefab, its id."),
+      collapsed: zod
+        .boolean()
+        .optional()
+        .describe("UI hint — collapsed in the hierarchy tree."),
+      controllerKind: zod
+        .enum(["none", "thirdPerson", "firstPerson"])
+        .optional(),
+    }),
+  ),
+  environment: zod.object({
+    skyColor: zod.string().optional(),
+    groundColor: zod.string().optional(),
+    ambientIntensity: zod.number().optional(),
+    sunIntensity: zod.number().optional(),
+    gravity: zod.array(zod.number()).optional(),
+  }),
+});

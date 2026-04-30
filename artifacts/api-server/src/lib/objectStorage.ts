@@ -1,6 +1,6 @@
 import { Storage, File } from "@google-cloud/storage";
 import { Readable } from "stream";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import {
   ObjectAclPolicy,
   ObjectPermission,
@@ -68,6 +68,76 @@ export class ObjectStorageService {
       );
     }
     return dir;
+  }
+
+  /**
+   * Get a `File` handle for a public object at `<firstSearchPath>/<filePath>`.
+   * Useful when we want to *write* to a known, deterministic public path
+   * (e.g. seeding bundled templates) rather than searching for an existing
+   * one. Does NOT check existence — call `.exists()` on the returned File
+   * if you need that.
+   */
+  publicFileHandle(filePath: string): File {
+    const searchPaths = this.getPublicObjectSearchPaths();
+    const fullPath = `${searchPaths[0]}/${filePath}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+    return objectStorageClient.bucket(bucketName).file(objectName);
+  }
+
+  /**
+   * Idempotently write a JSON payload to a public object path. Returns
+   * `{ written, byteSize }` — `written: false` when the existing
+   * object's CONTENTS already match (verified via MD5), so callers can
+   * skip the upload.
+   *
+   * Why MD5 instead of just byte size: a different scene with the same
+   * serialized length would collide on size alone and silently serve
+   * stale content. GCS computes md5Hash on every upload as part of
+   * normal object storage — comparing against the freshly-built
+   * payload's md5 is a strong correctness check at zero extra storage
+   * cost.
+   *
+   * Note: MD5 is used here as a *content fingerprint*, not for
+   * security. Cryptographic strength isn't relevant — we just need
+   * collisions to be vanishingly unlikely between revisions of the
+   * same template.
+   */
+  async ensurePublicJson(
+    filePath: string,
+    payload: string,
+    opts: { cacheTtlSec?: number } = {},
+  ): Promise<{ written: boolean; byteSize: number }> {
+    const file = this.publicFileHandle(filePath);
+    const buf = Buffer.from(payload, "utf8");
+    const cacheTtlSec = opts.cacheTtlSec ?? 31_536_000; // 1y default — versioned URLs are immutable
+    const expectedMd5 = createHash("md5").update(buf).digest("base64");
+    const [exists] = await file.exists();
+    if (exists) {
+      const [meta] = await file.getMetadata();
+      const existingMd5 = typeof meta.md5Hash === "string" ? meta.md5Hash : null;
+      if (existingMd5 === expectedMd5) {
+        return { written: false, byteSize: buf.byteLength };
+      }
+      // Size matches but MD5 doesn't — could be a corrupt or stale
+      // object with the same byte length. Overwrite (we have the
+      // immutability invariant via versioned URL paths, so this only
+      // ever runs when the *content itself* changed without the
+      // version key being bumped — typically a dev iteration before a
+      // version bump).
+    }
+    await file.save(buf, {
+      contentType: "application/json; charset=utf-8",
+      // Set cache headers up front so clients/CDNs cache aggressively.
+      // Versioned URLs (e.g. /templates/<version>/<key>.json) are safe to
+      // mark immutable.
+      metadata: {
+        cacheControl: `public, max-age=${cacheTtlSec}, immutable`,
+      },
+      // resumable=false avoids the unnecessary multipart dance for small
+      // payloads (templates are KBs).
+      resumable: false,
+    });
+    return { written: true, byteSize: buf.byteLength };
   }
 
   async searchPublicObject(filePath: string): Promise<File | null> {

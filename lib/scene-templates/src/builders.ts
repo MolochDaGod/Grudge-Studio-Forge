@@ -1,8 +1,53 @@
-import { nanoid } from "nanoid";
-import type { SceneData, SceneEntity, ControllerKind } from "@/scene/types";
-import { DEFAULT_ENV } from "@/scene/types";
+import type {
+  SceneData,
+  SceneEntity,
+  ControllerKind,
+} from "@workspace/scene-schema";
+import { DEFAULT_ENV } from "@workspace/scene-schema";
 
-const id = () => nanoid(8);
+// Deterministic ID generator: a per-builder counter, reset by `withIdScope`.
+// We need stable bytes-out so the api-server's md5 idempotency check skips
+// re-uploading templates whose content hasn't actually changed across boots.
+// Using nanoid here would make every boot's serialized JSON different even
+// when the template definition is unchanged.
+let __idCounter = 0;
+let __idScope = "ent";
+const id = () => `${__idScope}-${(__idCounter++).toString(36).padStart(4, "0")}`;
+
+/** Run `fn` with a fresh, deterministic ID counter scoped by `scope`.
+ *  Used by both the api-server seeder and any in-process re-builds so the
+ *  same template version always produces byte-identical JSON.
+ *
+ *  ⚠️ `fn` MUST be synchronous and return a non-Promise value. The scope
+ *  is restored in `finally` immediately after `fn()` returns; an async
+ *  callback would resume after the scope has been restored, allocating
+ *  IDs against the WRONG scope (or interleaving with another scope) and
+ *  silently breaking determinism. We enforce this at runtime: returning
+ *  a Promise throws so the misuse is loud, not silent. The generic is
+ *  also constrained to exclude Promise types at compile time.
+ */
+type NotPromise<T> = T extends Promise<unknown> ? never : T;
+export function withIdScope<T>(scope: string, fn: () => NotPromise<T>): T {
+  const prevCounter = __idCounter;
+  const prevScope = __idScope;
+  __idCounter = 0;
+  __idScope = scope;
+  try {
+    const result = fn() as T;
+    if (
+      result != null &&
+      typeof (result as { then?: unknown }).then === "function"
+    ) {
+      throw new Error(
+        "withIdScope: callback must be synchronous; got a thenable. Async work would run AFTER the ID scope is restored, breaking determinism.",
+      );
+    }
+    return result;
+  } finally {
+    __idCounter = prevCounter;
+    __idScope = prevScope;
+  }
+}
 
 /** Stable references to bundled GLB assets. EntityRenderer resolves the
  *  `builtin:` scheme to the actual Vite-hashed URL at render time, so saved

@@ -93,6 +93,12 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/scene-schema':
+        specifier: workspace:*
+        version: link:../../lib/scene-schema
+      '@workspace/scene-templates':
+        specifier: workspace:*
+        version: link:../../lib/scene-templates
       cors:
         specifier: ^2
         version: 2.8.6
@@ -323,6 +329,9 @@ importers:
       '@workspace/object-storage-web':
         specifier: workspace:*
         version: link:../../lib/object-storage-web
+      '@workspace/scene-schema':
+        specifier: workspace:*
+        version: link:../../lib/scene-schema
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -625,6 +634,14 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.14
+
+  lib/scene-schema: {}
+
+  lib/scene-templates:
+    dependencies:
+      '@workspace/scene-schema':
+        specifier: workspace:*
+        version: link:../scene-schema
 
   scripts:
     devDependencies:

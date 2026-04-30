@@ -389,3 +389,22 @@ export interface UploadUrlResponse {
   objectPath: string;
   metadata?: UploadUrlRequest;
 }
+
+export interface TemplateManifestEntry {
+  /** Stable URL-safe identifier matching the picker UI button. */
+  key: string;
+  /** User-facing template title. */
+  label: string;
+  /** One-line summary shown under the title in the picker. */
+  description: string;
+  /** Total number of entities (root + descendants) in the scene. */
+  entityCount: number;
+  /** Stringified JSON byte length — drives the determinate progress bar in the editor. */
+  byteSize: number;
+  /** Versioned object-storage path the download endpoint reads from. Informational only. */
+  storagePath: string;
+  /** Templates schema version this entry was built against. */
+  version: string;
+}
+
+export type TemplateScene = SceneData;

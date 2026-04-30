@@ -31,9 +31,15 @@ import { Hotbar } from "@/editor/Hotbar";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
-import { useListPrefabs, getListPrefabsQueryKey, type Prefab } from "@workspace/api-client-react";
+import {
+  useListPrefabs,
+  getListPrefabsQueryKey,
+  useListTemplates,
+  type Prefab,
+} from "@workspace/api-client-react";
 import type { PrefabPayload } from "@/scene/prefabPayload";
-import { SCENE_TEMPLATES } from "@/lib/sceneTemplates";
+import { TemplateLoadingDialog } from "@/editor/TemplateLoadingDialog";
+import { useTemplateLoader } from "@/editor/useTemplateLoader";
 
 interface RenderNodeProps {
   entity: SceneEntity;
@@ -807,21 +813,20 @@ export function Viewport() {
   // play mode and inside the prefab sub-scene to avoid covering the
   // intended content.
   const sceneEntitiesCount = useEditor((s) => s.sceneData.entities.length);
-  const setSceneData = useEditor((s) => s.setSceneData);
-  const setSceneName = useEditor((s) => s.setSceneName);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
   const showEmptySceneOverlay =
     !isPlaying && !prefabSubScene && sceneEntitiesCount === 0;
+
+  // Pull the manifest from the api-server (cached after the first call
+  // by React Query, so the Toolbar dropdown and this overlay share the
+  // same response). The streaming loader then handles the actual scene
+  // download with its own progress dialog.
+  const { data: templateManifest = [] } = useListTemplates();
+  const templateLoader = useTemplateLoader();
   const onPickTemplate = (key: string) => {
-    const tpl = SCENE_TEMPLATES.find((t) => t.key === key);
+    const tpl = templateManifest.find((t) => t.key === key);
     if (!tpl) return;
-    const data = tpl.build();
-    setSceneData(data);
-    setSceneName(tpl.label);
-    pushLog(
-      "info",
-      `Loaded template "${tpl.label}" (${data.entities.length} entities).`,
-    );
+    templateLoader.start(tpl.key, tpl.label);
   };
 
   // Right-click bookkeeping. R3F dispatches `onContextMenu` to the topmost
@@ -921,6 +926,13 @@ export function Viewport() {
   };
 
   return (
+    <>
+    <TemplateLoadingDialog
+      open={templateLoader.isLoading}
+      label={templateLoader.activeLabel}
+      progress={templateLoader.progress}
+      onCancel={templateLoader.cancel}
+    />
     <ContextMenu
       onOpenChange={(open) => {
         if (open) {
@@ -1034,7 +1046,7 @@ export function Viewport() {
                   ready to play. You can edit anything afterwards.
                 </p>
                 <ul className="space-y-1.5">
-                  {SCENE_TEMPLATES.map((t) => (
+                  {templateManifest.map((t) => (
                     <li key={t.key}>
                       <button
                         type="button"
@@ -1164,5 +1176,6 @@ export function Viewport() {
         <BestPracticesSubMenu context="viewport" label="Scene best practices" />
       </ContextMenuContent>
     </ContextMenu>
+    </>
   );
 }

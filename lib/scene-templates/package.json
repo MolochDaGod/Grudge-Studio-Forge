@@ -1,0 +1,12 @@
+{
+  "name": "@workspace/scene-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@workspace/scene-schema": "workspace:*"
+  }
+}
