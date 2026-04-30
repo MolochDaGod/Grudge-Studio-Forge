@@ -44,7 +44,7 @@ The editor features a dark theme with a "Warlord Crafting Suite" brand identity.
 ## External Dependencies
 
 *   **Backend Framework:** Express.js
-*   **Database:** PostgreSQL (with Drizzle ORM)
+*   **Database:** PostgreSQL (with Drizzle ORM). Forge owns the `forge_*` namespace (`forge_projects`, `forge_scenes`, `forge_scripts`, `forge_assets`, `forge_prefabs`) so it can coexist safely in the shared Grudge DB alongside the warlord / openrts / mmo / store tables. Schema migrations are applied via `lib/db/src/migrate.ts` — a tiny script that runs idempotent `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements over the same `pg` pool the app uses at runtime. We deliberately do **not** use `drizzle-kit push` in CI/post-merge: against the shared DB it offers to *rename* unrelated tables (player_characters → forge_projects, etc.), which would silently destroy other apps' data on stdin EOF. The post-merge script (`scripts/post-merge.sh`, 120s timeout) runs `pnpm install --frozen-lockfile` then `pnpm --filter @workspace/db run migrate`.
 *   **3D Graphics:** three.js, @react-three/fiber, @react-three/drei
 *   **Physics Engine:** Rapier (`@dimforge/rapier3d-compat`)
 *   **State Management:** Zustand (editor store) + miniplex 2 (read-only ECS mirror for AI bulk queries)

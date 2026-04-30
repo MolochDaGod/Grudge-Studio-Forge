@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
 
-export const prefabsTable = pgTable("prefabs", {
+export const prefabsTable = pgTable("forge_prefabs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id")
     .notNull()

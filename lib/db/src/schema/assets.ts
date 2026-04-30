@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
 
-export const assetsTable = pgTable("assets", {
+export const assetsTable = pgTable("forge_assets", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id")
     .notNull()
