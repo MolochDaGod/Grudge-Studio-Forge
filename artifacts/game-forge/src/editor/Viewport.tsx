@@ -369,11 +369,33 @@ function FocusCameraController() {
 interface ViewportErrorBoundaryState {
   error: Error | null;
 }
+interface ViewportErrorBoundaryProps {
+  children: ReactNode;
+  /** User-initiated remount (button click). Resets the auto-retry budget too. */
+  onReset: () => void;
+  /**
+   * Whether the parent still has an auto-retry attempt available. When true,
+   * the boundary swallows the first error and asks the parent to remount the
+   * subtree silently; if the same render crashes a second time we fall back
+   * to the manual UI so the user knows something is genuinely wrong.
+   *
+   * Why parent-owned: the boundary itself is unmounted+remounted on each
+   * `onAutoRetry` (the parent bumps a key), so any per-instance flag would
+   * reset to "available" forever and cause an infinite retry loop on a
+   * deterministic crash. The parent keeps the latch.
+   */
+  autoRetryAvailable: boolean;
+  /** Silent recovery hook — parent should bump the viewport epoch. */
+  onAutoRetry: () => void;
+}
 class ViewportErrorBoundary extends Component<
-  { children: ReactNode; onReset: () => void },
+  ViewportErrorBoundaryProps,
   ViewportErrorBoundaryState
 > {
   state: ViewportErrorBoundaryState = { error: null };
+  /** True once we've requested an auto-retry for the current boundary instance,
+   *  so we don't fire it twice if React calls componentDidCatch redundantly. */
+  private autoRetryRequested = false;
 
   static getDerivedStateFromError(error: Error): ViewportErrorBoundaryState {
     return { error };
@@ -384,6 +406,18 @@ class ViewportErrorBoundary extends Component<
     // errors because they happen above the React tree the panel reads from.
     // eslint-disable-next-line no-console
     console.error("[Viewport] render error:", error, info.componentStack);
+
+    // Most viewport crashes we've actually observed in the wild are transient
+    // init-races inside R3F / @react-three/postprocessing / Rapier — a fresh
+    // mount of the Canvas subtree clears them. Try once silently before
+    // surfacing the manual "Viewport crashed" UI so the user doesn't have to
+    // babysit a one-shot HMR / context-restore glitch.
+    if (this.props.autoRetryAvailable && !this.autoRetryRequested) {
+      this.autoRetryRequested = true;
+      // Defer one task so React finishes flushing its commit phase before we
+      // ask the parent to swap the boundary key.
+      setTimeout(() => this.props.onAutoRetry(), 0);
+    }
   }
 
   reset = () => {
@@ -393,6 +427,15 @@ class ViewportErrorBoundary extends Component<
 
   render() {
     if (this.state.error) {
+      // We've asked the parent to remount us; render nothing so the user sees
+      // a brief blank instead of a flash of the crash UI before recovery.
+      // Gate on `autoRetryRequested` (not `autoRetryAvailable`) so we only
+      // suppress the UI once componentDidCatch has actually scheduled the
+      // retry — otherwise the brief window between getDerivedStateFromError
+      // and componentDidCatch could render null without a recovery path.
+      if (this.autoRetryRequested) {
+        return null;
+      }
       return (
         <div className="w-full h-full flex items-center justify-center bg-background grid-pattern p-6">
           <div className="max-w-md text-center space-y-3 p-6 rounded-md bg-card/90 border border-card-border shadow-lg">
@@ -498,6 +541,15 @@ export function Viewport() {
   // <Canvas> tree (with its broken WebGL context, dangling refs, half-mounted
   // post-processing passes, etc.) and rebuild it from scratch.
   const [viewportEpoch, setViewportEpoch] = useState(0);
+  // Tracks whether we've already spent the boundary's silent auto-retry budget
+  // for the current page session. Without this latch a deterministic crash
+  // inside the Canvas tree would loop forever: boundary catches → onAutoRetry
+  // → key bump → fresh boundary (autoRetryRequested resets) → catches again →
+  // repeat. We grant exactly one silent retry per page load; the user's
+  // explicit "Reload viewport" click re-grants it (treated as a fresh attempt
+  // because the user has had a chance to fix something — typically by editing
+  // a script or removing a problematic entity).
+  const [autoRetryUsed, setAutoRetryUsed] = useState(false);
   const [webgl, setWebgl] = useState(() => probeWebGL());
 
   const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {
@@ -553,7 +605,15 @@ export function Viewport() {
         <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
           <ViewportErrorBoundary
             key={viewportEpoch}
-            onReset={() => setViewportEpoch((n) => n + 1)}
+            autoRetryAvailable={!autoRetryUsed}
+            onAutoRetry={() => {
+              setAutoRetryUsed(true);
+              setViewportEpoch((n) => n + 1);
+            }}
+            onReset={() => {
+              setAutoRetryUsed(false);
+              setViewportEpoch((n) => n + 1);
+            }}
           >
             <Canvas
               shadows
