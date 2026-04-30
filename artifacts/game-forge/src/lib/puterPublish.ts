@@ -5,10 +5,12 @@ import type { SceneData } from "@/scene/types";
  * Publish a scene as a free, sharable static site on Puter.
  *
  * The flow:
- *   1. Build a *stable* slug derived from the scene id (or a name-hash
- *      fallback for unsaved scenes) so re-publishing the same scene
- *      reuses the same `<sub>.puter.site` URL — bookmarked links keep
- *      working, and "Publish" effectively becomes "push update".
+ *   1. Build a *stable* slug derived from the scene id (or a content
+ *      hash of the scene data for unsaved drafts) so re-publishing the
+ *      same scene reuses the same `<sub>.puter.site` URL — bookmarked
+ *      links keep working, and "Publish" effectively becomes "push
+ *      update". Importantly, the slug never includes the scene NAME so
+ *      renaming a saved scene does not break the bookmark.
  *   2. Make the directory `Grudge/published/<slug>/` under the user's
  *      Puter cloud (idempotent — `createMissingParents`, no overwrite).
  *   3. Write `scene.json` + `index.html` (overwrite=true so subsequent
@@ -47,28 +49,31 @@ function fnv1a(input: string): string {
   return (h >>> 0).toString(36).padStart(7, "0").slice(0, 7);
 }
 
-/** Build a stable Puter subdomain slug for a scene. We prefer the
- *  numeric `sceneId` (Forge's primary key) so re-publishing the *same*
- *  scene keeps the same URL. Falls back to a name+entity-count hash so
- *  unsaved scratch scenes still get a deterministic-per-content slug. */
+/** Build a stable Puter subdomain slug for a scene.
+ *
+ *  Stability requirement (T005): re-publishing the *same* scene must
+ *  yield the *same* URL so bookmarked links keep working. That means
+ *  the slug must NOT depend on anything the user can change between
+ *  publishes — most importantly, the scene name. Saved scenes therefore
+ *  key purely off `sceneId` (the immutable database primary key);
+ *  renaming the scene leaves the slug untouched.
+ *
+ *  Unsaved scratch scenes have no id, so we fall back to a content hash
+ *  of the canonicalized `sceneData` JSON. Two clicks of Publish on the
+ *  same content map to the same slug; *any* edit produces a fresh URL
+ *  (which is the right behavior for ephemeral, never-saved drafts).
+ */
 function stableSlug(opts: {
-  sceneName: string;
   sceneId: number | null | undefined;
-  entityCount: number;
+  sceneData: SceneData;
 }): string {
-  const base = (opts.sceneName || "scene")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 28) || "scene";
   if (opts.sceneId != null && Number.isFinite(opts.sceneId)) {
-    // Hex id is short, URL-safe, and lets users eyeball "this is scene 42".
-    return `${base}-${opts.sceneId.toString(36)}`;
+    // `forge-scene-<id36>` — short, URL-safe, name-independent.
+    return `forge-scene-${opts.sceneId.toString(36)}`;
   }
-  // Anonymous scene — derive from a hash of name+structure so it stays
-  // stable across re-publishes of the same content but won't collide
-  // with another user's namespaceless scene.
-  return `${base}-${fnv1a(`${opts.sceneName}|${opts.entityCount}`)}`;
+  // Anonymous draft — hash the actual scene content so the slug is
+  // determined by what the user is publishing, not by an ephemeral name.
+  return `forge-draft-${fnv1a(JSON.stringify(opts.sceneData))}`;
 }
 
 /**
@@ -102,7 +107,6 @@ function buildIndexHtml(editorOrigin: string, sceneUrl: string): string {
 }
 
 export async function publishScene(opts: {
-  sceneName: string;
   sceneData: SceneData;
   /** Forge scene primary key when persisted; null/undefined for
    *  unsaved scratch scenes. Used to keep the published URL stable. */
@@ -123,9 +127,8 @@ export async function publishScene(opts: {
   }
 
   const sub = stableSlug({
-    sceneName: opts.sceneName,
     sceneId: opts.sceneId ?? null,
-    entityCount: opts.sceneData.entities.length,
+    sceneData: opts.sceneData,
   });
   const dirPath = `Grudge/published/${sub}`;
 

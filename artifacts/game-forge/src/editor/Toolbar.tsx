@@ -198,46 +198,56 @@ export function Toolbar({
   const updateScene = useUpdateScene();
   const createScene = useCreateScene();
   const updatePrefab = useUpdatePrefab();
-  // Subscribe to the project's prefab list so the Play handler can find a
-  // "default Player" prefab without an extra fetch. Disabled in prefab
-  // sub-scene mode (we won't show the Play button there).
+  // Subscribe to the project's prefab list so we can register the
+  // "default Player" prefab (the one flagged `data.isPlayerPrefab`) with
+  // the editor store. The store consumes it on every entry into play
+  // mode, which means BOTH the toolbar play button AND the global `P`
+  // hotkey share the same auto-spawn path — they can't drift.
   const { data: prefabsForPlay } = useListPrefabs(projectId ?? 0, {
     query: {
       queryKey: getListPrefabsQueryKey(projectId ?? 0),
       enabled: !!projectId,
     },
   });
+  const setPlayerPrefabResolver = useEditor((s) => s.setPlayerPrefabResolver);
 
-  /**
-   * Enter Play Mode. If the scene already has a controller-driven entity,
-   * just play. Otherwise, look for a prefab flagged as the default Player
-   * and auto-spawn it (transient: removed when Stop is pressed). Without
-   * this, an "empty" scene would launch into play mode with no avatar to
-   * control, which feels broken to first-time users.
-   */
-  const onPressPlay = () => {
-    void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
-    const hasController = sceneData.entities.some(
-      (e) => e.controllerKind && e.controllerKind !== "none",
-    );
-    if (!hasController) {
-      const playerPrefab = (prefabsForPlay ?? []).find((p) => {
+  // Keep the store's resolver in sync with the live prefab list. We
+  // register a closure rather than a snapshot so a play-button press
+  // sees whichever prefab is currently flagged — even if the list
+  // updated between toggle and now.
+  useEffect(() => {
+    if (!prefabsForPlay) {
+      setPlayerPrefabResolver(null);
+      return;
+    }
+    setPlayerPrefabResolver(() => {
+      const found = prefabsForPlay.find((p) => {
         const d = (p.data as PrefabPayload | undefined) ?? {};
         return d.isPlayerPrefab === true && (d.entities?.length ?? 0) > 0;
       });
-      if (playerPrefab) {
-        const data = playerPrefab.data as PrefabPayload;
-        const root = spawnPlayerPrefab(data.entities ?? [], playerPrefab.id);
-        if (root) {
-          pushLog("info", `Auto-spawned player prefab "${playerPrefab.name}".`);
-        } else {
-          pushLog(
-            "warn",
-            `Player prefab "${playerPrefab.name}" had no entities to spawn.`,
-          );
-        }
-      }
-    }
+      if (!found) return null;
+      const d = found.data as PrefabPayload;
+      return {
+        entities: d.entities ?? [],
+        prefabId: found.id,
+        name: found.name,
+      };
+    });
+    return () => {
+      setPlayerPrefabResolver(null);
+    };
+  }, [prefabsForPlay, setPlayerPrefabResolver]);
+
+  /**
+   * Toolbar Play button. Just warms the Blazor runtime in the background
+   * (so the user's first script frame doesn't pay the JIT cost) and
+   * delegates to `setPlaying(true)`. The auto-spawn for a default
+   * Player prefab is handled inside the store — see
+   * `setPlaying`/`playerPrefabResolver` — so this entry path stays in
+   * lock-step with the `P` hotkey.
+   */
+  const onPressPlay = () => {
+    void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
     setPlaying(true);
   };
 
@@ -264,7 +274,6 @@ export function Toolbar({
       // ends with a trailing slash.
       const editorOrigin = `${window.location.origin}${import.meta.env.BASE_URL}`;
       const res = await publishScene({
-        sceneName,
         sceneData,
         // sceneId keeps the published subdomain stable across republishes.
         // Falsy (unsaved scratch scene) → publishScene falls back to a

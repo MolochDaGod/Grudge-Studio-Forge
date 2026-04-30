@@ -144,22 +144,11 @@ export function PrefabsPanel() {
     const targetData = (target.data as PrefabPayload) ?? {};
     const turningOn = !targetData.isPlayerPrefab;
     try {
-      // Update the target. Always preserve the original entities/rootId.
-      await updatePrefab.mutateAsync({
-        id: target.id,
-        data: {
-          name: target.name,
-          data: {
-            entities: targetData.entities ?? [],
-            rootId: targetData.rootId ?? null,
-            isPlayerPrefab: turningOn,
-          },
-        },
-      });
-      // Mutual exclusion: clear the flag on every OTHER prefab that has it.
-      // We sequence rather than Promise.all so a partial failure doesn't
-      // leave two "players" — at worst we stop early with one cleared.
       if (turningOn) {
+        // Mutual exclusion. Clear OTHERS *first* — if any clear fails we
+        // bail out before flipping the target on, so the user never sees
+        // two simultaneous players. Sequenced (not Promise.all) so a
+        // mid-loop failure leaves the unflipped state recoverable.
         for (const other of prefabs) {
           if (other.id === target.id) continue;
           const od = (other.data as PrefabPayload) ?? {};
@@ -177,6 +166,20 @@ export function PrefabsPanel() {
           });
         }
       }
+      // Now flip the target. If turning ON, all previous players are
+      // already cleared above; if turning OFF, this is a single mutation
+      // with no other state to manage.
+      await updatePrefab.mutateAsync({
+        id: target.id,
+        data: {
+          name: target.name,
+          data: {
+            entities: targetData.entities ?? [],
+            rootId: targetData.rootId ?? null,
+            isPlayerPrefab: turningOn,
+          },
+        },
+      });
       qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
       pushLog(
         "info",

@@ -132,6 +132,22 @@ interface EditorState {
    *  command stack — undo must not bring play-only entities back into
    *  the persisted scene. */
   spawnPlayerPrefab: (entities: SceneEntity[], prefabId?: number | null) => string | null;
+  /** Pluggable resolver the store uses on entry-into-play to find the
+   *  current "default Player" prefab (the one flagged
+   *  `data.isPlayerPrefab` in the project's prefab list). The Toolbar
+   *  registers this — it has React-Query access to the prefab list,
+   *  whereas the store does not. Returning null means "no default
+   *  player; just enter play mode as-is". Centralizing the lookup here
+   *  ensures BOTH the toolbar play button AND the `P` hotkey go through
+   *  the same auto-spawn path. */
+  playerPrefabResolver:
+    | (() => { entities: SceneEntity[]; prefabId: number; name: string } | null)
+    | null;
+  setPlayerPrefabResolver: (
+    fn:
+      | (() => { entities: SceneEntity[]; prefabId: number; name: string } | null)
+      | null,
+  ) => void;
 
   pushLog: (level: ConsoleLevel, text: string) => void;
   clearConsole: () => void;
@@ -243,6 +259,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   bottomTab: "console",
   prefabSubScene: null,
   playOnlyEntityIds: [],
+  playerPrefabResolver: null,
   hotbar: Array(8).fill(null) as (number | null)[],
   focusToken: 0,
   commandStack: new CommandStack(100),
@@ -254,7 +271,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   setProject: (projectId) => {
     // Switching project must reset undo history (commands captured against the
     // previous project's entity ids would otherwise corrupt the new scene) and
-    // clear the hotbar (prefab ids are project-scoped).
+    // clear the hotbar (prefab ids are project-scoped). The
+    // playerPrefabResolver is also project-scoped (it closes over the
+    // OLD project's prefab list); the new project's Toolbar mount will
+    // re-register a fresh one, but until then auto-spawn must not fire
+    // against stale data.
     get().commandStack.clear();
     set({
       projectId,
@@ -264,6 +285,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       isDirty: false,
       prefabSubScene: null,
       hotbar: Array(8).fill(null) as (number | null)[],
+      playerPrefabResolver: null,
     });
   },
 
@@ -569,8 +591,31 @@ export const useEditor = create<EditorState>((set, get) => ({
       });
       return;
     }
+    // Entering play: if the scene has no controller-driven entity AND a
+    // default player prefab is registered, auto-spawn it. Routing the
+    // lookup through `playerPrefabResolver` (set by the Toolbar via its
+    // React-Query subscription) means the toolbar play button and the
+    // `P` hotkey both go through this single path — they can't drift.
+    if (playing && !s.isPlaying) {
+      const hasController = s.sceneData.entities.some(
+        (e) => e.controllerKind && e.controllerKind !== "none",
+      );
+      if (!hasController && s.playerPrefabResolver) {
+        const found = s.playerPrefabResolver();
+        if (found && found.entities.length > 0) {
+          const root = get().spawnPlayerPrefab(found.entities, found.prefabId);
+          if (root) {
+            get().pushLog(
+              "info",
+              `Auto-spawned player prefab "${found.name}".`,
+            );
+          }
+        }
+      }
+    }
     set({ isPlaying: playing, isPaused: false });
   },
+  setPlayerPrefabResolver: (fn) => set({ playerPrefabResolver: fn }),
 
   spawnPlayerPrefab: (entities, prefabId) => {
     if (!entities || entities.length === 0) return null;
