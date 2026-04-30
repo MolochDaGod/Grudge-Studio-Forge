@@ -18,6 +18,14 @@ const router: IRouter = Router();
 const storage = new ObjectStorageService();
 
 router.get("/templates", (req: Request, res: Response) => {
+  // The manifest is dynamic (new templates can be seeded on each boot)
+  // and small. Disable browser/CDN caching so editor clients always see
+  // the fresh list. Without this header, browsers heuristically cache
+  // the response — which can be catastrophic if the route was ever
+  // missing during earlier development (the SPA-fallback HTML response
+  // gets cached as the "canonical" /api/templates payload until the
+  // user hard-refreshes).
+  res.setHeader("Cache-Control", "no-store");
   const manifest = getCachedManifest();
   if (!manifest) {
     // Boot ordering bug — the seeder should have populated the cache
