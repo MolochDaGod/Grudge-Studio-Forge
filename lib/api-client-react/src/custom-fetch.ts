@@ -360,7 +360,21 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Default to `credentials: "include"` in the browser so cookie-based
+  // session auth works on cross-origin previews (the Replit iframe
+  // proxy can serve the SPA from a domain that differs from the API
+  // host during development). Same-origin requests are unaffected
+  // because the browser sends cookies regardless.
+  // Callers can opt out by passing `credentials: "omit"` explicitly.
+  const credentials =
+    init.credentials ?? (typeof window !== "undefined" ? "include" : undefined);
+
+  const response = await fetch(input, {
+    ...init,
+    method,
+    headers,
+    ...(credentials ? { credentials } : {}),
+  });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

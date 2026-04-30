@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/resizable";
 import { useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { bootstrapAuth } from "@/lib/authBootstrap";
 import { Toolbar } from "@/editor/Toolbar";
 import { Hierarchy } from "@/editor/Hierarchy";
 import { Inspector } from "@/editor/Inspector";
@@ -50,6 +51,12 @@ function EditorShell() {
   useEffect(() => {
     pushLog("info", "GameForge ready · Three.js · Rapier · R3F · Blazor C# transpiler loaded");
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Rehydrate the auth store from the session cookie. Runs once on
+  // mount; failures are non-fatal (the user just stays anonymous).
+  useEffect(() => {
+    void bootstrapAuth();
   }, []);
 
   // Centralized editor hotkeys.

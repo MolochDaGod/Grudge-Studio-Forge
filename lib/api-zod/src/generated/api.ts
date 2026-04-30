@@ -85,6 +85,117 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * Returns the front-end SDK bootstrap config. Safe to call
+unauthenticated; never includes secrets.
+
+ * @summary Public auth bootstrap config
+ */
+export const GetAuthConfigResponse = zod.object({
+  puterSiteOrigin: zod
+    .string()
+    .describe("Origin the front-end loads the Puter SDK from."),
+  puterBasePath: zod
+    .string()
+    .describe("Per-app sub-folder used for Puter cloud-storage scoping."),
+  enablePuterCloud: zod
+    .boolean()
+    .describe("Whether the editor should expose Puter cloud-storage UI."),
+  grudgeAuthUrl: zod
+    .string()
+    .nullable()
+    .describe("Optional URL of the upstream Grudge auth dashboard."),
+});
+
+/**
+ * Returns the active Grudge user, or `{ user: null }` for
+anonymous sessions. The client polls this on app boot to
+rehydrate the auth store.
+
+ * @summary Resolve the current session
+ */
+export const GetCurrentUserResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      userId: zod.string().describe("Primary key of the shared `users` row."),
+      puterUuid: zod.string(),
+      grudgeId: zod
+        .string()
+        .describe(
+          "Either the upstream `grudge_accounts.grudge_id` if known, or the\nephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.\n",
+        ),
+      username: zod.string(),
+      displayName: zod.string().nullable(),
+      email: zod.string().nullable(),
+      avatarUrl: zod.string().nullable(),
+      hasGrudgeAccount: zod
+        .boolean()
+        .describe(
+          "True iff the upstream `grudge_accounts` registry has this user.",
+        ),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * Verifies the Puter access token server-to-server, upserts the
+shared `users` row, and issues a HttpOnly session cookie. If
+the user has no row in the upstream `grudge_accounts` registry
+an account is implicitly created on first sign-in (Forge mints
+an ephemeral Grudge ID and persists the user-link row).
+
+ * @summary Exchange a Puter access token for a Grudge session
+ */
+export const exchangePuterTokenBodyPuterAccessTokenMin = 10;
+
+export const ExchangePuterTokenBody = zod.object({
+  puterAccessToken: zod
+    .string()
+    .min(exchangePuterTokenBodyPuterAccessTokenMin)
+    .describe("Access token from `puter.auth.getAccessToken()`."),
+});
+
+export const ExchangePuterTokenResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      userId: zod.string().describe("Primary key of the shared `users` row."),
+      puterUuid: zod.string(),
+      grudgeId: zod
+        .string()
+        .describe(
+          "Either the upstream `grudge_accounts.grudge_id` if known, or the\nephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.\n",
+        ),
+      username: zod.string(),
+      displayName: zod.string().nullable(),
+      email: zod.string().nullable(),
+      avatarUrl: zod.string().nullable(),
+      hasGrudgeAccount: zod
+        .boolean()
+        .describe(
+          "True iff the upstream `grudge_accounts` registry has this user.",
+        ),
+    }),
+    zod.null(),
+  ]),
+  created: zod
+    .boolean()
+    .describe("True iff this sign-in inserted a new row in `users`."),
+  grudgeAccountLinked: zod
+    .boolean()
+    .describe("True iff the upstream `grudge_accounts` row was found."),
+});
+
+/**
+ * Deletes the session row (if any) and clears the cookie.
+Idempotent — calling without a session returns `{ ok: true }`.
+
+ * @summary Tear down the current session
+ */
+export const LogoutCurrentUserResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
  * @summary List all projects
  */
 export const ListProjectsResponseItem = zod.object({

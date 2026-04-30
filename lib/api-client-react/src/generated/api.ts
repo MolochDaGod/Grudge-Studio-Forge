@@ -18,16 +18,21 @@ import type {
 
 import type {
   Asset,
+  AuthConfig,
   CreateAssetBody,
   CreatePrefabBody,
   CreateProjectBody,
   CreateSceneBody,
   CreateScriptBody,
+  CurrentUserResponse,
   GrudgeCatalog,
   HealthStatus,
+  LogoutResponse,
   Prefab,
   Project,
   ProjectSummary,
+  PuterExchangeRequest,
+  PuterExchangeResponse,
   Scene,
   Script,
   UpdatePrefabBody,
@@ -384,6 +389,339 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Returns the front-end SDK bootstrap config. Safe to call
+unauthenticated; never includes secrets.
+
+ * @summary Public auth bootstrap config
+ */
+export const getGetAuthConfigUrl = () => {
+  return `/api/auth/config`;
+};
+
+export const getAuthConfig = async (
+  options?: RequestInit,
+): Promise<AuthConfig> => {
+  return customFetch<AuthConfig>(getGetAuthConfigUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetAuthConfigQueryKey = () => {
+  return [`/api/auth/config`] as const;
+};
+
+export const getGetAuthConfigQueryOptions = <
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetAuthConfigQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getAuthConfig>>> = ({
+    signal,
+  }) => getAuthConfig({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthConfig>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetAuthConfigQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getAuthConfig>>
+>;
+export type GetAuthConfigQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Public auth bootstrap config
+ */
+
+export function useGetAuthConfig<
+  TData = Awaited<ReturnType<typeof getAuthConfig>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getAuthConfig>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetAuthConfigQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns the active Grudge user, or `{ user: null }` for
+anonymous sessions. The client polls this on app boot to
+rehydrate the auth store.
+
+ * @summary Resolve the current session
+ */
+export const getGetCurrentUserUrl = () => {
+  return `/api/auth/me`;
+};
+
+export const getCurrentUser = async (
+  options?: RequestInit,
+): Promise<CurrentUserResponse> => {
+  return customFetch<CurrentUserResponse>(getGetCurrentUserUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCurrentUserQueryKey = () => {
+  return [`/api/auth/me`] as const;
+};
+
+export const getGetCurrentUserQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCurrentUserQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({
+    signal,
+  }) => getCurrentUser({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentUser>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentUserQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentUser>>
+>;
+export type GetCurrentUserQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Resolve the current session
+ */
+
+export function useGetCurrentUser<
+  TData = Awaited<ReturnType<typeof getCurrentUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCurrentUserQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Verifies the Puter access token server-to-server, upserts the
+shared `users` row, and issues a HttpOnly session cookie. If
+the user has no row in the upstream `grudge_accounts` registry
+an account is implicitly created on first sign-in (Forge mints
+an ephemeral Grudge ID and persists the user-link row).
+
+ * @summary Exchange a Puter access token for a Grudge session
+ */
+export const getExchangePuterTokenUrl = () => {
+  return `/api/auth/puter/exchange`;
+};
+
+export const exchangePuterToken = async (
+  puterExchangeRequest: PuterExchangeRequest,
+  options?: RequestInit,
+): Promise<PuterExchangeResponse> => {
+  return customFetch<PuterExchangeResponse>(getExchangePuterTokenUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(puterExchangeRequest),
+  });
+};
+
+export const getExchangePuterTokenMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangePuterToken>>,
+    TError,
+    { data: BodyType<PuterExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof exchangePuterToken>>,
+  TError,
+  { data: BodyType<PuterExchangeRequest> },
+  TContext
+> => {
+  const mutationKey = ["exchangePuterToken"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof exchangePuterToken>>,
+    { data: BodyType<PuterExchangeRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return exchangePuterToken(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExchangePuterTokenMutationResult = NonNullable<
+  Awaited<ReturnType<typeof exchangePuterToken>>
+>;
+export type ExchangePuterTokenMutationBody = BodyType<PuterExchangeRequest>;
+export type ExchangePuterTokenMutationError = ErrorType<void>;
+
+/**
+ * @summary Exchange a Puter access token for a Grudge session
+ */
+export const useExchangePuterToken = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangePuterToken>>,
+    TError,
+    { data: BodyType<PuterExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof exchangePuterToken>>,
+  TError,
+  { data: BodyType<PuterExchangeRequest> },
+  TContext
+> => {
+  return useMutation(getExchangePuterTokenMutationOptions(options));
+};
+
+/**
+ * Deletes the session row (if any) and clears the cookie.
+Idempotent — calling without a session returns `{ ok: true }`.
+
+ * @summary Tear down the current session
+ */
+export const getLogoutCurrentUserUrl = () => {
+  return `/api/auth/logout`;
+};
+
+export const logoutCurrentUser = async (
+  options?: RequestInit,
+): Promise<LogoutResponse> => {
+  return customFetch<LogoutResponse>(getLogoutCurrentUserUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLogoutCurrentUserMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutCurrentUser>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logoutCurrentUser>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logoutCurrentUser"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logoutCurrentUser>>,
+    void
+  > = () => {
+    return logoutCurrentUser(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LogoutCurrentUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logoutCurrentUser>>
+>;
+
+export type LogoutCurrentUserMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Tear down the current session
+ */
+export const useLogoutCurrentUser = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutCurrentUser>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof logoutCurrentUser>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutCurrentUserMutationOptions(options));
+};
 
 /**
  * @summary List all projects

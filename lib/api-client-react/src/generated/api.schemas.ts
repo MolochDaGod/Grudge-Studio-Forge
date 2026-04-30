@@ -9,6 +9,57 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface AuthConfig {
+  /** Origin the front-end loads the Puter SDK from. */
+  puterSiteOrigin: string;
+  /** Per-app sub-folder used for Puter cloud-storage scoping. */
+  puterBasePath: string;
+  /** Whether the editor should expose Puter cloud-storage UI. */
+  enablePuterCloud: boolean;
+  /** Optional URL of the upstream Grudge auth dashboard. */
+  grudgeAuthUrl: string | null;
+}
+
+export interface GrudgeUser {
+  /** Primary key of the shared `users` row. */
+  userId: string;
+  puterUuid: string;
+  /** Either the upstream `grudge_accounts.grudge_id` if known, or the
+ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
+ */
+  grudgeId: string;
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  /** True iff the upstream `grudge_accounts` registry has this user. */
+  hasGrudgeAccount: boolean;
+}
+
+export interface CurrentUserResponse {
+  user: GrudgeUser | null;
+}
+
+export interface PuterExchangeRequest {
+  /**
+   * Access token from `puter.auth.getAccessToken()`.
+   * @minLength 10
+   */
+  puterAccessToken: string;
+}
+
+export interface PuterExchangeResponse {
+  user: GrudgeUser | null;
+  /** True iff this sign-in inserted a new row in `users`. */
+  created: boolean;
+  /** True iff the upstream `grudge_accounts` row was found. */
+  grudgeAccountLinked: boolean;
+}
+
+export interface LogoutResponse {
+  ok: boolean;
+}
+
 export interface Project {
   id: number;
   name: string;

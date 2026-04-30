@@ -9,6 +9,8 @@ servers:
     description: Base API path
 tags:
   - name: health
+  - name: auth
+    description: Grudge Studio Puter sign-in, session, and identity endpoints.
   - name: projects
   - name: scenes
   - name: scripts
@@ -97,6 +99,86 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/config:
+    get:
+      operationId: getAuthConfig
+      tags: [auth]
+      summary: Public auth bootstrap config
+      description: |
+        Returns the front-end SDK bootstrap config. Safe to call
+        unauthenticated; never includes secrets.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthConfig"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Resolve the current session
+      description: |
+        Returns the active Grudge user, or `{ user: null }` for
+        anonymous sessions. The client polls this on app boot to
+        rehydrate the auth store.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUserResponse"
+
+  /auth/puter/exchange:
+    post:
+      operationId: exchangePuterToken
+      tags: [auth]
+      summary: Exchange a Puter access token for a Grudge session
+      description: |
+        Verifies the Puter access token server-to-server, upserts the
+        shared `users` row, and issues a HttpOnly session cookie. If
+        the user has no row in the upstream `grudge_accounts` registry
+        an account is implicitly created on first sign-in (Forge mints
+        an ephemeral Grudge ID and persists the user-link row).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PuterExchangeRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PuterExchangeResponse"
+        "400":
+          description: Missing or malformed Puter access token.
+        "401":
+          description: Puter rejected the access token.
+        "502":
+          description: Puter API was unreachable or returned an unexpected response.
+
+  /auth/logout:
+    post:
+      operationId: logoutCurrentUser
+      tags: [auth]
+      summary: Tear down the current session
+      description: |
+        Deletes the session row (if any) and clears the cookie.
+        Idempotent — calling without a session returns `{ ok: true }`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
 
   /projects:
     get:
@@ -524,6 +606,101 @@ components:
       properties:
         status:
           type: string
+
+    AuthConfig:
+      type: object
+      required: [puterSiteOrigin, puterBasePath, enablePuterCloud, grudgeAuthUrl]
+      properties:
+        puterSiteOrigin:
+          type: string
+          description: Origin the front-end loads the Puter SDK from.
+        puterBasePath:
+          type: string
+          description: Per-app sub-folder used for Puter cloud-storage scoping.
+        enablePuterCloud:
+          type: boolean
+          description: Whether the editor should expose Puter cloud-storage UI.
+        grudgeAuthUrl:
+          type: string
+          nullable: true
+          description: Optional URL of the upstream Grudge auth dashboard.
+
+    GrudgeUser:
+      type: object
+      required:
+        - userId
+        - puterUuid
+        - grudgeId
+        - username
+        - displayName
+        - email
+        - avatarUrl
+        - hasGrudgeAccount
+      properties:
+        userId:
+          type: string
+          description: Primary key of the shared `users` row.
+        puterUuid:
+          type: string
+        grudgeId:
+          type: string
+          description: |
+            Either the upstream `grudge_accounts.grudge_id` if known, or the
+            ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        hasGrudgeAccount:
+          type: boolean
+          description: True iff the upstream `grudge_accounts` registry has this user.
+
+    CurrentUserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/GrudgeUser"
+            - type: "null"
+
+    PuterExchangeRequest:
+      type: object
+      required: [puterAccessToken]
+      properties:
+        puterAccessToken:
+          type: string
+          minLength: 10
+          description: Access token from `puter.auth.getAccessToken()`.
+
+    PuterExchangeResponse:
+      type: object
+      required: [user, created, grudgeAccountLinked]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/GrudgeUser"
+            - type: "null"
+        created:
+          type: boolean
+          description: True iff this sign-in inserted a new row in `users`.
+        grudgeAccountLinked:
+          type: boolean
+          description: True iff the upstream `grudge_accounts` row was found.
+
+    LogoutResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
 
     Project:
       type: object
