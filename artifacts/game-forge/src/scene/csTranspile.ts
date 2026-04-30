@@ -106,6 +106,23 @@ export interface ScriptContext {
     freeze: (id: string) => void;
     /** Inverse of {@link freeze}. */
     unfreeze: (id: string) => void;
+    // --- Hierarchy traversal (scene-graph parent/children/world space) -----
+    /** Direct parent of `id`, or undefined for top-level entities. */
+    parentOf: (id: string) => ScriptEntity | undefined;
+    /** Immediate children of `id` (one level only). */
+    childrenOf: (id: string) => ScriptEntity[];
+    /** All descendants of `id` (depth-first). */
+    descendantsOf: (id: string) => ScriptEntity[];
+    /** Filter children by predicate. With `deep:true`, walks the full subtree. */
+    findChildren: (
+      rootId: string,
+      predicate: (e: ScriptEntity) => boolean,
+      deep?: boolean,
+    ) => ScriptEntity[];
+    /** World-space position of an entity, composed through its ancestor chain
+     *  (rotation + scale honoured). Returns the entity's local position when
+     *  it has no parent. */
+    worldPosition: (id: string) => [number, number, number];
   };
   /** Global game event bus — used to drive the HUD (kill counter, damage flash,
    *  hit indicator, win/lose banner). */

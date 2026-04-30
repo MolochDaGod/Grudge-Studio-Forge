@@ -263,6 +263,96 @@ function ScriptedEntities({
       }
       return out;
     };
+
+    // ---------------- Hierarchy traversal ---------------------------------
+    // Build a children-by-parent map once per frame so parentOf/childrenOf/
+    // descendantsOf are all O(1) per call. Snapshots are produced lazily so
+    // callers that just want IDs don't pay the snapshot cost.
+    const childrenByParent = new Map<string, typeof sceneData.entities>();
+    const entityById = new Map<string, (typeof sceneData.entities)[number]>();
+    for (const e of sceneData.entities) {
+      entityById.set(e.id, e);
+      const key = e.parentId ?? "";
+      const arr = childrenByParent.get(key);
+      if (arr) arr.push(e);
+      else childrenByParent.set(key, [e]);
+    }
+
+    const parentOf = (id: string): ScriptEntity | undefined => {
+      const e = entityById.get(id);
+      if (!e?.parentId) return undefined;
+      const p = entityById.get(e.parentId);
+      return p ? snapshot(p) : undefined;
+    };
+    const childrenOf = (id: string): ScriptEntity[] => {
+      const arr = childrenByParent.get(id);
+      if (!arr) return [];
+      return arr.map((c) => snapshot(c));
+    };
+    const descendantsOf = (id: string): ScriptEntity[] => {
+      const out: ScriptEntity[] = [];
+      const stack = [id];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        const arr = childrenByParent.get(cur);
+        if (!arr) continue;
+        for (const c of arr) {
+          out.push(snapshot(c));
+          stack.push(c.id);
+        }
+      }
+      return out;
+    };
+    const findChildren = (
+      rootId: string,
+      predicate: (e: ScriptEntity) => boolean,
+      deep = false,
+    ): ScriptEntity[] => {
+      const candidates = deep ? descendantsOf(rootId) : childrenOf(rootId);
+      return candidates.filter(predicate);
+    };
+    // Compose world position by walking the ancestor chain.
+    // Honour rotation + scale by stacking THREE.Object3D scratch nodes.
+    const wpScratchA = new THREE.Object3D();
+    const wpScratchB = new THREE.Object3D();
+    const wpVec = new THREE.Vector3();
+    const worldPosition = (id: string): [number, number, number] => {
+      const e = entityById.get(id);
+      if (!e) return [0, 0, 0];
+      // Walk up to root to collect chain (root → leaf).
+      const chain: typeof sceneData.entities = [];
+      let cursor: (typeof sceneData.entities)[number] | undefined = e;
+      const seen = new Set<string>(); // cycle guard
+      while (cursor && !seen.has(cursor.id)) {
+        chain.unshift(cursor);
+        seen.add(cursor.id);
+        cursor = cursor.parentId ? entityById.get(cursor.parentId) : undefined;
+      }
+      // Apply each link's local TRS by reusing two scratch nodes (parent/child).
+      // We explicitly set `quaternion.setFromEuler(rotation)` rather than
+      // relying on Euler's onChange callback, so the composition is robust to
+      // any internal THREE refactors that change Euler→Quaternion sync timing.
+      let parentNode: THREE.Object3D | null = null;
+      for (let i = 0; i < chain.length; i++) {
+        const link = chain[i];
+        const node = i % 2 === 0 ? wpScratchA : wpScratchB;
+        node.position.set(...link.transform.position);
+        node.rotation.set(...link.transform.rotation);
+        node.quaternion.setFromEuler(node.rotation);
+        node.scale.set(...link.transform.scale);
+        node.matrix.compose(node.position, node.quaternion, node.scale);
+        if (parentNode) {
+          // childWorld = parentWorld * childLocal.
+          node.matrixWorld.multiplyMatrices(parentNode.matrixWorld, node.matrix);
+        } else {
+          node.matrixWorld.copy(node.matrix);
+        }
+        parentNode = node;
+      }
+      if (!parentNode) return [...e.transform.position];
+      wpVec.setFromMatrixPosition(parentNode.matrixWorld);
+      return [wpVec.x, wpVec.y, wpVec.z];
+    };
     const setEntityPosition = (id: string, pos: [number, number, number]): boolean => {
       // Defer the actual write — see pendingTeleports comment above. We also
       // stamp the id with THIS frame's elapsedTime on the play session.
@@ -324,6 +414,11 @@ function ScriptedEntities({
         states: session.states,
         freeze,
         unfreeze,
+        parentOf,
+        childrenOf,
+        descendantsOf,
+        findChildren,
+        worldPosition,
       });
 
       // Run start() once — for either source. Both run on the same frame.

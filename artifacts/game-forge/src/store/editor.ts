@@ -10,6 +10,7 @@ import {
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
 import { cloneSubtree, getDescendants, wouldCycle, reidTree, sanitizeEntities } from "@/lib/hierarchy";
+import { loadGlbTopLevelNodes, type GlbChildNode } from "@/lib/glbHierarchy";
 import {
   CommandStack,
   addEntityCommand,
@@ -95,6 +96,12 @@ interface EditorState {
 
   addEntity: (type: EntityType, name?: string, parentId?: string | null) => SceneEntity;
   addEntityRaw: (entity: SceneEntity) => SceneEntity;
+  /** Walk the GLB referenced by `parentEntityId` and create a transform-only
+   *  proxy child entity for each top-level named node. The parent GLB still
+   *  renders the geometry — proxies are pure locators (see ModelComponent.proxy).
+   *  Resolves with the number of children added (0 if the GLB has none, the
+   *  parent already has proxies, or the parent isn't a model). */
+  explodeGlbHierarchy: (parentEntityId: string) => Promise<number>;
   removeEntity: (id: string) => void;
   duplicateEntity: (id: string) => void;
   selectEntity: (id: string | null) => void;
@@ -157,6 +164,11 @@ const emptyScene = (): SceneData => ({
   entities: [],
   environment: { ...DEFAULT_ENV },
 });
+
+/** Module-scoped re-entry guard for `explodeGlbHierarchy`. The action loads
+ *  the GLB asynchronously, and a fast double-click could otherwise pass the
+ *  in-state `alreadyExposed` check twice and append duplicate proxies. */
+const explodeInFlight = new Set<string>();
 
 const defaultsByType = (type: EntityType, name: string): SceneEntity => {
   const base: SceneEntity = {
@@ -293,6 +305,86 @@ export const useEditor = create<EditorState>((set, get) => ({
       isDirty: true,
     }));
     return entity;
+  },
+
+  explodeGlbHierarchy: async (parentEntityId) => {
+    // Mutex against concurrent / double-click re-entry on the same parent.
+    // The async load below means a fast second click could otherwise pass the
+    // `alreadyExposed` guard a second time and append duplicate proxies.
+    if (explodeInFlight.has(parentEntityId)) {
+      get().pushLog("info", `Expose Children: already in progress.`);
+      return 0;
+    }
+    explodeInFlight.add(parentEntityId);
+    try {
+      const state = get();
+      const parent = state.sceneData.entities.find((e) => e.id === parentEntityId);
+      if (!parent) {
+        state.pushLog("warn", `Expose Children: entity ${parentEntityId} not found.`);
+        return 0;
+      }
+      if (parent.type !== "model" || !parent.model?.url) {
+        state.pushLog("warn", `Expose Children: "${parent.name}" has no GLB url.`);
+        return 0;
+      }
+      if (parent.model.proxy) {
+        state.pushLog("warn", `Expose Children: "${parent.name}" is itself a proxy locator.`);
+        return 0;
+      }
+      const alreadyExposed = state.sceneData.entities.some(
+        (e) => e.parentId === parent.id && e.model?.proxy,
+      );
+      if (alreadyExposed) {
+        state.pushLog("info", `Expose Children: "${parent.name}" already exposed.`);
+        return 0;
+      }
+      const url = parent.model.url;
+      let nodes: GlbChildNode[];
+      try {
+        nodes = await loadGlbTopLevelNodes(url);
+      } catch (err) {
+        state.pushLog(
+          "error",
+          `Expose Children: failed to load ${url}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return 0;
+      }
+      if (nodes.length === 0) {
+        state.pushLog("warn", `Expose Children: "${parent.name}" has no named top-level nodes.`);
+        return 0;
+      }
+      // Re-check after the await — the parent could have been deleted, the
+      // url could have changed, or another exploder could have raced us.
+      const fresh = get();
+      const freshParent = fresh.sceneData.entities.find((e) => e.id === parentEntityId);
+      if (!freshParent || freshParent.model?.url !== url) {
+        fresh.pushLog("warn", `Expose Children: parent changed during load — aborting.`);
+        return 0;
+      }
+      if (fresh.sceneData.entities.some((e) => e.parentId === parentEntityId && e.model?.proxy)) {
+        // Another call won the race.
+        return 0;
+      }
+      const newChildren: SceneEntity[] = nodes.map((n) => ({
+        id: nanoid(8),
+        name: n.name,
+        type: "model",
+        parentId: parentEntityId,
+        transform: { position: n.position, rotation: n.rotation, scale: n.scale },
+        model: { url, proxy: true, subNode: n.name },
+      }));
+      set((s) => ({
+        sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, ...newChildren] },
+        isDirty: true,
+      }));
+      fresh.pushLog(
+        "info",
+        `Expose Children: added ${newChildren.length} locator${newChildren.length === 1 ? "" : "s"} under "${freshParent.name}".`,
+      );
+      return newChildren.length;
+    } finally {
+      explodeInFlight.delete(parentEntityId);
+    }
   },
 
   removeEntity: (id) =>

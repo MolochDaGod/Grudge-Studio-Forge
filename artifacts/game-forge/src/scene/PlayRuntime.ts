@@ -95,6 +95,15 @@ export function makeContext(opts: {
   states: EntityStates;
   freeze: (id: string) => void;
   unfreeze: (id: string) => void;
+  parentOf: (id: string) => ScriptEntity | undefined;
+  childrenOf: (id: string) => ScriptEntity[];
+  descendantsOf: (id: string) => ScriptEntity[];
+  findChildren: (
+    rootId: string,
+    predicate: (e: ScriptEntity) => boolean,
+    deep?: boolean,
+  ) => ScriptEntity[];
+  worldPosition: (id: string) => [number, number, number];
 }): ScriptContext {
   const fromId = opts.entityId;
   return {
@@ -115,6 +124,11 @@ export function makeContext(opts: {
       cameraDirection: opts.cameraDirection,
       freeze: opts.freeze,
       unfreeze: opts.unfreeze,
+      parentOf: opts.parentOf,
+      childrenOf: opts.childrenOf,
+      descendantsOf: opts.descendantsOf,
+      findChildren: opts.findChildren,
+      worldPosition: opts.worldPosition,
     },
     events: {
       emit: (event, payload) => opts.bus.emit(event, payload),

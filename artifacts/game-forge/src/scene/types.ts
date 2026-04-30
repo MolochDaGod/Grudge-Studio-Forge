@@ -51,6 +51,16 @@ export interface ModelComponent {
   tint?: string;
   /** Floating sprite label shown above the model (player name, NPC tag, etc.). */
   label?: string;
+  /** When true, this entity is a *transform-only locator* mirroring a sub-node
+   *  of its parent's GLB (created by the "Expose Children" action). The renderer
+   *  skips loading a model for proxies — only the parent GLB renders the geometry.
+   *  Proxies still expose a transform (queryable from scripts via
+   *  `ctx.scene.worldPosition`) and can host their own children, scripts, and
+   *  behaviors (e.g. attach `behavior:"spawnpoint"` to a `Spawn_*` proxy). */
+  proxy?: boolean;
+  /** Name of the GLB sub-node this proxy refers to (informational, used by the
+   *  inspector and for debugging — runtime does not key off it). */
+  subNode?: string;
 }
 
 export type ControllerKind = "none" | "thirdPerson" | "firstPerson";

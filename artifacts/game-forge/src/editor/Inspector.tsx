@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -105,6 +106,7 @@ export function Inspector() {
   const setEntityScript = useEditor((s) => s.setEntityScript);
   const setEntityController = useEditor((s) => s.setEntityController);
   const entities = useEditor((s) => s.sceneData.entities);
+  const explodeGlbHierarchy = useEditor((s) => s.explodeGlbHierarchy);
 
   const { data: scripts = [] } = useListScripts(projectId ?? 0, {
     query: { queryKey: getListScriptsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -479,6 +481,46 @@ export function Inspector() {
                 data-testid="input-model-url"
               />
             </div>
+            {entity.model.proxy ? (
+              <p className="text-[11px] text-muted-foreground">
+                Locator (proxy) for sub-node{" "}
+                <span className="font-mono text-foreground">{entity.model.subNode ?? "?"}</span> of
+                its parent GLB. Geometry is rendered by the parent — this entity is a
+                transform-only anchor you can target by name (Spawn_*, Cover_*, etc.) or attach
+                scripts/behaviors to.
+              </p>
+            ) : (
+              entity.model.url && (
+                <div className="space-y-1.5">
+                  {(() => {
+                    const alreadyExposed = entities.some(
+                      (e) => e.parentId === entity.id && e.model?.proxy,
+                    );
+                    return (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs w-full"
+                          disabled={alreadyExposed}
+                          onClick={() => {
+                            void explodeGlbHierarchy(entity.id);
+                          }}
+                          data-testid="button-expose-children"
+                        >
+                          {alreadyExposed ? "Children already exposed" : "Expose Children"}
+                        </Button>
+                        <p className="text-[11px] text-muted-foreground">
+                          Walks the GLB and adds a transform-only locator child for each top-level
+                          named node (Spawn_*, Cover_*, Door_*, …). Lets scripts/AI target sub-parts
+                          by name and attach behaviors.
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              )
+            )}
           </Section>
         )}
 

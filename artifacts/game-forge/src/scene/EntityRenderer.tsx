@@ -53,6 +53,19 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
   };
 
   if (entity.type === "model") {
+    // Proxy locators (created by "Expose Children" on a parent GLB) are
+    // transform-only — the parent already renders the geometry. Show a small
+    // wireframe gizmo only when the proxy is selected so the user can find it
+    // in the viewport; otherwise render nothing visual.
+    if (entity.model?.proxy) {
+      if (!selected) return null;
+      return (
+        <mesh {...meshProps}>
+          <boxGeometry args={[0.25, 0.25, 0.25]} />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
+        </mesh>
+      );
+    }
     return <ModelEntity entity={entity} selected={selected} onPick={onPick} playMode={false} />;
   }
   if (entity.type === "light") {
