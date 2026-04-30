@@ -29,6 +29,13 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const [damageFlash, setDamageFlash] = useState(0);
   // Hit indicator — opacity decays to 0 over 0.18s.
   const [hitFlash, setHitFlash] = useState(0);
+  // Headshot indicator — short gold flash when player lands a headshot.
+  const [headshotFlash, setHeadshotFlash] = useState(0);
+  // Kill feed (most recent first, capped at 4). Each entry shows who killed
+  // whom and how recently (auto-fades after FEED_TTL_MS).
+  const [killFeed, setKillFeed] = useState<
+    Array<{ id: number; text: string; mine: boolean; ts: number }>
+  >([]);
 
   const [respawning, setRespawning] = useState<number | null>(null);
   const [outcome, setOutcome] = useState<"win" | "lose" | null>(null);
@@ -51,8 +58,31 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
       }),
     );
     offs.push(
-      bus.on("hit", () => {
+      bus.on("hit", (p) => {
+        const obj = p as { headshot?: boolean } | undefined;
         setHitFlash(1);
+        if (obj?.headshot) setHeadshotFlash(1);
+      }),
+    );
+    offs.push(
+      bus.on("kill", (p) => {
+        const obj = p as
+          | { killerId?: string; victimId?: string; victimIsPlayer?: boolean }
+          | undefined;
+        if (!obj) return;
+        const mine = !!obj.killerId && !obj.victimIsPlayer;
+        const text = obj.victimIsPlayer
+          ? "Enemy killed You"
+          : mine
+            ? "You killed Enemy"
+            : "Enemy killed Enemy";
+        setKillFeed((f) => {
+          const next = [
+            { id: Date.now() + Math.random(), text, mine, ts: Date.now() },
+            ...f,
+          ].slice(0, 4);
+          return next;
+        });
       }),
     );
     offs.push(
@@ -97,6 +127,22 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     const id = window.setTimeout(() => setHitFlash((f) => Math.max(0, f - 0.18)), 30);
     return () => window.clearTimeout(id);
   }, [hitFlash]);
+  useEffect(() => {
+    if (headshotFlash <= 0) return;
+    const id = window.setTimeout(() => setHeadshotFlash((f) => Math.max(0, f - 0.06)), 50);
+    return () => window.clearTimeout(id);
+  }, [headshotFlash]);
+
+  // Kill-feed entries auto-prune after 4s.
+  const FEED_TTL_MS = 4000;
+  useEffect(() => {
+    if (killFeed.length === 0) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setKillFeed((f) => f.filter((e) => now - e.ts < FEED_TTL_MS));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [killFeed.length]);
 
   const healthPct = Math.max(0, Math.min(1, playerHealth / Math.max(1, playerMaxHealth)));
 
@@ -147,6 +193,37 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           />
         </div>
       </div>
+
+      {/* Kill feed — top right (newest first, fades out) */}
+      <div className="absolute right-4 top-4 flex w-64 flex-col gap-1">
+        {killFeed.map((entry, i) => {
+          const age = Math.min(1, (Date.now() - entry.ts) / FEED_TTL_MS);
+          const opacity = i === 0 ? 1 : Math.max(0.2, 1 - age);
+          return (
+            <div
+              key={entry.id}
+              className="rounded bg-black/55 px-2 py-1 text-right text-[11px] text-white shadow"
+              style={{ opacity }}
+            >
+              <span className={entry.mine ? "text-emerald-300" : "text-red-300"}>
+                {entry.text}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Headshot call-out — center, gold flash */}
+      {headshotFlash > 0 && (
+        <div
+          className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 transition-opacity"
+          style={{ opacity: headshotFlash }}
+        >
+          <div className="rounded border border-yellow-300/80 bg-black/60 px-3 py-1 text-sm font-bold uppercase tracking-widest text-yellow-300 shadow">
+            Headshot!
+          </div>
+        </div>
+      )}
 
       {/* Scoreboard — top center */}
       <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded bg-black/55 px-4 py-2 text-white shadow">
