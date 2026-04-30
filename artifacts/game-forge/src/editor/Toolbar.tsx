@@ -257,10 +257,10 @@ export function Toolbar({
         />
         <span className="flex flex-col leading-none items-start">
           <span className="font-display text-[15px] font-bold brand-gold tracking-wider">
-            GAMEFORGE
+            STUDIO FORGE
           </span>
           <span className="font-heading text-[8px] uppercase tracking-[0.22em] text-muted-foreground -mt-0.5">
-            Grudge Studio
+            Grudge GameForge
           </span>
         </span>
       </button>

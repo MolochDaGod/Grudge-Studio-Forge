@@ -17,7 +17,9 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox } from "lucide-react";
+import { useViewportTabs } from "@/store/viewportTabs";
+import { openModelTabFromAsset } from "@/lib/openModelTab";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
 import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
 import {
@@ -559,6 +561,7 @@ function ProjectAssets() {
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.addEntity);
   const updateEntity = useEditor((s) => s.updateEntity);
+  const openTab = useViewportTabs((s) => s.openTab);
   const qc = useQueryClient();
   const { data: assets = [], isLoading } = useListAssets(projectId ?? 0, {
     query: { queryKey: getListAssetsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -686,19 +689,34 @@ function ProjectAssets() {
               <span className="font-medium truncate flex-1">{a.name}</span>
               <span className="text-[10px] text-muted-foreground/60 truncate max-w-[200px] hidden md:inline">{a.url}</span>
               {a.type === "model" && a.url && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 text-[10px] opacity-0 group-hover:opacity-100"
-                  onClick={() => {
-                    const e = addEntity("model", a.name);
-                    updateEntity(e.id, (d) => {
-                      d.model = { url: a.url };
-                    });
-                  }}
-                >
-                  <Plus className="size-3 mr-1" /> Spawn
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] opacity-0 group-hover:opacity-100"
+                    onClick={() => {
+                      openModelTabFromAsset({ name: a.name, url: a.url }, openTab);
+                      pushLog("info", `Opened "${a.name}" in a new viewer tab.`);
+                    }}
+                    title="Open in new viewer tab"
+                    data-testid={`button-open-asset-tab-${a.id}`}
+                  >
+                    <FileBox className="size-3 mr-1" /> Open
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] opacity-0 group-hover:opacity-100"
+                    onClick={() => {
+                      const e = addEntity("model", a.name);
+                      updateEntity(e.id, (d) => {
+                        d.model = { url: a.url };
+                      });
+                    }}
+                  >
+                    <Plus className="size-3 mr-1" /> Spawn
+                  </Button>
+                </>
               )}
               {a.source === "upload" && a.url && (
                 <a

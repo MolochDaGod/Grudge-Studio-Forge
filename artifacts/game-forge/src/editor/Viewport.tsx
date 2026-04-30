@@ -24,6 +24,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Hotbar } from "@/editor/Hotbar";
+import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
 import { useListPrefabs, getListPrefabsQueryKey, type Prefab } from "@workspace/api-client-react";
@@ -565,6 +566,7 @@ export function Viewport() {
               }}
               dpr={[1, 2]}
             >
+              <DevtoolsBridge label="Forge · Scene" />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
               <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
               <Lights />

@@ -6,7 +6,7 @@ import {
   ResizablePanelGroup,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { Toolbar } from "@/editor/Toolbar";
 import { Hierarchy } from "@/editor/Hierarchy";
@@ -15,44 +15,13 @@ import { BottomPanel } from "@/editor/BottomPanel";
 import { ProjectPicker } from "@/editor/ProjectPicker";
 import { AssetDropZone } from "@/editor/AssetDropZone";
 import { AIWorkerPanel } from "@/editor/AIWorkerPanel";
+import { ViewportTabBar } from "@/editor/ViewportTabBar";
+import { ViewportHost } from "@/editor/ViewportHost";
+import { useViewportLaunchQueue } from "@/lib/launchQueue";
 import { useEditor } from "@/store/editor";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles, Plus } from "lucide-react";
 import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
-
-/**
- * The 3D viewport drags in three.js, R3F, drei, rapier, and postprocessing —
- * by far the heaviest sub-tree in the editor. Loading it lazily lets the
- * surrounding shell (toolbar, hierarchy, inspector, project picker) paint
- * immediately and shaves the time-to-interactive on first load. The Suspense
- * fallback below sits in the viewport pane while the chunk streams in.
- *
- * Two complementary mechanisms hide that fallback in practice:
- *  1. `main.tsx` calls `schedulePrefetchViewport()` from
- *     `@/lib/prefetch`, which fires this same dynamic import on the next
- *     idle frame.
- *  2. `vite.config.ts`'s `preloadViewportCandidate` plugin emits
- *     `<link rel="modulepreload">` tags for the resulting chunks at
- *     build time so the browser fetches them in parallel with the entry.
- *
- * Both routes go through `@/editor/viewportPreload`, the small re-export
- * "preload candidate" entry. Vite dedupes the dynamic import by
- * specifier, so all three call sites resolve to the same chunk and the
- * second/third invocations hit the module cache on the same tick.
- */
-const Viewport = lazy(() =>
-  import("@/editor/viewportPreload").then((m) => ({ default: m.Viewport })),
-);
-
-function ViewportFallback() {
-  return (
-    <div className="w-full h-full flex items-center justify-center bg-background grid-pattern">
-      <div className="text-xs font-mono text-muted-foreground animate-pulse">
-        Loading 3D viewport…
-      </div>
-    </div>
-  );
-}
 
 function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -62,6 +31,11 @@ function EditorShell() {
   const pushLog = useEditor((s) => s.pushLog);
   const isPlaying = useEditor((s) => s.isPlaying);
   const togglePlay = useEditor((s) => s.togglePlay);
+
+  // Listens for files passed via the OS file-handler ("Open with Grudge
+  // GameForge"). Each file is opened in a fresh viewer tab so existing
+  // tabs are never disturbed.
+  useViewportLaunchQueue();
 
   const { data: projects } = useListProjects();
 
@@ -203,29 +177,30 @@ function EditorShell() {
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={62}>
-                <div className="relative w-full h-full">
-                  <Suspense fallback={<ViewportFallback />}>
-                    <Viewport />
-                  </Suspense>
-                  {!projectId && !pickerOpen && (
-                    <button
-                      onClick={() => setPickerOpen(true)}
-                      aria-label="Open or create a project"
-                      title="Open or create a project"
-                      data-testid="button-open-or-create-project"
-                      style={{
-                        position: "absolute",
-                        right: 16,
-                        bottom: 16,
-                        zIndex: 50,
-                        width: 48,
-                        height: 48,
-                      }}
-                      className="rounded-full bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center justify-center shadow-2xl hover-elevate"
-                    >
-                      <Plus className="size-6" />
-                    </button>
-                  )}
+                <div className="relative w-full h-full flex flex-col">
+                  <ViewportTabBar />
+                  <div className="relative flex-1 min-h-0">
+                    <ViewportHost />
+                    {!projectId && !pickerOpen && (
+                      <button
+                        onClick={() => setPickerOpen(true)}
+                        aria-label="Open or create a project"
+                        title="Open or create a project"
+                        data-testid="button-open-or-create-project"
+                        style={{
+                          position: "absolute",
+                          right: 16,
+                          bottom: 16,
+                          zIndex: 50,
+                          width: 48,
+                          height: 48,
+                        }}
+                        className="rounded-full bg-primary/15 text-primary border border-primary/40 backdrop-blur flex items-center justify-center shadow-2xl hover-elevate"
+                      >
+                        <Plus className="size-6" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </ResizablePanel>
               <ResizableHandle />

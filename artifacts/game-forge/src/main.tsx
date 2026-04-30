@@ -1,3 +1,12 @@
+// Install the three.js devtools bridge BEFORE any three.js / R3F module is
+// imported. The official "three.js developer tools" Chrome extension hooks
+// the `__THREE_DEVTOOLS__` global the moment it sees it, and observing
+// scenes/renderers later still works — but creating the global up-front
+// lets the extension capture object construction events for chunks that
+// import three before the first React render.
+import { ensureThreeDevtools } from "@/lib/threeDevtools";
+ensureThreeDevtools();
+
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { schedulePrefetchViewport } from "@/lib/prefetch";

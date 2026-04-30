@@ -12,6 +12,7 @@ import {
 import type { Prefab } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
+import { useViewportTabs } from "@/store/viewportTabs";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -37,6 +38,7 @@ export function PrefabsPanel() {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
   const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
+  const openTab = useViewportTabs((s) => s.openTab);
   const openPrefabSubScene = useEditor((s) => s.openPrefabSubScene);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
   const closePrefabSubScene = useEditor((s) => s.closePrefabSubScene);
@@ -459,6 +461,18 @@ export function PrefabsPanel() {
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => onOpen(p)} disabled={!!prefabSubScene && !editing}>
                     Open prefab editor
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => {
+                      openTab({
+                        kind: "prefab",
+                        data: { prefabId: p.id, prefabName: p.name },
+                      });
+                      pushLog("info", `Previewing prefab "${p.name}" in a new tab.`);
+                    }}
+                    data-testid={`menu-preview-prefab-${p.id}`}
+                  >
+                    Preview in new tab
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuSub>

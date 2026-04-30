@@ -1,7 +1,7 @@
 {
-  "name": "Grudge GameForge",
-  "short_name": "GameForge",
-  "description": "Browser-based 3D game editor with physics, scripting, and the Grudge Studio asset library.",
+  "name": "Grudge Studio Forge",
+  "short_name": "Studio Forge",
+  "description": "Browser-based 3D game editor with multi-viewport tabs, physics, scripting, three.js devtools integration, and the Grudge Studio asset library.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -28,5 +28,32 @@
       "purpose": "maskable"
     }
   ],
-  "categories": ["games", "developer", "graphics"]
+  "categories": ["games", "developer", "graphics"],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "model/gltf-binary": [".glb"],
+        "model/gltf+json": [".gltf"],
+        "application/octet-stream": [
+          ".obj",
+          ".fbx",
+          ".asset",
+          ".prefab",
+          ".gfscene"
+        ],
+        "application/zip": [".zip"]
+      },
+      "icons": [
+        {
+          "src": "/pwa-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
 }
