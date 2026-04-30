@@ -895,6 +895,12 @@ export const ListPrefabsResponseItem = zod.object({
       }),
     ),
     rootId: zod.string().nullish(),
+    isPlayerPrefab: zod
+      .boolean()
+      .optional()
+      .describe(
+        "When true, Play Mode auto-spawns this prefab as the player when\nthe scene has no controller-driven entity. At most one prefab per\nproject should carry this flag — the editor enforces mutual\nexclusion when it's toggled on.\n",
+      ),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -986,6 +992,12 @@ export const CreatePrefabBody = zod.object({
         }),
       ),
       rootId: zod.string().nullish(),
+      isPlayerPrefab: zod
+        .boolean()
+        .optional()
+        .describe(
+          "When true, Play Mode auto-spawns this prefab as the player when\nthe scene has no controller-driven entity. At most one prefab per\nproject should carry this flag — the editor enforces mutual\nexclusion when it's toggled on.\n",
+        ),
     })
     .optional(),
 });
@@ -1079,6 +1091,12 @@ export const GetPrefabResponse = zod.object({
       }),
     ),
     rootId: zod.string().nullish(),
+    isPlayerPrefab: zod
+      .boolean()
+      .optional()
+      .describe(
+        "When true, Play Mode auto-spawns this prefab as the player when\nthe scene has no controller-driven entity. At most one prefab per\nproject should carry this flag — the editor enforces mutual\nexclusion when it's toggled on.\n",
+      ),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -1172,6 +1190,12 @@ export const UpdatePrefabBody = zod.object({
         }),
       ),
       rootId: zod.string().nullish(),
+      isPlayerPrefab: zod
+        .boolean()
+        .optional()
+        .describe(
+          "When true, Play Mode auto-spawns this prefab as the player when\nthe scene has no controller-driven entity. At most one prefab per\nproject should carry this flag — the editor enforces mutual\nexclusion when it's toggled on.\n",
+        ),
     })
     .optional(),
 });
@@ -1261,6 +1285,12 @@ export const UpdatePrefabResponse = zod.object({
       }),
     ),
     rootId: zod.string().nullish(),
+    isPlayerPrefab: zod
+      .boolean()
+      .optional()
+      .describe(
+        "When true, Play Mode auto-spawns this prefab as the player when\nthe scene has no controller-driven entity. At most one prefab per\nproject should carry this flag — the editor enforces mutual\nexclusion when it's toggled on.\n",
+      ),
   }),
   createdAt: zod.string(),
   updatedAt: zod.string(),

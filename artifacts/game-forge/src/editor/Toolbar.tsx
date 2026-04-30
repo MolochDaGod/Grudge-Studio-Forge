@@ -27,6 +27,9 @@ import {
   Sparkles as AISparkles,
   Gauge,
   Activity,
+  Globe,
+  Copy,
+  CheckCircle2,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -59,8 +62,10 @@ import {
   getGetProjectSummaryQueryKey,
   getGetProjectQueryKey,
   getListPrefabsQueryKey,
+  useListPrefabs,
 } from "@workspace/api-client-react";
 import type { EntityType, CameraMode } from "@/scene/types";
+import type { PrefabPayload } from "@/scene/prefabPayload";
 import {
   Select,
   SelectContent,
@@ -73,6 +78,16 @@ import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { InstallAppButton } from "@/editor/InstallAppButton";
 import { UserMenu } from "@/editor/UserMenu";
+import { useAuth } from "@/store/auth";
+import { publishScene, type PublishResult } from "@/lib/puterPublish";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const PRIMITIVES: { type: EntityType; label: string; Icon: typeof Box }[] = [
   { type: "box", label: "Box", Icon: Box },
@@ -104,6 +119,7 @@ export function Toolbar({
   const setPaused = useEditor((s) => s.setPaused);
   const setPlaying = useEditor((s) => s.setPlaying);
   const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
+  const spawnPlayerPrefab = useEditor((s) => s.spawnPlayerPrefab);
   const [mapGenOpen, setMapGenOpen] = useState(false);
   const setEnvironment = useEditor((s) => s.setEnvironment);
   const cameraMode: CameraMode = sceneData.environment.cameraMode ?? "editor";
@@ -182,9 +198,102 @@ export function Toolbar({
   const updateScene = useUpdateScene();
   const createScene = useCreateScene();
   const updatePrefab = useUpdatePrefab();
+  // Subscribe to the project's prefab list so the Play handler can find a
+  // "default Player" prefab without an extra fetch. Disabled in prefab
+  // sub-scene mode (we won't show the Play button there).
+  const { data: prefabsForPlay } = useListPrefabs(projectId ?? 0, {
+    query: {
+      queryKey: getListPrefabsQueryKey(projectId ?? 0),
+      enabled: !!projectId,
+    },
+  });
+
+  /**
+   * Enter Play Mode. If the scene already has a controller-driven entity,
+   * just play. Otherwise, look for a prefab flagged as the default Player
+   * and auto-spawn it (transient: removed when Stop is pressed). Without
+   * this, an "empty" scene would launch into play mode with no avatar to
+   * control, which feels broken to first-time users.
+   */
+  const onPressPlay = () => {
+    void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
+    const hasController = sceneData.entities.some(
+      (e) => e.controllerKind && e.controllerKind !== "none",
+    );
+    if (!hasController) {
+      const playerPrefab = (prefabsForPlay ?? []).find((p) => {
+        const d = (p.data as PrefabPayload | undefined) ?? {};
+        return d.isPlayerPrefab === true && (d.entities?.length ?? 0) > 0;
+      });
+      if (playerPrefab) {
+        const data = playerPrefab.data as PrefabPayload;
+        const root = spawnPlayerPrefab(data.entities ?? [], playerPrefab.id);
+        if (root) {
+          pushLog("info", `Auto-spawned player prefab "${playerPrefab.name}".`);
+        } else {
+          pushLog(
+            "warn",
+            `Player prefab "${playerPrefab.name}" had no entities to spawn.`,
+          );
+        }
+      }
+    }
+    setPlaying(true);
+  };
 
   const [editingName, setEditingName] = useState(sceneName);
   useEffect(() => setEditingName(sceneName), [sceneName]);
+
+  // ----- Publish (T005) -----
+  const authStatus = useAuth((s) => s.status);
+  const isSignedIn = authStatus === "signedIn";
+  const [publishing, setPublishing] = useState(false);
+  const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const onPublish = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    setPublishError(null);
+    setPublishResult(null);
+    try {
+      // The bootstrapper redirects back to *this* editor page (with
+      // ?scene=… appended), so we need our origin + the artifact's base
+      // path. import.meta.env.BASE_URL is provided by Vite and already
+      // ends with a trailing slash.
+      const editorOrigin = `${window.location.origin}${import.meta.env.BASE_URL}`;
+      const res = await publishScene({
+        sceneName,
+        sceneData,
+        // sceneId keeps the published subdomain stable across republishes.
+        // Falsy (unsaved scratch scene) → publishScene falls back to a
+        // content hash so the slug is still deterministic per content.
+        sceneId: sceneId ?? null,
+        editorOrigin,
+      });
+      setPublishResult(res);
+      pushLog("info", `Published to ${res.shareUrl}`);
+    } catch (err) {
+      const msg = (err as Error).message;
+      setPublishError(msg);
+      pushLog("error", `Publish failed: ${msg}`);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const onCopyShareUrl = async () => {
+    if (!publishResult) return;
+    try {
+      await navigator.clipboard.writeText(publishResult.shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard can fail in iframes without permissions; surface a hint
+      pushLog("warn", "Clipboard blocked — copy the URL manually.");
+    }
+  };
 
   const onSave = async () => {
     if (!projectId) return;
@@ -440,6 +549,41 @@ export function Toolbar({
         Save
       </Button>
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onPublish}
+              disabled={
+                !isSignedIn ||
+                publishing ||
+                !!prefabSubScene ||
+                sceneData.entities.length === 0
+              }
+              data-testid="button-publish"
+            >
+              {publishing ? (
+                <Loader2 className="size-4 mr-1 animate-spin" />
+              ) : (
+                <Globe className="size-4 mr-1" />
+              )}
+              Publish
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          {!isSignedIn
+            ? "Sign in with Puter to publish"
+            : prefabSubScene
+              ? "Close the prefab sub-scene first"
+              : sceneData.entities.length === 0
+                ? "Add some entities first"
+                : "Publish to a free Puter-hosted page"}
+        </TooltipContent>
+      </Tooltip>
+
       <input
         ref={importInputRef}
         type="file"
@@ -535,10 +679,7 @@ export function Toolbar({
             <span>
               <Button
                 size="sm"
-                onClick={() => {
-                  void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
-                  setPlaying(true);
-                }}
+                onClick={onPressPlay}
                 disabled={!!prefabSubScene}
                 className="bg-accent text-accent-foreground hover:bg-accent/90"
                 data-testid="button-play"
@@ -570,6 +711,79 @@ export function Toolbar({
       )}
 
       <MapGenDialog open={mapGenOpen} onOpenChange={setMapGenOpen} />
+
+      <Dialog
+        open={!!publishResult || !!publishError}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPublishResult(null);
+            setPublishError(null);
+          }
+        }}
+      >
+        <DialogContent data-testid="publish-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {publishResult ? "Scene published" : "Publish failed"}
+            </DialogTitle>
+            <DialogDescription>
+              {publishResult
+                ? "Anyone with this link can play your scene in their browser. The link is yours forever — re-publish to push updates."
+                : publishError ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+          {publishResult && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-card-border bg-muted/30 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1">
+                  Share URL
+                </div>
+                <div
+                  className="text-xs font-mono break-all text-accent"
+                  data-testid="publish-share-url"
+                >
+                  {publishResult.shareUrl}
+                </div>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Subdomain:{" "}
+                <span className="font-mono">{publishResult.subdomain}</span>
+                {publishResult.reused
+                  ? " — updated in place (existing share link still works)."
+                  : " — newly created."}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            {publishResult && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCopyShareUrl}
+                data-testid="button-copy-share-url"
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle2 className="size-4 mr-1.5" /> Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-4 mr-1.5" /> Copy link
+                  </>
+                )}
+              </Button>
+            )}
+            {publishResult && (
+              <Button
+                size="sm"
+                onClick={() => window.open(publishResult.shareUrl, "_blank")}
+              >
+                <Globe className="size-4 mr-1.5" /> Open in new tab
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

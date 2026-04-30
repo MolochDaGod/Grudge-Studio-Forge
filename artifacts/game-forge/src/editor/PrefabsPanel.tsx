@@ -26,13 +26,9 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { SceneEntity } from "@/scene/types";
+import type { PrefabPayload } from "@/scene/prefabPayload";
 import { STARTER_PREFABS, STARTER_VFX, type StarterPrefabDef } from "@/lib/starterPrefabs";
 import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
-
-interface PrefabPayload {
-  entities?: SceneEntity[];
-  rootId?: string | null;
-}
 
 export function PrefabsPanel() {
   const projectId = useEditor((s) => s.projectId);
@@ -134,6 +130,63 @@ export function PrefabsPanel() {
       if (!ok) return;
     }
     closePrefabSubScene();
+  };
+
+  /**
+   * Toggle the "default Player" flag on a prefab. At most one prefab per
+   * project should carry this flag at a time, so flipping it ON also clears
+   * it from any other prefab. The flag is stashed inside `prefab.data`
+   * (a JSON blob) — adding a column would have required an OpenAPI/Drizzle
+   * round-trip with no behavioural payoff. Toolbar's Play handler reads it.
+   */
+  const onTogglePlayerPrefab = async (target: Prefab) => {
+    if (!projectId) return;
+    const targetData = (target.data as PrefabPayload) ?? {};
+    const turningOn = !targetData.isPlayerPrefab;
+    try {
+      // Update the target. Always preserve the original entities/rootId.
+      await updatePrefab.mutateAsync({
+        id: target.id,
+        data: {
+          name: target.name,
+          data: {
+            entities: targetData.entities ?? [],
+            rootId: targetData.rootId ?? null,
+            isPlayerPrefab: turningOn,
+          },
+        },
+      });
+      // Mutual exclusion: clear the flag on every OTHER prefab that has it.
+      // We sequence rather than Promise.all so a partial failure doesn't
+      // leave two "players" — at worst we stop early with one cleared.
+      if (turningOn) {
+        for (const other of prefabs) {
+          if (other.id === target.id) continue;
+          const od = (other.data as PrefabPayload) ?? {};
+          if (!od.isPlayerPrefab) continue;
+          await updatePrefab.mutateAsync({
+            id: other.id,
+            data: {
+              name: other.name,
+              data: {
+                entities: od.entities ?? [],
+                rootId: od.rootId ?? null,
+                isPlayerPrefab: false,
+              },
+            },
+          });
+        }
+      }
+      qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      pushLog(
+        "info",
+        turningOn
+          ? `"${target.name}" is now the default Player — Play will auto-spawn it.`
+          : `Cleared default-Player flag from "${target.name}".`,
+      );
+    } catch (err) {
+      pushLog("error", `Toggle player prefab failed: ${(err as Error).message}`);
+    }
   };
 
   const onDelete = async (p: Prefab) => {
@@ -461,6 +514,15 @@ export function PrefabsPanel() {
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => onOpen(p)} disabled={!!prefabSubScene && !editing}>
                     Open prefab editor
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onClick={() => onTogglePlayerPrefab(p)}
+                    disabled={!!prefabSubScene || updatePrefab.isPending}
+                    data-testid={`menu-toggle-player-prefab-${p.id}`}
+                  >
+                    {data?.isPlayerPrefab
+                      ? "✓ Default Player (click to clear)"
+                      : "Set as default Player"}
                   </ContextMenuItem>
                   <ContextMenuItem
                     onClick={() => {

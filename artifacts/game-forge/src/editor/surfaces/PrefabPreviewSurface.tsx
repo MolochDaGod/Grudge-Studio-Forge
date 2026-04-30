@@ -7,6 +7,7 @@ import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { buildTree } from "@/lib/hierarchy";
 import { useGetPrefab } from "@workspace/api-client-react";
 import type { SceneEntity } from "@/scene/types";
+import type { PrefabPayload } from "@/scene/prefabPayload";
 import type { PrefabTabPayload } from "@/store/viewportTabs";
 import { Loader2, AlertTriangle, Package } from "lucide-react";
 
@@ -35,10 +36,6 @@ function RenderNode({
       ))}
     </EntityRenderer>
   );
-}
-
-interface PrefabPayload {
-  entities?: SceneEntity[];
 }
 
 export function PrefabPreviewSurface({ payload }: { payload: PrefabTabPayload }) {

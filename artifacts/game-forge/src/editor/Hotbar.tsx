@@ -22,13 +22,8 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import type { SceneEntity } from "@/scene/types";
+import type { PrefabPayload } from "@/scene/prefabPayload";
 import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
-
-interface PrefabPayload {
-  entities?: SceneEntity[];
-  rootId?: string | null;
-}
 
 export function Hotbar() {
   const projectId = useEditor((s) => s.projectId);

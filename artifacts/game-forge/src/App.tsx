@@ -54,6 +54,58 @@ function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Published-scene auto-loader.
+  //
+  // When someone opens a Puter-hosted scene, the bootstrapper redirects
+  // here with `?scene=<absolute-url>`. We fetch the JSON, install it into
+  // the editor (without a sceneId — it's transient), and immediately
+  // enter play mode. The query param is then stripped from the URL so a
+  // refresh doesn't re-fetch (and so the user can keep editing without
+  // a stale URL). Failures only log; we never block the editor on a
+  // bad shared URL.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const sceneUrl = params.get("scene");
+    if (!sceneUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(sceneUrl, { mode: "cors" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { entities?: unknown; environment?: unknown };
+        if (cancelled) return;
+        if (!data || !Array.isArray(data.entities)) {
+          throw new Error("Scene JSON missing 'entities' array");
+        }
+        const store = useEditor.getState();
+        store.setSceneData({
+          entities: data.entities as never,
+          environment: (data.environment as never) ?? {},
+        });
+        store.setSceneName("Published Scene");
+        store.setPlaying(true);
+        store.pushLog("info", `Loaded published scene from ${sceneUrl}`);
+      } catch (err) {
+        if (!cancelled) {
+          pushLog("error", `Failed to load shared scene: ${(err as Error).message}`);
+        }
+      } finally {
+        // Strip ?scene= so a refresh keeps the now-live scene rather
+        // than re-fetching (and the URL stays clean for the user).
+        const url = new URL(window.location.href);
+        url.searchParams.delete("scene");
+        window.history.replaceState({}, "", url.toString());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Rehydrate the auth store from the session cookie. Runs once on
   // mount; failures are non-fatal (the user just stays anonymous).
   useEffect(() => {

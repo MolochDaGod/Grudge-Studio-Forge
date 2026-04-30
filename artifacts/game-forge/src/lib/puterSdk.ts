@@ -48,6 +48,15 @@ export interface PuterSdk {
       opts?: { multiple?: boolean },
     ) => Promise<{ name: string; read(): Promise<Blob> } | null>;
   };
+  /** Static-site hosting. Creates a `<subdomain>.puter.site` that serves
+   *  files from `dirPath` in the user's Puter cloud. Older SDK builds may
+   *  not expose this — callers should feature-detect before invoking. */
+  hosting?: {
+    create(
+      subdomain: string,
+      dirPath: string,
+    ): Promise<{ subdomain: string; url?: string }>;
+  };
 }
 
 declare global {
@@ -71,7 +80,12 @@ export function loadPuterSdk(origin = "https://js.puter.com"): Promise<PuterSdk>
     const script = document.createElement("script");
     script.src = `${origin.replace(/\/$/, "")}/v2/`;
     script.async = true;
-    script.crossOrigin = "anonymous";
+    // NOTE: do NOT set `crossOrigin` here. Puter's CDN does not return
+    // `Access-Control-Allow-Origin`, so any value (including "anonymous")
+    // forces a CORS preflight that fails and the script never loads.
+    // Plain `<script>` tags execute fine cross-origin without CORS — we
+    // just lose the ability to read window.onerror details, which we
+    // don't need (the SDK exposes its own `window.puter` global).
     script.onload = () => {
       if (window.puter) resolve(window.puter);
       else reject(new Error("Puter SDK loaded but window.puter is missing"));

@@ -318,6 +318,12 @@ export interface CreateAssetBody {
 export interface PrefabData {
   entities: Entity[];
   rootId?: string | null;
+  /** When true, Play Mode auto-spawns this prefab as the player when
+the scene has no controller-driven entity. At most one prefab per
+project should carry this flag — the editor enforces mutual
+exclusion when it's toggled on.
+ */
+  isPlayerPrefab?: boolean;
 }
 
 export interface Prefab {

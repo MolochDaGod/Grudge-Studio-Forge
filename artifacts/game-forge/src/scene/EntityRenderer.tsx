@@ -22,6 +22,10 @@ interface RenderProps {
   entity: SceneEntity;
   selected?: boolean;
   onPick?: () => void;
+  /** Right-click hit. Fires from the same outer wrapper that owns onPick.
+   *  The viewport snapshots the entity id into a ref so the surrounding
+   *  Radix `<ContextMenu>` can render entity-aware actions. */
+  onContext?: () => void;
   playMode: boolean;
   /** Child entities rendered inside this entity's group so they inherit
    *  its transform (Unity-style hierarchy). */
@@ -373,7 +377,20 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   props,
   ref,
 ) {
-  const { entity, playMode, children } = props;
+  const { entity, playMode, children, onContext } = props;
+  // Bubble-phase R3F synthetic event. We DO call stopPropagation so the
+  // innermost mesh wins — without it a parent EntityRenderer for a GLB
+  // root would also fire and overwrite `lastContextEntityIdRef` with the
+  // ancestor's id. Note: r3f's `stopPropagation` only halts traversal
+  // through the r3f event graph; the underlying DOM `contextmenu` still
+  // bubbles up to the surrounding Radix `<ContextMenuTrigger>` div, so
+  // the menu opens normally with the correct entity in scope.
+  const handleContext = onContext
+    ? (e: { stopPropagation?: () => void }) => {
+        e.stopPropagation?.();
+        onContext();
+      }
+    : undefined;
   const tr = entity.transform;
   const usePhysics = playMode && entity.physics && entity.type !== "light" && entity.type !== "camera";
 
@@ -432,7 +449,11 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         {explicitForModel && colliderShape === "ball" && (
           <CylinderCollider args={[0.5, 0.5]} position={[0, 0.5, 0]} />
         )}
-        <group scale={tr.scale}>
+        {/* `onContextMenu` lives on the inner group rather than on
+            RigidBody itself — @react-three/rapier's RigidBody doesn't
+            forward DOM-style pointer events. The group catches the same
+            r3f synthetic event for the entity's visible geometry. */}
+        <group scale={tr.scale} onContextMenu={handleContext}>
           <MeshBody {...props} />
           {children}
         </group>
@@ -447,6 +468,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       rotation={tr.rotation}
       scale={tr.scale}
       userData={{ entityId: entity.id, name: entity.name }}
+      onContextMenu={handleContext}
     >
       <MeshBody {...props} />
       {children}

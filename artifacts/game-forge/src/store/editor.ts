@@ -120,6 +120,19 @@ interface EditorState {
   setPaused: (paused: boolean) => void;
   setTransformMode: (m: TransformMode) => void;
 
+  /** Entities that were spawned *for* play mode (e.g. the auto-spawned
+   *  player prefab from {@link spawnPlayerPrefab}). Tracked so we can
+   *  sweep them again when {@link setPlaying}(false) is called — they
+   *  must never be persisted to the saved scene. NOT undoable. */
+  playOnlyEntityIds: string[];
+  /** Spawn a prefab's entities into the live scene tagged as play-only,
+   *  positioning the spawn root at the first `behavior:"spawnpoint"`
+   *  entity if any, otherwise at the origin. Returns the spawned root
+   *  id, or null if `entities` was empty. The mutation BYPASSES the
+   *  command stack — undo must not bring play-only entities back into
+   *  the persisted scene. */
+  spawnPlayerPrefab: (entities: SceneEntity[], prefabId?: number | null) => string | null;
+
   pushLog: (level: ConsoleLevel, text: string) => void;
   clearConsole: () => void;
   setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes") => void;
@@ -229,6 +242,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   consoleMessages: [],
   bottomTab: "console",
   prefabSubScene: null,
+  playOnlyEntityIds: [],
   hotbar: Array(8).fill(null) as (number | null)[],
   focusToken: 0,
   commandStack: new CommandStack(100),
@@ -532,8 +546,65 @@ export const useEditor = create<EditorState>((set, get) => ({
       isDirty: true,
     })),
 
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying, isPaused: false })),
-  setPlaying: (playing) => set({ isPlaying: playing, isPaused: false }),
+  togglePlay: () => {
+    const next = !get().isPlaying;
+    get().setPlaying(next);
+  },
+  setPlaying: (playing) => {
+    const s = get();
+    // Stopping play: garbage-collect any entities the auto-spawn (or other
+    // play-only logic) injected. The persisted scene must be exactly what
+    // the user designed, so we filter out tagged ids and reset the tracker.
+    if (!playing && s.playOnlyEntityIds.length > 0) {
+      const drop = new Set(s.playOnlyEntityIds);
+      // Also drop descendants — a play-only spawn root can have children
+      // (the prefab tree was re-id'd on spawn).
+      const remaining = s.sceneData.entities.filter((e) => !drop.has(e.id));
+      set({
+        isPlaying: false,
+        isPaused: false,
+        playOnlyEntityIds: [],
+        sceneData: { ...s.sceneData, entities: remaining },
+        selectedId: drop.has(s.selectedId ?? "") ? null : s.selectedId,
+      });
+      return;
+    }
+    set({ isPlaying: playing, isPaused: false });
+  },
+
+  spawnPlayerPrefab: (entities, prefabId) => {
+    if (!entities || entities.length === 0) return null;
+    const s = get();
+    const { entities: spawned, rootIds } = reidTree(entities, null);
+    const rootId = rootIds[0] ?? spawned[0]?.id ?? null;
+    if (!rootId) return null;
+    // Find a designated spawnpoint to place the player root at, otherwise
+    // fall back to origin. We only translate the spawn ROOT — children
+    // already have parent-relative transforms.
+    const spawnpoint = s.sceneData.entities.find(
+      (e) => e.behavior === "spawnpoint",
+    );
+    const spawnPos: Vec3 = spawnpoint
+      ? [...spawnpoint.transform.position]
+      : [0, 1, 0];
+    const root = spawned.find((e) => e.id === rootId);
+    if (root) {
+      root.transform = { ...root.transform, position: spawnPos };
+    }
+    if (prefabId != null) {
+      for (const e of spawned) e.prefabId = prefabId;
+    }
+    set({
+      sceneData: {
+        ...s.sceneData,
+        entities: [...s.sceneData.entities, ...spawned],
+      },
+      // Mark every spawned id (root + children) so stop-play sweeps the
+      // entire subtree, not just the root.
+      playOnlyEntityIds: [...s.playOnlyEntityIds, ...spawned.map((e) => e.id)],
+    });
+    return rootId;
+  },
   setPaused: (paused) => set({ isPaused: paused }),
   setTransformMode: (m) => set({ transformMode: m }),
 

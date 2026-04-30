@@ -32,16 +32,17 @@ import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
 import { useListPrefabs, getListPrefabsQueryKey, type Prefab } from "@workspace/api-client-react";
-
-interface PrefabPayload {
-  entities?: SceneEntity[];
-}
+import type { PrefabPayload } from "@/scene/prefabPayload";
+import { SCENE_TEMPLATES } from "@/lib/sceneTemplates";
 
 interface RenderNodeProps {
   entity: SceneEntity;
   childrenByParent: Map<string | null, SceneEntity[]>;
   selectedId: string | null;
   onPick: (id: string) => void;
+  /** Right-click hit on a specific entity. Optional so play-mode trees
+   *  (where the context menu is unused) don't have to forward anything. */
+  onContext?: (id: string) => void;
   groupRefs?: React.MutableRefObject<Map<string, THREE.Group>>;
   bodyRefs?: React.MutableRefObject<Map<string, RapierRigidBody | THREE.Group>>;
   playMode: boolean;
@@ -60,6 +61,7 @@ function RenderNode({
   childrenByParent,
   selectedId,
   onPick,
+  onContext,
   groupRefs,
   bodyRefs,
   playMode,
@@ -72,6 +74,7 @@ function RenderNode({
       childrenByParent={childrenByParent}
       selectedId={selectedId}
       onPick={onPick}
+      onContext={onContext}
       groupRefs={groupRefs}
       bodyRefs={bodyRefs}
       playMode={playMode}
@@ -83,6 +86,7 @@ function RenderNode({
       entity={entity}
       selected={selectedId === entity.id}
       onPick={() => onPick(entity.id)}
+      onContext={onContext ? () => onContext(entity.id) : undefined}
       playMode={playMode}
       ref={(el) => {
         if (groupRefs) {
@@ -101,7 +105,15 @@ function RenderNode({
   );
 }
 
-function SceneEditMode({ data }: { data?: { entities: SceneEntity[] } }) {
+function SceneEditMode({
+  data,
+  onContextEntity,
+}: {
+  data?: { entities: SceneEntity[] };
+  /** Records the entity hit by the most recent right-click so the
+   *  surrounding Radix `<ContextMenu>` can render entity-aware items. */
+  onContextEntity?: (id: string) => void;
+}) {
   const liveData = useEditor((s) => s.sceneData);
   const sceneData = data ?? liveData;
   const selectedId = useEditor((s) => s.selectedId);
@@ -126,6 +138,7 @@ function SceneEditMode({ data }: { data?: { entities: SceneEntity[] } }) {
           childrenByParent={childrenByParent}
           selectedId={selectedId}
           onPick={selectEntity}
+          onContext={onContextEntity}
           groupRefs={groupRefs}
           playMode={false}
         />
@@ -779,11 +792,54 @@ export function Viewport() {
   const selectEntity = useEditor((s) => s.selectEntity);
   const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
   const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
+  const cmdRemoveEntity = useEditor((s) => s.cmdRemoveEntity);
+  const cmdDuplicateEntity = useEditor((s) => s.cmdDuplicateEntity);
+  const cmdRenameEntity = useEditor((s) => s.cmdRenameEntity);
+  const cmdSetEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
+  const requestFocus = useEditor((s) => s.requestFocus);
   const projectId = useEditor((s) => s.projectId);
   const hotbar = useEditor((s) => s.hotbar);
   const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
   const pushLog = useEditor((s) => s.pushLog);
   const cameraMode = env.cameraMode ?? "editor";
+  // Empty-scene overlay (T004): show a "pick a template" panel when the
+  // user opens the editor onto a scene with no entities. Hidden during
+  // play mode and inside the prefab sub-scene to avoid covering the
+  // intended content.
+  const sceneEntitiesCount = useEditor((s) => s.sceneData.entities.length);
+  const setSceneData = useEditor((s) => s.setSceneData);
+  const setSceneName = useEditor((s) => s.setSceneName);
+  const prefabSubScene = useEditor((s) => s.prefabSubScene);
+  const showEmptySceneOverlay =
+    !isPlaying && !prefabSubScene && sceneEntitiesCount === 0;
+  const onPickTemplate = (key: string) => {
+    const tpl = SCENE_TEMPLATES.find((t) => t.key === key);
+    if (!tpl) return;
+    const data = tpl.build();
+    setSceneData(data);
+    setSceneName(tpl.label);
+    pushLog(
+      "info",
+      `Loaded template "${tpl.label}" (${data.entities.length} entities).`,
+    );
+  };
+
+  // Right-click bookkeeping. R3F dispatches `onContextMenu` to the topmost
+  // intersected entity DURING the same browser event that Radix later opens
+  // the menu from. We snapshot the hit id into a ref (no re-render on hover),
+  // then move it into React state via Radix's `onOpenChange` so the menu
+  // content can render entity-aware items at open time. The capture-phase
+  // listener on the trigger DIV resets the ref BEFORE r3f raycasts, so a
+  // right-click on empty space starts from null and stays null.
+  const lastContextEntityIdRef = useRef<string | null>(null);
+  const [contextEntityId, setContextEntityId] = useState<string | null>(null);
+  // Derive from the LIVE entities array so a Delete-then-reopen doesn't
+  // surface a stale name. Subscribed via store so it stays reactive.
+  const contextEntity = useEditor((s) =>
+    contextEntityId
+      ? s.sceneData.entities.find((x) => x.id === contextEntityId) ?? null
+      : null,
+  );
 
   // Bumping `viewportEpoch` after a crash forces React to discard the old
   // <Canvas> tree (with its broken WebGL context, dangling refs, half-mounted
@@ -847,10 +903,49 @@ export function Viewport() {
     );
   }
 
+  const onEntityFocus = (id: string) => {
+    selectEntity(id);
+    requestFocus();
+  };
+  const onEntityRename = (id: string, currentName: string) => {
+    const next = window.prompt("Rename entity", currentName);
+    if (next == null) return; // user cancelled
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === currentName) return;
+    cmdRenameEntity(id, trimmed);
+  };
+  const onEntityResetTransform = (id: string) => {
+    cmdSetEntityTransform(id, "position", [0, 0, 0]);
+    cmdSetEntityTransform(id, "rotation", [0, 0, 0]);
+    cmdSetEntityTransform(id, "scale", [1, 1, 1]);
+  };
+
   return (
-    <ContextMenu>
+    <ContextMenu
+      onOpenChange={(open) => {
+        if (open) {
+          // Snapshot the ref into state so ContextMenuContent can render
+          // entity-aware items. The ref was either set by an EntityRenderer's
+          // r3f onContextMenu or cleared by the capture-phase reset below.
+          setContextEntityId(lastContextEntityIdRef.current);
+        } else {
+          // Optional cleanup so a stale id doesn't bleed into a follow-up
+          // open if the next right-click misses everything.
+          setContextEntityId(null);
+        }
+      }}
+    >
       <ContextMenuTrigger asChild>
-        <div className="relative w-full h-full bg-background grid-pattern overflow-hidden">
+        <div
+          className="relative w-full h-full bg-background grid-pattern overflow-hidden"
+          // Capture phase: runs BEFORE r3f's bubble-phase raycast on the
+          // <canvas>. Resets the hover snapshot so a right-click on empty
+          // space (no intersection → no per-entity handler fires) opens
+          // the empty-space menu instead of acting on the previous hit.
+          onContextMenuCapture={() => {
+            lastContextEntityIdRef.current = null;
+          }}
+        >
           <ViewportErrorBoundary
             key={viewportEpoch}
             autoRetryAvailable={!autoRetryUsed}
@@ -879,7 +974,15 @@ export function Viewport() {
               <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
               <Lights />
               <Suspense fallback={null}>
-                {isPlaying ? <ScenePlayMode /> : <SceneEditMode />}
+                {isPlaying ? (
+                  <ScenePlayMode />
+                ) : (
+                  <SceneEditMode
+                    onContextEntity={(id) => {
+                      lastContextEntityIdRef.current = id;
+                    }}
+                  />
+                )}
               </Suspense>
               <EffectsRig highQuality={renderQuality === "high"} />
               {showStats && <Stats className="!left-auto !right-3 !top-3" />}
@@ -914,10 +1017,104 @@ export function Viewport() {
             <PlayHUD bus={getPlaySession().bus} />
           )}
 
+          {showEmptySceneOverlay && (
+            <div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              data-testid="empty-scene-overlay"
+            >
+              <div className="pointer-events-auto max-w-md w-[420px] rounded-xl border border-card-border bg-card/95 backdrop-blur shadow-xl p-5">
+                <div className="text-[11px] font-heading uppercase tracking-[0.18em] text-accent mb-1">
+                  New Scene
+                </div>
+                <h2 className="text-lg font-heading mb-1">
+                  Pick a starting template
+                </h2>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Each template ships with players, AI, lighting, and a level
+                  ready to play. You can edit anything afterwards.
+                </p>
+                <ul className="space-y-1.5">
+                  {SCENE_TEMPLATES.map((t) => (
+                    <li key={t.key}>
+                      <button
+                        type="button"
+                        onClick={() => onPickTemplate(t.key)}
+                        className="w-full text-left px-3 py-2 rounded-md border border-card-border hover:border-accent hover:bg-accent/5 transition-colors group"
+                        data-testid={`empty-scene-template-${t.key}`}
+                      >
+                        <div className="text-sm font-medium group-hover:text-accent">
+                          {t.label}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                          {t.description}
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-[10px] text-muted-foreground mt-3">
+                  Or right-click the viewport to add primitives manually.
+                </div>
+              </div>
+            </div>
+          )}
+
           <Hotbar />
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-[200px]">
+      <ContextMenuContent className="min-w-[220px]">
+        {contextEntity && (
+          <>
+            <div
+              className="px-2 py-1.5 text-[10px] font-heading uppercase tracking-[0.18em] text-accent flex items-center gap-2"
+              data-testid="context-menu-entity-header"
+            >
+              <span className="opacity-60">Entity</span>
+              <span className="text-foreground normal-case font-mono tracking-normal text-[11px] truncate max-w-[160px]">
+                {contextEntity.name}
+              </span>
+            </div>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onClick={() => onEntityFocus(contextEntity.id)}
+              data-testid="context-menu-entity-focus"
+            >
+              Focus camera
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => selectEntity(contextEntity.id)}
+              data-testid="context-menu-entity-select"
+            >
+              Open in Inspector
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => onEntityRename(contextEntity.id, contextEntity.name)}
+              data-testid="context-menu-entity-rename"
+            >
+              Rename…
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => cmdDuplicateEntity(contextEntity.id)}
+              data-testid="context-menu-entity-duplicate"
+            >
+              Duplicate
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => onEntityResetTransform(contextEntity.id)}
+              data-testid="context-menu-entity-reset"
+            >
+              Reset transform
+            </ContextMenuItem>
+            <ContextMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => cmdRemoveEntity(contextEntity.id)}
+              data-testid="context-menu-entity-delete"
+            >
+              Delete entity
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuSub>
           <ContextMenuSubTrigger>
             <Plus className="size-3.5 mr-2" /> Add primitive

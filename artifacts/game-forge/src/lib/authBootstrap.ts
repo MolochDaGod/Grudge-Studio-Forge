@@ -40,12 +40,20 @@ export async function bootstrapAuth(): Promise<void> {
       });
     }
 
-    // Cheap probe: only re-sync if the SDK is already in the page and
-    // says someone is signed in. We never auto-inject the SDK here.
-    const sdk = getPuter();
+    // Resume a prior Puter session if one exists. We *do* lazy-load the
+    // SDK here (it lives in localStorage as the access-token bearer), but
+    // we never open the popup — we only sync if `isSignedIn()` is true.
+    // Guests pay one cheap script download (cached after first visit) but
+    // don't see any UI flash. Anything that throws during the probe falls
+    // back to anon mode silently.
+    let sdk = getPuter();
     if (!sdk) {
-      auth.setUser(null);
-      return;
+      try {
+        sdk = await loadPuterSdk("https://js.puter.com");
+      } catch {
+        auth.setUser(null);
+        return;
+      }
     }
     const signedIn = await Promise.resolve(sdk.auth.isSignedIn()).catch(
       () => false,
@@ -61,6 +69,20 @@ export async function bootstrapAuth(): Promise<void> {
     }
     const result = await syncPuterUser({ puterAccessToken: token });
     auth.setUser(result.user);
+    // Visible breadcrumb in the editor console so the user can tell their
+    // prior Puter session was restored on this page load (no popup needed).
+    // Lazy-import the editor store to avoid a circular dependency.
+    try {
+      const { useEditor } = await import("@/store/editor");
+      useEditor
+        .getState()
+        .pushLog(
+          "info",
+          `Resumed Puter session as ${result.user.username ?? result.user.userId}`,
+        );
+    } catch {
+      /* console wiring failure is harmless */
+    }
   } catch (err) {
     auth.setError((err as Error).message ?? "Auth bootstrap failed");
   }
