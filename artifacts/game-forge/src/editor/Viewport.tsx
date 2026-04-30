@@ -821,7 +821,14 @@ export function Viewport() {
   // by React Query, so the Toolbar dropdown and this overlay share the
   // same response). The streaming loader then handles the actual scene
   // download with its own progress dialog.
-  const { data: templateManifest = [] } = useListTemplates();
+  //
+  // See Toolbar.tsx for the rationale on the Array.isArray coercion: it
+  // protects the overlay from a transient non-array `data` shape (e.g.
+  // proxy intercepting and returning an HTML body) so the first-run
+  // landing page degrades to "no templates yet" instead of crashing the
+  // entire viewport.
+  const tplQuery = useListTemplates();
+  const templateManifest = Array.isArray(tplQuery.data) ? tplQuery.data : [];
   const templateLoader = useTemplateLoader();
   const onPickTemplate = (key: string) => {
     const tpl = templateManifest.find((t) => t.key === key);
@@ -1045,25 +1052,56 @@ export function Viewport() {
                   Each template ships with players, AI, lighting, and a level
                   ready to play. You can edit anything afterwards.
                 </p>
-                <ul className="space-y-1.5">
-                  {templateManifest.map((t) => (
-                    <li key={t.key}>
-                      <button
-                        type="button"
-                        onClick={() => onPickTemplate(t.key)}
-                        className="w-full text-left px-3 py-2 rounded-md border border-card-border hover:border-accent hover:bg-accent/5 transition-colors group"
-                        data-testid={`empty-scene-template-${t.key}`}
-                      >
-                        <div className="text-sm font-medium group-hover:text-accent">
-                          {t.label}
-                        </div>
-                        <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
-                          {t.description}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {tplQuery.isError ||
+                (tplQuery.data !== undefined &&
+                  !Array.isArray(tplQuery.data)) ? (
+                  <div
+                    role="alert"
+                    aria-live="polite"
+                    className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs"
+                    data-testid="empty-scene-templates-error"
+                  >
+                    <div className="text-destructive font-medium mb-1">
+                      Couldn't load templates from the server.
+                    </div>
+                    <div className="text-muted-foreground mb-2">
+                      The template list will refresh automatically — or you can
+                      retry now.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void tplQuery.refetch()}
+                      className="px-2 py-1 rounded border border-card-border hover:border-accent hover:bg-accent/5 text-xs"
+                      data-testid="empty-scene-templates-retry"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : templateManifest.length === 0 ? (
+                  <div className="text-xs text-muted-foreground py-2">
+                    Loading templates…
+                  </div>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {templateManifest.map((t) => (
+                      <li key={t.key}>
+                        <button
+                          type="button"
+                          onClick={() => onPickTemplate(t.key)}
+                          className="w-full text-left px-3 py-2 rounded-md border border-card-border hover:border-accent hover:bg-accent/5 transition-colors group"
+                          data-testid={`empty-scene-template-${t.key}`}
+                        >
+                          <div className="text-sm font-medium group-hover:text-accent">
+                            {t.label}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                            {t.description}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <div className="text-[10px] text-muted-foreground mt-3">
                   Or right-click the viewport to add primitives manually.
                 </div>

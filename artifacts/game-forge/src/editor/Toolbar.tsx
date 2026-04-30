@@ -142,7 +142,26 @@ export function Toolbar({
   // instead of being bundled into the editor JS. The picker reads the
   // manifest via React Query; selecting one streams the SceneData JSON
   // with a real progress bar.
-  const { data: templateManifest = [] } = useListTemplates();
+  //
+  // Defensive: React Query hands back the raw fetcher result for `data`,
+  // and the OpenAPI contract pins it to `TemplateManifestEntry[]`. Even
+  // so, we coerce to an array on the consumer side so a transient API
+  // misbehaviour (proxy interception page, JSON wrapper, undefined while
+  // loading) cannot crash the entire toolbar — instead the picker just
+  // shows "Loading template list…" until the next poll succeeds.
+  const tplQuery = useListTemplates();
+  const templateManifest = Array.isArray(tplQuery.data) ? tplQuery.data : [];
+  if (
+    import.meta.env.DEV &&
+    tplQuery.data !== undefined &&
+    !Array.isArray(tplQuery.data)
+  ) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[Forge] useListTemplates returned non-array data — coercing to []",
+      tplQuery.data,
+    );
+  }
   const templateLoader = useTemplateLoader();
 
   const loadTemplate = (key: string) => {
@@ -668,7 +687,24 @@ export function Toolbar({
               <FileStack className="size-4 mr-2" /> Load template…
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[260px]">
-              {templateManifest.length === 0 ? (
+              {tplQuery.isError ||
+              (tplQuery.data !== undefined && !Array.isArray(tplQuery.data)) ? (
+                <>
+                  <DropdownMenuItem
+                    disabled
+                    className="text-xs text-destructive whitespace-normal leading-tight"
+                  >
+                    Couldn't load templates from the server.
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => void tplQuery.refetch()}
+                    className="text-xs"
+                    data-testid="menu-templates-retry"
+                  >
+                    Retry
+                  </DropdownMenuItem>
+                </>
+              ) : templateManifest.length === 0 ? (
                 <DropdownMenuItem disabled className="text-xs">
                   Loading template list…
                 </DropdownMenuItem>

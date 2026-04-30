@@ -235,9 +235,35 @@ export default defineConfig({
          *     the glue code) because their vendor weight is hoisted to
          *     these named chunks instead.
          *
+         * ⚠️  React, react-dom, scheduler, AND @radix-ui/* are intentionally
+         * NOT split out — they stay in the main entry chunk. Why:
+         *
+         *   `vite-plugin-top-level-await` (required so Rapier's WASM
+         *   streaming load works in browsers without native TLA) wraps
+         *   any chunk that has a top-level `await` into a `__tla` promise
+         *   that consumers must await before reading exports. Once any
+         *   chunk in the graph gets a `__tla` marker, every chunk that
+         *   re-exports through it inherits the asynchronous-binding
+         *   behaviour. With React split into its own `vendor-react`
+         *   chunk, Radix's `vendor-radix` chunk would import from it
+         *   (`R as mn, b as Ri, ...`) and execute its own module body —
+         *   `const ComponentX = React.forwardRef(...)` — BEFORE the
+         *   `__tla_0` promise from vendor-react had resolved. The
+         *   imported bindings would still be undefined, producing the
+         *   classic production-only crash:
+         *     "Cannot read properties of undefined (reading 'forwardRef')"
+         *   thrown from a renamed import like `Ri.forwardRef(...)`.
+         *
+         *   Keeping React + Radix in the main entry sidesteps the issue
+         *   entirely — the entry chunk is always the first thing the
+         *   browser evaluates, so by the time any lazy / vendor chunk
+         *   loads, React's bindings are already live. The size cost
+         *   (~280 KB minified for react + react-dom + radix) is well
+         *   under our chunk-size warning limit.
+         *
          * `manualChunks` runs against the *resolved id* of every module
          * — including transitive deps inside `node_modules` — so we only
-         * need to enumerate the package roots.
+         * need to enumerate the package roots we DO want split out.
          */
         manualChunks(id: string) {
           if (!id.includes("node_modules")) return undefined;
@@ -273,16 +299,9 @@ export default defineConfig({
           ) {
             return "vendor-three";
           }
-          if (norm.includes("/@radix-ui/")) {
-            return "vendor-radix";
-          }
-          if (
-            norm.includes("/react-dom/") ||
-            norm.includes("/react/") ||
-            norm.includes("/scheduler/")
-          ) {
-            return "vendor-react";
-          }
+          // React + Radix deliberately fall through to the main entry
+          // chunk — see the long comment above for why splitting them
+          // breaks production builds when TLA is in the graph.
           return undefined;
         },
       },
