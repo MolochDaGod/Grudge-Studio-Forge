@@ -4,19 +4,23 @@ import type { GrudgeUser } from "@workspace/api-client-react";
 /**
  * Editor-side auth store.
  *
- * Source of truth for "who is signed in?" across the editor UI. The
- * store is rehydrated on app boot by `bootstrapAuth()` calling
- * `/api/auth/me`, then mutated by the sign-in/out flows. We deliberately
- * avoid persisting any of this to localStorage — the cookie is the
- * persistent credential, and re-reading `/auth/me` on boot keeps the
- * client view consistent with the server (e.g. after the user signed
- * out from the upstream Grudge dashboard).
+ * Source of truth for "who is signed in?" across the editor UI. Forge is
+ * intentionally session-less on the server — Puter Auth lives entirely
+ * client-side via the Puter SDK, which manages its own token storage.
+ * `bootstrapAuth()` asks the SDK whether a user is signed in, and only
+ * if so does it call `/api/auth/puter/sync` once to mirror the user
+ * into the shared `users` table and resolve the canonical Grudge ID.
+ *
+ * We deliberately avoid persisting anything to localStorage ourselves:
+ * the SDK already handles that, and asking it on every boot keeps the
+ * client view consistent with reality (e.g. after the user signed out
+ * from the upstream Grudge dashboard or another tab).
  */
 export type AuthStatus =
-  | "idle"      // boot — never queried the server yet
-  | "loading"   // a sign-in or rehydrate is in flight
-  | "anon"      // server confirmed the user is anonymous
-  | "signedIn"  // server returned a valid GrudgeUser
+  | "idle"      // boot — haven't asked the SDK yet
+  | "loading"   // a sign-in or sync is in flight
+  | "anon"      // SDK reports no signed-in Puter user (guest mode)
+  | "signedIn"  // SDK reports a user and the server sync succeeded
   | "error";    // last operation failed; surface via `error`
 
 interface AuthState {

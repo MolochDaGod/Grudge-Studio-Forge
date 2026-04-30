@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface PuterExchangeRequest {
+export interface PuterSyncRequest {
   /**
    * Access token from `puter.auth.getAccessToken()`.
    * @minLength 10

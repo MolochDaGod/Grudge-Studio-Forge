@@ -24,8 +24,10 @@ export interface GrudgeUser {
   /** Primary key of the shared `users` row. */
   userId: string;
   puterUuid: string;
-  /** Either the upstream `grudge_accounts.grudge_id` if known, or the
-ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
+  /** Either the upstream `grudge_accounts.grudge_id` when the user
+has a row in that registry, or a deterministic per-user
+ephemeral id of the form `GRUDGE-<13digits>-<HEX>` so the
+editor always has *some* id to display.
  */
   grudgeId: string;
   username: string;
@@ -36,11 +38,7 @@ ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
   hasGrudgeAccount: boolean;
 }
 
-export interface CurrentUserResponse {
-  user: GrudgeUser | null;
-}
-
-export interface PuterExchangeRequest {
+export interface PuterSyncRequest {
   /**
    * Access token from `puter.auth.getAccessToken()`.
    * @minLength 10
@@ -48,16 +46,12 @@ export interface PuterExchangeRequest {
   puterAccessToken: string;
 }
 
-export interface PuterExchangeResponse {
-  user: GrudgeUser | null;
-  /** True iff this sign-in inserted a new row in `users`. */
+export interface PuterSyncResponse {
+  user: GrudgeUser;
+  /** True iff this sync inserted a new row in `users`. */
   created: boolean;
   /** True iff the upstream `grudge_accounts` row was found. */
   grudgeAccountLinked: boolean;
-}
-
-export interface LogoutResponse {
-  ok: boolean;
 }
 
 export interface Project {

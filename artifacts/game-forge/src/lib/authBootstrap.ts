@@ -1,11 +1,9 @@
 import {
-  exchangePuterToken,
   getAuthConfig,
-  getCurrentUser,
-  logoutCurrentUser,
+  syncPuterUser,
 } from "@workspace/api-client-react";
 import { useAuth } from "@/store/auth";
-import { loadPuterSdk, readAccessToken } from "@/lib/puterSdk";
+import { getPuter, loadPuterSdk, readAccessToken } from "@/lib/puterSdk";
 
 /**
  * Boot the auth store. Called once from App.tsx on mount.
@@ -13,28 +11,27 @@ import { loadPuterSdk, readAccessToken } from "@/lib/puterSdk";
  * Steps:
  *   1. Pull `/auth/config` so the store knows the Puter origin + flags
  *      and can render the right buttons.
- *   2. Pull `/auth/me` to rehydrate the current session from the
- *      HttpOnly cookie (if any).
+ *   2. If the Puter SDK is *already* loaded (because the user signed in
+ *      previously, the SDK persisted their session, and the script tag
+ *      from a previous load is still cached), check whether the SDK
+ *      reports a signed-in user. If so, sync once with our server.
  *
- * Errors are non-fatal — a failure here drops the user into anonymous
- * mode and surfaces the error so the UI can show a "Retry sign-in"
- * affordance.
+ * We deliberately do NOT auto-load the SDK at boot for guest visitors —
+ * Puter Auth is opt-in, and a 250 KB script download for someone who
+ * just wants to play around in the editor is wasteful. The "Sign in"
+ * button in the toolbar lazy-loads the SDK on click.
+ *
+ * Errors are non-fatal — the user lands in `anon` mode and can retry
+ * via the toolbar.
  */
 export async function bootstrapAuth(): Promise<void> {
   const auth = useAuth.getState();
   auth.setLoading();
   try {
-    // Run both in parallel — neither depends on the other.
-    const [configResult, meResult] = await Promise.allSettled([
-      getAuthConfig(),
-      getCurrentUser(),
-    ]);
-
-    if (configResult.status === "fulfilled") {
-      auth.setConfig(configResult.value);
+    const config = await getAuthConfig().catch(() => null);
+    if (config) {
+      auth.setConfig(config);
     } else {
-      // We can still operate without config — assume sane defaults
-      // (Puter origin = puter.com, cloud features off).
       auth.setConfig({
         puterSiteOrigin: "https://puter.com",
         puterBasePath: "/grudge-gameforge",
@@ -43,11 +40,27 @@ export async function bootstrapAuth(): Promise<void> {
       });
     }
 
-    if (meResult.status === "fulfilled") {
-      auth.setUser(meResult.value.user ?? null);
-    } else {
+    // Cheap probe: only re-sync if the SDK is already in the page and
+    // says someone is signed in. We never auto-inject the SDK here.
+    const sdk = getPuter();
+    if (!sdk) {
       auth.setUser(null);
+      return;
     }
+    const signedIn = await Promise.resolve(sdk.auth.isSignedIn()).catch(
+      () => false,
+    );
+    if (!signedIn) {
+      auth.setUser(null);
+      return;
+    }
+    const token = await readAccessToken(sdk);
+    if (!token) {
+      auth.setUser(null);
+      return;
+    }
+    const result = await syncPuterUser({ puterAccessToken: token });
+    auth.setUser(result.user);
   } catch (err) {
     auth.setError((err as Error).message ?? "Auth bootstrap failed");
   }
@@ -56,9 +69,10 @@ export async function bootstrapAuth(): Promise<void> {
 /**
  * Run the full Puter sign-in handshake:
  *   1. Lazy-load the SDK (no-op if already loaded).
- *   2. Trigger the popup-based `puter.auth.signIn()`.
+ *   2. Trigger the popup-based `puter.auth.signIn()` if not already signed in.
  *   3. Read the access token from the SDK.
- *   4. Exchange it server-side for a Grudge session cookie.
+ *   4. Mirror the user into our shared `users` table via `/auth/puter/sync`
+ *      and pull back the resolved view (Grudge ID, etc.).
  *   5. Hydrate the auth store with the returned user.
  *
  * Throws on the underlying error so the caller (UserMenu) can show a
@@ -68,14 +82,11 @@ export async function signInWithPuter(): Promise<void> {
   const auth = useAuth.getState();
   auth.setLoading();
   try {
-    const origin = auth.config?.puterSiteOrigin ?? "https://js.puter.com";
-    // The SDK is hosted on `js.puter.com`, not on the main `puter.com`
-    // origin. We accept either in config and normalise to js.puter.com.
-    const sdkOrigin = origin.includes("js.puter.com")
-      ? origin
-      : "https://js.puter.com";
-
-    const sdk = await loadPuterSdk(sdkOrigin);
+    // The Puter SDK is hosted on `js.puter.com` regardless of which
+    // `puter.com` site origin we pass in. Normalise so a misconfigured
+    // `PUTER_SITE_ORIGIN` (e.g. pointing at the dashboard) doesn't
+    // break the loader.
+    const sdk = await loadPuterSdk("https://js.puter.com");
 
     // Skip signIn() if the user is already signed in to Puter from a
     // previous session — saves a popup.
@@ -91,8 +102,8 @@ export async function signInWithPuter(): Promise<void> {
       throw new Error("Puter sign-in completed but no access token was returned.");
     }
 
-    const result = await exchangePuterToken({ puterAccessToken: token });
-    auth.setUser(result.user ?? null);
+    const result = await syncPuterUser({ puterAccessToken: token });
+    auth.setUser(result.user);
   } catch (err) {
     const message = (err as Error).message ?? "Sign-in failed";
     auth.setError(message);
@@ -100,24 +111,18 @@ export async function signInWithPuter(): Promise<void> {
   }
 }
 
+/**
+ * Sign out: ask the Puter SDK to drop the user's token, then clear the
+ * local store. Forge has no server-side session to tear down.
+ */
 export async function signOut(): Promise<void> {
   const auth = useAuth.getState();
   auth.setLoading();
   try {
-    await logoutCurrentUser();
-  } catch {
-    // Even if the server call fails, drop the local session — the
-    // worst case is a stale cookie that the next /auth/me call will
-    // either revalidate or clear via 401.
-  }
-  // Best-effort sign-out from Puter as well, so the next sign-in
-  // doesn't silently re-auth as the same user. We swallow errors
-  // because the SDK might not be loaded.
-  try {
-    const sdk = (await import("@/lib/puterSdk")).getPuter();
+    const sdk = getPuter();
     if (sdk?.auth.signOut) await sdk.auth.signOut();
   } catch {
-    // Ignored
+    // Best-effort. The user can still close the tab to fully reset.
   }
   auth.setUser(null);
 }

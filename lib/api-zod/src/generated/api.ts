@@ -107,92 +107,54 @@ export const GetAuthConfigResponse = zod.object({
 });
 
 /**
- * Returns the active Grudge user, or `{ user: null }` for
-anonymous sessions. The client polls this on app boot to
-rehydrate the auth store.
+ * Verifies a Puter access token server-to-server (via Puter's
+`whoami` endpoint), upserts the shared `users` row keyed on
+`puter_uuid`, and returns the resolved user view (including
+the canonical Grudge ID when one exists in the upstream
+`grudge_accounts` registry, or a deterministic per-user
+ephemeral id otherwise).
 
- * @summary Resolve the current session
+Forge holds no server-side session — Puter Auth manages its
+own token lifecycle entirely client-side via the Puter SDK.
+This endpoint is idempotent and intended to be called once
+per app boot when the SDK reports a signed-in user.
+
+ * @summary Mirror a signed-in Puter user into the shared Grudge users table
  */
-export const GetCurrentUserResponse = zod.object({
-  user: zod.union([
-    zod.object({
-      userId: zod.string().describe("Primary key of the shared `users` row."),
-      puterUuid: zod.string(),
-      grudgeId: zod
-        .string()
-        .describe(
-          "Either the upstream `grudge_accounts.grudge_id` if known, or the\nephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.\n",
-        ),
-      username: zod.string(),
-      displayName: zod.string().nullable(),
-      email: zod.string().nullable(),
-      avatarUrl: zod.string().nullable(),
-      hasGrudgeAccount: zod
-        .boolean()
-        .describe(
-          "True iff the upstream `grudge_accounts` registry has this user.",
-        ),
-    }),
-    zod.null(),
-  ]),
-});
+export const syncPuterUserBodyPuterAccessTokenMin = 10;
 
-/**
- * Verifies the Puter access token server-to-server, upserts the
-shared `users` row, and issues a HttpOnly session cookie. If
-the user has no row in the upstream `grudge_accounts` registry
-an account is implicitly created on first sign-in (Forge mints
-an ephemeral Grudge ID and persists the user-link row).
-
- * @summary Exchange a Puter access token for a Grudge session
- */
-export const exchangePuterTokenBodyPuterAccessTokenMin = 10;
-
-export const ExchangePuterTokenBody = zod.object({
+export const SyncPuterUserBody = zod.object({
   puterAccessToken: zod
     .string()
-    .min(exchangePuterTokenBodyPuterAccessTokenMin)
+    .min(syncPuterUserBodyPuterAccessTokenMin)
     .describe("Access token from `puter.auth.getAccessToken()`."),
 });
 
-export const ExchangePuterTokenResponse = zod.object({
-  user: zod.union([
-    zod.object({
-      userId: zod.string().describe("Primary key of the shared `users` row."),
-      puterUuid: zod.string(),
-      grudgeId: zod
-        .string()
-        .describe(
-          "Either the upstream `grudge_accounts.grudge_id` if known, or the\nephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.\n",
-        ),
-      username: zod.string(),
-      displayName: zod.string().nullable(),
-      email: zod.string().nullable(),
-      avatarUrl: zod.string().nullable(),
-      hasGrudgeAccount: zod
-        .boolean()
-        .describe(
-          "True iff the upstream `grudge_accounts` registry has this user.",
-        ),
-    }),
-    zod.null(),
-  ]),
+export const SyncPuterUserResponse = zod.object({
+  user: zod.object({
+    userId: zod.string().describe("Primary key of the shared `users` row."),
+    puterUuid: zod.string(),
+    grudgeId: zod
+      .string()
+      .describe(
+        "Either the upstream `grudge_accounts.grudge_id` when the user\nhas a row in that registry, or a deterministic per-user\nephemeral id of the form `GRUDGE-<13digits>-<HEX>` so the\neditor always has \*some\* id to display.\n",
+      ),
+    username: zod.string(),
+    displayName: zod.string().nullable(),
+    email: zod.string().nullable(),
+    avatarUrl: zod.string().nullable(),
+    hasGrudgeAccount: zod
+      .boolean()
+      .describe(
+        "True iff the upstream `grudge_accounts` registry has this user.",
+      ),
+  }),
   created: zod
     .boolean()
-    .describe("True iff this sign-in inserted a new row in `users`."),
+    .describe("True iff this sync inserted a new row in `users`."),
   grudgeAccountLinked: zod
     .boolean()
     .describe("True iff the upstream `grudge_accounts` row was found."),
-});
-
-/**
- * Deletes the session row (if any) and clears the cookie.
-Idempotent — calling without a session returns `{ ok: true }`.
-
- * @summary Tear down the current session
- */
-export const LogoutCurrentUserResponse = zod.object({
-  ok: zod.boolean(),
 });
 
 /**

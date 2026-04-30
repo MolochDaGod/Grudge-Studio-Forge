@@ -7,6 +7,10 @@
  */
 import type { GrudgeUser } from "./grudgeUser";
 
-export interface CurrentUserResponse {
-  user: GrudgeUser | null;
+export interface PuterSyncResponse {
+  user: GrudgeUser;
+  /** True iff this sync inserted a new row in `users`. */
+  created: boolean;
+  /** True iff the upstream `grudge_accounts` row was found. */
+  grudgeAccountLinked: boolean;
 }

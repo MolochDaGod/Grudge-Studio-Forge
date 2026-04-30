@@ -1,31 +1,30 @@
 import { pool } from "@workspace/db";
-import { mintEphemeralGrudgeId, SESSION_TTL_MS } from "./sessionCookie";
+import { createHmac } from "node:crypto";
 import type { PuterIdentity } from "./puterAuth";
 
 /**
  * Reads/writes the **shared** Grudge identity tables.
  *
- * These tables (`users`, `accounts`, `grudge_accounts`, `sessions`) are
- * also written by the upstream Grudge Studio auth service (see
- * `GRUDGE_AUTH_URL`) and by sister apps in the wider ecosystem. We
- * deliberately use raw `pool.query` rather than drizzle definitions so
- * the schema stays solely managed by whoever owns the master migration
- * pipeline — this server is a participant, not the source of truth, for
- * those tables.
+ * The wider Grudge ecosystem owns the schema — `users`, `accounts`,
+ * `grudge_accounts`, etc. are also written by the upstream Grudge auth
+ * service (see `GRUDGE_AUTH_URL`) and by sister apps. We deliberately use
+ * raw `pool.query` rather than drizzle definitions so this server stays a
+ * participant, not the source of truth, for those tables.
  *
- * For Forge-specific data we DO own (e.g., per-user editor preferences,
- * project ownership links) we add new tables in our own drizzle schema —
- * but none are needed for the auth handshake itself.
+ * Forge itself is intentionally session-less: Puter Auth lives entirely
+ * client-side via the Puter SDK (which manages its own token storage),
+ * and the Forge server only ever needs to verify the user once at sync
+ * time to make sure the shared `users` row exists. There is no Forge
+ * session cookie, no Forge sessions row, and no Forge link table.
  */
 
 export interface ForgeUserView {
   /** PK of the shared `users` table (UUID). */
   userId: string;
-  /** Puter UUID — what we surface to the client as the canonical "Grudge ID"
-   *  when the user has no row in `grudge_accounts` yet. */
+  /** Puter UUID — the canonical client-visible "I am this person" id. */
   puterUuid: string;
   /** "Official" Grudge ID from the shared `grudge_accounts` registry,
-   *  or the per-user mint we generated for this session. */
+   *  or a deterministic per-user mint when no upstream row exists. */
   grudgeId: string;
   username: string;
   displayName: string | null;
@@ -33,8 +32,9 @@ export interface ForgeUserView {
   avatarUrl: string | null;
   /** True iff a row was found in the shared `grudge_accounts` registry —
    *  the wider Grudge ecosystem (dashboard, marketplace, etc.) recognises
-   *  this user. False = this Forge sign-in created the local user but the
-   *  upstream account hasn't been provisioned yet. */
+   *  this user. False = this user is signed in via Puter but the upstream
+   *  Grudge account hasn't been provisioned yet. Forge clients can use
+   *  this flag to gate "more connected" features. */
   hasGrudgeAccount: boolean;
 }
 
@@ -51,11 +51,10 @@ export interface ForgeUserView {
  * a UNIQUE constraint to the shared `users.puter_uuid` column (that
  * schema is owned upstream and may carry historical NULLs/duplicates),
  * so the SELECT-then-INSERT pair would otherwise race when the same
- * user opens two browser tabs and clicks "Sign in" simultaneously,
- * producing two `users` rows for one Puter identity. The advisory lock
- * serializes only on the specific puter_uuid being processed, so it
- * has no effect on unrelated sign-ins. `pg_advisory_xact_lock` is
- * automatically released at COMMIT/ROLLBACK.
+ * user opens two tabs and signs in simultaneously, producing two
+ * `users` rows for one Puter identity. The advisory lock serializes
+ * only on the specific puter_uuid being processed. `pg_advisory_xact_lock`
+ * is automatically released at COMMIT/ROLLBACK.
  */
 export async function findOrCreateUserByPuter(
   identity: PuterIdentity,
@@ -133,21 +132,31 @@ export async function findGrudgeIdForPuter(
   return r.rows[0]?.grudge_id ?? null;
 }
 
-/** Resolve the full client-facing user view from the user PK alone.
- *
- *  Resolution order for the surfaced `grudgeId`:
- *    1. The upstream `grudge_accounts` row (canonical, set by the wider
- *       Grudge ecosystem).
- *    2. A previously-recorded `forge_session_links` row for this user
- *       (covers the case where the deterministic mint was generated
- *       once at sign-in time and we want to keep returning the same
- *       value across tabs/sessions).
- *    3. A fresh deterministic mint via `mintEphemeralGrudgeId(userId)`
- *       — same input always yields the same output, so even if the
- *       link row hasn't been written yet (or was deleted) the value
- *       stays stable per user.
+/**
+ * Mint a stable per-user `grudge_id` for clients that have signed into
+ * Forge via Puter but do not yet have a row in the shared
+ * `grudge_accounts` registry. Format mirrors the existing rows:
+ * `GRUDGE-<13digits>-<HEX>`. Deterministic in the seed so the surfaced
+ * id is identical across sync calls and across browser tabs for the
+ * same user.
  */
-export async function loadUserView(userId: string): Promise<ForgeUserView | null> {
+function mintEphemeralGrudgeId(seed: string): string {
+  const secret =
+    process.env.JWT_SECRET ?? process.env.SESSION_SECRET ?? "forge-fallback";
+  const digest = createHmac("sha256", secret)
+    .update(`grudge-id:${seed}`)
+    .digest();
+  const span = 9_000_000_000_000n;
+  const base = 1_000_000_000_000n;
+  const numeric = (digest.readBigUInt64BE(0) % span) + base;
+  const hex = digest.subarray(8, 12).toString("hex").toUpperCase();
+  return `GRUDGE-${numeric.toString()}-${hex}`;
+}
+
+/** Resolve the full client-facing user view from the user PK alone. */
+export async function loadUserView(
+  userId: string,
+): Promise<ForgeUserView | null> {
   const u = await pool.query<{
     id: string;
     username: string;
@@ -164,20 +173,8 @@ export async function loadUserView(userId: string): Promise<ForgeUserView | null
   if (!row || !row.puter_uuid) return null;
 
   const upstreamGrudgeId = await findGrudgeIdForPuter(row.puter_uuid);
-  let grudgeId: string;
-  if (upstreamGrudgeId) {
-    grudgeId = upstreamGrudgeId;
-  } else {
-    const link = await pool.query<{ grudge_id: string }>(
-      `SELECT grudge_id FROM forge_session_links
-        WHERE user_id = $1
-        ORDER BY created_at ASC
-        LIMIT 1`,
-      [row.id],
-    );
-    grudgeId =
-      link.rows[0]?.grudge_id ?? mintEphemeralGrudgeId(`user:${row.id}`);
-  }
+  const grudgeId =
+    upstreamGrudgeId ?? mintEphemeralGrudgeId(`user:${row.id}`);
 
   return {
     userId: row.id,
@@ -189,109 +186,4 @@ export async function loadUserView(userId: string): Promise<ForgeUserView | null
     avatarUrl: row.avatar_url,
     hasGrudgeAccount: upstreamGrudgeId !== null,
   };
-}
-
-/**
- * Insert a row in the shared `sessions` table and return the session_id
- * that should be embedded in the cookie.
- *
- * NOTE on the `token` column: existing rows store opaque ~300-char tokens
- * (likely JWTs from the upstream auth service). Forge sessions don't have
- * an upstream JWT to store, so we put the cookie's HMAC-signature there
- * as a debug breadcrumb — it's never read on the hot path (we always
- * verify via the cookie's own signature) but lets ops scripts that grep
- * the table tell apart Forge sessions from upstream ones.
- */
-export async function createSession(
-  sessionId: string,
-  grudgeId: string,
-  cookieValue: string,
-  ip: string | null,
-  userAgent: string | null,
-): Promise<void> {
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  await pool.query(
-    `INSERT INTO sessions
-        (session_id, grudge_id, token, ip_address, user_agent, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [sessionId, grudgeId, cookieValue, ip, userAgent, expiresAt],
-  );
-}
-
-/** Resolve a cookie session_id back to the user. Returns null when the
- *  session is unknown or expired (the latter rows are pruned lazily). */
-export async function loadSessionUser(
-  sessionId: string,
-): Promise<ForgeUserView | null> {
-  const s = await pool.query<{ grudge_id: string; expires_at: Date }>(
-    `SELECT grudge_id, expires_at FROM sessions WHERE session_id = $1 LIMIT 1`,
-    [sessionId],
-  );
-  const row = s.rows[0];
-  if (!row) return null;
-  if (row.expires_at.getTime() < Date.now()) {
-    // Best-effort cleanup; ignore errors so a read failure on a
-    // stale session never blocks the user from re-authenticating.
-    void pool
-      .query("DELETE FROM sessions WHERE session_id = $1", [sessionId])
-      .catch(() => undefined);
-    return null;
-  }
-
-  // The fastest lookup is via the upstream `grudge_accounts.puter_user_id`,
-  // but Forge-minted sessions reference an ephemeral `GRUDGE-<ms>-<HEX>`
-  // grudge_id that won't appear in `grudge_accounts`. Fall back to looking
-  // up the user via the ephemeral id we encoded inside the grudge_id mint
-  // — but the simpler robust path is to look up by the session row's
-  // associated user. We inferred the user at session-creation time, so
-  // we reverse it by joining `users` ↔ `grudge_accounts` first.
-  const viaGrudge = await pool.query<{ id: string }>(
-    `SELECT u.id
-       FROM users u
-       JOIN grudge_accounts g ON g.puter_user_id = u.puter_uuid
-      WHERE g.grudge_id = $1
-      LIMIT 1`,
-    [row.grudge_id],
-  );
-  if (viaGrudge.rows[0]) {
-    return loadUserView(viaGrudge.rows[0].id);
-  }
-
-  // Forge-minted ephemeral id: `GRUDGE-<ms>-<HEX>` is keyed off
-  // HMAC(JWT_SECRET, "grudge-id:user:<userId>"). We can't reverse the
-  // HMAC, so we instead store the user_id <-> grudge_id linkage in a
-  // small Forge-owned table populated at session creation time. See
-  // `forge_session_links`.
-  const link = await pool.query<{ user_id: string }>(
-    `SELECT user_id FROM forge_session_links WHERE grudge_id = $1 LIMIT 1`,
-    [row.grudge_id],
-  );
-  if (link.rows[0]) {
-    return loadUserView(link.rows[0].user_id);
-  }
-  return null;
-}
-
-/** Tear down a session row by its cookie session_id. */
-export async function deleteSession(sessionId: string): Promise<void> {
-  await pool.query(
-    `DELETE FROM sessions WHERE session_id = $1`,
-    [sessionId],
-  );
-}
-
-/** Persist the (user_id ↔ ephemeral grudge_id) mapping created when a
- *  Forge session is minted for a user that has no upstream
- *  `grudge_accounts` row yet. This is the ONLY auth-related write to a
- *  Forge-owned table. */
-export async function recordSessionLink(
-  grudgeId: string,
-  userId: string,
-): Promise<void> {
-  await pool.query(
-    `INSERT INTO forge_session_links (grudge_id, user_id)
-     VALUES ($1, $2)
-     ON CONFLICT (grudge_id) DO NOTHING`,
-    [grudgeId, userId],
-  );
 }

@@ -24,15 +24,13 @@ import type {
   CreateProjectBody,
   CreateSceneBody,
   CreateScriptBody,
-  CurrentUserResponse,
   GrudgeCatalog,
   HealthStatus,
-  LogoutResponse,
   Prefab,
   Project,
   ProjectSummary,
-  PuterExchangeRequest,
-  PuterExchangeResponse,
+  PuterSyncRequest,
+  PuterSyncResponse,
   Scene,
   Script,
   UpdatePrefabBody,
@@ -469,127 +467,54 @@ export function useGetAuthConfig<
 }
 
 /**
- * Returns the active Grudge user, or `{ user: null }` for
-anonymous sessions. The client polls this on app boot to
-rehydrate the auth store.
+ * Verifies a Puter access token server-to-server (via Puter's
+`whoami` endpoint), upserts the shared `users` row keyed on
+`puter_uuid`, and returns the resolved user view (including
+the canonical Grudge ID when one exists in the upstream
+`grudge_accounts` registry, or a deterministic per-user
+ephemeral id otherwise).
 
- * @summary Resolve the current session
+Forge holds no server-side session — Puter Auth manages its
+own token lifecycle entirely client-side via the Puter SDK.
+This endpoint is idempotent and intended to be called once
+per app boot when the SDK reports a signed-in user.
+
+ * @summary Mirror a signed-in Puter user into the shared Grudge users table
  */
-export const getGetCurrentUserUrl = () => {
-  return `/api/auth/me`;
+export const getSyncPuterUserUrl = () => {
+  return `/api/auth/puter/sync`;
 };
 
-export const getCurrentUser = async (
+export const syncPuterUser = async (
+  puterSyncRequest: PuterSyncRequest,
   options?: RequestInit,
-): Promise<CurrentUserResponse> => {
-  return customFetch<CurrentUserResponse>(getGetCurrentUserUrl(), {
-    ...options,
-    method: "GET",
-  });
-};
-
-export const getGetCurrentUserQueryKey = () => {
-  return [`/api/auth/me`] as const;
-};
-
-export const getGetCurrentUserQueryOptions = <
-  TData = Awaited<ReturnType<typeof getCurrentUser>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentUser>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
-  const { query: queryOptions, request: requestOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetCurrentUserQueryKey();
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({
-    signal,
-  }) => getCurrentUser({ signal, ...requestOptions });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentUser>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetCurrentUserQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getCurrentUser>>
->;
-export type GetCurrentUserQueryError = ErrorType<unknown>;
-
-/**
- * @summary Resolve the current session
- */
-
-export function useGetCurrentUser<
-  TData = Awaited<ReturnType<typeof getCurrentUser>>,
-  TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getCurrentUser>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetCurrentUserQueryOptions(options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
-    queryKey: QueryKey;
-  };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-/**
- * Verifies the Puter access token server-to-server, upserts the
-shared `users` row, and issues a HttpOnly session cookie. If
-the user has no row in the upstream `grudge_accounts` registry
-an account is implicitly created on first sign-in (Forge mints
-an ephemeral Grudge ID and persists the user-link row).
-
- * @summary Exchange a Puter access token for a Grudge session
- */
-export const getExchangePuterTokenUrl = () => {
-  return `/api/auth/puter/exchange`;
-};
-
-export const exchangePuterToken = async (
-  puterExchangeRequest: PuterExchangeRequest,
-  options?: RequestInit,
-): Promise<PuterExchangeResponse> => {
-  return customFetch<PuterExchangeResponse>(getExchangePuterTokenUrl(), {
+): Promise<PuterSyncResponse> => {
+  return customFetch<PuterSyncResponse>(getSyncPuterUserUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(puterExchangeRequest),
+    body: JSON.stringify(puterSyncRequest),
   });
 };
 
-export const getExchangePuterTokenMutationOptions = <
+export const getSyncPuterUserMutationOptions = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof exchangePuterToken>>,
+    Awaited<ReturnType<typeof syncPuterUser>>,
     TError,
-    { data: BodyType<PuterExchangeRequest> },
+    { data: BodyType<PuterSyncRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof exchangePuterToken>>,
+  Awaited<ReturnType<typeof syncPuterUser>>,
   TError,
-  { data: BodyType<PuterExchangeRequest> },
+  { data: BodyType<PuterSyncRequest> },
   TContext
 > => {
-  const mutationKey = ["exchangePuterToken"];
+  const mutationKey = ["syncPuterUser"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -599,128 +524,44 @@ export const getExchangePuterTokenMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof exchangePuterToken>>,
-    { data: BodyType<PuterExchangeRequest> }
+    Awaited<ReturnType<typeof syncPuterUser>>,
+    { data: BodyType<PuterSyncRequest> }
   > = (props) => {
     const { data } = props ?? {};
 
-    return exchangePuterToken(data, requestOptions);
+    return syncPuterUser(data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type ExchangePuterTokenMutationResult = NonNullable<
-  Awaited<ReturnType<typeof exchangePuterToken>>
+export type SyncPuterUserMutationResult = NonNullable<
+  Awaited<ReturnType<typeof syncPuterUser>>
 >;
-export type ExchangePuterTokenMutationBody = BodyType<PuterExchangeRequest>;
-export type ExchangePuterTokenMutationError = ErrorType<void>;
+export type SyncPuterUserMutationBody = BodyType<PuterSyncRequest>;
+export type SyncPuterUserMutationError = ErrorType<void>;
 
 /**
- * @summary Exchange a Puter access token for a Grudge session
+ * @summary Mirror a signed-in Puter user into the shared Grudge users table
  */
-export const useExchangePuterToken = <
+export const useSyncPuterUser = <
   TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof exchangePuterToken>>,
+    Awaited<ReturnType<typeof syncPuterUser>>,
     TError,
-    { data: BodyType<PuterExchangeRequest> },
+    { data: BodyType<PuterSyncRequest> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof exchangePuterToken>>,
+  Awaited<ReturnType<typeof syncPuterUser>>,
   TError,
-  { data: BodyType<PuterExchangeRequest> },
+  { data: BodyType<PuterSyncRequest> },
   TContext
 > => {
-  return useMutation(getExchangePuterTokenMutationOptions(options));
-};
-
-/**
- * Deletes the session row (if any) and clears the cookie.
-Idempotent — calling without a session returns `{ ok: true }`.
-
- * @summary Tear down the current session
- */
-export const getLogoutCurrentUserUrl = () => {
-  return `/api/auth/logout`;
-};
-
-export const logoutCurrentUser = async (
-  options?: RequestInit,
-): Promise<LogoutResponse> => {
-  return customFetch<LogoutResponse>(getLogoutCurrentUserUrl(), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const getLogoutCurrentUserMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof logoutCurrentUser>>,
-    TError,
-    void,
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof logoutCurrentUser>>,
-  TError,
-  void,
-  TContext
-> => {
-  const mutationKey = ["logoutCurrentUser"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof logoutCurrentUser>>,
-    void
-  > = () => {
-    return logoutCurrentUser(requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type LogoutCurrentUserMutationResult = NonNullable<
-  Awaited<ReturnType<typeof logoutCurrentUser>>
->;
-
-export type LogoutCurrentUserMutationError = ErrorType<unknown>;
-
-/**
- * @summary Tear down the current session
- */
-export const useLogoutCurrentUser = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof logoutCurrentUser>>,
-    TError,
-    void,
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof logoutCurrentUser>>,
-  TError,
-  void,
-  TContext
-> => {
-  return useMutation(getLogoutCurrentUserMutationOptions(options));
+  return useMutation(getSyncPuterUserMutationOptions(options));
 };
 
 /**

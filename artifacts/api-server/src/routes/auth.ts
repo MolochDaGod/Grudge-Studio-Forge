@@ -2,83 +2,19 @@ import { Router, type IRouter } from "express";
 import { verifyPuterToken, PuterAuthError } from "../lib/puterAuth";
 import {
   findOrCreateUserByPuter,
-  findGrudgeIdForPuter,
-  loadSessionUser,
   loadUserView,
-  createSession,
-  deleteSession,
-  recordSessionLink,
 } from "../lib/authRepo";
-import {
-  buildCookieValue,
-  clearSessionCookie,
-  mintEphemeralGrudgeId,
-  newSessionId,
-  readSessionId,
-  setSessionCookie,
-} from "../lib/sessionCookie";
-import { requireUser } from "../middlewares/auth";
-import { isOriginAllowed } from "../lib/originPolicy";
-import type { Request, Response, NextFunction } from "express";
 
 const router: IRouter = Router();
-
-/**
- * Defense-in-depth Origin check for cookie-mutating routes.
- *
- * The CORS middleware already rejects unknown origins, but a CORS
- * misconfiguration (or a future change to the allow-list) shouldn't be
- * the only barrier between an attacker page and a forged session
- * cookie. This middleware blocks any state-changing auth request whose
- * Origin (or, failing that, Referer) we don't recognise. Same-origin
- * requests typically omit `Origin` on safe methods but include it on
- * POST in modern browsers, so requiring it here is appropriate.
- */
-function requireTrustedOrigin(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  const origin =
-    typeof req.headers.origin === "string" ? req.headers.origin : null;
-  if (origin) {
-    if (!isOriginAllowed(origin)) {
-      req.log?.warn({ origin }, "auth: rejecting untrusted Origin");
-      res.status(403).json({ error: "untrusted_origin" });
-      return;
-    }
-    next();
-    return;
-  }
-  // No Origin header. Fall back to Referer when present so we still get
-  // some assurance for browser-issued POSTs that strip Origin (rare).
-  const referer =
-    typeof req.headers.referer === "string" ? req.headers.referer : null;
-  if (referer) {
-    let refererOrigin: string | null = null;
-    try {
-      refererOrigin = new URL(referer).origin;
-    } catch {
-      refererOrigin = null;
-    }
-    if (refererOrigin && !isOriginAllowed(refererOrigin)) {
-      req.log?.warn({ referer }, "auth: rejecting untrusted Referer");
-      res.status(403).json({ error: "untrusted_origin" });
-      return;
-    }
-  }
-  // No Origin and no/trusted Referer → likely same-origin or non-browser
-  // (curl, server-side caller). Allow.
-  next();
-}
 
 /**
  * GET /api/auth/config
  *
  * Public, unauthenticated. Tells the client which Puter endpoint to
- * sign in against and whether the cloud-storage features are enabled
- * for this deployment. We don't expose secrets — only the flags and
- * origins the SDK needs to bootstrap.
+ * sign in against, whether cloud-storage features are enabled for this
+ * deployment, and the URL of the wider Grudge dashboard. We don't
+ * expose any secrets — only the flags and origins the SDK needs to
+ * bootstrap.
  */
 router.get("/auth/config", (_req, res) => {
   res.json({
@@ -90,49 +26,36 @@ router.get("/auth/config", (_req, res) => {
 });
 
 /**
- * GET /api/auth/me
- *
- * Returns the active user, or `{ user: null }` for anonymous sessions.
- * The client polls this on app boot to rehydrate the auth store.
- */
-router.get("/auth/me", async (req, res) => {
-  if (req.user) {
-    res.json({ user: req.user });
-    return;
-  }
-  // attachUser middleware should have populated req.user already; this
-  // fallback keeps the endpoint robust if it's ever mounted before
-  // attachUser, or if attachUser silently swallowed a transient error.
-  const sid = readSessionId(req);
-  if (!sid) {
-    res.json({ user: null });
-    return;
-  }
-  const user = await loadSessionUser(sid);
-  res.json({ user: user ?? null });
-});
-
-/**
- * POST /api/auth/puter/exchange
+ * POST /api/auth/puter/sync
  *
  * Body: `{ puterAccessToken: string }`
  *
- * Trades a fresh Puter access token for a server-side session cookie.
- * We verify the token by calling Puter's whoami endpoint server-to-
- * server — the client cannot lie about its Puter identity.
+ * Forge is intentionally session-less on the server: Puter Auth manages
+ * its own token lifecycle entirely client-side. The only thing the
+ * server needs to do when a user signs in (or returns to the editor with
+ * an existing Puter session) is make sure the shared `users` table has a
+ * row for that Puter identity, so the rest of the Grudge ecosystem can
+ * see the user. This endpoint is the entry point for that one-time
+ * mirror.
  *
- * Side effects (all idempotent on retry):
- *   - Upserts a row in the shared `users` table keyed by `puter_uuid`.
- *   - Reads the upstream `grudge_accounts` registry to find the user's
- *     "official" Grudge ID. If absent, mints a deterministic ephemeral
- *     `GRUDGE-<ms>-<HEX>` id and records the mapping in
- *     `forge_session_links` (Forge-owned).
- *   - Inserts a row in the shared `sessions` table with a fresh UUID
- *     `session_id`, a ~30-day expiry, and the request's IP/User-Agent
- *     for audit.
- *   - Sets a HttpOnly, SameSite=Lax cookie carrying the signed session id.
+ * Behaviour (idempotent — safe to call on every page load):
+ *   1. Verifies the Puter access token by calling Puter's whoami
+ *      endpoint server-to-server. The server NEVER trusts a client's
+ *      claimed identity — even a malicious client cannot pollute the
+ *      shared `users` table with a forged Puter UUID.
+ *   2. Upserts a row in the shared `users` table keyed on `puter_uuid`,
+ *      refreshing the lightweight profile mirror (display_name, email,
+ *      avatar_url) under an advisory lock so concurrent syncs cannot
+ *      duplicate.
+ *   3. Looks up the user's "official" Grudge ID in the shared
+ *      `grudge_accounts` registry (read-only — that table is owned
+ *      upstream). When absent, returns a deterministic per-user
+ *      ephemeral id so the editor can still show *something*.
+ *   4. Returns the resolved user view. The client stashes this in its
+ *      Zustand store; there is no cookie, no session row, no follow-up
+ *      `/auth/me`.
  */
-router.post("/auth/puter/exchange", requireTrustedOrigin, async (req, res) => {
+router.post("/auth/puter/sync", async (req, res) => {
   const body = req.body as { puterAccessToken?: unknown } | undefined;
   const token =
     typeof body?.puterAccessToken === "string" ? body.puterAccessToken : "";
@@ -157,67 +80,19 @@ router.post("/auth/puter/exchange", requireTrustedOrigin, async (req, res) => {
   }
 
   const { userId, created } = await findOrCreateUserByPuter(identity);
-
-  const upstreamGrudgeId = await findGrudgeIdForPuter(identity.uuid);
-  const grudgeId =
-    upstreamGrudgeId ?? mintEphemeralGrudgeId(`user:${userId}`);
-  if (!upstreamGrudgeId) {
-    // Persist the ephemeral mapping so subsequent cookie lookups can
-    // reverse it back to the user. No-op if a row already exists.
-    await recordSessionLink(grudgeId, userId);
+  const view = await loadUserView(userId);
+  if (!view) {
+    // Should be unreachable: we just upserted this row.
+    req.log?.error({ userId }, "auth: loadUserView returned null after upsert");
+    res.status(500).json({ error: "user_view_unavailable" });
+    return;
   }
 
-  const sessionId = newSessionId();
-  const cookieValue = buildCookieValue(sessionId);
-  const ip =
-    typeof req.headers["x-forwarded-for"] === "string"
-      ? req.headers["x-forwarded-for"].split(",")[0]?.trim() ?? null
-      : req.ip ?? null;
-  const ua =
-    typeof req.headers["user-agent"] === "string"
-      ? req.headers["user-agent"].slice(0, 1024)
-      : null;
-
-  await createSession(sessionId, grudgeId, cookieValue, ip, ua);
-  setSessionCookie(res, sessionId);
-
-  const view = await loadUserView(userId);
   res.json({
     user: view,
     created,
-    grudgeAccountLinked: upstreamGrudgeId !== null,
+    grudgeAccountLinked: view.hasGrudgeAccount,
   });
-});
-
-/**
- * POST /api/auth/logout
- *
- * Tears down the session row and clears the cookie. Idempotent — calling
- * it without a session is a no-op success.
- */
-router.post("/auth/logout", requireTrustedOrigin, async (req, res) => {
-  const sid = readSessionId(req);
-  if (sid) {
-    try {
-      await deleteSession(sid);
-    } catch (err) {
-      // Even if the row is gone, we still want to clear the cookie so
-      // the user lands in a clean anonymous state.
-      req.log?.warn({ err }, "auth: deleteSession failed");
-    }
-  }
-  clearSessionCookie(res);
-  res.json({ ok: true });
-});
-
-/**
- * GET /api/auth/whoami
- *
- * Authenticated echo endpoint — useful for debugging cookie/CORS plumbing
- * during development and integrations testing.
- */
-router.get("/auth/whoami", requireUser, (req, res) => {
-  res.json({ user: req.user });
 });
 
 export default router;

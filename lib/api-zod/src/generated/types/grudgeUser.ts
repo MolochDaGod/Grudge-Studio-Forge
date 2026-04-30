@@ -10,8 +10,10 @@ export interface GrudgeUser {
   /** Primary key of the shared `users` row. */
   userId: string;
   puterUuid: string;
-  /** Either the upstream `grudge_accounts.grudge_id` if known, or the
-ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
+  /** Either the upstream `grudge_accounts.grudge_id` when the user
+has a row in that registry, or a deterministic per-user
+ephemeral id of the form `GRUDGE-<13digits>-<HEX>` so the
+editor always has *some* id to display.
  */
   grudgeId: string;
   username: string;

@@ -22,16 +22,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/store/auth";
 import { signInWithPuter, signOut } from "@/lib/authBootstrap";
-import { useQueryClient } from "@tanstack/react-query";
-import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 
 /**
  * Toolbar entry point for Grudge Studio Puter Auth.
  *
  * Anonymous → renders a "Sign in with Grudge Studio" button that
- *             triggers the Puter sign-in popup and the server token
- *             exchange. On success the editor stays in place; the
- *             user just unlocks cloud-sync features.
+ *             triggers the Puter sign-in popup and a one-shot server
+ *             sync to mirror the user into the shared `users` table.
+ *             The editor stays in place; the user just gets a richer
+ *             identity surface (Grudge ID, avatar, upstream link).
  *
  * Signed-in → renders an avatar + dropdown showing the user's display
  *             name, Grudge ID, and an upstream-account indicator (so
@@ -41,7 +40,6 @@ import { getGetCurrentUserQueryKey } from "@workspace/api-client-react";
 export function UserMenu() {
   const { status, user, error, config } = useAuth();
   const { toast } = useToast();
-  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
   const inFlight = busy || status === "loading";
@@ -51,10 +49,6 @@ export function UserMenu() {
     setBusy(true);
     try {
       await signInWithPuter();
-      // Force a refetch of any session-aware query — none today, but
-      // any future auth-gated endpoint will pick up the new cookie
-      // automatically once we invalidate the /me cache.
-      void qc.invalidateQueries({ queryKey: getGetCurrentUserQueryKey() });
       toast({
         title: "Signed in to Grudge Studio",
         description: "Your Puter cloud storage is now connected.",
@@ -75,7 +69,6 @@ export function UserMenu() {
     setBusy(true);
     try {
       await signOut();
-      void qc.invalidateQueries({ queryKey: getGetCurrentUserQueryKey() });
       toast({ title: "Signed out", description: "See you soon!" });
     } finally {
       setBusy(false);

@@ -1,11 +1,8 @@
 import express, { type Express } from "express";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { attachUser } from "./middlewares/auth";
-import { describeOriginPolicy, isOriginAllowed } from "./lib/originPolicy";
 
 const app: Express = express();
 
@@ -48,47 +45,22 @@ app.use(
     },
   }),
 );
+
 /**
- * CORS allow-list. Same-origin in production (the proxy serves both the
- * SPA and the API on `localhost:80`), and in development the request
- * Origin is the Replit preview iframe domain. We deliberately do NOT
- * reflect arbitrary Origins back: combined with HttpOnly auth cookies
- * and `credentials: "include"`, a reflective policy would let any
- * attacker page mount login-CSRF against `/api/auth/puter/exchange`.
- *
- * `isOriginAllowed` accepts Replit preview/deployment hosts, localhost,
- * anything explicitly listed in `REPLIT_DOMAINS` (set automatically on
- * Replit deployments), and anything in the `EXTRA_ALLOWED_ORIGINS`
- * environment escape hatch. Unknown Origins produce a CORS-rejected
- * response, which the browser surfaces as a network error rather than
- * silently letting credentials leak.
+ * CORS: permissive by design. Forge is session-less on the server (Puter
+ * Auth lives client-side; we never set a cookie) so there is no CSRF
+ * surface to defend — the only mutating endpoint, `/auth/puter/sync`,
+ * verifies a fresh Puter access token server-to-server before touching
+ * the shared `users` table, and that token is unobtainable to attacker
+ * pages. We do NOT set `credentials: true`, so even if a future endpoint
+ * accidentally relied on cookies, browsers would refuse to send them
+ * cross-origin.
  */
-logger.info({ originPolicy: describeOriginPolicy() }, "CORS allow-list active");
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // For allowed origins: reflect the Origin and emit
-      // Access-Control-Allow-Credentials so cookies ride along.
-      // For disallowed origins: cb(null, false) — the cors lib will
-      // simply omit the Access-Control-Allow-Origin header. Browsers
-      // then block the response from reaching the attacker page (which
-      // is the real defense), and any state-changing auth route also
-      // runs `requireTrustedOrigin` for a clean 403 server-side.
-      if (isOriginAllowed(origin)) {
-        cb(null, origin ?? true);
-      } else {
-        cb(null, false);
-      }
-    },
-    credentials: true,
-  }),
-);
-app.use(cookieParser());
+app.use(cors());
+logger.info("CORS open (no credentials, no cookie auth)");
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Resolve req.user from the session cookie (best-effort, never blocks).
-app.use(attachUser);
 
 app.use("/api", router);
 

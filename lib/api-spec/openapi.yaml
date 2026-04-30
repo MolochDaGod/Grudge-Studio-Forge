@@ -116,69 +116,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthConfig"
 
-  /auth/me:
-    get:
-      operationId: getCurrentUser
-      tags: [auth]
-      summary: Resolve the current session
-      description: |
-        Returns the active Grudge user, or `{ user: null }` for
-        anonymous sessions. The client polls this on app boot to
-        rehydrate the auth store.
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CurrentUserResponse"
-
-  /auth/puter/exchange:
+  /auth/puter/sync:
     post:
-      operationId: exchangePuterToken
+      operationId: syncPuterUser
       tags: [auth]
-      summary: Exchange a Puter access token for a Grudge session
+      summary: Mirror a signed-in Puter user into the shared Grudge users table
       description: |
-        Verifies the Puter access token server-to-server, upserts the
-        shared `users` row, and issues a HttpOnly session cookie. If
-        the user has no row in the upstream `grudge_accounts` registry
-        an account is implicitly created on first sign-in (Forge mints
-        an ephemeral Grudge ID and persists the user-link row).
+        Verifies a Puter access token server-to-server (via Puter's
+        `whoami` endpoint), upserts the shared `users` row keyed on
+        `puter_uuid`, and returns the resolved user view (including
+        the canonical Grudge ID when one exists in the upstream
+        `grudge_accounts` registry, or a deterministic per-user
+        ephemeral id otherwise).
+
+        Forge holds no server-side session — Puter Auth manages its
+        own token lifecycle entirely client-side via the Puter SDK.
+        This endpoint is idempotent and intended to be called once
+        per app boot when the SDK reports a signed-in user.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PuterExchangeRequest"
+              $ref: "#/components/schemas/PuterSyncRequest"
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PuterExchangeResponse"
+                $ref: "#/components/schemas/PuterSyncResponse"
         "400":
           description: Missing or malformed Puter access token.
         "401":
           description: Puter rejected the access token.
         "502":
           description: Puter API was unreachable or returned an unexpected response.
-
-  /auth/logout:
-    post:
-      operationId: logoutCurrentUser
-      tags: [auth]
-      summary: Tear down the current session
-      description: |
-        Deletes the session row (if any) and clears the cookie.
-        Idempotent — calling without a session returns `{ ok: true }`.
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LogoutResponse"
 
   /projects:
     get:
@@ -645,8 +618,10 @@ components:
         grudgeId:
           type: string
           description: |
-            Either the upstream `grudge_accounts.grudge_id` if known, or the
-            ephemeral `GRUDGE-<ms>-<HEX>` id Forge minted on first sign-in.
+            Either the upstream `grudge_accounts.grudge_id` when the user
+            has a row in that registry, or a deterministic per-user
+            ephemeral id of the form `GRUDGE-<13digits>-<HEX>` so the
+            editor always has *some* id to display.
         username:
           type: string
         displayName:
@@ -662,16 +637,7 @@ components:
           type: boolean
           description: True iff the upstream `grudge_accounts` registry has this user.
 
-    CurrentUserResponse:
-      type: object
-      required: [user]
-      properties:
-        user:
-          oneOf:
-            - $ref: "#/components/schemas/GrudgeUser"
-            - type: "null"
-
-    PuterExchangeRequest:
+    PuterSyncRequest:
       type: object
       required: [puterAccessToken]
       properties:
@@ -680,27 +646,18 @@ components:
           minLength: 10
           description: Access token from `puter.auth.getAccessToken()`.
 
-    PuterExchangeResponse:
+    PuterSyncResponse:
       type: object
       required: [user, created, grudgeAccountLinked]
       properties:
         user:
-          oneOf:
-            - $ref: "#/components/schemas/GrudgeUser"
-            - type: "null"
+          $ref: "#/components/schemas/GrudgeUser"
         created:
           type: boolean
-          description: True iff this sign-in inserted a new row in `users`.
+          description: True iff this sync inserted a new row in `users`.
         grudgeAccountLinked:
           type: boolean
           description: True iff the upstream `grudge_accounts` row was found.
-
-    LogoutResponse:
-      type: object
-      required: [ok]
-      properties:
-        ok:
-          type: boolean
 
     Project:
       type: object
