@@ -116,16 +116,34 @@ const ent = (o: BuildOpts): SceneEntity => {
 export function tpsZombieDemoScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Ground (invisible-ish — hemisphere light gives a much better fill now,
-  // so the bumped sun/ambient below paints the GLBs nicely).
+  // Real GLB map (encampment — fits the "zombie ambush at a war camp"
+  // mood). Loaded from public/builtin/map-encampment.glb via the
+  // `builtin:` scheme, same way the dm-* templates load their maps.
+  // No physics on the visible map — collision is handled by the
+  // invisible Ground plane below so the player can't fall through.
+  entities.push({
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: "builtin:map-encampment" },
+    transform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [0.5, 0.5, 0.5],
+    },
+    parentId: null,
+  });
+
+  // Invisible collision ground — keeps the player from falling through
+  // the map. Dark plane that mostly disappears against the GLB textures.
   entities.push(
     ent({
-      name: "Graveyard Ground",
+      name: "Ground",
       type: "plane",
       rotation: [-Math.PI / 2, 0, 0],
-      scale: [60, 60, 1],
+      scale: [200, 200, 1],
       color: "#1a1a26",
-      roughness: 0.95,
+      roughness: 1,
       metalness: 0,
       fixed: true,
     }),
@@ -174,10 +192,11 @@ export function tpsZombieDemoScene(): SceneData {
     }),
   );
 
-  // Spawn points (six on a ring at r=10). The deathmatch behaviors look
-  // these up by name prefix `Spawn_` so respawn after death works. The
-  // player and zombies both use them.
-  const SPAWN_R = 10;
+  // Spawn points (six on a ring). The deathmatch behaviors look these
+  // up by name prefix `Spawn_` so respawn after death works. r=14
+  // matches the comparable dm-encampment template (same map, same
+  // scale) and gives better spacing than the previous r=10 cluster.
+  const SPAWN_R = 14;
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2 + Math.PI / 12;
     entities.push({
@@ -204,7 +223,9 @@ export function tpsZombieDemoScene(): SceneData {
   // match the kill-feed convention from the dm-* maps.
   for (let i = 0; i < 6; i++) {
     const angle = (i / 6) * Math.PI * 2;
-    const r = 8;
+    // Slightly inside the spawn ring so the zombies are visible to the
+    // player on first load (player spawns near origin / at a Spawn_*).
+    const r = 11;
     const s = 0.92 + (i % 3) * 0.07;
     entities.push({
       id: id(),
@@ -222,47 +243,24 @@ export function tpsZombieDemoScene(): SceneData {
     });
   }
 
-  // Crypt walls — 4 boxes parented to a "Crypt" empty. These act as
-  // line-of-sight breakers so the AI's raycast LoS check actually does
-  // something interesting (otherwise on an open plane every enemy sees
-  // the player at all times).
-  const cryptId = id();
-  entities.push({
-    id: cryptId,
-    name: "Crypt",
-    type: "empty",
-    transform: { position: [-12, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-    parentId: null,
-  });
-  const wallH = 2.5;
-  const wallSpecs: { pos: [number, number, number]; scale: [number, number, number] }[] = [
-    { pos: [0, wallH / 2, 3], scale: [6, wallH, 0.3] },
-    { pos: [0, wallH / 2, -3], scale: [6, wallH, 0.3] },
-    { pos: [3, wallH / 2, 0], scale: [0.3, wallH, 6] },
-    { pos: [-3, wallH / 2, 0], scale: [0.3, wallH, 6] },
-  ];
-  for (let i = 0; i < wallSpecs.length; i++) {
-    entities.push(
-      ent({
-        name: `Crypt Wall ${i + 1}`,
-        type: "box",
-        parentId: cryptId,
-        position: wallSpecs[i].pos,
-        scale: wallSpecs[i].scale,
-        color: "#3a3a48",
-        roughness: 0.95,
-        fixed: true,
-      }),
-    );
-  }
-
-  // Brazier light (warm point light over the crypt).
+  // Mood lights — two warm braziers above the camp give the scene
+  // depth on top of the hemisphere fill + sun. The encampment GLB
+  // already provides plenty of cover geometry, so we don't need the
+  // old procedural Crypt walls anymore.
   entities.push(
     ent({
-      name: "Brazier Light",
+      name: "Brazier Light L",
       type: "light",
-      position: [-12, 4, 0],
-      light: { kind: "point", color: "#ff7a2a", intensity: 14, distance: 22 },
+      position: [8, 4, 6],
+      light: { kind: "point", color: "#ff8a3d", intensity: 16, distance: 24 },
+    }),
+  );
+  entities.push(
+    ent({
+      name: "Brazier Light R",
+      type: "light",
+      position: [-8, 4, -6],
+      light: { kind: "point", color: "#ff8a3d", intensity: 16, distance: 24 },
     }),
   );
 
@@ -309,53 +307,46 @@ export function tpsZombieDemoScene(): SceneData {
 export function fpsArenaScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Arena root (empty)
-  const arenaId = id();
+  // Arena radius is still useful for placing spawns + crates relative to
+  // the player, even though we no longer build procedural walls — the
+  // GLB castle map below provides those.
+  const arenaR = 15;
+
+  // Real GLB map (Fort Royale — small medieval-style castle, smallest of
+  // the shooter maps so it loads fast and reads well at FPS scale).
+  // Loaded from public/builtin/map-fort-royale.glb via the `builtin:`
+  // scheme, identical to how the dm-* templates load their maps. No
+  // physics on the visible map — collision is on the invisible Ground
+  // plane below so the player can't fall through.
   entities.push({
-    id: arenaId,
-    name: "Arena",
-    type: "empty",
-    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: "builtin:map-fort-royale" },
+    transform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [0.6, 0.6, 0.6],
+    },
     parentId: null,
   });
 
-  // Floor
+  // Invisible collision ground (replaces the old procedural Arena Floor +
+  // 4 walls — the GLB castle has its own walls that will block
+  // line-of-sight, and the open layout is more interesting than a sealed
+  // box).
   entities.push(
     ent({
-      name: "Arena Floor",
+      name: "Ground",
       type: "plane",
-      parentId: arenaId,
       rotation: [-Math.PI / 2, 0, 0],
-      scale: [30, 30, 1],
-      color: "#1f1f2c",
-      roughness: 0.85,
+      scale: [200, 200, 1],
+      color: "#1a1a24",
+      roughness: 1,
+      metalness: 0,
       fixed: true,
     }),
   );
-  // Four walls parented to arena root
-  const wallH = 5;
-  const arenaR = 15;
-  const arenaWalls: { pos: [number, number, number]; scale: [number, number, number] }[] = [
-    { pos: [0, wallH / 2, arenaR], scale: [arenaR * 2, wallH, 0.4] },
-    { pos: [0, wallH / 2, -arenaR], scale: [arenaR * 2, wallH, 0.4] },
-    { pos: [arenaR, wallH / 2, 0], scale: [0.4, wallH, arenaR * 2] },
-    { pos: [-arenaR, wallH / 2, 0], scale: [0.4, wallH, arenaR * 2] },
-  ];
-  for (let i = 0; i < arenaWalls.length; i++) {
-    entities.push(
-      ent({
-        name: `Wall ${i + 1}`,
-        type: "box",
-        parentId: arenaId,
-        position: arenaWalls[i].pos,
-        scale: arenaWalls[i].scale,
-        color: "#2a2a3a",
-        metalness: 0.4,
-        roughness: 0.7,
-        fixed: true,
-      }),
-    );
-  }
 
   // Player. Cylinder body (you don't see your own avatar in FPS) + the
   // `player-deathmatch` behavior so LMB shoots, the HUD/crosshair shows,
@@ -412,7 +403,7 @@ export function fpsArenaScene(): SceneData {
       type: "empty",
       transform: { position: spawnSpots[i], rotation: [0, 0, 0], scale: [1, 1, 1] },
       behavior: "spawnpoint",
-      parentId: arenaId,
+      parentId: null,
     });
   }
 

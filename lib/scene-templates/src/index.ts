@@ -33,7 +33,7 @@ import {
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260501.2";
+export const TEMPLATES_VERSION = "20260501.4";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */

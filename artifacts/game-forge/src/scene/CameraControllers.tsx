@@ -339,9 +339,16 @@ export function ThirdPersonCameraController({
     // follows the body either way.
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
       moveBody(body, { x: vx, z: vz }, delta);
-      if (vx !== 0 || vz !== 0) {
-        rotateBody(body, Math.atan2(vx, vz) + Math.PI);
-      }
+      // Lock the character's facing to the camera yaw — same convention
+      // as Mugen87/dive and YAZH. This is what makes a TPS feel like a
+      // TPS: pressing W walks the character "away from camera", strafing
+      // moves sideways without spinning the body, and the rifle/aim line
+      // always points where you're looking. The previous code rotated
+      // toward the *movement* direction (atan2(vx, vz) + π), which made
+      // the character pirouette mid-strafe and meant the body never
+      // matched the look direction when standing still — exactly the
+      // "wrong perspective" the user complained about.
+      rotateBody(body, yawRef.current + Math.PI);
     }
 
     // Camera follows orbit. `pos` was read at frame start; for dynamic bodies
