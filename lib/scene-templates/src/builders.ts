@@ -106,19 +106,24 @@ const ent = (o: BuildOpts): SceneEntity => {
   return e;
 };
 
-/** Third-person zombie shooter sandbox inspired by YetAnotherZombieHorror.
- *  Player capsule with a parented "weapon" empty + 6 zombie boxes spread
- *  around a fenced graveyard plane. */
+/** Third-person zombie shooter sandbox inspired by YetAnotherZombieHorror
+ *  and Mugen87/dive. Player rigged character with a parented rifle; the
+ *  player runs the same `player-deathmatch` behavior as the dm-* maps so
+ *  LMB raycasts, hit feedback, headshots, health, respawn, and the full
+ *  HUD (crosshair, kill feed, scoreboard) all light up automatically.
+ *  Zombies use `enemy-deathmatch` (Yuka WanderBehavior + SeekBehavior +
+ *  FSM with line-of-sight checks). */
 export function tpsZombieDemoScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Ground
+  // Ground (invisible-ish — hemisphere light gives a much better fill now,
+  // so the bumped sun/ambient below paints the GLBs nicely).
   entities.push(
     ent({
       name: "Graveyard Ground",
       type: "plane",
       rotation: [-Math.PI / 2, 0, 0],
-      scale: [40, 40, 1],
+      scale: [60, 60, 1],
       color: "#1a1a26",
       roughness: 0.95,
       metalness: 0,
@@ -127,7 +132,10 @@ export function tpsZombieDemoScene(): SceneData {
   );
 
   // Player root: rigged character GLB drives the visuals; a kinematic cylinder
-  // collider drives movement/contacts (independent of the mesh).
+  // collider drives movement/contacts (independent of the mesh). The
+  // `player-deathmatch` behavior reads LMB + camera ray each frame and
+  // sends 'damage' messages to whoever the cursor is over (HUD subscribes
+  // to playerHealth / hit / kill / playerScore events emitted by it).
   const playerId = id();
   entities.push({
     id: playerId,
@@ -137,6 +145,7 @@ export function tpsZombieDemoScene(): SceneData {
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
     parentId: null,
   });
 
@@ -165,28 +174,58 @@ export function tpsZombieDemoScene(): SceneData {
     }),
   );
 
-  // Six NPC zombies in a ring — same rigged character, slight scale variance.
+  // Spawn points (six on a ring at r=10). The deathmatch behaviors look
+  // these up by name prefix `Spawn_` so respawn after death works. The
+  // player and zombies both use them.
+  const SPAWN_R = 10;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + Math.PI / 12;
+    entities.push({
+      id: id(),
+      name: `Spawn_${i + 1}`,
+      type: "empty",
+      transform: {
+        position: [Math.cos(a) * SPAWN_R, 0, Math.sin(a) * SPAWN_R],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+      behavior: "spawnpoint",
+      parentId: null,
+    });
+  }
+
+  // Six zombie enemies in a ring — rigged character with red tint,
+  // running the same `enemy-deathmatch` AI as the dm-* maps. They patrol
+  // when they don't see you, chase + shoot when they do.
+  //
+  // Note: enemy lookup in deathmatchBehaviors uses
+  // `behavior === "enemy-deathmatch"` (not the name), so the historical
+  // "Zombie 1..6" naming is no longer required. We use "Enemy_*" to
+  // match the kill-feed convention from the dm-* maps.
   for (let i = 0; i < 6; i++) {
     const angle = (i / 6) * Math.PI * 2;
     const r = 8;
     const s = 0.92 + (i % 3) * 0.07;
-    const npcId = id();
     entities.push({
-      id: npcId,
-      name: `Zombie ${i + 1}`,
+      id: id(),
+      name: `Enemy_${i + 1}`,
       type: "model",
-      model: { url: ASSETS.character },
+      model: { url: ASSETS.character, tint: "#5cb85c" }, // sickly green = zombie tint
       transform: {
         position: [Math.cos(angle) * r, 0, Math.sin(angle) * r],
         rotation: [0, angle + Math.PI, 0], // face the player
         scale: [s, s, s],
       },
       physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
+      behavior: "enemy-deathmatch",
       parentId: null,
     });
   }
 
-  // Crypt walls — 4 boxes parented to a "Crypt" empty
+  // Crypt walls — 4 boxes parented to a "Crypt" empty. These act as
+  // line-of-sight breakers so the AI's raycast LoS check actually does
+  // something interesting (otherwise on an open plane every enemy sees
+  // the player at all times).
   const cryptId = id();
   entities.push({
     id: cryptId,
@@ -217,7 +256,7 @@ export function tpsZombieDemoScene(): SceneData {
     );
   }
 
-  // Brazier light
+  // Brazier light (warm point light over the crypt).
   entities.push(
     ent({
       name: "Brazier Light",
@@ -227,23 +266,46 @@ export function tpsZombieDemoScene(): SceneData {
     }),
   );
 
+  // Hidden game manager — listens to `kill` events and tracks score so
+  // the HUD's win/lose banner fires when either side reaches scoreLimit.
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: null,
+  });
+
   return {
     entities,
     environment: {
       ...DEFAULT_ENV,
-      skyColor: "#070710",
-      groundColor: "#1a1a26",
-      ambientIntensity: 0.18,
-      sunIntensity: 0.45,
+      // Bumped lighting so the rigged characters and crypt actually read
+      // (the old 0.18 ambient + 0.45 sun was too dim — combined with the
+      // new hemisphere light in Viewport.tsx the scene now matches what
+      // YAZH shows in its night-graveyard preset).
+      skyColor: "#0c0c1c",
+      groundColor: "#241a18",
+      ambientIntensity: 0.45,
+      sunIntensity: 0.85,
       cameraMode: "thirdPerson",
       cameraTargetEntityId: playerId,
       playerMoveSpeed: 6,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+      respawnDelay: 5,
     },
   };
 }
 
 /** First-person arena — closed room with player, weapon mount,
- *  three turret blocks, and a few breakable crates. */
+ *  three turret enemies, and a few crates. The player runs the
+ *  `player-deathmatch` behavior (LMB raycast shooting, full HUD with
+ *  crosshair, kill feed, scoreboard) and the turrets run
+ *  `enemy-deathmatch` (Yuka FSM with line-of-sight via the surrounding
+ *  walls / crates). FPS feel is inspired by Mugen87/dive — tight room,
+ *  spotlight overhead, real GLB rifle parented to the camera body. */
 export function fpsArenaScene(): SceneData {
   const entities: SceneEntity[] = [];
 
@@ -295,7 +357,9 @@ export function fpsArenaScene(): SceneData {
     );
   }
 
-  // Player
+  // Player. Cylinder body (you don't see your own avatar in FPS) + the
+  // `player-deathmatch` behavior so LMB shoots, the HUD/crosshair shows,
+  // and respawn/kill tracking works.
   const playerId = id();
   entities.push({
     id: playerId,
@@ -305,6 +369,7 @@ export function fpsArenaScene(): SceneData {
     material: { color: "#d4af37", metalness: 0.3, roughness: 0.5, emissive: "#3a2a08" },
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "firstPerson",
+    behavior: "player-deathmatch",
     parentId: null,
   });
   // FPS rifle: real GLB rifle mounted in front of the player camera.
@@ -331,52 +396,49 @@ export function fpsArenaScene(): SceneData {
     }),
   );
 
-  // Three turrets in a triangle
-  const turretPositions: [number, number, number][] = [
+  // Spawn points (4 in arena corners). Player + enemies use these for
+  // initial spawn-after-death placement (deathmatch behaviors look up
+  // entities whose name starts with `Spawn_`).
+  const spawnSpots: [number, number, number][] = [
+    [arenaR - 2, 0, arenaR - 2],
+    [-(arenaR - 2), 0, arenaR - 2],
+    [arenaR - 2, 0, -(arenaR - 2)],
+    [-(arenaR - 2), 0, -(arenaR - 2)],
+  ];
+  for (let i = 0; i < spawnSpots.length; i++) {
+    entities.push({
+      id: id(),
+      name: `Spawn_${i + 1}`,
+      type: "empty",
+      transform: { position: spawnSpots[i], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      parentId: arenaId,
+    });
+  }
+
+  // Three roving enemies in a triangle (formerly static turrets — they
+  // now run the `enemy-deathmatch` Yuka FSM, so they patrol when you're
+  // not in line-of-sight, chase + shoot when they spot you, and use the
+  // crates and walls below as cover for LoS breaks).
+  const enemyPositions: [number, number, number][] = [
     [0, 0, -10],
     [-9, 0, -4],
     [9, 0, -4],
   ];
-  for (let i = 0; i < turretPositions.length; i++) {
-    const tId = id();
+  for (let i = 0; i < enemyPositions.length; i++) {
     entities.push({
-      id: tId,
-      name: `Turret ${i + 1}`,
-      type: "box",
-      transform: { position: turretPositions[i], rotation: [0, 0, 0], scale: [1, 0.8, 1] },
-      material: { color: "#3a3344", metalness: 0.6, roughness: 0.4 },
-      physics: { bodyType: "fixed", colliderType: "cuboid", mass: 0, restitution: 0.2, friction: 1 },
-      parentId: arenaId,
+      id: id(),
+      name: `Enemy_${i + 1}`,
+      type: "model",
+      model: { url: ASSETS.character, tint: "#ff5050" },
+      transform: { position: enemyPositions[i], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
+      behavior: "enemy-deathmatch",
+      parentId: null,
     });
-    entities.push(
-      ent({
-        name: `Turret ${i + 1} Barrel`,
-        type: "cylinder",
-        parentId: tId,
-        position: [0, 0.8, 0.6],
-        rotation: [Math.PI / 2, 0, 0],
-        scale: [0.15, 1.2, 0.15],
-        color: "#222230",
-        metalness: 0.8,
-        roughness: 0.3,
-        fixed: true,
-      }),
-    );
-    entities.push(
-      ent({
-        name: `Turret ${i + 1} Eye`,
-        type: "sphere",
-        parentId: tId,
-        position: [0, 0.8, 1.25],
-        scale: [0.18, 0.18, 0.18],
-        color: "#ff3030",
-        emissive: "#ff0000",
-        noPhysics: true,
-      }),
-    );
   }
 
-  // 5 crates scattered
+  // 5 crates scattered as line-of-sight cover.
   for (let i = 0; i < 5; i++) {
     entities.push(
       ent({
@@ -386,11 +448,14 @@ export function fpsArenaScene(): SceneData {
         scale: [0.9, 0.9, 0.9],
         color: "#7a5e2e",
         roughness: 0.85,
+        fixed: true,
       }),
     );
   }
 
-  // Spotlight from above
+  // Spotlight from above (kept for arena flavor; the new hemisphere light
+  // in Viewport.tsx handles fill so the spotlight reads as a hot key
+  // instead of being the only thing in the room).
   entities.push(
     ent({
       name: "Arena Spot",
@@ -400,17 +465,34 @@ export function fpsArenaScene(): SceneData {
     }),
   );
 
+  // Hidden game manager — score tracking + win/lose banner.
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: null,
+  });
+
   return {
     entities,
     environment: {
       ...DEFAULT_ENV,
-      skyColor: "#08080f",
-      groundColor: "#1a1a24",
-      ambientIntensity: 0.14,
-      sunIntensity: 0.3,
+      // Bumped from the old (0.14 ambient / 0.3 sun) — combined with the
+      // hemisphere light those low values left the FPS arena pitch black
+      // outside the spotlight cone. Now the room has a soft cool fill +
+      // overhead spot, so you can actually navigate.
+      skyColor: "#1a1a24",
+      groundColor: "#15151c",
+      ambientIntensity: 0.4,
+      sunIntensity: 0.35,
       cameraMode: "firstPerson",
       cameraTargetEntityId: playerId,
       playerMoveSpeed: 7,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+      respawnDelay: 5,
     },
   };
 }

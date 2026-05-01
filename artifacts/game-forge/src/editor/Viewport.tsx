@@ -560,9 +560,20 @@ function ScenePlayMode() {
 
 function Lights() {
   const env = useEditor((s) => s.sceneData.environment);
+  // Hemisphere light fills the scene with a natural sky-above / ground-below
+  // gradient so that GLB maps with mostly-Standard materials read clearly
+  // even when the directional sun is weak (cyberpunk neon, overcast winter,
+  // covered interiors). Inspired by Mugen87/dive's lighting setup. We tie
+  // it to env.skyColor / env.groundColor / env.ambientIntensity so that
+  // tuning the environment in the inspector still works as before — the
+  // hemisphere just rides on top of the existing ambient + sun pair.
+  const ambient = env.ambientIntensity ?? 0.4;
+  const sky = env.skyColor ?? "#0a0a14";
+  const ground = env.groundColor ?? "#1a1a2e";
   return (
     <>
-      <ambientLight intensity={env.ambientIntensity ?? 0.4} />
+      <ambientLight intensity={ambient} />
+      <hemisphereLight args={[sky, ground, ambient * 0.85]} />
       <directionalLight
         position={[10, 12, 8]}
         intensity={env.sunIntensity ?? 1.2}

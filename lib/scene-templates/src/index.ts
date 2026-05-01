@@ -33,7 +33,7 @@ import {
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260501.1";
+export const TEMPLATES_VERSION = "20260501.2";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -59,14 +59,14 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
     key: "tps-zombies",
     label: "TPS — Zombie Graveyard",
     description:
-      "Third-person sandbox: rigged character player with parented rifle, 6 NPC zombies, crypt walls, brazier light.",
+      "Third-person deathmatch: rigged player + rifle vs 6 Yuka-driven zombies in a crypt. Spawn points, HUD, scoring wired in.",
     build: tpsZombieDemoScene,
   },
   {
     key: "fps-arena",
-    label: "FPS — Turret Arena",
+    label: "FPS — Combat Arena",
     description:
-      "First-person arena: cylinder player with parented rifle GLB, 3 turrets, crates, spotlight.",
+      "First-person deathmatch: cylinder player + rifle GLB vs 3 roving AI enemies. Crates for cover, spawn points, HUD, scoring wired in.",
     build: fpsArenaScene,
   },
   {
