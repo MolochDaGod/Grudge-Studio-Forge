@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TemplateLoadProgress } from "@/lib/loadTemplate";
 import { loadTemplateWithProgress } from "@/lib/loadTemplate";
+import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
 import type { SceneData } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
 
@@ -80,6 +81,15 @@ export function useTemplateLoader() {
       })
         .then((data: SceneData) => {
           if (loadIdRef.current !== id) return;
+          // Kick off background warm-up of every `builtin:` GLB referenced
+          // by the template's entities BEFORE the dialog closes and the
+          // viewport mounts them. Big maps (the deathmatch templates ship
+          // 14–44 MB GLBs) otherwise wouldn't start downloading until
+          // useGLTF() fires inside EntityRenderer, leaving the viewport
+          // showing only the small wireframe placeholder for the entire
+          // download. This call is best-effort and dedupes against drei's
+          // loader cache, so re-picking the same template is a no-op.
+          warmBuiltinModelsForEntities(data.entities);
           // Hold the 100% bar for a beat so the user sees completion
           // before the dialog vanishes.
           holdTimerRef.current = window.setTimeout(() => {

@@ -176,9 +176,15 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
   return (
     <Suspense
       fallback={
+        // Brand-gold wireframe placeholder while the GLB streams in.
+        // Color was previously "#444" (dark gray) which blended into the
+        // editor's dark background — large maps could spend 5–30 s
+        // downloading and the user couldn't tell anything was happening.
+        // Gold (#d4af37) reads cleanly against both the lit editor scene
+        // and the dark grid pattern, so it actually communicates "loading".
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color="#444" wireframe />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
         </mesh>
       }
     >
