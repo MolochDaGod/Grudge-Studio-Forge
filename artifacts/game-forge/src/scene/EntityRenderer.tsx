@@ -1,6 +1,6 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { CapsuleCollider, CylinderCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
-import { Suspense, forwardRef, useEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel } from "@/lib/builtinModels";
@@ -195,6 +195,13 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
         label={entity.model?.label}
         selected={selected}
         onPick={onPick}
+        // Convention: any entity literally named "Map" is treated as
+        // an environment / level mesh and drop-aligned to local Y=0
+        // so its visible floor sits flush with the invisible Ground
+        // plane templates pair it with. Cheap (one bbox per GLB load)
+        // and benefits every template that uses the same naming
+        // pattern (tps-zombies, fps-arena, all dm-*).
+        dropToGround={entity.name?.toLowerCase() === "map"}
       />
     </Suspense>
   );
@@ -257,9 +264,16 @@ interface LoadedModelProps {
   label?: string;
   selected?: boolean;
   onPick?: () => void;
+  /** When true, after cloning the GLB scene we measure its local bounding
+   *  box and shift the inner scene so its lowest point sits at the
+   *  entity's local Y=0. This is what lets large environment maps (whose
+   *  GLB origin is often above their visible floor) align flush with the
+   *  invisible Ground collision plane at world Y=0 instead of floating
+   *  above it / sinking below it. */
+  dropToGround?: boolean;
 }
 
-function LoadedModel({ url, clip, tint, label, selected, onPick }: LoadedModelProps) {
+function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   const gltf = useGLTF(resolved);
   // SkeletonUtils.clone preserves bone bindings for skinned meshes (regular
@@ -267,6 +281,31 @@ function LoadedModel({ url, clip, tint, label, selected, onPick }: LoadedModelPr
   const cloned = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf]);
   const groupRef = useRef<THREE.Group>(null);
   const { actions, names } = useAnimations(gltf.animations, groupRef);
+
+  // Drop-to-ground: lift the inner scene so its world-y min = 0 in local
+  // space. We do this on the cloned scene's position (NOT the entity
+  // transform) so saved scene data + scripts + physics all keep seeing
+  // the original transform — only the visual mesh shifts. useLayoutEffect
+  // (not useMemo) because this is a side effect on the cloned object,
+  // and we want it applied synchronously before paint so the selection
+  // wireframe / label sprite (which both call setFromObject(cloned) of
+  // their own) read the already-shifted bounds. Reversible: we restore
+  // the original position on cleanup so toggling dropToGround at
+  // runtime can't leave a stale offset baked in.
+  useLayoutEffect(() => {
+    if (!dropToGround) return;
+    // Box3.setFromObject walks the subtree applying each node's local
+    // matrix, so the result is in `cloned`'s local space — exactly what
+    // we want, since the entity's parent group will then apply scale +
+    // position on top.
+    const box = new THREE.Box3().setFromObject(cloned);
+    if (!isFinite(box.min.y)) return;
+    const originalY = cloned.position.y;
+    cloned.position.y -= box.min.y;
+    return () => {
+      cloned.position.y = originalY;
+    };
+  }, [cloned, dropToGround]);
 
   // ── Animation: explicit `clip` wins; otherwise fall back to idle/loop heuristic.
   useEffect(() => {
