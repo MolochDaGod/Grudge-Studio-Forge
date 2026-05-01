@@ -419,8 +419,18 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     // physics-friendly characters without needing a full kinematic-character
     // controller. Non-player rigid bodies keep their default (full) rotation
     // axes so prop physics looks natural.
+    //
+    // ⚠️ This prop must be conditionally SPREAD (not just set to undefined
+    // for the non-player case) — react-three-rapier's `setRigidBodyOptions`
+    // checks `if (key in options)` and then destructures the value as
+    // `[x, y, z]`. Passing `enabledRotations={undefined}` keeps the key on
+    // the props object, so it tries to iterate `undefined` and crashes
+    // every render with "undefined is not iterable" inside CanvasImpl,
+    // which Replit's runtime-error overlay was eating the stack of.
     const isPlayerControlled =
       !!entity.controllerKind && entity.controllerKind !== "none";
+    const playerRotationLockProps: { enabledRotations?: [boolean, boolean, boolean] } =
+      isPlayerControlled ? { enabledRotations: [false, true, false] } : {};
 
     return (
       <RigidBody
@@ -428,7 +438,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         type={ph.bodyType ?? "dynamic"}
         position={tr.position}
         rotation={tr.rotation}
-        enabledRotations={isPlayerControlled ? [false, true, false] : undefined}
+        {...playerRotationLockProps}
         colliders={
           explicitForModel
             ? false
