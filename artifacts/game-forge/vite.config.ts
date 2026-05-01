@@ -52,6 +52,49 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * `src/lib/prefetch.ts` (or the user opens a project), the chunks are
  * either already in cache or in flight.
  */
+/**
+ * TEMP DEV ONLY: receive `[forge-debug]` runtime-error reports POSTed by
+ * the browser-side handler in `src/main.tsx` and dump them to the workflow
+ * stdout. The Replit error overlay strips frames whose URLs aren't in
+ * vite's moduleGraph, so the workflow log alone never shows the real
+ * stack. This middleware writes the RAW stack — exactly what the browser
+ * gave us — so we can grep it.
+ */
+function forgeDebugLogReceiver(): Plugin {
+  return {
+    name: "forge-debug-log-receiver",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/__forge_debug_log", (req, res) => {
+        if (req.method !== "POST") {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => {
+          try {
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            // eslint-disable-next-line no-console
+            console.log(
+              `\n========= [forge-debug] ${body.kind} =========\n` +
+                `${body.message}\n` +
+                `RAW STACK:\n${body.stack}\n` +
+                `===============================================\n`,
+            );
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.log("[forge-debug] failed to parse payload:", e);
+          }
+          res.statusCode = 204;
+          res.end();
+        });
+      });
+    },
+  };
+}
+
 function preloadViewportCandidate(): Plugin {
   const TARGET_CHUNK_NAMES = new Set(["viewportPreload"]);
   return {
@@ -141,6 +184,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    forgeDebugLogReceiver(),
     preloadViewportCandidate(),
     /**
      * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
