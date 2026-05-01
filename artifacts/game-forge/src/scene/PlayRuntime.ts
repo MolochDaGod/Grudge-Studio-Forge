@@ -208,3 +208,95 @@ export function raycastEntities(
   }
   return null;
 }
+
+/** Result of a {@link groundProbe} hit. `surface` is the parent-chain
+ *  surface tag (see EntityRenderer LoadedModel) — defaults to `"walk"`
+ *  when the hit object's chain has no explicit tag, which matches the
+ *  spatial-queries skill's "anything unmarked is plain walkable ground"
+ *  rule (§3.2). */
+export interface GroundProbeHit {
+  /** World-space hit point. */
+  point: [number, number, number];
+  /** Distance from origin (which is `position + originOffset`) to the hit. */
+  distance: number;
+  /** World-space surface normal. `[0, 1, 0]` if the hit had no face data. */
+  normal: [number, number, number];
+  /** Surface tag found by walking up the hit object's parents looking
+   *  for the first ancestor with `userData.surface` set. */
+  surface: string;
+  /** Entity ID found via the same parent-chain walk (mirrors
+   *  `raycastEntities`). `null` for decorative non-entity meshes
+   *  (e.g. raw map geometry not wrapped by an EntityRenderer). */
+  entityId: string | null;
+}
+
+/**
+ * First-contact-below ground probe. Drops a short downward ray from
+ * just above the given world position and returns the first hit, plus
+ * the surface tag found on the parent chain.
+ *
+ * Implements the §2.1 + §3.2 patterns from
+ * `.agents/skills/spatial-queries-and-surfaces/SKILL.md`:
+ *
+ *   - origin lifted by `originOffset` (default 0.1m) above the position
+ *     to avoid starting inside the floor and missing it,
+ *   - `maxDistance` capped tight (default 0.35m) so a long ray can't
+ *     punch through the world and falsely report grounded,
+ *   - returns `null` (not "grounded but at infinity") when nothing is
+ *     within reach, so callers can branch cleanly on falsiness.
+ *
+ * Reuses the module-level `SHARED_RAYCASTER` so this helper is safe to
+ * call every frame from a behavior without GC churn.
+ *
+ * Typical use from a player behavior:
+ * ```ts
+ * const hit = groundProbe(scene, [t.position.x, t.position.y, t.position.z]);
+ * isGrounded = !!hit;
+ * if (hit?.surface === "swim") moveSpeed *= 0.5;
+ * ```
+ */
+export function groundProbe(
+  scene: THREE.Object3D,
+  position: [number, number, number],
+  options?: { originOffset?: number; maxDistance?: number },
+): GroundProbeHit | null {
+  const originOffset = options?.originOffset ?? 0.1;
+  const maxDistance = options?.maxDistance ?? 0.35;
+  SHARED_RAYCASTER.set(
+    new THREE.Vector3(position[0], position[1] + originOffset, position[2]),
+    new THREE.Vector3(0, -1, 0),
+  );
+  // Total ray length includes the lift, so the effective range below
+  // the foot equals `maxDistance` minus zero (the lift cancels out
+  // because the lift point is the ray origin).
+  SHARED_RAYCASTER.far = originOffset + maxDistance;
+  const hits = SHARED_RAYCASTER.intersectObjects(scene.children, true);
+  if (hits.length === 0) return null;
+  const hit = hits[0];
+  // Walk the parent chain for both `surface` (terrain tag) and
+  // `entityId` (so callers know which entity, if any, owns the
+  // surface). Mirrors `raycastEntities`'s pattern.
+  let surface: string | null = null;
+  let entityId: string | null = null;
+  let cur: THREE.Object3D | null = hit.object;
+  while (cur) {
+    const ud = cur.userData as { surface?: string; entityId?: string } | undefined;
+    if (!surface && ud?.surface) surface = ud.surface;
+    if (!entityId && ud?.entityId) entityId = ud.entityId;
+    if (surface && entityId) break;
+    cur = cur.parent;
+  }
+  return {
+    point: [hit.point.x, hit.point.y, hit.point.z],
+    distance: hit.distance - originOffset,
+    normal:
+      hit.face && hit.object instanceof THREE.Mesh
+        ? (() => {
+            const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+            return [n.x, n.y, n.z] as [number, number, number];
+          })()
+        : [0, 1, 0],
+    surface: surface ?? "walk",
+    entityId,
+  };
+}

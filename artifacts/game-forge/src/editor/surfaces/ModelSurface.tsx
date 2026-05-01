@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
+import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import type { ModelTabPayload } from "@/store/viewportTabs";
 import { Loader2, FileBox, AlertTriangle, RotateCw } from "lucide-react";
 
@@ -146,7 +147,7 @@ function disposeGltfGraph(scene: THREE.Object3D) {
 function GltfModel({ url }: { url: string }) {
   // useLoader caches per URL, but a fresh blob URL per tab guarantees
   // the cache key is unique (no risk of two tabs sharing a graph).
-  const gltf = useLoader(GLTFLoader, url);
+  const gltf = useLoader(GLTFLoader, url, extendGltfLoader);
   const root = useRef<THREE.Group>(null!);
 
   // Apply a sensible default: enable shadow casting so the user can SEE

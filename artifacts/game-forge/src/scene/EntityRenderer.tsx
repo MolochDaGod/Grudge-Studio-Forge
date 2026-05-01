@@ -1,9 +1,11 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
+import { useThree } from "@react-three/fiber";
 import { CapsuleCollider, CylinderCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel } from "@/lib/builtinModels";
+import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import type { SceneEntity } from "./types";
 
 /** Resolve a model URL. Order:
@@ -202,6 +204,11 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
         // and benefits every template that uses the same naming
         // pattern (tps-zombies, fps-arena, all dm-*).
         dropToGround={entity.name?.toLowerCase() === "map"}
+        // Map entities get a "walk" surface tag so spatial queries
+        // (PlayRuntime → groundProbe) can identify what they hit.
+        // Future: extend to read entity.model?.surface for water /
+        // ladder / dig zones authored at the template level.
+        surfaceTag={entity.name?.toLowerCase() === "map" ? "walk" : undefined}
       />
     </Suspense>
   );
@@ -257,6 +264,12 @@ function buildLabelSprite(text: string): THREE.Sprite {
   return sprite;
 }
 
+/** Tracks textures whose filtering we've already upgraded so we don't
+ *  walk + flag the same shared GLB texture every time another instance
+ *  spawns (e.g. cloning a single Map across a level). WeakSet so cached
+ *  textures get GC'd normally when the GLB unloads. */
+const touchedTextures: WeakSet<THREE.Texture> = new WeakSet();
+
 interface LoadedModelProps {
   url: string;
   clip?: string;
@@ -271,11 +284,36 @@ interface LoadedModelProps {
    *  invisible Ground collision plane at world Y=0 instead of floating
    *  above it / sinking below it. */
   dropToGround?: boolean;
+  /** Surface tag stamped onto the cloned root's `userData.surface`, so
+   *  spatial-query helpers (see scene/PlayRuntime.ts → `groundProbe`)
+   *  can identify what kind of ground a raycast hit. Tag vocabulary:
+   *  "walk" | "climb" | "swim" | "dig" | "slip" | "damage" | "nojump".
+   *  See `.agents/skills/spatial-queries-and-surfaces/SKILL.md` §3. */
+  surfaceTag?: string;
 }
 
-function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround }: LoadedModelProps) {
+function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
-  const gltf = useGLTF(resolved);
+  // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
+  // `false, false` so drei does NOT install its own DRACO/Meshopt
+  // decoders — `extendGltfLoader` runs first, then drei's own setters
+  // would overwrite our singleton DRACOLoader with a fresh one. Letting
+  // our extender be authoritative means every load path in the app
+  // (drei `useGLTF` here, the SHARED_LOADER in `glbHierarchy.ts`, and
+  // the standalone `useLoader(GLTFLoader, ...)` calls in the model /
+  // placeholder surfaces) shares one DRACOLoader + one Meshopt decoder
+  // instance — only one worker pool, one ~200KB WASM download per
+  // session.
+  //
+  // Cast: drei's GLTFLoader type narrows ktx2Loader / meshoptDecoder
+  // field types differently than three's published .d.ts, but at
+  // runtime they're the same class.
+  const gltf = useGLTF(
+    resolved,
+    false,
+    false,
+    extendGltfLoader as unknown as Parameters<typeof useGLTF>[3],
+  );
   // SkeletonUtils.clone preserves bone bindings for skinned meshes (regular
   // .clone() breaks them — would T-pose every instance after the first).
   const cloned = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf]);
@@ -306,6 +344,76 @@ function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround }:
       cloned.position.y = originalY;
     };
   }, [cloned, dropToGround]);
+
+  // ── Surface tagging: stamp the cloned root's userData so a downstream
+  // raycast (e.g. PlayRuntime → groundProbe) can read what kind of
+  // ground it hit by walking the parent chain to find this tag. The tag
+  // lives on the cloned scene rather than on the entity group because
+  // `THREE.Raycaster.intersectObjects(scene.children, true)` returns the
+  // hit *mesh* — and reading its `userData` chain is cheaper if the tag
+  // is on the cloned root rather than several levels up at the entity
+  // group. Defaults to "walk" when no explicit tag is provided so any
+  // unmarked Map mesh still produces a useful read.
+  useLayoutEffect(() => {
+    const tag = surfaceTag ?? "walk";
+    const prev = (cloned.userData as { surface?: string }).surface;
+    (cloned.userData as { surface?: string }).surface = tag;
+    return () => {
+      if (prev === undefined) {
+        delete (cloned.userData as { surface?: string }).surface;
+      } else {
+        (cloned.userData as { surface?: string }).surface = prev;
+      }
+    };
+  }, [cloned, surfaceTag]);
+
+  // ── Texture quality: bump anisotropic filtering on every texture in the
+  // GLB so floor/wall textures stay sharp at oblique camera angles
+  // (especially noticeable on the large Map GLBs and their tiled
+  // ground textures). We mutate the **original** `gltf.scene` rather
+  // than the clone because every cloned instance shares the same
+  // cached texture objects (drei `useGLTF` caches by URL); doing it
+  // once on the source benefits every spawn. A module-level WeakSet
+  // dedupes so re-mounting LoadedModel for a cached GLB does not
+  // re-walk textures we already touched.
+  //
+  // useLayoutEffect (not useEffect): runs synchronously after DOM
+  // mutations but **before paint**, so we set anisotropy on textures
+  // before the renderer's first upload of this material — avoiding a
+  // second GPU upload that would otherwise happen when the post-paint
+  // useEffect later flipped `needsUpdate`. We also re-check the value
+  // before bumping `needsUpdate` so a re-walk (e.g. somehow missing
+  // the WeakSet) is still a no-op when the GPU is already in sync.
+  const { gl } = useThree();
+  useLayoutEffect(() => {
+    const maxAniso = gl.capabilities.getMaxAnisotropy();
+    if (maxAniso <= 1) return;
+    gltf.scene.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if (!m) continue;
+        // MeshStandard/Physical/Phong/Basic all share these slot names
+        // when present. Reading via index keeps this future-proof for
+        // material types we don't explicitly enumerate.
+        const slots: string[] = [
+          "map", "normalMap", "roughnessMap", "metalnessMap",
+          "emissiveMap", "aoMap", "alphaMap",
+        ];
+        for (const slot of slots) {
+          const tex = (m as unknown as Record<string, unknown>)[slot];
+          if (!(tex instanceof THREE.Texture)) continue;
+          if (touchedTextures.has(tex)) continue;
+          if (tex.anisotropy !== maxAniso) {
+            tex.anisotropy = maxAniso;
+            tex.needsUpdate = true;
+          }
+          touchedTextures.add(tex);
+        }
+      }
+    });
+  }, [gltf, gl]);
 
   // ── Animation: explicit `clip` wins; otherwise fall back to idle/loop heuristic.
   useEffect(() => {

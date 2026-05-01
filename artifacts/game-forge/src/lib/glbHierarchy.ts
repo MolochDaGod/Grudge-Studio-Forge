@@ -21,6 +21,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three-stdlib";
+import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import { resolveBuiltinModel } from "@/lib/builtinModels";
 
 export interface GlbChildNode {
@@ -42,6 +43,11 @@ function resolveUrl(url: string): string {
 }
 
 const SHARED_LOADER = new GLTFLoader();
+// Wire DRACO + Meshopt decoders so this loader can read compressed GLBs
+// just like drei's `useGLTF` over in EntityRenderer. Cast to the
+// three.js (vs three-stdlib) GLTFLoader type since they share the same
+// runtime class but ship subtly different .d.ts files in pnpm.
+extendGltfLoader(SHARED_LOADER as unknown as Parameters<typeof extendGltfLoader>[0]);
 /** In-flight de-duplication: if two callers ask for the same URL while a
  *  load is pending, they share one fetch. The entry is removed once the
  *  promise settles (success or failure) so we don't pin large GLB scenes in

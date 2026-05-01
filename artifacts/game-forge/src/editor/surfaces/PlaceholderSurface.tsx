@@ -6,6 +6,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as THREE from "three";
 import { Bone, Film, Wand2, FileBox } from "lucide-react";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
+import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import type {
   RiggingTabPayload,
   AnimationTabPayload,
@@ -40,7 +41,7 @@ function ModelPreview({ source }: { source: ModelTabPayload }) {
 }
 
 function ModelGltf({ url }: { url: string }) {
-  const gltf = useLoader(GLTFLoader, url);
+  const gltf = useLoader(GLTFLoader, url, extendGltfLoader);
   useEffect(() => {
     gltf.scene.traverse((o) => {
       const m = o as THREE.Mesh;
