@@ -122,6 +122,7 @@ function HierarchyRow({
         onDropRow(entity.id);
       }}
       onClick={onPick}
+      onDoubleClick={onFocus}
       onContextMenu={onPick}
       style={{ paddingLeft: 6 + depth * 14 }}
       className={`group flex items-center gap-1 pr-2 py-1 rounded text-sm cursor-pointer hover-elevate ${
