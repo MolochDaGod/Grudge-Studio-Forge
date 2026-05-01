@@ -1,33 +1,35 @@
 /**
  * Cloudflare R2 (Grudge Studio's bucket) storage adapter.
  *
- * R2 is S3-compatible, so we use `@aws-sdk/client-s3` pointed at the
- * R2 endpoint. This module replaces the Replit GCS sidecar pathway for
- * the things we care about controlling — built-in scene templates
- * ("example maps") — so the user's data lives where they actually own
- * the infrastructure (R2 bucket they pay for) instead of leaking into
- * Replit's managed GCS bucket.
+ * R2 is S3-compatible, so we use `@aws-sdk/client-s3` pointed at R2's
+ * **native** S3 endpoint at
+ *   https://<CF_ACCOUNT_ID>.r2.cloudflarestorage.com
+ *
+ * We deliberately do NOT use `OBJECT_STORAGE_ENDPOINT` —
+ * `objectstore.grudge-studio.com` is a Cloudflare Worker proxy that
+ * speaks its own JSON API rather than the S3 protocol, and the AWS SDK
+ * fails to deserialize its responses. The Worker is fine for app code
+ * that knows its contract, but for S3-style reads/writes from this
+ * service we go to native R2 directly.
+ *
+ * Required env vars (Replit secrets):
+ *   CF_ACCOUNT_ID            Cloudflare account ID (used to build the
+ *                            native R2 S3 endpoint).
+ *   R2_BUCKET_ASSETS         R2 bucket name (e.g. "grudge-assets").
+ *   OBJECT_STORAGE_KEY       R2 S3 API access key ID.
+ *   OBJECT_STORAGE_SECRET    R2 S3 API secret access key.
+ *
+ * Optional:
+ *   OBJECT_STORAGE_PUBLIC_URL    Public read prefix (custom domain,
+ *                                e.g. https://assets.grudge-studio.com).
+ *   OBJECT_STORAGE_PUBLIC_R2_URL Native R2 public URL fallback
+ *                                (https://pub-<id>.r2.dev).
  *
  * What this does NOT replace:
  *   - User-uploaded asset signing (`getObjectEntityUploadURL`,
  *     ACL/permission flows in `objectStorage.ts`). Those are tied to
  *     Replit's auth model and a deeper migration; not in scope for the
  *     "stop putting maps on Replit" complaint.
- *
- * Required env vars (already present as Replit secrets):
- *   OBJECT_STORAGE_ENDPOINT     https://<account-id>.r2.cloudflarestorage.com
- *   OBJECT_STORAGE_BUCKET       bucket name (e.g. "grudge-objectstore")
- *   OBJECT_STORAGE_KEY          R2 access key ID
- *   OBJECT_STORAGE_SECRET       R2 secret access key
- *   OBJECT_STORAGE_REGION       "auto" for R2 (also accepted: us-east-1)
- *
- * Optional:
- *   OBJECT_STORAGE_PUBLIC_URL   public URL prefix (e.g. r2.dev or custom
- *                               domain). Not currently used because the
- *                               templates route streams through the API
- *                               server — but exposed via
- *                               `getPublicUrl()` for future direct-link
- *                               flows that want to bypass the proxy.
  */
 
 import {
@@ -42,35 +44,52 @@ import { createHash } from "crypto";
 
 let _client: S3Client | null = null;
 
+function nativeR2Endpoint(): string {
+  const accountId = process.env.CF_ACCOUNT_ID;
+  if (!accountId) {
+    throw new Error(
+      "R2 not configured: CF_ACCOUNT_ID env var is required to construct " +
+        "the native R2 S3 endpoint (https://<account>.r2.cloudflarestorage.com).",
+    );
+  }
+  return `https://${accountId}.r2.cloudflarestorage.com`;
+}
+
 function client(): S3Client {
   if (_client) return _client;
-  const endpoint = process.env.OBJECT_STORAGE_ENDPOINT;
   const accessKeyId = process.env.OBJECT_STORAGE_KEY;
   const secretAccessKey = process.env.OBJECT_STORAGE_SECRET;
-  if (!endpoint || !accessKeyId || !secretAccessKey) {
+  if (!accessKeyId || !secretAccessKey) {
     throw new Error(
-      "R2 not configured: set OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_KEY, " +
-        "and OBJECT_STORAGE_SECRET (Cloudflare R2 credentials).",
+      "R2 not configured: set OBJECT_STORAGE_KEY and OBJECT_STORAGE_SECRET " +
+        "(Cloudflare R2 S3 API credentials).",
     );
   }
   _client = new S3Client({
-    region: process.env.OBJECT_STORAGE_REGION || "auto",
-    endpoint,
+    // R2's native S3 endpoint requires region "auto" (it ignores the
+    // value but the SDK requires one for SigV4).
+    region: "auto",
+    endpoint: nativeR2Endpoint(),
     credentials: { accessKeyId, secretAccessKey },
-    // R2 supports both virtual-hosted and path-style. Path-style is the
-    // safer default when bucket names include characters that don't
-    // play nicely with DNS subdomains.
+    // Path-style works against the native R2 endpoint and avoids any
+    // DNS-subdomain weirdness with bucket names that have hyphens.
     forcePathStyle: true,
   });
   return _client;
 }
 
+/**
+ * Resolve the R2 bucket name for templates. Prefers the explicit
+ * `R2_BUCKET_ASSETS` (the user's canonical asset bucket); falls back to
+ * the legacy `OBJECT_STORAGE_BUCKET` for compatibility with older
+ * configs.
+ */
 function bucket(): string {
-  const b = process.env.OBJECT_STORAGE_BUCKET;
+  const b = process.env.R2_BUCKET_ASSETS || process.env.OBJECT_STORAGE_BUCKET;
   if (!b) {
     throw new Error(
-      "R2 not configured: OBJECT_STORAGE_BUCKET env var must name the " +
-        "Cloudflare R2 bucket to read/write.",
+      "R2 not configured: set R2_BUCKET_ASSETS (or OBJECT_STORAGE_BUCKET) " +
+        "to the R2 bucket that should hold scene templates.",
     );
   }
   return b;
@@ -132,15 +151,19 @@ export class R2StorageService {
       return { written: false, byteSize: buf.byteLength };
     }
 
+    // NOTE: Do NOT set `ContentMD5` here. The AWS SDK's
+    // flexible-checksums middleware (enabled by default in v3.730+)
+    // automatically attaches a CRC32 checksum, and R2 rejects requests
+    // that carry both an explicit MD5 *and* the SDK's default checksum
+    // with `InvalidRequest: You can only specify one non-default
+    // checksum at a time`. Integrity is still guaranteed end-to-end via
+    // the CRC32 the SDK sends.
     await client().send(
       new PutObjectCommand({
         Bucket: bucket(),
         Key: key,
         Body: buf,
         ContentType: "application/json; charset=utf-8",
-        // ContentMD5 lets R2 verify the upload server-side; same field
-        // S3 uses. Sent as base64 per spec.
-        ContentMD5: createHash("md5").update(buf).digest("base64"),
         CacheControl: `public, max-age=${cacheTtlSec}, immutable`,
       }),
     );
@@ -209,7 +232,12 @@ export class R2StorageService {
    * cache headers + CORS), but exposed for future direct-link flows.
    */
   getPublicUrl(key: string): string | null {
-    const base = process.env.OBJECT_STORAGE_PUBLIC_URL;
+    // Prefer the custom domain (assets.grudge-studio.com) over the
+    // r2.dev public URL — same bucket, but the custom domain is
+    // CDN-fronted with the user's branding.
+    const base =
+      process.env.OBJECT_STORAGE_PUBLIC_URL ||
+      process.env.OBJECT_STORAGE_PUBLIC_R2_URL;
     if (!base) return null;
     return `${base.replace(/\/+$/, "")}/${key.replace(/^\/+/, "")}`;
   }
