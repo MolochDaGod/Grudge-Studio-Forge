@@ -315,6 +315,28 @@ export default defineConfig({
     fs: {
       strict: true,
     },
+    /**
+     * In the Replit workspace preview, the artifact iframe loads this Vite
+     * dev server directly on its own port — not through the shared `:80`
+     * proxy. That means a relative `fetch("/api/templates")` from the
+     * browser ends up at `:24426/api/templates`, where Vite's SPA
+     * fallback returns `index.html` (text/html) instead of the JSON the
+     * api-server would have served on `:80/api/...`. The OpenAPI client
+     * then "successfully" resolves with an HTML string typed as
+     * `TemplateManifestEntry[]`, and template loading silently fails
+     * (toolbar shows "Loading template list…" forever).
+     *
+     * Forward `/api` to the api-server's localPort so dev requests reach
+     * the same Express app that production hits via the shared proxy.
+     * Production builds are served as static files behind the real `:80`
+     * proxy, so this dev-only forwarder has no effect there.
+     */
+    proxy: {
+      "/api": {
+        target: "http://localhost:8080",
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port,
