@@ -2,20 +2,20 @@
  * Built-in scene templates ("example maps") REST endpoints.
  *
  *   GET /api/templates         → manifest (key, label, byteSize, entityCount, …)
- *   GET /api/templates/:key    → streams the SceneData JSON from object storage
+ *   GET /api/templates/:key    → streams the SceneData JSON from Cloudflare R2
  *
- * The download endpoint pipes from the same `ObjectStorageService.downloadObject`
- * helper the public-objects route uses, so it gets the proper
- * `Content-Length` + `Cache-Control` headers automatically — that
- * `Content-Length` is what powers the editor's determinate progress bar.
+ * Storage backend: Grudge Studio's Cloudflare R2 bucket via
+ * {@link R2StorageService}. The download endpoint streams the R2
+ * `GetObject` body straight to the response with a forwarded
+ * `Content-Length` — that header is what powers the editor's
+ * determinate progress bar.
  */
 import { Router, type IRouter, type Request, type Response } from "express";
-import { Readable } from "stream";
 import { getCachedManifest, templatesObjectKey } from "../lib/seedTemplates";
-import { ObjectStorageService } from "../lib/objectStorage";
+import { R2NotFoundError, R2StorageService } from "../lib/r2Storage";
 
 const router: IRouter = Router();
-const storage = new ObjectStorageService();
+const storage = new R2StorageService();
 
 router.get("/templates", (req: Request, res: Response) => {
   // The manifest is dynamic (new templates can be seeded on each boot)
@@ -77,43 +77,49 @@ router.get("/templates/:key", async (req: Request, res: Response) => {
 
   try {
     const objectKey = templatesObjectKey(key);
-    const file = await storage.searchPublicObject(objectKey);
-    if (!file) {
-      // Seeder claimed success but the object isn't there — most likely
-      // a transient storage error during boot. Surface 503 so the
-      // editor can retry instead of caching a 404.
-      req.log.error({ key, objectKey }, "Seeded template missing in object storage");
+    const stream = await storage.getPublicObjectStream(objectKey);
+
+    // Set headers BEFORE piping. The editor uses Content-Length for the
+    // progress bar; without it the dialog would stay indeterminate.
+    res.setHeader("Content-Type", stream.contentType);
+    if (stream.contentLength != null) {
+      res.setHeader("Content-Length", String(stream.contentLength));
+    }
+    // Versioned URLs are immutable by convention. We set the same
+    // Cache-Control on the R2 object during seeding, but R2 doesn't
+    // always return CacheControl on GetObject — pin it here so
+    // browsers + Cloudflare CDN cache aggressively regardless.
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=31536000, immutable",
+    );
+    if (stream.etag) {
+      // Quote per RFC 7232. Lets browsers do conditional requests on
+      // re-visit even though we mark the response immutable (some
+      // clients revalidate anyway).
+      res.setHeader("ETag", `"${stream.etag}"`);
+    }
+
+    stream.body.on("error", (err) => {
+      req.log.error({ err, key }, "R2 stream errored mid-pipe");
+      // Headers already sent; best we can do is close the socket so
+      // the client sees a truncated transfer rather than hanging.
+      res.destroy(err instanceof Error ? err : new Error(String(err)));
+    });
+    stream.body.pipe(res);
+  } catch (err) {
+    if (err instanceof R2NotFoundError) {
+      // Seeder claimed success but the object isn't in R2 — most
+      // likely a transient storage error during boot. Surface 503 so
+      // the editor can retry instead of caching a 404.
+      req.log.error({ key }, "Seeded template missing in R2");
       res
         .status(503)
         .setHeader("Retry-After", "5")
         .json({ error: "Template temporarily unavailable" });
       return;
     }
-
-    const response = await storage.downloadObject(file);
-    res.status(response.status);
-    response.headers.forEach((value, headerKey) => {
-      res.setHeader(headerKey, value);
-    });
-    // `downloadObject` infers Cache-Control from the GCS ACL, which
-    // marks our seeded objects as `private` (we never call
-    // `setObjectAclPolicy` on them). Templates are versioned + immutable
-    // by URL convention, so override here. Browser AND CDN caching
-    // matters: a fresh tab should hit local cache instantly on reload.
-    res.setHeader(
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(
-        response.body as ReadableStream<Uint8Array>,
-      );
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (err) {
-    req.log.error({ err, key }, "Error serving template");
+    req.log.error({ err, key }, "Error serving template from R2");
     res.status(500).json({ error: "Failed to serve template" });
   }
 });

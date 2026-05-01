@@ -2,7 +2,7 @@
  * Built-in scene template seeder.
  *
  * On boot we materialize every entry in {@link SCENE_TEMPLATES} into the
- * public object-storage bucket at
+ * Grudge Studio Cloudflare R2 bucket at
  *   templates/<TEMPLATES_VERSION>/<key>.gfscene.json
  *
  * The path is *versioned* — bumping {@link TEMPLATES_VERSION} in
@@ -13,6 +13,11 @@
  * `/templates` REST routes read from, so requests don't have to re-run
  * the builders on every hit (the builders are pure, but constructing
  * 24-entity scenes adds latency we can avoid).
+ *
+ * Storage backend: Grudge Studio's Cloudflare R2 bucket via
+ * {@link R2StorageService} (S3-compatible). We deliberately do NOT use
+ * Replit's managed object storage for templates — they live where the
+ * user owns the infrastructure.
  */
 import {
   SCENE_TEMPLATES,
@@ -21,7 +26,7 @@ import {
   type TemplateApiManifest,
 } from "@workspace/scene-templates";
 import { logger } from "./logger";
-import { ObjectStorageService } from "./objectStorage";
+import { R2StorageService } from "./r2Storage";
 
 let cachedManifest: TemplateApiManifest[] | null = null;
 
@@ -45,7 +50,7 @@ export function getCachedManifest(): TemplateApiManifest[] | null {
  * cloud-storage call would be much worse for the user.
  */
 export async function seedTemplates(): Promise<TemplateApiManifest[]> {
-  const storage = new ObjectStorageService();
+  const storage = new R2StorageService();
   const manifest: TemplateApiManifest[] = [];
 
   for (const tpl of SCENE_TEMPLATES) {
@@ -78,8 +83,8 @@ export async function seedTemplates(): Promise<TemplateApiManifest[]> {
           ms: Date.now() - start,
         },
         result.written
-          ? "Template uploaded to object storage"
-          : "Template already up-to-date — skipped upload",
+          ? "Template uploaded to Cloudflare R2"
+          : "Template already up-to-date in R2 — skipped upload",
       );
     } catch (err) {
       logger.error(
