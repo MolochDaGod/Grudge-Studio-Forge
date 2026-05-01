@@ -500,7 +500,13 @@ export function characterShowcaseScene(): SceneData {
 //   • 1 GameManager empty with behavior:gamemode-deathmatch
 //   • Lighting tuned per setting (cyberpunk = neon, encampment = warm, desert = harsh sun)
 function buildDeathmatch(opts: {
-  mapKey: "map-cyberpunk" | "map-encampment" | "map-deserttown";
+  mapKey:
+    | "map-cyberpunk"
+    | "map-encampment"
+    | "map-deserttown"
+    | "map-fort-royale"
+    | "map-yard"
+    | "map-winter-base";
   mapScale: number;
   mapRotationY?: number;
   spawnRadius: number;
@@ -686,41 +692,65 @@ export function deserttownDeathmatchScene(): SceneData {
   });
 }
 
-export const SCENE_TEMPLATES: { key: string; label: string; build: () => SceneData; description: string }[] = [
-  {
-    key: "character-showcase",
-    label: "Character + Rifle Showcase",
-    description: "A single rigged character holding the bundled rifle on a lit ground plane — quick asset reference.",
-    build: characterShowcaseScene,
-  },
-  {
-    key: "tps-zombies",
-    label: "TPS — Zombie Graveyard",
-    description: "Third-person sandbox: rigged character player with parented rifle, 6 NPC zombies, crypt walls, brazier light.",
-    build: tpsZombieDemoScene,
-  },
-  {
-    key: "fps-arena",
-    label: "FPS — Turret Arena",
-    description: "First-person arena: cylinder player with parented rifle GLB, 3 turrets, crates, spotlight.",
-    build: fpsArenaScene,
-  },
-  {
-    key: "dm-cyberpunk",
-    label: "Deathmatch — Cyberpunk City",
-    description: "First-to-10 deathmatch on the neon cyberpunk map. 6 Yuka-driven AI enemies, multi-spawn respawn, full HUD.",
-    build: cyberpunkDeathmatchScene,
-  },
-  {
-    key: "dm-encampment",
-    label: "Deathmatch — Forest Encampment",
-    description: "First-to-10 deathmatch in the wooded encampment. 7 AI enemies, warm firelight, full HUD.",
-    build: encampmentDeathmatchScene,
-  },
-  {
-    key: "dm-deserttown",
-    label: "Deathmatch — Desert Town",
-    description: "First-to-10 deathmatch in the sun-baked desert town. 6 AI enemies, harsh midday sun, full HUD.",
-    build: deserttownDeathmatchScene,
-  },
-];
+// Fort Royale — small medieval-style castle map (9.7 MB GLB, fastest of the
+// shooter maps to load). Warm torchlight + dim ambient so the stone walls
+// and braziers read clearly.
+export function fortRoyaleDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-fort-royale",
+    mapScale: 0.6,
+    spawnRadius: 12,
+    enemyCount: 6,
+    env: {
+      skyColor: "#1a1410",
+      groundColor: "#2a1f14",
+      ambientIntensity: 0.35,
+      sunIntensity: 0.45,
+    },
+    brazierLights: [
+      { pos: [6, 4, 6], color: "#ff8a3d", intensity: 18, distance: 22 },
+      { pos: [-6, 4, 6], color: "#ff8a3d", intensity: 18, distance: 22 },
+      { pos: [6, 4, -6], color: "#ff8a3d", intensity: 18, distance: 22 },
+      { pos: [-6, 4, -6], color: "#ff8a3d", intensity: 18, distance: 22 },
+    ],
+  });
+}
+
+// Yard — open-air industrial yard. Daylight, neutral ambient, no mood lights
+// (the sun handles it).
+export function yardDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-yard",
+    mapScale: 0.6,
+    spawnRadius: 14,
+    enemyCount: 6,
+    env: {
+      skyColor: "#9bb6c8",
+      groundColor: "#5e6168",
+      ambientIntensity: 0.7,
+      sunIntensity: 1.4,
+    },
+    brazierLights: [],
+  });
+}
+
+// Winter Base — snow-covered fortified base. Cool blue ambient + a low
+// silver sun to mimic overcast winter light.
+export function winterBaseDeathmatchScene(): SceneData {
+  return buildDeathmatch({
+    mapKey: "map-winter-base",
+    mapScale: 0.6,
+    spawnRadius: 14,
+    enemyCount: 6,
+    env: {
+      skyColor: "#cdd9e6",
+      groundColor: "#8a99ad",
+      ambientIntensity: 0.75,
+      sunIntensity: 1.0,
+    },
+    brazierLights: [
+      { pos: [0, 6, 8], color: "#cfe6ff", intensity: 10, distance: 26 },
+      { pos: [0, 6, -8], color: "#cfe6ff", intensity: 10, distance: 26 },
+    ],
+  });
+}

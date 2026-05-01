@@ -36,6 +36,9 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-cyberpunk": ensureBaseUrl("builtin/map-cyberpunk.glb"),
   "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
   "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
+  "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
+  "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
+  "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
 };
 
 export const BUILTIN_MODEL_KEY = (key: keyof typeof BUILTIN_MODELS | string) =>

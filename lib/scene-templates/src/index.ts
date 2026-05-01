@@ -22,15 +22,18 @@ import {
   cyberpunkDeathmatchScene,
   deserttownDeathmatchScene,
   encampmentDeathmatchScene,
+  fortRoyaleDeathmatchScene,
   fpsArenaScene,
   tpsZombieDemoScene,
+  winterBaseDeathmatchScene,
+  yardDeathmatchScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260430.1";
+export const TEMPLATES_VERSION = "20260501.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -87,6 +90,27 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "First-to-10 deathmatch in the sun-baked desert town. 6 AI enemies, harsh midday sun, full HUD.",
     build: deserttownDeathmatchScene,
   },
+  {
+    key: "dm-fort-royale",
+    label: "Deathmatch — Fort Royale",
+    description:
+      "First-to-10 deathmatch inside a small medieval fort. 6 AI enemies, four corner braziers, fastest-loading map.",
+    build: fortRoyaleDeathmatchScene,
+  },
+  {
+    key: "dm-yard",
+    label: "Deathmatch — Yard",
+    description:
+      "First-to-10 deathmatch in an open industrial yard. 6 AI enemies, broad daylight, full HUD.",
+    build: yardDeathmatchScene,
+  },
+  {
+    key: "dm-winter-base",
+    label: "Deathmatch — Winter Base",
+    description:
+      "First-to-10 deathmatch in a snowy fortified base. 6 AI enemies, cool overcast lighting, full HUD.",
+    build: winterBaseDeathmatchScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -112,7 +136,10 @@ export {
   cyberpunkDeathmatchScene,
   deserttownDeathmatchScene,
   encampmentDeathmatchScene,
+  fortRoyaleDeathmatchScene,
   fpsArenaScene,
   tpsZombieDemoScene,
+  winterBaseDeathmatchScene,
+  yardDeathmatchScene,
   withIdScope,
 } from "./builders.js";
