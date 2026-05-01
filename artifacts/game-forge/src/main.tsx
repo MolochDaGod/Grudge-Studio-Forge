@@ -14,6 +14,34 @@ import { registerPwa } from "@/lib/pwa";
 import "./index.css";
 
 registerPwa();
+
+// TEMP DEBUG: Replit's runtime-error-modal plugin filters stack frames whose
+// URLs aren't in the Vite moduleGraph, which leaves us with a useless empty
+// stack in the workflow log. Mirror every uncaught error / rejection to the
+// console with the RAW stack so the workflow log captures something we can
+// actually grep. This runs alongside (not instead of) the modal.
+if (import.meta.env.DEV) {
+  window.addEventListener("error", (evt) => {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[forge-debug] window error:",
+      evt.error?.message ?? evt.message,
+      "\nRAW STACK:\n",
+      evt.error?.stack ?? "(no stack)",
+    );
+  });
+  window.addEventListener("unhandledrejection", (evt) => {
+    const reason = evt.reason as { message?: string; stack?: string } | null;
+    // eslint-disable-next-line no-console
+    console.error(
+      "[forge-debug] unhandled rejection:",
+      reason?.message ?? String(reason),
+      "\nRAW STACK:\n",
+      reason?.stack ?? "(no stack)",
+    );
+  });
+}
+
 createRoot(document.getElementById("root")!).render(<App />);
 
 // Warm the heavy 3D viewport chunk in the background once the editor
