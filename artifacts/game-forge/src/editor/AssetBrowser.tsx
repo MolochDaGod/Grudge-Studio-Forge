@@ -17,7 +17,8 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users } from "lucide-react";
+import { RACES, type Race } from "@/lib/races";
 import { useViewportTabs } from "@/store/viewportTabs";
 import { openModelTabFromAsset } from "@/lib/openModelTab";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
@@ -1201,6 +1202,200 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
   );
 }
 
+/** Browser tab for the 6 built-in races. Pure-static (no fetch) — the
+ *  catalog and portraits live in `@/lib/races` and are bundled by Vite
+ *  via the `@assets` alias. Spawning a race drops a labelled, role-tinted
+ *  placeholder cube into the scene at (0, 1, 0); designers can later
+ *  swap the model from the inspector or attach a script that reads the
+ *  race name. Importing copies the portrait into the project's asset
+ *  list so it can be referenced from UI / scripts.  */
+function RacesGrid() {
+  const projectId = useEditor((s) => s.projectId);
+  const pushLog = useEditor((s) => s.pushLog);
+  const addEntity = useEditor((s) => s.addEntity);
+  const updateEntity = useEditor((s) => s.updateEntity);
+  const qc = useQueryClient();
+  const createAsset = useCreateAsset();
+  const [query, setQuery] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+
+  const filtered = RACES.filter((r) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return (
+      r.name.toLowerCase().includes(q) ||
+      r.id.toLowerCase().includes(q) ||
+      r.role.toLowerCase().includes(q) ||
+      r.description.toLowerCase().includes(q)
+    );
+  });
+
+  const spawn = (r: Race) => {
+    if (!projectId) {
+      pushLog("warn", "Open a project first to spawn races into a scene.");
+      window.alert("Open or create a project first — races can only be spawned into a project's scene.");
+      return;
+    }
+    const e = addEntity("box", r.name);
+    const tint = r.role === "enemy" ? "#a13a3a" : "#3a7aa1";
+    updateEntity(e.id, (d) => {
+      if (!d.material) d.material = {};
+      d.material.color = tint;
+      d.material.emissive = tint;
+      d.transform = {
+        ...d.transform,
+        position: [0, 1, 0],
+        scale: [0.7, 1.6, 0.7],
+      };
+    });
+    pushLog(
+      "info",
+      `Spawned ${r.role} race "${r.name}" (HP ${r.baseStats.health}, SPD ${r.baseStats.speed}, DMG ${r.baseStats.damage}) at (0, 1, 0).`,
+    );
+  };
+
+  const importIcon = async (r: Race) => {
+    if (!projectId) {
+      pushLog("warn", "Open a project first");
+      return;
+    }
+    await createAsset.mutateAsync({
+      data: {
+        projectId,
+        name: `${r.name} portrait`,
+        url: r.icon,
+        type: "image",
+        source: "grudge",
+      },
+    });
+    qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
+    qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+    pushLog("info", `Imported "${r.name}" portrait into project assets.`);
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-2 py-2 border-b border-border flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search races…"
+            className="h-7 pl-7 text-xs"
+          />
+        </div>
+        <span className="text-[10px] text-muted-foreground font-mono">
+          {filtered.length}/{RACES.length}
+        </span>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+      </div>
+      <ScrollArea className="flex-1">
+        {viewMode === "grid" ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-1.5 p-1.5">
+            {filtered.map((r) => (
+              <ContextMenu key={r.id}>
+                <ContextMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onDoubleClick={() => spawn(r)}
+                    title={`${r.name} — ${r.description}\nDouble-click to spawn`}
+                    data-testid={`race-card-${r.id}`}
+                    className="group flex flex-col items-stretch gap-1 rounded-md border border-border bg-muted/40 hover-elevate focus:outline-none focus:ring-1 focus:ring-accent overflow-hidden text-left cursor-pointer"
+                  >
+                    <div className="aspect-square relative bg-background overflow-hidden">
+                      <img
+                        src={r.icon}
+                        alt={r.name}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        draggable={false}
+                      />
+                      <span
+                        className={`absolute top-1 right-1 px-1 py-0.5 rounded text-[9px] font-mono uppercase tracking-wide ${
+                          r.role === "enemy"
+                            ? "bg-red-500/80 text-white"
+                            : "bg-blue-500/80 text-white"
+                        }`}
+                      >
+                        {r.role}
+                      </span>
+                    </div>
+                    <div className="px-1.5 pb-1 text-[11px] leading-tight truncate">{r.name}</div>
+                  </button>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuLabel className="flex flex-col items-start gap-0.5">
+                    <span className="font-medium">{r.name}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      HP {r.baseStats.health} · SPD {r.baseStats.speed} · DMG {r.baseStats.damage}
+                    </span>
+                  </ContextMenuLabel>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onSelect={() => spawn(r)}>
+                    <Plus className="size-3.5 mr-2" /> Spawn into scene
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => void importIcon(r)}>
+                    <ImageIcon className="size-3.5 mr-2" /> Import portrait as asset
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            ))}
+            {filtered.length === 0 && (
+              <p className="col-span-full text-xs text-muted-foreground text-center py-8">No matches.</p>
+            )}
+          </div>
+        ) : (
+          <div className="p-1.5">
+            {filtered.map((r) => (
+              <div
+                key={r.id}
+                className="group flex items-center gap-2 h-9 px-2 rounded-sm hover-elevate text-xs"
+                data-testid={`race-row-${r.id}`}
+              >
+                <img
+                  src={r.icon}
+                  alt={r.name}
+                  className="size-7 rounded-sm object-cover shrink-0"
+                  draggable={false}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-medium">{r.name}</div>
+                  <div className="truncate text-[10px] text-muted-foreground font-mono">
+                    {r.role} · HP {r.baseStats.health} · SPD {r.baseStats.speed} · DMG {r.baseStats.damage}
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6 shrink-0"
+                  title="Spawn into scene"
+                  onClick={() => spawn(r)}
+                  data-testid={`race-spawn-${r.id}`}
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-6 shrink-0"
+                  title="Import portrait as project asset"
+                  onClick={() => void importIcon(r)}
+                  data-testid={`race-import-${r.id}`}
+                >
+                  <ImageIcon className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-8">No matches.</p>
+            )}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
 /** Tab identifiers accepted by the `gameforge:focusAssetTab` event so the
  *  top menu (Assets → …) can deep-link straight to a provider. Kept in
  *  one place so the menu and this component cannot drift apart. */
@@ -1209,6 +1404,7 @@ export type AssetBrowserTab =
   | "items"
   | "enemies"
   | "quests"
+  | "races"
   | "ph-models"
   | "ph-textures"
   | "ph-hdris"
@@ -1229,7 +1425,7 @@ export function AssetBrowser() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail;
       const valid: readonly AssetBrowserTab[] = [
-        "weapons", "items", "enemies", "quests",
+        "weapons", "items", "enemies", "quests", "races",
         "ph-models", "ph-textures", "ph-hdris", "project",
       ];
       if (valid.includes(detail as AssetBrowserTab)) {
@@ -1254,6 +1450,9 @@ export function AssetBrowser() {
         </TabsTrigger>
         <TabsTrigger value="quests" className="text-xs gap-1.5">
           <Scroll className="size-3" /> Quests
+        </TabsTrigger>
+        <TabsTrigger value="races" className="text-xs gap-1.5" data-testid="tab-races">
+          <Users className="size-3" /> Races
         </TabsTrigger>
         <TabsTrigger value="ph-models" className="text-xs gap-1.5" data-testid="tab-polyhaven-models">
           <Box className="size-3" /> Models
@@ -1280,6 +1479,9 @@ export function AssetBrowser() {
         </TabsContent>
         <TabsContent value="quests" className="m-0 h-full">
           <GrudgeGrid loading={quests.isLoading} items={quests.data?.items ?? []} type="quest" EmptyIcon={Scroll} />
+        </TabsContent>
+        <TabsContent value="races" className="m-0 h-full">
+          <RacesGrid />
         </TabsContent>
         <TabsContent value="ph-models" className="m-0 h-full">
           <PolyHavenGrid kind="models" />

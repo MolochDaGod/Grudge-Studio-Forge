@@ -39,7 +39,7 @@ function fire<T = unknown>(name: string, detail?: T) {
  *  isn't mounted until the bottom Tabs surface its `assets` panel, so we
  *  fire focusAssetTab on the next microtask to give it time to mount. */
 function openAssets(tab:
-  | "weapons" | "items" | "enemies" | "quests"
+  | "weapons" | "items" | "enemies" | "quests" | "races"
   | "ph-models" | "ph-textures" | "ph-hdris" | "project",
 ) {
   useEditor.getState().setBottomTab("assets");
@@ -356,6 +356,7 @@ export function MenuBar({
                 <MenubarItem onSelect={() => openAssets("items")} data-testid="menu-assets-grudge-items">Items / Equipment</MenubarItem>
                 <MenubarItem onSelect={() => openAssets("enemies")} data-testid="menu-assets-grudge-enemies">Enemy Templates</MenubarItem>
                 <MenubarItem onSelect={() => openAssets("quests")} data-testid="menu-assets-grudge-quests">Quests</MenubarItem>
+                <MenubarItem onSelect={() => openAssets("races")} data-testid="menu-assets-races">Races</MenubarItem>
               </MenubarSubContent>
             </MenubarSub>
             <MenubarSeparator />
