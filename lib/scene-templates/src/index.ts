@@ -14,26 +14,27 @@
  * Bumping {@link TEMPLATES_VERSION} triggers the seeder to upload a fresh
  * versioned copy on next boot — old versions stay in object storage for
  * already-published scenes that may have linked the older URL.
+ *
+ * The shipped set is intentionally curated to THREE deathmatch maps —
+ * one per visual biome (neon city / medieval fort / wooded forest) —
+ * each modeled after the Mugen87/dive sample game: full parent/child
+ * hierarchy, Yuka-driven AI prefabs, player + enemy behavior scripts,
+ * and a hidden GameManager entity running the gamemode-deathmatch
+ * script (score tracking + win/lose).
  */
 import type { SceneData } from "@workspace/scene-schema";
 
 import {
-  characterShowcaseScene,
   cyberpunkDeathmatchScene,
-  deserttownDeathmatchScene,
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
-  fpsArenaScene,
-  tpsZombieDemoScene,
-  winterBaseDeathmatchScene,
-  yardDeathmatchScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260501.4";
+export const TEMPLATES_VERSION = "20260503.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -49,46 +50,11 @@ export interface TemplateManifestEntry {
 
 export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
   {
-    key: "character-showcase",
-    label: "Character + Rifle Showcase",
-    description:
-      "A single rigged character holding the bundled rifle on a lit ground plane — quick asset reference.",
-    build: characterShowcaseScene,
-  },
-  {
-    key: "tps-zombies",
-    label: "TPS — Zombie Graveyard",
-    description:
-      "Third-person deathmatch: rigged player + rifle vs 6 Yuka-driven zombies in a crypt. Spawn points, HUD, scoring wired in.",
-    build: tpsZombieDemoScene,
-  },
-  {
-    key: "fps-arena",
-    label: "FPS — Combat Arena",
-    description:
-      "First-person deathmatch: cylinder player + rifle GLB vs 3 roving AI enemies. Crates for cover, spawn points, HUD, scoring wired in.",
-    build: fpsArenaScene,
-  },
-  {
     key: "dm-cyberpunk",
     label: "Deathmatch — Cyberpunk City",
     description:
       "First-to-10 deathmatch on the neon cyberpunk map. 6 Yuka-driven AI enemies, multi-spawn respawn, full HUD.",
     build: cyberpunkDeathmatchScene,
-  },
-  {
-    key: "dm-encampment",
-    label: "Deathmatch — Forest Encampment",
-    description:
-      "First-to-10 deathmatch in the wooded encampment. 7 AI enemies, warm firelight, full HUD.",
-    build: encampmentDeathmatchScene,
-  },
-  {
-    key: "dm-deserttown",
-    label: "Deathmatch — Desert Town",
-    description:
-      "First-to-10 deathmatch in the sun-baked desert town. 6 AI enemies, harsh midday sun, full HUD.",
-    build: deserttownDeathmatchScene,
   },
   {
     key: "dm-fort-royale",
@@ -98,18 +64,11 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
     build: fortRoyaleDeathmatchScene,
   },
   {
-    key: "dm-yard",
-    label: "Deathmatch — Yard",
+    key: "dm-encampment",
+    label: "Deathmatch — Forest Encampment",
     description:
-      "First-to-10 deathmatch in an open industrial yard. 6 AI enemies, broad daylight, full HUD.",
-    build: yardDeathmatchScene,
-  },
-  {
-    key: "dm-winter-base",
-    label: "Deathmatch — Winter Base",
-    description:
-      "First-to-10 deathmatch in a snowy fortified base. 6 AI enemies, cool overcast lighting, full HUD.",
-    build: winterBaseDeathmatchScene,
+      "First-to-10 deathmatch in the wooded encampment. 7 AI enemies, warm firelight, full HUD.",
+    build: encampmentDeathmatchScene,
   },
 ];
 
@@ -132,14 +91,8 @@ export interface TemplateApiManifest {
 }
 
 export {
-  characterShowcaseScene,
   cyberpunkDeathmatchScene,
-  deserttownDeathmatchScene,
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
-  fpsArenaScene,
-  tpsZombieDemoScene,
-  winterBaseDeathmatchScene,
-  yardDeathmatchScene,
   withIdScope,
 } from "./builders.js";
