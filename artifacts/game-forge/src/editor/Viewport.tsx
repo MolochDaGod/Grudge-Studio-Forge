@@ -1104,7 +1104,14 @@ export function Viewport() {
               {isPlaying && <PointerLockBridge onChange={setIsPointerLocked} />}
               <DevtoolsBridge label="Forge · Scene" />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
-              <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
+              {/*
+                Fog far plane was 80 units — at the new 2.5–3× map
+                scale (arenas span ~120 units) that wall of fog
+                started right behind the player and hid the entire
+                map. Pushed near→far to 80→320 so fog only kisses the
+                horizon instead of swallowing the playable area.
+              */}
+              <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 80, 320]} />
               <Lights />
               <Suspense fallback={null}>
                 {isPlaying ? (

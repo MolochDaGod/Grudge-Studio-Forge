@@ -708,9 +708,16 @@ function buildDeathmatch(opts: {
 
 export function cyberpunkDeathmatchScene(): SceneData {
   return buildDeathmatch({
+    // Chicken_gun source maps are authored for ~1 m mobile-game characters
+    // (literal chickens), so the previous 0.5–0.6× scaling left a 1.7 m
+    // player towering over a ~30-unit arena — closer to a small bedroom
+    // than an FPS map. Scaling UP to 2.5× gives an arena ~120 units
+    // across, which feels right for a deathmatch with run/cover/sightlines.
+    // Spawn radius scales with it so spawns spread across the new size
+    // instead of clustering at the (now relative) center.
     mapKey: "map-cyberpunk",
-    mapScale: 0.6,
-    spawnRadius: 14,
+    mapScale: 2.5,
+    spawnRadius: 36,
     enemyCount: 6,
     env: {
       skyColor: "#06061a",
@@ -718,20 +725,25 @@ export function cyberpunkDeathmatchScene(): SceneData {
       ambientIntensity: 0.32,
       sunIntensity: 0.28,
     },
+    // Brazier positions + ranges scaled with the map (5× the previous
+    // numbers) so the neon pools fall ON the new arena's landmarks
+    // instead of all clustering inside ~10 units of origin.
     brazierLights: [
-      { pos: [10, 5, 0], color: "#ff2d8a", intensity: 22, distance: 28 },
-      { pos: [-10, 5, 0], color: "#21d4ff", intensity: 22, distance: 28 },
-      { pos: [0, 6, 12], color: "#a020f0", intensity: 18, distance: 26 },
-      { pos: [0, 6, -12], color: "#39ff14", intensity: 18, distance: 26 },
+      { pos: [25, 12, 0], color: "#ff2d8a", intensity: 60, distance: 70 },
+      { pos: [-25, 12, 0], color: "#21d4ff", intensity: 60, distance: 70 },
+      { pos: [0, 14, 30], color: "#a020f0", intensity: 50, distance: 65 },
+      { pos: [0, 14, -30], color: "#39ff14", intensity: 50, distance: 65 },
     ],
   });
 }
 
 export function encampmentDeathmatchScene(): SceneData {
   return buildDeathmatch({
+    // Same scale-up rationale as cyberpunk above — chicken_gun source
+    // GLB authored for ~1 m characters; 2.5× makes it human-FPS sized.
     mapKey: "map-encampment",
-    mapScale: 0.5,
-    spawnRadius: 16,
+    mapScale: 2.5,
+    spawnRadius: 38,
     enemyCount: 7,
     env: {
       skyColor: "#0c1018",
@@ -740,9 +752,9 @@ export function encampmentDeathmatchScene(): SceneData {
       sunIntensity: 0.5,
     },
     brazierLights: [
-      { pos: [8, 4, 6], color: "#ff8a3d", intensity: 16, distance: 24 },
-      { pos: [-8, 4, -6], color: "#ff8a3d", intensity: 16, distance: 24 },
-      { pos: [0, 6, 0], color: "#ffe6a8", intensity: 12, distance: 32 },
+      { pos: [20, 9, 15], color: "#ff8a3d", intensity: 50, distance: 60 },
+      { pos: [-20, 9, -15], color: "#ff8a3d", intensity: 50, distance: 60 },
+      { pos: [0, 14, 0], color: "#ffe6a8", intensity: 35, distance: 80 },
     ],
   });
 }
@@ -770,9 +782,12 @@ export function deserttownDeathmatchScene(): SceneData {
 // and braziers read clearly.
 export function fortRoyaleDeathmatchScene(): SceneData {
   return buildDeathmatch({
+    // Same scale-up rationale as cyberpunk above — the fort GLB is the
+    // smallest of the chicken_gun maps, so we go a touch larger (3×) to
+    // give a comparable arena footprint to the other two templates.
     mapKey: "map-fort-royale",
-    mapScale: 0.6,
-    spawnRadius: 12,
+    mapScale: 3.0,
+    spawnRadius: 30,
     enemyCount: 6,
     env: {
       skyColor: "#1a1410",
@@ -781,10 +796,10 @@ export function fortRoyaleDeathmatchScene(): SceneData {
       sunIntensity: 0.45,
     },
     brazierLights: [
-      { pos: [6, 4, 6], color: "#ff8a3d", intensity: 18, distance: 22 },
-      { pos: [-6, 4, 6], color: "#ff8a3d", intensity: 18, distance: 22 },
-      { pos: [6, 4, -6], color: "#ff8a3d", intensity: 18, distance: 22 },
-      { pos: [-6, 4, -6], color: "#ff8a3d", intensity: 18, distance: 22 },
+      { pos: [16, 9, 16], color: "#ff8a3d", intensity: 55, distance: 55 },
+      { pos: [-16, 9, 16], color: "#ff8a3d", intensity: 55, distance: 55 },
+      { pos: [16, 9, -16], color: "#ff8a3d", intensity: 55, distance: 55 },
+      { pos: [-16, 9, -16], color: "#ff8a3d", intensity: 55, distance: 55 },
     ],
   });
 }
