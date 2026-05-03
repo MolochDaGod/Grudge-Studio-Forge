@@ -101,7 +101,11 @@ async function buildAll() {
       "puppeteer-core",
       "electron",
     ],
-    sourcemap: "linked",
+    // Source maps balloon the deployed image (~5 MB for the main bundle alone)
+    // and are not consumed in production — `--enable-source-maps` is set on the
+    // node CLI but we deliberately don't ship the .map files. Keep them in dev
+    // so local stack traces still resolve.
+    sourcemap: process.env.NODE_ENV === "production" ? false : "linked",
     plugins: [
       // pino relies on workers to handle logging, instead of externalizing it we use a plugin to handle it
       esbuildPluginPino({ transports: ["pino-pretty"] })

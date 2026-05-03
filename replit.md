@@ -54,6 +54,18 @@ The editor features a dark theme with a "Warlord Crafting Suite" brand identity.
 *   **Module Structure:** Frontend is a Vite + React application; backend is an Express server. Shared libraries include API specs, React Query clients, Zod validators, and Drizzle schemas.
 *   **Performance:** In-memory caches are used for external data proxies.
 
+## Deployment
+
+Production runs on Replit autoscale with the application router proxying
+`/api/*` to the api-server and `/*` to the static game-forge SPA. The
+mockup-sandbox is intentionally dev-only. Full pipeline notes — per-artifact
+build/run, the boot-time idempotent `runMigrations()` against the shared
+Grudge Postgres, the `/api/healthz` startup probe, required env vars, and how
+the post-merge hook differs from the deploy boot — live in
+[`DEPLOYMENT.md`](./DEPLOYMENT.md). Read that before changing `.replit`,
+any `artifact.toml`, `artifacts/api-server/build.mjs`, or
+`scripts/post-merge.sh`.
+
 ## External Dependencies
 
 *   **Backend Framework:** Express.js
