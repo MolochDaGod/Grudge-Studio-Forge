@@ -111,6 +111,28 @@ function RenderNode({
   );
 }
 
+/** Module-scope flag set while a gizmo (TransformControls) drag is in
+ *  progress, plus a short trailing-edge window AFTER the drag ends.
+ *
+ *  Why: when the user releases the mouse over the gizmo, three.js still
+ *  fires a synthetic `click` against whatever mesh is under the cursor —
+ *  almost always the ground. That used to trigger `selectEntity(ground)`
+ *  immediately after every gizmo move/rotate/scale, kicking the user
+ *  out of their selection. We gate both the per-mesh `onPick` and the
+ *  Canvas-wide `onPointerMissed` against this flag and ignore the
+ *  trailing click.
+ *
+ *  150 ms is empirically enough to swallow the trailing event without
+ *  noticeably delaying a real follow-up click on a different entity.  */
+const gizmoDragGate = {
+  active: false,
+  releasedAt: 0,
+};
+export function isGizmoSwallowingClick(): boolean {
+  if (gizmoDragGate.active) return true;
+  return performance.now() - gizmoDragGate.releasedAt < 150;
+}
+
 function SceneEditMode({
   data,
   onContextEntity,
@@ -131,6 +153,29 @@ function SceneEditMode({
 
   const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
   const selectedRef = selectedId ? groupRefs.current.get(selectedId) : undefined;
+  const transformControlsRef = useRef<THREE.Object3D & {
+    addEventListener: (type: string, fn: (e: { value: boolean }) => void) => void;
+    removeEventListener: (type: string, fn: (e: { value: boolean }) => void) => void;
+  } | null>(null);
+
+  // Listen for TransformControls' `dragging-changed` event so we know
+  // exactly when a gizmo drag begins and ends. The drei wrapper forwards
+  // the underlying three.js event verbatim — `e.value` is the new
+  // dragging boolean.
+  useEffect(() => {
+    const ctl = transformControlsRef.current;
+    if (!ctl) return;
+    const handler = (e: { value: boolean }) => {
+      if (e.value) {
+        gizmoDragGate.active = true;
+      } else {
+        gizmoDragGate.active = false;
+        gizmoDragGate.releasedAt = performance.now();
+      }
+    };
+    ctl.addEventListener("dragging-changed", handler);
+    return () => ctl.removeEventListener("dragging-changed", handler);
+  }, [selectedRef]);
 
   const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
   const roots = childrenByParent.get(null) ?? [];
@@ -143,7 +188,12 @@ function SceneEditMode({
           entity={entity}
           childrenByParent={childrenByParent}
           selectedId={selectedId}
-          onPick={selectEntity}
+          onPick={(id: string) => {
+            // Trailing click after a gizmo drag — ignore so we don't
+            // bounce the selection onto the ground/wall under the cursor.
+            if (isGizmoSwallowingClick()) return;
+            selectEntity(id);
+          }}
           onContext={onContextEntity}
           groupRefs={groupRefs}
           playMode={false}
@@ -151,6 +201,7 @@ function SceneEditMode({
       ))}
       {selectedRef && (
         <TransformControls
+          ref={transformControlsRef as never}
           object={selectedRef}
           mode={transformMode}
           onObjectChange={() => {
@@ -1092,7 +1143,14 @@ export function Viewport() {
             <Canvas
               shadows
               camera={{ position: [8, 8, 12], fov: 45 }}
-              onPointerMissed={isPlaying ? undefined : () => selectEntity(null)}
+              onPointerMissed={
+                isPlaying
+                  ? undefined
+                  : () => {
+                      if (isGizmoSwallowingClick()) return;
+                      selectEntity(null);
+                    }
+              }
               gl={{
                 antialias: false,
                 powerPreference: "high-performance",
