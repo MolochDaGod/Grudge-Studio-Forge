@@ -1,14 +1,7 @@
 import { useState } from "react";
-import {
-  CloudCog,
-  ExternalLink,
-  Loader2,
-  LogIn,
-  LogOut,
-  Sparkles,
-  User as UserIcon,
-} from "lucide-react";
+import { LogIn, LogOut, User as UserIcon, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,106 +10,127 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/store/auth";
-import { signInWithPuter, signOut } from "@/lib/authBootstrap";
+import { signIn, signOut, renameUser } from "@/lib/authBootstrap";
 
 /**
- * Toolbar entry point for Grudge Studio Puter Auth.
+ * Toolbar entry point for local sign-in.
  *
- * Anonymous → renders a "Sign in with Grudge Studio" button that
- *             triggers the Puter sign-in popup and a one-shot server
- *             sync to mirror the user into the shared `users` table.
- *             The editor stays in place; the user just gets a richer
- *             identity surface (Grudge ID, avatar, upstream link).
+ * Anonymous → "Sign in" button opens a tiny name dialog. Submitting
+ *             persists the user to localStorage and closes the dialog.
+ *             Empty submit auto-generates a "Player-XXXX" guest name.
  *
- * Signed-in → renders an avatar + dropdown showing the user's display
- *             name, Grudge ID, and an upstream-account indicator (so
- *             the user knows whether their identity is mirrored in the
- *             wider Grudge ecosystem yet).
+ * Signed-in → avatar + dropdown with display name, an inline rename
+ *             field, and sign-out.
+ *
+ * No popups, no SDK, no server round-trips — this whole module is
+ * synchronous and works inside the Replit canvas iframe sandbox.
  */
 export function UserMenu() {
-  const { status, user, error, config } = useAuth();
-  const { toast } = useToast();
-  const [busy, setBusy] = useState(false);
+  const { status, user } = useAuth();
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [renameInput, setRenameInput] = useState("");
 
-  const inFlight = busy || status === "loading";
-
-  const handleSignIn = async () => {
-    if (inFlight) return;
-    setBusy(true);
-    try {
-      await signInWithPuter();
-      toast({
-        title: "Signed in to Grudge Studio",
-        description: "Your Puter cloud storage is now connected.",
-      });
-    } catch (err) {
-      toast({
-        title: "Sign-in failed",
-        description: (err as Error).message ?? "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    if (inFlight) return;
-    setBusy(true);
-    try {
-      await signOut();
-      toast({ title: "Signed out", description: "See you soon!" });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // ---- Anonymous / loading ----------------------------------------------
+  // ---- Anonymous --------------------------------------------------------
   if (status !== "signedIn" || !user) {
     return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span>
+      <>
+        <Tooltip>
+          <TooltipTrigger asChild>
             <Button
               size="sm"
               variant="outline"
-              onClick={handleSignIn}
-              disabled={inFlight}
+              onClick={() => {
+                setNameInput("");
+                setSignInOpen(true);
+              }}
               data-testid="button-sign-in"
               className="gap-1.5"
             >
-              {inFlight ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <LogIn className="size-4" />
-              )}
+              <LogIn className="size-4" />
               <span className="hidden sm:inline">Sign in</span>
             </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="max-w-[220px]">
-          {status === "error" && error
-            ? error
-            : "Sign in with Grudge Studio (Puter) to enable cloud save and sync."}
-        </TooltipContent>
-      </Tooltip>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Pick a display name for your saved projects.
+          </TooltipContent>
+        </Tooltip>
+
+        <Dialog open={signInOpen} onOpenChange={setSignInOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Sign in</DialogTitle>
+              <DialogDescription>
+                Pick a display name. Stored locally — leave blank for a
+                guest name.
+              </DialogDescription>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                signIn(nameInput);
+                setSignInOpen(false);
+              }}
+              className="space-y-3 py-1"
+            >
+              <Input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Your name"
+                maxLength={32}
+                data-testid="input-sign-in-name"
+              />
+              <DialogFooter className="gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setSignInOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" data-testid="button-sign-in-submit">
+                  Sign in
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   }
 
   // ---- Signed in --------------------------------------------------------
-  const initials = (user.displayName ?? user.username)
+  const initials = user.name
     .split(/[\s._-]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase())
     .join("");
 
+  const commitRename = () => {
+    renameUser(renameInput);
+    setEditingName(false);
+  };
+
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) setEditingName(false);
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
@@ -125,113 +139,83 @@ export function UserMenu() {
           data-testid="button-user-menu"
         >
           <Avatar className="size-6">
-            {user.avatarUrl ? (
-              <AvatarImage src={user.avatarUrl} alt={user.username} />
-            ) : null}
             <AvatarFallback className="text-[10px] font-mono">
               {initials || <UserIcon className="size-3" />}
             </AvatarFallback>
           </Avatar>
           <span className="hidden md:inline text-xs max-w-[120px] truncate">
-            {user.displayName ?? user.username}
+            {user.name}
           </span>
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72">
-        <DropdownMenuLabel className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium truncate">
-            {user.displayName ?? user.username}
-          </span>
-          {user.email ? (
-            <span className="text-[11px] text-muted-foreground truncate">
-              {user.email}
-            </span>
-          ) : null}
-        </DropdownMenuLabel>
-
-        <DropdownMenuSeparator />
-
-        <div className="px-2 py-1.5 text-[11px] font-mono text-muted-foreground space-y-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="opacity-60">Grudge ID</span>
-            <span className="truncate" title={user.grudgeId}>
-              {user.grudgeId}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="opacity-60">Puter UUID</span>
-            <span className="truncate" title={user.puterUuid}>
-              {user.puterUuid.slice(0, 8)}…
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <span className="opacity-60">Upstream account</span>
-            {user.hasGrudgeAccount ? (
-              <span className="inline-flex items-center gap-1 text-emerald-500">
-                <Sparkles className="size-3" /> Linked
-              </span>
-            ) : (
-              <span className="text-amber-500">Local only</span>
-            )}
-          </div>
-        </div>
-
-        {config?.enablePuterCloud ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="gap-2"
-              onSelect={(e) => {
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel className="flex items-center justify-between gap-2">
+          {editingName ? (
+            <form
+              onSubmit={(e) => {
                 e.preventDefault();
-                toast({
-                  title: "Cloud storage ready",
-                  description: `Files sync to puter://${config.puterBasePath.replace(/^\//, "")}/${user.grudgeId}`,
-                });
+                commitRename();
               }}
-              data-testid="menu-cloud-info"
+              className="flex items-center gap-1 flex-1"
             >
-              <CloudCog className="size-4" /> Cloud storage
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                Connected
-              </span>
-            </DropdownMenuItem>
-          </>
-        ) : null}
-
-        {config?.grudgeAuthUrl ? (
-          <DropdownMenuItem
-            className="gap-2"
-            onSelect={() => {
-              window.open(
-                config.grudgeAuthUrl ?? undefined,
-                "_blank",
-                "noopener,noreferrer",
-              );
-            }}
-            data-testid="menu-grudge-dashboard"
-          >
-            <ExternalLink className="size-4" /> Grudge Studio dashboard
-          </DropdownMenuItem>
-        ) : null}
+              <Input
+                autoFocus
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                maxLength={32}
+                className="h-7 text-sm"
+                data-testid="input-rename"
+              />
+              <Button
+                type="submit"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0"
+              >
+                <Check className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-7 shrink-0"
+                onClick={() => setEditingName(false)}
+              >
+                <X className="size-4" />
+              </Button>
+            </form>
+          ) : (
+            <>
+              <span className="text-sm font-medium truncate">{user.name}</span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setRenameInput(user.name);
+                  setEditingName(true);
+                }}
+                data-testid="button-rename"
+              >
+                <Pencil className="size-3" />
+              </Button>
+            </>
+          )}
+        </DropdownMenuLabel>
 
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
           className="gap-2 text-destructive focus:text-destructive"
-          disabled={inFlight}
           onSelect={(e) => {
             e.preventDefault();
-            void handleSignOut();
+            signOut();
           }}
           data-testid="menu-sign-out"
         >
-          {inFlight ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <LogOut className="size-4" />
-          )}
-          Sign out
+          <LogOut className="size-4" /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
