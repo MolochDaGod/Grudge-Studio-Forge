@@ -1,0 +1,28 @@
+Create missing forge_* tables
+What & Why
+The API is returning HTTP 500 on every /api/projects call (both GET and POST) because the underlying Postgres tables don't exist in this environment's database. The Drizzle schema and the API expect forge_projects, forge_scenes, forge_scripts, forge_assets, and forge_prefabs, but the shared Grudge database currently only contains unrelated tables from other apps (projects, scenes, scripts, assets, prefabs — without the forge_ prefix). The idempotent migration runner that creates the forge_* tables exists and is wired into the post-merge script, but it has never been executed against this database, so the editor cannot list or create projects.
+
+Done looks like
+GET /api/projects returns 200 with an array (empty is fine) instead of a 500.
+Creating a new project from the editor UI succeeds and the project appears in the list.
+The five forge_* tables and their indexes exist in the database, alongside the pre-existing non-forge tables (no data from other Grudge apps is touched).
+If the tables ever go missing again, the API returns a JSON error explaining that the database is not migrated, instead of a raw HTML 500 page.
+Out of scope
+Renaming or removing the existing non-forge_ tables in the shared database.
+Switching off the forge_ table prefix or going back to drizzle-kit push.
+Any schema changes to the forge tables themselves.
+Auto-running the migration on every API server boot (the post-merge hook is the intended trigger).
+Steps
+Run the migration against this environment — Execute pnpm --filter @workspace/db run migrate so the five CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS statements in lib/db/src/migrate.ts are applied. Verify in psql that forge_projects, forge_scenes, forge_scripts, forge_assets, and forge_prefabs now exist and that the original non-forge tables are untouched.
+Improve the error response on the projects routes — Wrap the handlers in artifacts/api-server/src/routes/projects.ts so that when a query fails because a relation does not exist (Postgres 42P01), the API responds with a structured JSON 503 telling the operator to run the migration, instead of letting Express render the default HTML 500 page. Keep the existing behavior (Zod validation 400s, generic 500s) for all other errors.
+Verify end to end — Restart the artifacts/api-server: API Server workflow, hit GET /api/projects (should be 200 []), create a project from the Grudge GameForge editor, and confirm it appears in the list and that the runtime-error overlay is gone.
+Relevant files
+artifacts/api-server/src/routes/projects.ts
+lib/db/src/migrate.ts
+lib/db/src/schema/projects.ts
+lib/db/src/schema/scenes.ts
+lib/db/src/schema/scripts.ts
+lib/db/src/schema/assets.ts
+lib/db/src/schema/prefabs.ts
+lib/db/package.json
+scripts/post-merge.sh
