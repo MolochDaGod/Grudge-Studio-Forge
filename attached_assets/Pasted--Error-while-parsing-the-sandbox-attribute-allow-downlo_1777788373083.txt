@@ -1,0 +1,15 @@
+ Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+C @ 0i8wy8tbht2ow.js:2
+Grudge-Studio-Forge:1 Unchecked runtime.lastError: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+Grudge-Studio-Forge:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+Grudge-Studio-Forge:1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+ Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+C @ 0i8wy8tbht2ow.js:2
+19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev/__replco/workspace_iframe.html?initialPath=%2F&id=artifacts%2Fgame-forge:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/__replco/workspace_iframe.html?initialPath=%2F&id=artifacts%2Fgame-forge:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/:1  Failed to load resource: the server responded with a status of 404 (Not Found)
+19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/:1 Loading the script 'https://19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/__replco/static/devtools/injected.js' violates the following Content Security Policy directive: "default-src 'none'". Note that 'script-src-elem' was not explicitly set, so 'default-src' is used as a fallback. The action has been blocked.
+19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/:1 Executing inline event handler violates the following Content Security Policy directive 'default-src 'none''. Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. Note also that 'script-src' was not explicitly set, so 'default-src' is used as a fallback. The action has been blocked.
+ Loading the script 'https://replit.com/public/js/beacon.js' violates the following Content Security Policy directive: "default-src 'none'". Note that 'script-src-elem' was not explicitly set, so 'default-src' is used as a fallback. The action has been blocked.
+onIframeLoad @ 19b4eccc-88a2-4ea8-8215-9ed4623fca90-00-np474pq575z7.janeway.replit.dev:8080/__replco/workspace_iframe.html?initialPath=%2F&id=artifacts%2Fgame-forge:144
+workspace_iframe.html?initialPath=%2F&id=artifacts%2Fgame-forge:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
