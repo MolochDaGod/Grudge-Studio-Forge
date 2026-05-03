@@ -23,6 +23,24 @@ win:
         - x64
   icon: build/icon.ico
   artifactName: GrudgeGameForge-Setup-${version}.${ext}
+  # Authenticode code signing.
+  #
+  # electron-builder picks up the certificate from environment variables
+  # so we never commit cert material to the repo:
+  #   - CSC_LINK            path or https/base64 URL to the .pfx file
+  #   - CSC_KEY_PASSWORD    password that unlocks the .pfx
+  # See README "Code signing the Windows installer" for details.
+  #
+  # If you use a hardware-backed cert (EV / HSM) where the private key
+  # cannot be exported, leave CSC_LINK unset and instead set
+  # WIN_CSC_SUBJECT_NAME to the certificate's CN; electron-builder will
+  # then sign via signtool against the installed cert in the Windows
+  # certificate store.
+  certificateSubjectName: ${env.WIN_CSC_SUBJECT_NAME}
+  signingHashAlgorithms:
+    - sha256
+  rfc3161TimeStampServer: http://timestamp.digicert.com
+  signAndEditExecutable: true
 
 nsis:
   oneClick: false
