@@ -6,4 +6,15 @@
 # Grudge database, which would silently destroy data on stdin EOF).
 set -e
 pnpm install --frozen-lockfile
+
+# Workspace-wide typecheck gate. The platform's per-artifact build only
+# typechecks the artifact it is building, so a cross-package regression
+# (e.g. a lib change that breaks api-server) can sneak past `Publish`
+# and take prod down. Running the full `pnpm run typecheck` here means
+# any merge into main that breaks libs or any leaf package fails loudly
+# on the post-merge hook BEFORE the deploy is triggered. `set -e` above
+# guarantees a non-zero exit aborts the rest of this script.
+echo "[post-merge] running workspace typecheck..."
+pnpm run typecheck
+
 pnpm --filter @workspace/db run migrate

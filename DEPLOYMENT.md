@@ -174,7 +174,7 @@ Two different hooks touch the database. They serve different purposes:
 | | `scripts/post-merge.sh` | Deploy boot |
 | --- | --- | --- |
 | Trigger | Branch merged into main | `Publish` button / autoscale cold start |
-| Runs | `pnpm install --frozen-lockfile` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
+| Runs | `pnpm install --frozen-lockfile` + `pnpm run typecheck` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
 | Target DB | Dev (shared) | Prod (shared) — same physical DB in this project |
 | Interactive? | No (stdin closed) | No |
 
@@ -182,8 +182,32 @@ Both call the same idempotent `runMigrations()`, so re-runs are no-ops. The
 post-merge hook exists so dev never lags behind a schema change; the boot
 hook exists so a fresh prod instance can never serve a half-migrated DB.
 
+## Typecheck gate (post-merge)
+
+`scripts/post-merge.sh` runs `pnpm run typecheck` after `pnpm install` and
+**before** `pnpm --filter @workspace/db run migrate`. Because the script is
+`set -e`, a typecheck failure exits non-zero, the post-merge hook is recorded
+as failed, and the publish flow surfaces it in the merge / deploy log instead
+of silently shipping a broken build.
+
+**Why it lives here, not in `[deployment.postBuild]`:**
+
+- The platform's per-artifact build (`artifact.toml` `build = ...`) only
+  typechecks the artifact it is currently building. A regression in
+  `lib/db` that breaks `api-server` would pass the `game-forge` build and
+  could still ship.
+- `pnpm run typecheck` covers `tsc --build` for every composite lib **plus**
+  `tsc --noEmit` for every leaf workspace package (api-server, game-forge,
+  game-forge-desktop, mockup-sandbox, scripts). One command, one gate.
+- Running it on post-merge means the gate fires the moment a branch lands on
+  main, before the deploy is triggered — and also blocks dev from lagging
+  behind a broken merge.
+
+If a deploy goes out and prod is on fire, suspect a typecheck regression that
+slipped in via a hot-fix that bypassed the merge hook. Re-run
+`pnpm run typecheck` locally to confirm.
+
 ## Out of scope here
 
 - Switching deployment target away from `autoscale`.
-- Adding a typecheck/CI gate before publish.
 - Restructuring artifact routing.
