@@ -112,21 +112,49 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
   },
 ];
 
-async function main(): Promise<void> {
+/**
+ * Apply all idempotent migration statements using the shared pool.
+ * Safe to call on every server boot. Does NOT close the pool — callers
+ * that own the process lifetime (e.g. the CLI below) are responsible
+ * for `pool.end()`.
+ *
+ * Stable 64-bit advisory lock key for the Forge migration runner.
+ *
+ * `CREATE TABLE IF NOT EXISTS` is NOT safe under concurrency in
+ * Postgres: two processes that race past the existence check both try
+ * to create the underlying sequence, and the loser hits a
+ * `pg_class_relname_nsp_index` unique-constraint violation. That bites
+ * us at boot when a workflow restart leaves the previous process
+ * briefly overlapping with the new one. A session-level advisory lock
+ * serializes concurrent runners cheaply (no rows, no DDL of its own).
+ */
+const MIGRATION_ADVISORY_LOCK_KEY = 0x46_4f_52_47_45_4d_49_47n; // "FORGEMIG"
+
+export async function runMigrations(
+  log: (name: string, ok: boolean) => void = () => {},
+): Promise<void> {
   const client = await pool.connect();
   try {
-    for (const { name, sql } of STATEMENTS) {
-      process.stdout.write(`migrate · ${name} … `);
-      await client.query(sql);
-      process.stdout.write("ok\n");
+    await client.query("SELECT pg_advisory_lock($1)", [
+      MIGRATION_ADVISORY_LOCK_KEY.toString(),
+    ]);
+    try {
+      for (const { name, sql } of STATEMENTS) {
+        try {
+          await client.query(sql);
+          log(name, true);
+        } catch (err) {
+          log(name, false);
+          throw err;
+        }
+      }
+    } finally {
+      await client.query("SELECT pg_advisory_unlock($1)", [
+        MIGRATION_ADVISORY_LOCK_KEY.toString(),
+      ]);
     }
   } finally {
     client.release();
-    await pool.end();
   }
 }
 
-main().catch((err) => {
-  console.error("migrate failed:", err);
-  process.exit(1);
-});
