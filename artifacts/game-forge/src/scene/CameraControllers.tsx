@@ -266,8 +266,8 @@ export function ThirdPersonCameraController({
   const sceneData = useEditor((s) => s.sceneData);
   const env = sceneData.environment;
   const yawRef = useRef(0);
-  const pitchRef = useRef(0.45);
-  const distRef = useRef(8);
+  const pitchRef = useRef(0.18);
+  const distRef = useRef(3.2);
   // True while the canvas owns pointer-lock — mouselook only applies then so
   // editor mode (no lock) doesn't accidentally orbit when the cursor moves.
   // The PointerLockBridge in Viewport.tsx is the canonical owner of the lock
@@ -294,7 +294,9 @@ export function ThirdPersonCameraController({
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      distRef.current = THREE.MathUtils.clamp(distRef.current + e.deltaY * 0.01, 3, 20);
+      // Fortnite-style: tight zoom band — close enough to feel like an
+      // over-the-shoulder TPS, never far enough to feel like orbit-cam.
+      distRef.current = THREE.MathUtils.clamp(distRef.current + e.deltaY * 0.005, 2.2, 5.5);
     };
     document.addEventListener("pointerlockchange", onLockChange);
     document.addEventListener("mousemove", onMove);
@@ -355,14 +357,51 @@ export function ThirdPersonCameraController({
       rotateBody(body, yawRef.current + Math.PI);
     }
 
-    // Camera follows orbit. `pos` was read at frame start; for dynamic bodies
-    // the next physics step will move them — the 1-frame lag is imperceptible.
+    // Fortnite-style over-the-shoulder camera.
+    //
+    // Geometry, in player-local frame:
+    //   forward = where the player is facing (== camera yaw)
+    //   right   = perpendicular, to the player's right
+    //   up      = world Y
+    //
+    // The "boom" (camera pivot) sits at the player's shoulder height,
+    // offset SIDEWAYS along `right` by SHOULDER_OFFSET. The camera then
+    // sits behind that pivot along -forward by `dist`, with a small
+    // upward `pitch` lift. Crucially, lookAt targets a point that uses
+    // the SAME right-shoulder offset — that's what keeps the character
+    // pinned to the LEFT third of the screen and the aim reticle on the
+    // RIGHT third (the over-the-shoulder feel). If we instead looked at
+    // the body centre, the character would slide back to the middle and
+    // we'd be back to a generic orbit cam.
     const d = distRef.current;
-    const px = Math.sin(yawRef.current) * Math.cos(pitchRef.current) * d;
-    const py = Math.sin(pitchRef.current) * d + 1.5;
-    const pz = Math.cos(yawRef.current) * Math.cos(pitchRef.current) * d;
-    camera.position.set(pos.x + px, pos.y + py, pos.z + pz);
-    camera.lookAt(pos.x, pos.y + 1.2, pos.z);
+    const SHOULDER_OFFSET = 0.55;   // metres to the right of the spine
+    const SHOULDER_HEIGHT = 1.55;   // ~head height for an average rig
+    const AIM_AHEAD       = 6.0;    // how far in front the look-target sits
+    const sinY = Math.sin(yawRef.current);
+    const cosY = Math.cos(yawRef.current);
+    const sinP = Math.sin(pitchRef.current);
+    const cosP = Math.cos(pitchRef.current);
+
+    // forward = where the camera (and player) are looking; right is its
+    // 90° clockwise rotation in the XZ plane.
+    const fx =  sinY * cosP;
+    const fy =  sinP;
+    const fz =  cosY * cosP;
+    const rx =  cosY;
+    const rz = -sinY;
+
+    // Pivot at the right shoulder.
+    const sx = pos.x + rx * SHOULDER_OFFSET;
+    const sy = pos.y + SHOULDER_HEIGHT;
+    const sz = pos.z + rz * SHOULDER_OFFSET;
+
+    // Camera sits behind the shoulder along -forward.
+    camera.position.set(sx - fx * d, sy - fy * d, sz - fz * d);
+
+    // Aim point sits ahead of (and at) the same shoulder line, so the
+    // character stays parked on the left third and the crosshair lands
+    // on the right third — exactly the Fortnite framing.
+    camera.lookAt(sx + fx * AIM_AHEAD, sy + fy * AIM_AHEAD, sz + fz * AIM_AHEAD);
   });
 
   return null;
