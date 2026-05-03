@@ -37,6 +37,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  ListObjectsV2Command,
   type GetObjectCommandOutput,
 } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
@@ -221,6 +222,72 @@ export class R2StorageService {
         typeof out.ContentLength === "number" ? out.ContentLength : null,
       etag: out.ETag ? out.ETag.replace(/^"|"$/g, "").toLowerCase() : null,
     };
+  }
+
+  /**
+   * Write arbitrary bytes to a public R2 key. Used by the AI Worker's
+   * asset-import / scene-snapshot tools where the caller already knows
+   * the content-type (e.g. `model/gltf-binary` for a downloaded GLB).
+   *
+   * Idempotent on byte-identical bodies, same fingerprint trick as
+   * {@link ensurePublicJson}.
+   */
+  async ensurePublicBytes(
+    key: string,
+    body: Buffer,
+    opts: { contentType: string; cacheTtlSec?: number },
+  ): Promise<{ written: boolean; byteSize: number }> {
+    const cacheTtlSec = opts.cacheTtlSec ?? 31_536_000;
+    const expectedMd5Hex = createHash("md5").update(body).digest("hex");
+    const existingEtag = await this.headEtag(key);
+    if (existingEtag && existingEtag === expectedMd5Hex) {
+      return { written: false, byteSize: body.byteLength };
+    }
+    await client().send(
+      new PutObjectCommand({
+        Bucket: bucket(),
+        Key: key,
+        Body: body,
+        ContentType: opts.contentType,
+        CacheControl: `public, max-age=${cacheTtlSec}, immutable`,
+      }),
+    );
+    return { written: true, byteSize: body.byteLength };
+  }
+
+  /**
+   * List objects under a key prefix. Returns lightweight descriptors
+   * (no body bytes). Used by the AI Worker's `list_user_assets` tool
+   * so the model can recall what it's previously stashed in R2 for the
+   * current project.
+   */
+  async listObjects(
+    prefix: string,
+    opts: { maxKeys?: number } = {},
+  ): Promise<
+    Array<{
+      key: string;
+      sizeBytes: number;
+      lastModified: string | null;
+      etag: string | null;
+    }>
+  > {
+    const out = await client().send(
+      new ListObjectsV2Command({
+        Bucket: bucket(),
+        Prefix: prefix,
+        MaxKeys: Math.min(opts.maxKeys ?? 200, 1000),
+      }),
+    );
+    const items = out.Contents ?? [];
+    return items
+      .filter((o) => typeof o.Key === "string")
+      .map((o) => ({
+        key: o.Key as string,
+        sizeBytes: typeof o.Size === "number" ? o.Size : 0,
+        lastModified: o.LastModified ? o.LastModified.toISOString() : null,
+        etag: o.ETag ? o.ETag.replace(/^"|"$/g, "").toLowerCase() : null,
+      }));
   }
 
   /**

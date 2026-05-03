@@ -843,6 +843,150 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       data: { count: ecsCountEntities(args as EcsFilter) },
     }),
   },
+
+  // ── Object storage (R2) ────────────────────────────────────────────
+  // Three tools that let the AI persist & recall content beyond the
+  // current browser session. All three are project-scoped on the server
+  // (keys namespaced by `<projectId>`) and return public URLs the AI
+  // can immediately drop back into other tools (e.g. the `url` from
+  // `import_asset_from_url` is valid as the `modelUrl` arg of
+  // `add_model_entity`).
+  {
+    def: {
+      name: "save_scene_snapshot",
+      description:
+        "Save the current scene to durable object storage as an immutable JSON snapshot. Returns a public URL that can be shared or re-loaded later. Use this after building something the user wants to keep, or as a checkpoint before risky bulk changes. Optional `name` is used in the filename only.",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Short label for the snapshot, e.g. 'fort-royale-v2'.",
+          },
+        },
+      },
+    },
+    exec: async (input) => {
+      const s = useEditor.getState();
+      const projectId = s.projectId;
+      if (!projectId) return { ok: false, error: "No project open." };
+      const res = await fetch(apiUrl("ai-storage/scene-snapshot"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          name: typeof input.name === "string" ? input.name : s.sceneName,
+          sceneData: s.sceneData,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `Snapshot failed (${res.status}): ${body}` };
+      }
+      const data = (await res.json()) as {
+        key: string;
+        url: string;
+        byteSize: number;
+        written: boolean;
+      };
+      return { ok: true, data };
+    },
+  },
+
+  {
+    def: {
+      name: "import_asset_from_url",
+      description:
+        "Download a remote asset (GLB, image, audio) into the project's private object-storage namespace. Returns a stable public URL the editor can immediately load — pass that URL as `modelUrl` to `add_model_entity` (for GLBs) or use it as a texture / sky source. Max 25 MB, http(s) only. Useful for: pulling a CC0 model from the web, importing a texture the user shared, or re-using something previously generated.",
+      input_schema: {
+        type: "object",
+        properties: {
+          sourceUrl: {
+            type: "string",
+            description: "Direct download URL (http/https only).",
+          },
+          name: {
+            type: "string",
+            description:
+              "Short human label, used to build the stored filename (e.g. 'oak-tree', 'rust-metal-512').",
+          },
+          contentType: {
+            type: "string",
+            description:
+              "Optional MIME override when the server's content-type is wrong (e.g. 'model/gltf-binary' for a .glb served as octet-stream).",
+          },
+        },
+        required: ["sourceUrl", "name"],
+      },
+    },
+    exec: async (input) => {
+      const projectId = useEditor.getState().projectId;
+      if (!projectId) return { ok: false, error: "No project open." };
+      const res = await fetch(apiUrl("ai-storage/import-asset"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          sourceUrl: input.sourceUrl,
+          name: input.name,
+          contentType: input.contentType,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `Import failed (${res.status}): ${body}` };
+      }
+      const data = (await res.json()) as {
+        key: string;
+        url: string;
+        contentType: string;
+        byteSize: number;
+        written: boolean;
+      };
+      return { ok: true, data };
+    },
+  },
+
+  {
+    def: {
+      name: "list_user_assets",
+      description:
+        "List everything the AI has previously stashed in object storage for the current project — both imported assets and saved scene snapshots. Use this to recall a model URL you uploaded earlier, or to find a prior snapshot to share with the user.",
+      input_schema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: ["assets", "snapshots", "all"],
+            description: "Filter by kind. Defaults to 'all'.",
+          },
+        },
+      },
+    },
+    exec: async (input) => {
+      const projectId = useEditor.getState().projectId;
+      if (!projectId) return { ok: false, error: "No project open." };
+      const kind = typeof input.kind === "string" ? input.kind : "all";
+      const res = await fetch(
+        apiUrl(`ai-storage/list/${encodeURIComponent(projectId)}?kind=${encodeURIComponent(kind)}`),
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return { ok: false, error: `List failed (${res.status}): ${body}` };
+      }
+      const data = (await res.json()) as {
+        projectId: string;
+        items: Array<{
+          kind: "asset" | "snapshot";
+          key: string;
+          url: string;
+          sizeBytes: number;
+          lastModified: string | null;
+        }>;
+      };
+      return { ok: true, data };
+    },
+  },
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -891,6 +1035,8 @@ export function buildSystemPrompt(): string {
     `- For bulk questions about the scene ("how many enemies?", "any dynamic bodies without a script?") use count_entities / query_entities — they read from a denormalized ECS mirror with rich structural filters, so they're far more ergonomic than reasoning over list_entities output.`,
     `- Use list_entities to look up real ids before update_entity / delete_entity / attach_script — never guess ids.`,
     `- For player characters prefer the built-in 'blake' model.`,
+    `- To pull a fresh asset off the web, use import_asset_from_url (returns a URL you can immediately drop into add_model_entity's modelUrl). Reuse list_user_assets to recall what you've already imported for this project before re-downloading.`,
+    `- To checkpoint the user's work or hand them a sharable scene, use save_scene_snapshot — it returns a public URL.`,
     `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,
     `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,
   ].join("\n");
