@@ -74,7 +74,6 @@ router.get("/polyhaven/textures", async (req, res, next) => {
     const data = await cachedFetch("/assets?t=textures");
     res.json(flattenAssets(data, "textures"));
   } catch (err) {
-    req.log.error({ err }, "polyhaven textures fetch failed");
     next(err);
   }
 });
@@ -84,7 +83,6 @@ router.get("/polyhaven/hdris", async (req, res, next) => {
     const data = await cachedFetch("/assets?t=hdris");
     res.json(flattenAssets(data, "hdris"));
   } catch (err) {
-    req.log.error({ err }, "polyhaven hdris fetch failed");
     next(err);
   }
 });
@@ -94,7 +92,6 @@ router.get("/polyhaven/models", async (req, res, next) => {
     const data = await cachedFetch("/assets?t=models");
     res.json(flattenAssets(data, "models"));
   } catch (err) {
-    req.log.error({ err }, "polyhaven models fetch failed");
     next(err);
   }
 });
@@ -228,7 +225,6 @@ router.get("/polyhaven/files/:slug", async (req, res, next) => {
           : null,
     });
   } catch (err) {
-    req.log.error({ err }, "polyhaven files fetch failed");
     next(err);
   }
 });

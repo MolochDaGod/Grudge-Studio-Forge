@@ -88,7 +88,6 @@ router.get("/grudge/weapons", async (req, res, next) => {
     const data = await fetchGrudge("/api/v1/weapons.json");
     res.json(toCatalog(data, "grudge:weapons"));
   } catch (err) {
-    req.log.error({ err }, "grudge weapons fetch failed");
     next(err);
   }
 });
@@ -98,7 +97,6 @@ router.get("/grudge/items", async (req, res, next) => {
     const data = await fetchGrudge("/api/v1/equipment.json");
     res.json(toCatalog(data, "grudge:equipment"));
   } catch (err) {
-    req.log.error({ err }, "grudge items fetch failed");
     next(err);
   }
 });
@@ -108,7 +106,6 @@ router.get("/grudge/enemies", async (req, res, next) => {
     const data = await fetchGrudge("/api/v1/enemyTemplates.json");
     res.json(toCatalog(data, "grudge:enemies"));
   } catch (err) {
-    req.log.error({ err }, "grudge enemies fetch failed");
     next(err);
   }
 });
@@ -118,7 +115,6 @@ router.get("/grudge/quests", async (req, res, next) => {
     const data = await fetchGrudge("/api/v1/quests.json");
     res.json(toCatalog(data, "grudge:quests"));
   } catch (err) {
-    req.log.error({ err }, "grudge quests fetch failed");
     next(err);
   }
 });

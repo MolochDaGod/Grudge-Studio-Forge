@@ -22,7 +22,8 @@
     "express": "^5",
     "google-auth-library": "^10.6.2",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
