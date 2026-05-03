@@ -1,0 +1,42 @@
+appId: com.grudge.gameforge
+productName: Grudge GameForge
+copyright: Copyright © 2026 Grudge
+
+directories:
+  output: dist/installer
+  buildResources: build
+
+files:
+  - dist/main/**/*
+  - "!**/*.map"
+
+extraResources:
+  - from: ../game-forge/dist/public
+    to: renderer
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: GrudgeGameForge-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Grudge GameForge
+
+# Auto-updater feed. Override the owner/repo via env or before publishing.
+# `publish` is consumed by both electron-builder (during release) and
+# electron-updater (at runtime to fetch update manifests).
+publish:
+  - provider: github
+    owner: ${env.GH_OWNER}
+    repo: ${env.GH_REPO}
+    releaseType: release

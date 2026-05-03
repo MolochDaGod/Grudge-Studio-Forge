@@ -1,0 +1,49 @@
+{
+  "name": "@workspace/game-forge-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Native Windows desktop wrapper for Grudge GameForge with on-disk 3D tools.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build:renderer": "cross-env PORT=24426 BASE_PATH=./ pnpm --filter @workspace/game-forge run build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "pnpm run build:renderer && pnpm run build:main",
+    "dev": "concurrently -k -n vite,tsc,electron -c blue,yellow,magenta \"pnpm run dev:renderer\" \"pnpm run dev:main:watch\" \"pnpm run dev:main:run\"",
+    "dev:renderer": "cross-env PORT=24426 BASE_PATH=/ pnpm --filter @workspace/game-forge run dev",
+    "dev:main:watch": "tsc -p tsconfig.main.json --watch --preserveWatchOutput",
+    "dev:main:run": "wait-on http://localhost:24426 dist/main/main.js && cross-env GAMEFORGE_DEV_URL=http://localhost:24426/ electron .",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit",
+    "build:win": "pnpm run build && electron-builder --win --config electron-builder.yml",
+    "build:win:dir": "pnpm run build && electron-builder --win --dir --config electron-builder.yml",
+    "release": "pnpm run build && electron-builder --win --publish always --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/yauzl": "2.10.3",
+    "concurrently": "^9.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "5.6.3",
+    "wait-on": "^8.0.0"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.1.0",
+    "@gltf-transform/extensions": "^4.1.0",
+    "@gltf-transform/functions": "^4.1.0",
+    "@workspace/desktop-bridge": "workspace:*",
+    "@workspace/scene-schema": "workspace:*",
+    "archiver": "^7.0.1",
+    "@types/archiver": "^6.0.3",
+    "assimpjs": "0.0.10",
+    "electron-store": "8.2.0",
+    "electron-updater": "^6.3.9",
+    "three": "0.184.0",
+    "yauzl": "^3.2.0"
+  },
+  "build": {
+    "appId": "com.grudge.gameforge",
+    "productName": "Grudge GameForge"
+  }
+}

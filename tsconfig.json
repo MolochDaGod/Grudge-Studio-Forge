@@ -13,6 +13,9 @@
       "path": "./lib/api-zod"
     },
     {
+      "path": "./lib/desktop-bridge"
+    },
+    {
       "path": "./lib/object-storage-web"
     },
     {

@@ -52,6 +52,7 @@
     "@uppy/react": "^5.0.0",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
+    "@workspace/desktop-bridge": "workspace:*",
     "@workspace/object-storage-web": "workspace:*",
     "@workspace/scene-schema": "workspace:*",
     "class-variance-authority": "catalog:",

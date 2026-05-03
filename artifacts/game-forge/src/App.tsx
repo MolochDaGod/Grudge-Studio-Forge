@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
+import { UpdateToast } from "@/editor/UpdateToast";
 import {
   ResizablePanel,
   ResizablePanelGroup,
@@ -304,6 +305,7 @@ function App() {
       <TooltipProvider>
         <EditorShell />
         <Toaster />
+        <UpdateToast />
       </TooltipProvider>
     </QueryClientProvider>
   );

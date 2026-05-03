@@ -79,6 +79,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { InstallAppButton } from "@/editor/InstallAppButton";
+import { ToolsPanel } from "@/editor/ToolsPanel";
+import { Wrench } from "lucide-react";
 import { UserMenu } from "@/editor/UserMenu";
 import { useAuth } from "@/store/auth";
 import { publishScene, type PublishResult } from "@/lib/puterPublish";
@@ -123,6 +125,28 @@ export function Toolbar({
   const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
   const spawnPlayerPrefab = useEditor((s) => s.spawnPlayerPrefab);
   const [mapGenOpen, setMapGenOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsTab, setToolsTab] = useState<
+    "converter" | "unzipper" | "deployer" | "scripts"
+  >("converter");
+
+  // Listen for native menu → "Tools → 3D Converter" etc. dispatched by
+  // the Electron shell over IPC. The preload forwards them as
+  // `menu:openTool` events on `window`. Web build never receives them.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      const tab =
+        detail === "unzipper" || detail === "deployer" || detail === "scripts"
+          ? detail
+          : "converter";
+      setToolsTab(tab);
+      setToolsOpen(true);
+    };
+    window.addEventListener("gameforge:openTool", handler);
+    return () => window.removeEventListener("gameforge:openTool", handler);
+  }, []);
   const setEnvironment = useEditor((s) => s.setEnvironment);
   const cameraMode: CameraMode = sceneData.environment.cameraMode ?? "editor";
   const setSceneName = useEditor((s) => s.setSceneName);
@@ -550,6 +574,31 @@ export function Toolbar({
       <Separator orientation="vertical" className="h-6 mx-1" />
 
       <InstallAppButton />
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setToolsTab("converter");
+              setToolsOpen(true);
+            }}
+            data-testid="button-open-tools"
+          >
+            <Wrench className="size-4 mr-1.5" /> Tools
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          3D converter, unzipper, scene deployer, script editor
+        </TooltipContent>
+      </Tooltip>
+
+      <ToolsPanel
+        open={toolsOpen}
+        onOpenChange={setToolsOpen}
+        initialTab={toolsTab}
+      />
 
       <Tooltip>
         <TooltipTrigger asChild>
