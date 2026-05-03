@@ -116,20 +116,38 @@ again whenever the user clicks **Help → Check for Updates**. Renderer
 toasts are wired through the `updater:state` channel exposed via
 `window.desktop.updates.onChange(listener)`.
 
-## Optional native converters (FBX / OBJ / STL)
+## 3D converter format matrix
 
-GLB ↔ GLTF round-trips ship out of the box via `@gltf-transform/core`.
-Cross-format conversions to / from FBX, OBJ, or STL require one of:
+The 3D Converter handles every pair of GLB / GLTF / FBX / OBJ / STL
+end-to-end with no extra binaries to install:
 
-- **fbx2gltf** — drop the platform binary into
-  `artifacts/game-forge-desktop/bin/fbx2gltf.exe` and re-build; the
-  converter will detect and prefer it for any `.fbx` input.
-- **assimp-js** — install `assimpjs` and `assimp-wasm` and add an
-  alternate code path in `ipc/tools.ts → convert3d`.
+| Source ＼ Target | GLB | GLTF | FBX | OBJ | STL |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| **GLB**         | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **GLTF**        | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **FBX**         | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **OBJ**         | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **STL**         | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Until then the converter writes a `*.unconverted.<ext>` passthrough
-copy and surfaces a clear warning in the UI rather than silently
-producing an empty file.
+How it works (see `src/ipc/tools.ts → convert3d`):
+
+- **GLB ↔ GLTF** — `@gltf-transform/core` with `prune()` + `dedup()`
+  so the output is meaningfully smaller than a re-serialization.
+- **FBX / OBJ / STL → GLB / GLTF** — the bundled
+  [`assimpjs`](https://www.npmjs.com/package/assimpjs) WASM build of
+  Assimp. For OBJ inputs, sibling `.mtl` and texture files are
+  auto-included so material references resolve.
+- **GLB / GLTF / FBX / OBJ / STL → OBJ / STL** — non-GLTF inputs
+  round-trip through GLB via assimpjs first, then a tiny in-process
+  serializer walks the gltf-transform document and writes triangles.
+- **anything → FBX** — same pipeline, then a minimal ASCII FBX 7.4
+  emitter (single Geometry + Model). Verified round-trip in
+  Blender 4.x and Unity 2022 LTS.
+
+The Assimp WASM bundle (`node_modules/assimpjs/dist/assimpjs.wasm`,
+~2 MB) is automatically included in the installer via electron-builder
+because it lives inside `node_modules`. No extra `bin/` files are
+required.
 
 ## Out of scope (intentional)
 

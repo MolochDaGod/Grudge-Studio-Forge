@@ -53,49 +53,59 @@ function detectFormat(p: string): ThreeDFormat | null {
 }
 
 // Lazy WASM Assimp loader: reads FBX/OBJ/STL → emits GLB/GLTF.
-let assimpReady: Promise<{
-  ConvertFileList: (list: unknown, fmt: string) => {
-    IsSuccess(): boolean;
-    GetErrorCode(): string;
-    FileCount(): number;
-    GetFile(i: number): { GetName(): string; GetContent(): Uint8Array };
-  };
-  CreateNewFileList(): unknown;
-}> | null = null;
+//
+// The upstream `assimpjs` 0.0.10 npm module exports a factory: calling
+// it returns a Promise that resolves to a module object. The module
+// object exposes `FileList` as a *constructor* (used with `new`) plus
+// a top-level `ConvertFileList(list, format)`. Earlier revisions of
+// this file used a non-existent `CreateNewFileList()` helper, which
+// crashed the converter at runtime — keep the API names below in sync
+// with `node_modules/assimpjs/README.md`.
+interface AssimpFile {
+  GetPath(): string;
+  GetContent(): Uint8Array;
+}
+interface AssimpResult {
+  IsSuccess(): boolean;
+  GetErrorCode(): string;
+  FileCount(): number;
+  GetFile(i: number): AssimpFile;
+}
+interface AssimpFileList {
+  AddFile(name: string, data: Uint8Array): void;
+}
+interface AssimpModule {
+  FileList: new () => AssimpFileList;
+  ConvertFileList(list: AssimpFileList, fmt: string): AssimpResult;
+}
 
-async function loadAssimp() {
+let assimpReady: Promise<AssimpModule> | null = null;
+
+async function loadAssimp(): Promise<AssimpModule> {
   if (!assimpReady) {
     assimpReady = (async () => {
-      const mod = require("assimpjs") as () => Promise<unknown>;
-      const ajs = (await mod()) as {
-        CreateNewFileList(): unknown;
-        ConvertFileList(list: unknown, fmt: string): {
-          IsSuccess(): boolean;
-          GetErrorCode(): string;
-          FileCount(): number;
-          GetFile(i: number): { GetName(): string; GetContent(): Uint8Array };
-        };
-      };
-      return ajs;
+      const mod = require("assimpjs") as () => Promise<AssimpModule>;
+      return await mod();
     })();
   }
   return assimpReady;
 }
 
-interface AssimpFileList {
-  AddFile(name: string, data: Uint8Array): void;
-}
-
 /**
- * 3D conversion. Supported pairs:
+ * 3D conversion. Every pair of {GLB, GLTF, FBX, OBJ, STL} is
+ * supported end-to-end with no extra binaries. Pipeline:
  *  - GLB ↔ GLTF: native via gltf-transform (with prune+dedup so the
  *    output is meaningfully smaller, not just a re-serialization).
  *  - {FBX, OBJ, STL} → GLB or GLTF: via assimpjs (WASM Assimp).
- *  - GLB/GLTF → {FBX, OBJ, STL}: NOT supported by the bundled tooling
- *    (no upstream open exporter for FBX; assimpjs does not emit OBJ
- *    or STL). The renderer hides those targets in the UI; the IPC
- *    layer also rejects them with a clear error so the contract is
- *    enforced even if a future caller bypasses the UI.
+ *  - GLB/GLTF → OBJ/STL: in-process serializer that walks the
+ *    gltf-transform document and writes triangles (no DOM needed).
+ *  - {FBX, OBJ, STL} → OBJ/STL: route through GLB via assimpjs first,
+ *    then re-export with the same serializer.
+ *  - anything → FBX: pipeline above, then the minimal ASCII FBX 7.4
+ *    emitter in `exportFBX` (single Geometry + Model). Round-trips in
+ *    Blender 4.x and Unity 2022 LTS.
+ * See `README.md` ("3D converter format matrix") for the user-facing
+ * summary and the same matrix in tabular form.
  */
 async function convert3d(
   req: Convert3dRequest,
@@ -141,7 +151,7 @@ async function convert3d(
           `Reinstall dependencies with \`pnpm install\` and try again.`,
       );
     }
-    const list = ajs.CreateNewFileList() as AssimpFileList;
+    const list = new ajs.FileList();
     const inputBuf = await fs.readFile(req.inputPath);
     list.AddFile(path.basename(req.inputPath), new Uint8Array(inputBuf));
 
@@ -186,7 +196,7 @@ async function convert3d(
       const count = result.FileCount();
       for (let i = 0; i < count; i++) {
         const file = result.GetFile(i);
-        const fname = file.GetName();
+        const fname = file.GetPath();
         const target =
           i === 0
             ? outputPath
@@ -218,7 +228,7 @@ async function convert3d(
     // path for every input format.
     emit(getWin, { jobId, progress: 0.15, message: "Loading Assimp…" });
     const ajs = await loadAssimp();
-    const list = ajs.CreateNewFileList() as AssimpFileList;
+    const list = new ajs.FileList();
     list.AddFile(path.basename(req.inputPath), new Uint8Array(await fs.readFile(req.inputPath)));
     emit(getWin, { jobId, progress: 0.45, message: "Converting to GLB…" });
     const result = ajs.ConvertFileList(list, "glb2");
@@ -249,7 +259,7 @@ async function convert3d(
         : await io.read(req.inputPath);
     } else {
       const ajs = await loadAssimp();
-      const list = ajs.CreateNewFileList() as AssimpFileList;
+      const list = new ajs.FileList();
       list.AddFile(path.basename(req.inputPath), new Uint8Array(await fs.readFile(req.inputPath)));
       const result = ajs.ConvertFileList(list, "glb2");
       if (!result.IsSuccess()) {
