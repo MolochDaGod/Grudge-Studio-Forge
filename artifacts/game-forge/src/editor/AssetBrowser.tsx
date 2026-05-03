@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -1201,14 +1201,47 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
   );
 }
 
+/** Tab identifiers accepted by the `gameforge:focusAssetTab` event so the
+ *  top menu (Assets → …) can deep-link straight to a provider. Kept in
+ *  one place so the menu and this component cannot drift apart. */
+export type AssetBrowserTab =
+  | "weapons"
+  | "items"
+  | "enemies"
+  | "quests"
+  | "ph-models"
+  | "ph-textures"
+  | "ph-hdris"
+  | "project";
+
 export function AssetBrowser() {
   const weapons = useGetGrudgeWeapons();
   const items = useGetGrudgeItems();
   const enemies = useGetGrudgeEnemies();
   const quests = useGetGrudgeQuests();
+  const [tab, setTab] = useState<AssetBrowserTab>("weapons");
+
+  // Top menu (Assets → Browse PolyHaven HDRIs, etc.) dispatches a
+  // `gameforge:focusAssetTab` CustomEvent with the target tab id. We
+  // accept any of the known ids and silently ignore the rest.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      const valid: readonly AssetBrowserTab[] = [
+        "weapons", "items", "enemies", "quests",
+        "ph-models", "ph-textures", "ph-hdris", "project",
+      ];
+      if (valid.includes(detail as AssetBrowserTab)) {
+        setTab(detail as AssetBrowserTab);
+      }
+    };
+    window.addEventListener("gameforge:focusAssetTab", handler);
+    return () => window.removeEventListener("gameforge:focusAssetTab", handler);
+  }, []);
 
   return (
-    <Tabs defaultValue="weapons" className="flex flex-col h-full">
+    <Tabs value={tab} onValueChange={(v) => setTab(v as AssetBrowserTab)} className="flex flex-col h-full">
       <TabsList className="rounded-none w-fit mx-2 mt-1.5 flex-wrap h-auto">
         <TabsTrigger value="weapons" className="text-xs gap-1.5">
           <Sword className="size-3" /> Weapons

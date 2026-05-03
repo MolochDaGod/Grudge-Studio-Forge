@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { bootstrapAuth } from "@/lib/authBootstrap";
 import { Toolbar } from "@/editor/Toolbar";
+import { MenuBar } from "@/editor/MenuBar";
 import { Hierarchy } from "@/editor/Hierarchy";
 import { Inspector } from "@/editor/Inspector";
 import { BottomPanel } from "@/editor/BottomPanel";
@@ -231,6 +232,10 @@ function EditorShell() {
   return (
     <AssetDropZone>
     <div className="h-screen w-screen flex flex-col overflow-hidden text-foreground">
+      <MenuBar
+        onOpenProjects={() => setPickerOpen(true)}
+        onToggleAIWorker={() => setAiOpen((v) => !v)}
+      />
       <Toolbar
         onOpenProjects={() => setPickerOpen(true)}
         onToggleAIWorker={() => setAiOpen((v) => !v)}
