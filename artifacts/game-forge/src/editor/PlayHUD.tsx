@@ -157,23 +157,21 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         }}
       />
 
-      {/* Crosshair */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-        <div className="relative h-6 w-6">
-          {/* base crosshair */}
-          <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-white/70" />
-          <div className="absolute top-1/2 left-0 h-px w-full -translate-y-1/2 bg-white/70" />
-          <div className="absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90" />
-          {/* hit flash overlay */}
-          <div
-            className="absolute inset-0 transition-opacity"
-            style={{ opacity: hitFlash }}
-          >
-            <div className="absolute left-1/2 top-0 h-full w-0.5 -translate-x-1/2 bg-red-500" />
-            <div className="absolute top-1/2 left-0 h-0.5 w-full -translate-y-1/2 bg-red-500" />
-          </div>
-        </div>
-      </div>
+      {/* Aim crosshair (dive-style: white ring → red when aiming, pulse on shoot,
+          scales out + fades when hidden during respawn/win/lose). */}
+      <DiveAim
+        bus={bus}
+        hidden={respawning !== null || outcome !== null}
+        hitFlash={hitFlash}
+      />
+      <style>{`
+        @keyframes diveAimShoot {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.6); }
+          100% { transform: scale(1); }
+        }
+        .dive-aim-shoot { animation: diveAimShoot 150ms ease-out; }
+      `}</style>
 
       {/* Health bar — top left */}
       <div className="absolute left-4 top-4 w-56 rounded bg-black/55 px-3 py-2 text-white shadow">
@@ -276,6 +274,99 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Dive-style aim reticle. A 16-px white circle centered on the screen.
+ *
+ *   • Pulses (scale 1 → 1.6 → 1 over 150ms) on every `playerShot` event.
+ *   • Turns red while RMB is held (subscribes to `weaponAim`, emitted by
+ *     the player-deathmatch script).
+ *   • Briefly recolors red on `hit` events too — feedback when a shot lands.
+ *   • Scales to 1.5 + fades to 0 when `hidden` is true (respawn / win / lose).
+ *
+ * Style approximates the dive Aim.svelte component (border-radius: 50%,
+ * 2px border, ease-in/out transitions on transform + opacity).
+ */
+function DiveAim({
+  bus,
+  hidden,
+  hitFlash,
+}: {
+  bus: GameBus;
+  hidden: boolean;
+  hitFlash: number;
+}) {
+  const [aiming, setAiming] = useState(false);
+  const [shootKey, setShootKey] = useState(0);
+
+  useEffect(() => {
+    const offs: Array<() => void> = [];
+    offs.push(
+      bus.on("weaponAim", (p) => {
+        const obj = p as { aiming?: boolean } | boolean | undefined;
+        const v = typeof obj === "boolean" ? obj : !!obj?.aiming;
+        setAiming(v);
+      }),
+    );
+    offs.push(
+      bus.on("playerShot", () => {
+        // Bumping a numeric key replays the CSS keyframe via React remount of
+        // the className. We cycle modulo to avoid unbounded growth.
+        setShootKey((k) => (k + 1) % 1_000_000);
+      }),
+    );
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [bus]);
+
+  // Border color: red when aiming OR briefly when a shot lands.
+  const isRed = aiming || hitFlash > 0;
+  const borderColor = isRed ? "rgb(239,68,68)" : "rgba(255,255,255,0.92)";
+  const transform = hidden ? "scale(1.5)" : "scale(1)";
+  const opacity = hidden ? 0 : 1;
+  const transitionTiming = hidden ? "ease-in" : "ease-out";
+
+  return (
+    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+      <div className="relative" style={{ width: 16, height: 16 }}>
+        <div
+          // Re-keying restarts the CSS animation cleanly on every shot.
+          key={shootKey}
+          className={shootKey > 0 ? "dive-aim-shoot" : undefined}
+          style={{
+            position: "absolute",
+            inset: 0,
+            border: `2px solid ${borderColor}`,
+            borderRadius: "50%",
+            opacity,
+            transform,
+            transitionProperty: "transform, opacity, border-color",
+            transitionDuration: "250ms",
+            transitionTimingFunction: transitionTiming,
+            transformOrigin: "center center",
+          }}
+        />
+        {/* Center dot — small precision aid, hidden when the ring is hidden. */}
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: 2,
+            height: 2,
+            marginLeft: -1,
+            marginTop: -1,
+            borderRadius: "50%",
+            background: borderColor,
+            opacity: opacity * 0.9,
+            transition: "opacity 250ms, background 250ms",
+          }}
+        />
+      </div>
     </div>
   );
 }

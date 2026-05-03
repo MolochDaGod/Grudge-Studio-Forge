@@ -268,37 +268,41 @@ export function ThirdPersonCameraController({
   const yawRef = useRef(0);
   const pitchRef = useRef(0.45);
   const distRef = useRef(8);
-  const draggingRef = useRef(false);
-  const lastRef = useRef({ x: 0, y: 0 });
+  // True while the canvas owns pointer-lock — mouselook only applies then so
+  // editor mode (no lock) doesn't accidentally orbit when the cursor moves.
+  // The PointerLockBridge in Viewport.tsx is the canonical owner of the lock
+  // request; this controller just observes and reads movementX/Y deltas.
+  const lockedRef = useRef(false);
 
   useEffect(() => {
     const el = gl.domElement;
     const sens = env.mouseSensitivity ?? 0.0025;
-    const onDown = (e: MouseEvent) => {
-      draggingRef.current = true;
-      lastRef.current = { x: e.clientX, y: e.clientY };
+    const onLockChange = () => {
+      lockedRef.current = document.pointerLockElement === el;
     };
-    const onUp = () => (draggingRef.current = false);
     const onMove = (e: MouseEvent) => {
-      if (!draggingRef.current) return;
-      const dx = e.clientX - lastRef.current.x;
-      const dy = e.clientY - lastRef.current.y;
-      lastRef.current = { x: e.clientX, y: e.clientY };
-      yawRef.current -= dx * sens;
-      pitchRef.current = THREE.MathUtils.clamp(pitchRef.current + dy * sens, -0.4, 1.2);
+      if (!lockedRef.current) return;
+      // movementX/Y is the only mouse delta source that keeps producing values
+      // under pointer-lock (clientX/Y stays clamped at the lock anchor). This
+      // is what makes the dive-style "always centered crosshair" feel work.
+      yawRef.current -= e.movementX * sens;
+      pitchRef.current = THREE.MathUtils.clamp(
+        pitchRef.current + e.movementY * sens,
+        -0.4,
+        1.2,
+      );
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       distRef.current = THREE.MathUtils.clamp(distRef.current + e.deltaY * 0.01, 3, 20);
     };
-    el.addEventListener("mousedown", onDown);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("mousemove", onMove);
+    document.addEventListener("pointerlockchange", onLockChange);
+    document.addEventListener("mousemove", onMove);
     el.addEventListener("wheel", onWheel, { passive: false });
+    onLockChange();
     return () => {
-      el.removeEventListener("mousedown", onDown);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("mousemove", onMove);
+      document.removeEventListener("pointerlockchange", onLockChange);
+      document.removeEventListener("mousemove", onMove);
       el.removeEventListener("wheel", onWheel);
     };
   }, [gl, env.mouseSensitivity]);

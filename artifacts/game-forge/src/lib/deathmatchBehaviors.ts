@@ -57,6 +57,9 @@ exports.start = function(entity, ctx) {
   ctx.state.dead = false;
   ctx.state.deadUntil = 0;
   ctx.state.score = 0;
+  // Tracks RMB-held aim state so we only emit "weaponAim" on transitions
+  // (the HUD's DiveAim subscribes and recolors the reticle red).
+  ctx.state.aiming = false;
   // Inbox: receive damage from enemies.
   ctx.scene.on("damage", function(payload, fromId) {
     if (ctx.state.dead) return;
@@ -109,6 +112,14 @@ exports.update = function(entity, ctx) {
       ctx.events.emit("playerRespawning", { secondsLeft: Math.ceil(ctx.state.deadUntil - ctx.time.elapsed) });
       return;
     }
+  }
+
+  // RMB-held aim → recolor the dive reticle red. Only emit on transitions so
+  // we don't spam the bus every frame the button is down.
+  const wantAim = !!ctx.input.mouse.right;
+  if (wantAim !== ctx.state.aiming) {
+    ctx.state.aiming = wantAim;
+    ctx.events.emit("weaponAim", { aiming: wantAim });
   }
 
   // LMB shoot with cooldown.

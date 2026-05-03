@@ -601,6 +601,60 @@ function ClickToDeselect() {
   return null;
 }
 
+/**
+ * Universal pointer-lock bridge for play mode.
+ *
+ * Mounted inside the R3F Canvas (so it can grab `gl.domElement`) and only
+ * during play. Requests pointer-lock on click, tracks the lock state via
+ * the native `pointerlockchange` event, and pushes that state up via
+ * `onChange` so a sibling DOM overlay can render the "Click to capture ·
+ * ESC to release" hint when unlocked.
+ *
+ * Browser semantics:
+ *   - Pressing ESC natively releases the lock — no manual ESC handler.
+ *   - The lock survives until ESC, tab blur, or `document.exitPointerLock()`.
+ *   - Each click while unlocked re-requests the lock; the browser may
+ *     ratelimit re-requests after a manual user release within ~1.5s
+ *     (the "user-initiated" cooldown). We swallow the resulting
+ *     `SecurityError` so the editor doesn't spam the console.
+ */
+function PointerLockBridge({ onChange }: { onChange: (locked: boolean) => void }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    const el = gl.domElement;
+    const onClick = () => {
+      if (document.pointerLockElement === el) return;
+      try {
+        const p = el.requestPointerLock?.();
+        // Modern browsers return a Promise; older ones return undefined.
+        if (p && typeof (p as Promise<void>).catch === "function") {
+          (p as Promise<void>).catch(() => {
+            /* user-initiated cooldown or denied — handled by overlay state */
+          });
+        }
+      } catch {
+        /* same as above */
+      }
+    };
+    const onLockChange = () => {
+      onChange(document.pointerLockElement === el);
+    };
+    el.addEventListener("click", onClick);
+    document.addEventListener("pointerlockchange", onLockChange);
+    // Sync once on mount in case we re-mounted while already locked.
+    onLockChange();
+    return () => {
+      el.removeEventListener("click", onClick);
+      document.removeEventListener("pointerlockchange", onLockChange);
+      if (document.pointerLockElement === el) {
+        document.exitPointerLock?.();
+      }
+      onChange(false);
+    };
+  }, [gl, onChange]);
+  return null;
+}
+
 /** Snap the orbit-controls target onto the selected entity whenever the user
  *  presses F (or picks "Focus camera" from a context menu). We bump
  *  `focusToken` in the store and the effect below re-runs.
@@ -878,6 +932,13 @@ export function Viewport() {
   // a script or removing a problematic entity).
   const [autoRetryUsed, setAutoRetryUsed] = useState(false);
   const [webgl, setWebgl] = useState(() => probeWebGL());
+  // Tracks whether the canvas currently holds pointer-lock during play.
+  // Drives the dive-style "Click to capture · ESC to release" overlay below.
+  // Reset to false on play stop via the effect further down.
+  const [isPointerLocked, setIsPointerLocked] = useState(false);
+  useEffect(() => {
+    if (!isPlaying) setIsPointerLocked(false);
+  }, [isPlaying]);
 
   const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {
     query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -998,7 +1059,9 @@ export function Viewport() {
                 toneMapping: THREE.NoToneMapping,
               }}
               dpr={[1, 2]}
+              style={isPlaying ? { cursor: "none" } : undefined}
             >
+              {isPlaying && <PointerLockBridge onChange={setIsPointerLocked} />}
               <DevtoolsBridge label="Forge · Scene" />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
               <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 30, 80]} />
@@ -1043,8 +1106,27 @@ export function Viewport() {
             <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
           </div>
 
-          {isPlaying && env.gameMode === "deathmatch" && (
-            <PlayHUD bus={getPlaySession().bus} />
+          {isPlaying && <PlayHUD bus={getPlaySession().bus} />}
+
+          {/* Click-to-capture overlay — appears whenever play is active and the
+              pointer isn't currently locked. Dive-style: a thin centered card
+              with the keybind hint. The Canvas underneath catches the click
+              via PointerLockBridge, so this overlay is purely decorative
+              (pointer-events: none). */}
+          {isPlaying && !isPointerLocked && (
+            <div
+              className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
+              data-testid="pointer-lock-prompt"
+            >
+              <div className="rounded-md border border-white/20 bg-black/70 px-5 py-3 text-center font-mono text-white shadow-xl backdrop-blur">
+                <div className="text-sm font-semibold uppercase tracking-widest">
+                  Click to capture mouse
+                </div>
+                <div className="mt-1 text-[11px] text-white/60">
+                  ESC to release · WASD to move · LMB to fire · RMB to aim
+                </div>
+              </div>
+            </div>
           )}
 
           {showEmptySceneOverlay && (
