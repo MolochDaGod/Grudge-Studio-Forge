@@ -782,15 +782,16 @@ export function deserttownDeathmatchScene(): SceneData {
 // and braziers read clearly.
 export function fortRoyaleDeathmatchScene(): SceneData {
   return buildDeathmatch({
-    // Same scale-up rationale as cyberpunk above. Fort Royale's source
-    // GLB is the smallest of the three, so we go a touch larger (7×)
-    // to land in the same ~280-unit arena footprint as the other two
-    // templates. Brazier positions, intensity, and distance pushed out
-    // by the same factor so the four corner torches still illuminate
-    // the new courtyard properly.
+    // Cranked to 50× per user request — the previous 7× still felt
+    // tiny, so this is now an open-world-scale fort (~2 km across)
+    // that you actually have to traverse. Spawn radius pushed to 540
+    // so the six spawn points sit out by the perimeter walls instead
+    // of clustering at the courtyard center, and the four corner
+    // brazier lights pushed out + boosted in range so they stay
+    // visible at this footprint without going pitch black between.
     mapKey: "map-fort-royale",
-    mapScale: 7.0,
-    spawnRadius: 75,
+    mapScale: 50.0,
+    spawnRadius: 540,
     enemyCount: 6,
     env: {
       skyColor: "#1a1410",
@@ -799,10 +800,10 @@ export function fortRoyaleDeathmatchScene(): SceneData {
       sunIntensity: 0.45,
     },
     brazierLights: [
-      { pos: [42, 14, 42], color: "#ff8a3d", intensity: 90, distance: 130 },
-      { pos: [-42, 14, 42], color: "#ff8a3d", intensity: 90, distance: 130 },
-      { pos: [42, 14, -42], color: "#ff8a3d", intensity: 90, distance: 130 },
-      { pos: [-42, 14, -42], color: "#ff8a3d", intensity: 90, distance: 130 },
+      { pos: [300, 80, 300], color: "#ff8a3d", intensity: 600, distance: 900 },
+      { pos: [-300, 80, 300], color: "#ff8a3d", intensity: 600, distance: 900 },
+      { pos: [300, 80, -300], color: "#ff8a3d", intensity: 600, distance: 900 },
+      { pos: [-300, 80, -300], color: "#ff8a3d", intensity: 600, distance: 900 },
     ],
   });
 }

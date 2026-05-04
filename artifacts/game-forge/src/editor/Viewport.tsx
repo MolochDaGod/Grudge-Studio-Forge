@@ -952,45 +952,10 @@ export function Viewport() {
     templateLoader.start(tpl.key, tpl.label);
   };
 
-  // Auto-load a playable demo on first boot — so the app opens directly into
-  // a ready-to-play scene instead of the empty-scene picker. Picks
-  // dm-fort-royale (10 MB, the fastest map) and only fires once per page load.
-  // Manual triggers (the picker, Toolbar dropdown) remain available afterwards.
-  //
-  // Guards:
-  //   1. Wait until the manifest fetch resolves (`!tplQuery.isLoading` AND
-  //      we have at least one entry) — without it `start()` would race the
-  //      Toolbar dropdown's eventual click and load nothing.
-  //   2. Only when the scene is genuinely empty AND not already loading
-  //      AND we're not in a sub-scene (prefab editor) AND not playing.
-  //   3. `autoLoadFiredRef` latches forever after the first call — if the
-  //      user later deletes everything by hand, they get the picker, not
-  //      another forced reload.
-  const autoLoadFiredRef = useRef(false);
-  useEffect(() => {
-    if (autoLoadFiredRef.current) return;
-    if (tplQuery.isLoading) return;
-    if (templateManifest.length === 0) return;
-    if (templateLoader.isLoading) return;
-    if (sceneEntitiesCount > 0) return;
-    if (prefabSubScene) return;
-    if (isPlaying) return;
-    // Prefer dm-fort-royale (10 MB — fastest), fall back to the first
-    // available template if it ever gets removed from the manifest.
-    const preferred =
-      templateManifest.find((t) => t.key === "dm-fort-royale") ??
-      templateManifest[0];
-    if (!preferred) return;
-    autoLoadFiredRef.current = true;
-    templateLoader.start(preferred.key, preferred.label);
-  }, [
-    tplQuery.isLoading,
-    templateManifest,
-    templateLoader,
-    sceneEntitiesCount,
-    prefabSubScene,
-    isPlaying,
-  ]);
+  // (No auto-load on first boot — opens straight into the empty-scene
+  // picker so the user chooses what to play instead of being dropped into
+  // a hard-coded demo. Manual triggers stay available via the picker
+  // overlay and the Toolbar / File menu.)
 
   // Right-click bookkeeping. R3F dispatches `onContextMenu` to the topmost
   // intersected entity DURING the same browser event that Radix later opens
