@@ -709,15 +709,17 @@ function buildDeathmatch(opts: {
 export function cyberpunkDeathmatchScene(): SceneData {
   return buildDeathmatch({
     // Chicken_gun source maps are authored for ~1 m mobile-game characters
-    // (literal chickens), so the previous 0.5–0.6× scaling left a 1.7 m
-    // player towering over a ~30-unit arena — closer to a small bedroom
-    // than an FPS map. Scaling UP to 2.5× gives an arena ~120 units
-    // across, which feels right for a deathmatch with run/cover/sightlines.
-    // Spawn radius scales with it so spawns spread across the new size
-    // instead of clustering at the (now relative) center.
+    // (literal chickens). Previous 2.5× scaling still left the arena
+    // ~120 units across, which the player reported as "tiny" — only a
+    // few seconds of running covered the whole map. Bumped to 6× so the
+    // arena is ~280 units across, comparable to a Quake / Halo CE
+    // deathmatch map. Spawn radius scales with it so spawns spread to
+    // the perimeter instead of clustering at center, and brazier
+    // positions are pushed out the same factor so the neon pools still
+    // fall ON the arena landmarks.
     mapKey: "map-cyberpunk",
-    mapScale: 2.5,
-    spawnRadius: 36,
+    mapScale: 6.0,
+    spawnRadius: 90,
     enemyCount: 6,
     env: {
       skyColor: "#06061a",
@@ -725,25 +727,23 @@ export function cyberpunkDeathmatchScene(): SceneData {
       ambientIntensity: 0.32,
       sunIntensity: 0.28,
     },
-    // Brazier positions + ranges scaled with the map (5× the previous
-    // numbers) so the neon pools fall ON the new arena's landmarks
-    // instead of all clustering inside ~10 units of origin.
     brazierLights: [
-      { pos: [25, 12, 0], color: "#ff2d8a", intensity: 60, distance: 70 },
-      { pos: [-25, 12, 0], color: "#21d4ff", intensity: 60, distance: 70 },
-      { pos: [0, 14, 30], color: "#a020f0", intensity: 50, distance: 65 },
-      { pos: [0, 14, -30], color: "#39ff14", intensity: 50, distance: 65 },
+      { pos: [60, 18, 0], color: "#ff2d8a", intensity: 90, distance: 140 },
+      { pos: [-60, 18, 0], color: "#21d4ff", intensity: 90, distance: 140 },
+      { pos: [0, 22, 72], color: "#a020f0", intensity: 75, distance: 130 },
+      { pos: [0, 22, -72], color: "#39ff14", intensity: 75, distance: 130 },
     ],
   });
 }
 
 export function encampmentDeathmatchScene(): SceneData {
   return buildDeathmatch({
-    // Same scale-up rationale as cyberpunk above — chicken_gun source
-    // GLB authored for ~1 m characters; 2.5× makes it human-FPS sized.
+    // Same scale-up rationale as cyberpunk above — bumped from 2.5×
+    // to 6× so the wooded encampment plays like a real outdoor FPS
+    // arena instead of a campsite you can walk across in 3 seconds.
     mapKey: "map-encampment",
-    mapScale: 2.5,
-    spawnRadius: 38,
+    mapScale: 6.0,
+    spawnRadius: 95,
     enemyCount: 7,
     env: {
       skyColor: "#0c1018",
@@ -752,9 +752,9 @@ export function encampmentDeathmatchScene(): SceneData {
       sunIntensity: 0.5,
     },
     brazierLights: [
-      { pos: [20, 9, 15], color: "#ff8a3d", intensity: 50, distance: 60 },
-      { pos: [-20, 9, -15], color: "#ff8a3d", intensity: 50, distance: 60 },
-      { pos: [0, 14, 0], color: "#ffe6a8", intensity: 35, distance: 80 },
+      { pos: [50, 14, 36], color: "#ff8a3d", intensity: 80, distance: 130 },
+      { pos: [-50, 14, -36], color: "#ff8a3d", intensity: 80, distance: 130 },
+      { pos: [0, 22, 0], color: "#ffe6a8", intensity: 60, distance: 170 },
     ],
   });
 }
@@ -782,12 +782,15 @@ export function deserttownDeathmatchScene(): SceneData {
 // and braziers read clearly.
 export function fortRoyaleDeathmatchScene(): SceneData {
   return buildDeathmatch({
-    // Same scale-up rationale as cyberpunk above — the fort GLB is the
-    // smallest of the chicken_gun maps, so we go a touch larger (3×) to
-    // give a comparable arena footprint to the other two templates.
+    // Same scale-up rationale as cyberpunk above. Fort Royale's source
+    // GLB is the smallest of the three, so we go a touch larger (7×)
+    // to land in the same ~280-unit arena footprint as the other two
+    // templates. Brazier positions, intensity, and distance pushed out
+    // by the same factor so the four corner torches still illuminate
+    // the new courtyard properly.
     mapKey: "map-fort-royale",
-    mapScale: 3.0,
-    spawnRadius: 30,
+    mapScale: 7.0,
+    spawnRadius: 75,
     enemyCount: 6,
     env: {
       skyColor: "#1a1410",
@@ -796,10 +799,10 @@ export function fortRoyaleDeathmatchScene(): SceneData {
       sunIntensity: 0.45,
     },
     brazierLights: [
-      { pos: [16, 9, 16], color: "#ff8a3d", intensity: 55, distance: 55 },
-      { pos: [-16, 9, 16], color: "#ff8a3d", intensity: 55, distance: 55 },
-      { pos: [16, 9, -16], color: "#ff8a3d", intensity: 55, distance: 55 },
-      { pos: [-16, 9, -16], color: "#ff8a3d", intensity: 55, distance: 55 },
+      { pos: [42, 14, 42], color: "#ff8a3d", intensity: 90, distance: 130 },
+      { pos: [-42, 14, 42], color: "#ff8a3d", intensity: 90, distance: 130 },
+      { pos: [42, 14, -42], color: "#ff8a3d", intensity: 90, distance: 130 },
+      { pos: [-42, 14, -42], color: "#ff8a3d", intensity: 90, distance: 130 },
     ],
   });
 }
