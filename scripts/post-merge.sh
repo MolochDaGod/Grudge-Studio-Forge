@@ -5,17 +5,30 @@
 # `drizzle-kit push` (push prompts for table renames against the shared
 # Grudge database, which would silently destroy data on stdin EOF).
 set -e
+# pipefail so the typecheck pipeline below propagates `pnpm`'s exit
+# status instead of `tee`'s — without it, a failing typecheck would
+# silently fall through to the migration step.
+set -o pipefail
 pnpm install --frozen-lockfile
 
-# Workspace-wide typecheck gate. The platform's per-artifact build only
-# typechecks the artifact it is building, so a cross-package regression
-# (e.g. a lib change that breaks api-server) can sneak past `Publish`
-# and take prod down. Running the full `pnpm run typecheck` here means
-# any merge into main that breaks libs or any leaf package fails loudly
-# on the post-merge hook BEFORE the deploy is triggered. `set -e` above
-# guarantees a non-zero exit aborts the rest of this script.
-echo "[post-merge] running workspace typecheck..."
-pnpm run typecheck
+# Merge-blocking typecheck gate. The same `pnpm run typecheck` is also
+# registered as a pre-merge workspace validation (`isValidation = true`)
+# for visibility on the author's branch, but THIS hook is the layer that
+# actually fails the merge: a non-zero exit here is recorded by the
+# platform as a failed merge, so DB migrations are skipped and the
+# deploy is not triggered. See DEPLOYMENT.md ("Typecheck gate").
+TYPECHECK_LOG="/tmp/post-merge-typecheck.log"
+echo "[post-merge] running workspace typecheck (merge-blocking gate)..."
+if ! pnpm run typecheck 2>&1 | tee "$TYPECHECK_LOG"; then
+  echo ""
+  echo "============================================================"
+  echo "[post-merge] MERGE BLOCKED: workspace typecheck failed."
+  echo "[post-merge] DB migrations skipped; deploy will not run."
+  echo "[post-merge] Full output: $TYPECHECK_LOG"
+  echo "[post-merge] Reproduce locally: pnpm run typecheck"
+  echo "============================================================"
+  exit 1
+fi
 
 # Workspace-wide test gate. Mirrors the typecheck gate above: the platform's
 # per-artifact build never runs tests, so a logic regression that compiles
