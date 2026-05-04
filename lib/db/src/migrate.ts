@@ -130,11 +130,35 @@ const STATEMENTS: ReadonlyArray<{ name: string; sql: string }> = [
  */
 const MIGRATION_ADVISORY_LOCK_KEY = 0x46_4f_52_47_45_4d_49_47n; // "FORGEMIG"
 
+export interface RunMigrationsOptions {
+  /**
+   * If set, the migration runner issues `SET search_path TO "<schema>"`
+   * on its acquired session before applying any STATEMENTS. Used by the
+   * pre-merge dry-run (see `migrate-dryrun-cli.ts`) to apply the same
+   * SQL against an ephemeral schema in the same physical DB, so a
+   * broken migration is caught on the author's branch without touching
+   * the real `forge_*` tables in `public`.
+   *
+   * Schema name MUST be a safe identifier — the runner double-quotes it
+   * but does not otherwise escape it. Callers generate it themselves.
+   */
+  searchPath?: string;
+}
+
 export async function runMigrations(
   log: (name: string, ok: boolean) => void = () => {},
+  options: RunMigrationsOptions = {},
 ): Promise<void> {
   const client = await pool.connect();
   try {
+    if (options.searchPath !== undefined) {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(options.searchPath)) {
+        throw new Error(
+          `runMigrations: unsafe searchPath identifier ${JSON.stringify(options.searchPath)}`,
+        );
+      }
+      await client.query(`SET search_path TO "${options.searchPath}"`);
+    }
     await client.query("SELECT pg_advisory_lock($1)", [
       MIGRATION_ADVISORY_LOCK_KEY.toString(),
     ]);

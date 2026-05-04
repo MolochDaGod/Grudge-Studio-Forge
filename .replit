@@ -24,6 +24,10 @@ args = "typecheck"
 task = "workflow.run"
 args = "test"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "migrate-dryrun"
+
 [[workflows.workflow]]
 name = "typecheck"
 author = "agent"
@@ -42,6 +46,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm run test"
+
+[workflows.workflow.metadata]
+isValidation = true
+
+[[workflows.workflow]]
+name = "migrate-dryrun"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/db run migrate:dryrun"
 
 [workflows.workflow.metadata]
 isValidation = true

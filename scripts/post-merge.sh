@@ -40,4 +40,27 @@ fi
 echo "[post-merge] running workspace tests..."
 pnpm run test
 
+# Merge-blocking migration dry-run gate. Same pattern as the typecheck
+# and test gates: a pre-merge `migrate-dryrun` validation gives the
+# author visibility on their branch, and THIS hook is the layer that
+# actually fails the merge. Applies the same idempotent STATEMENTS list
+# the boot-time runner uses, but against an ephemeral schema in the
+# shared Grudge DB (see lib/db/src/migrate-dryrun-cli.ts) so a broken
+# CREATE TABLE / guarded ALTER never half-applies against `public`.
+# A failure here exits non-zero, the platform records the merge as
+# failed, the real `migrate` step below is skipped, and the deploy is
+# not triggered. See DEPLOYMENT.md ("Migration dry-run gate").
+DRYRUN_LOG="/tmp/post-merge-migrate-dryrun.log"
+echo "[post-merge] running migration dry-run (merge-blocking gate)..."
+if ! pnpm --filter @workspace/db run migrate:dryrun 2>&1 | tee "$DRYRUN_LOG"; then
+  echo ""
+  echo "============================================================"
+  echo "[post-merge] MERGE BLOCKED: migration dry-run failed."
+  echo "[post-merge] Real DB migration skipped; deploy will not run."
+  echo "[post-merge] Full output: $DRYRUN_LOG"
+  echo "[post-merge] Reproduce locally: pnpm --filter @workspace/db run migrate:dryrun"
+  echo "============================================================"
+  exit 1
+fi
+
 pnpm --filter @workspace/db run migrate

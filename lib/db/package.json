@@ -10,6 +10,7 @@
   },
   "scripts": {
     "migrate": "tsx src/migrate-cli.ts",
+    "migrate:dryrun": "tsx src/migrate-dryrun-cli.ts",
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
   },
