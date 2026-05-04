@@ -30,7 +30,7 @@ import {
 import { Hotbar } from "@/editor/Hotbar";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
-import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2 } from "lucide-react";
+import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2, X } from "lucide-react";
 import {
   useListPrefabs,
   getListPrefabsQueryKey,
@@ -930,8 +930,20 @@ export function Viewport() {
   // intended content.
   const sceneEntitiesCount = useEditor((s) => s.sceneData.entities.length);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
+  // Dismissable picker — user can X-out the "Pick a starting template"
+  // overlay if they want to build from scratch instead. Auto-resets the
+  // moment the scene becomes non-empty (so loading a template, adding a
+  // primitive, etc.) and re-arms when the scene goes empty again — that
+  // way "File → New" still surfaces the picker on a fresh scene.
+  const [pickerDismissed, setPickerDismissed] = useState(false);
+  useEffect(() => {
+    if (sceneEntitiesCount > 0 && pickerDismissed) setPickerDismissed(false);
+  }, [sceneEntitiesCount, pickerDismissed]);
   const showEmptySceneOverlay =
-    !isPlaying && !prefabSubScene && sceneEntitiesCount === 0;
+    !isPlaying &&
+    !prefabSubScene &&
+    sceneEntitiesCount === 0 &&
+    !pickerDismissed;
 
   // Pull the manifest from the api-server (cached after the first call
   // by React Query, so the Toolbar dropdown and this overlay share the
@@ -1204,11 +1216,20 @@ export function Viewport() {
               className="absolute inset-0 flex items-center justify-center pointer-events-none"
               data-testid="empty-scene-overlay"
             >
-              <div className="pointer-events-auto max-w-md w-[420px] rounded-xl border border-card-border bg-card/95 backdrop-blur shadow-xl p-5">
+              <div className="pointer-events-auto relative max-w-md w-[420px] rounded-xl border border-card-border bg-card/95 backdrop-blur shadow-xl p-5">
+                <button
+                  type="button"
+                  onClick={() => setPickerDismissed(true)}
+                  aria-label="Close template picker"
+                  className="absolute top-2 right-2 w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 border border-transparent hover:border-card-border transition-colors"
+                  data-testid="empty-scene-overlay-close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
                 <div className="text-[11px] font-heading uppercase tracking-[0.18em] text-accent mb-1">
                   New Scene
                 </div>
-                <h2 className="text-lg font-heading mb-1">
+                <h2 className="text-lg font-heading mb-1 pr-7">
                   Pick a starting template
                 </h2>
                 <p className="text-xs text-muted-foreground mb-4">
