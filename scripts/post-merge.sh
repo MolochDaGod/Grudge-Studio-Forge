@@ -52,13 +52,13 @@ pnpm run test
 # not triggered. See DEPLOYMENT.md ("Migration dry-run gate").
 DRYRUN_LOG="/tmp/post-merge-migrate-dryrun.log"
 echo "[post-merge] running migration dry-run (merge-blocking gate)..."
-if ! pnpm --filter @workspace/db run migrate:dryrun 2>&1 | tee "$DRYRUN_LOG"; then
+if ! pnpm --filter @workspace/db run migrate:dryrun -- --seed 2>&1 | tee "$DRYRUN_LOG"; then
   echo ""
   echo "============================================================"
   echo "[post-merge] MERGE BLOCKED: migration dry-run failed."
   echo "[post-merge] Real DB migration skipped; deploy will not run."
   echo "[post-merge] Full output: $DRYRUN_LOG"
-  echo "[post-merge] Reproduce locally: pnpm --filter @workspace/db run migrate:dryrun"
+  echo "[post-merge] Reproduce locally: pnpm --filter @workspace/db run migrate:dryrun -- --seed"
   echo "============================================================"
   exit 1
 fi

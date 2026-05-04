@@ -174,7 +174,7 @@ Two different hooks touch the database. They serve different purposes:
 | | `scripts/post-merge.sh` | Deploy boot |
 | --- | --- | --- |
 | Trigger | Branch merged into main | `Publish` button / autoscale cold start |
-| Runs | `pnpm install --frozen-lockfile` + `pnpm run typecheck` + `pnpm run test` + `pnpm --filter @workspace/db run migrate:dryrun` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
+| Runs | `pnpm install --frozen-lockfile` + `pnpm run typecheck` + `pnpm run test` + `pnpm --filter @workspace/db run migrate:dryrun -- --seed` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
 | Target DB | Dev (shared) | Prod (shared) — same physical DB in this project |
 | Interactive? | No (stdin closed) | No |
 
@@ -184,14 +184,14 @@ hook exists so a fresh prod instance can never serve a half-migrated DB.
 
 ## Pre-merge / post-merge gates (typecheck + test + migrate-dryrun)
 
-The same workspace-wide `pnpm run typecheck`, `pnpm run test`, and `pnpm --filter @workspace/db run migrate:dryrun` each run in two places, for two different audiences. Together they form a **merge-blocking gate** — a red gate stops the merge rather than just flagging it.
+The same workspace-wide `pnpm run typecheck`, `pnpm run test`, and `pnpm --filter @workspace/db run migrate:dryrun -- --seed` each run in two places, for two different audiences. Together they form a **merge-blocking gate** — a red gate stops the merge rather than just flagging it.
 
 Note on the split: the platform here does not expose a per-validation "block the merge button" toggle — `WorkflowMetadata` in `.replit` only supports `isValidation`. So the pre-merge validations are visibility-only (red status next to the merge controls, but the merge button is not itself disabled), and the **post-merge hook is the real enforcement layer**: a non-zero exit there is recorded by the platform as a failed merge, DB migrations are skipped, and the deploy is not triggered.
 
-1. **Pre-merge visibility (per-branch):** registered as workspace **validations** named `typecheck` (shell: `pnpm run typecheck`), `test` (shell: `pnpm run test`), and `migrate-dryrun` (shell: `pnpm --filter @workspace/db run migrate:dryrun`) with `isValidation = true` in `.replit`. They show up in the workspace UI next to the branch / merge controls so an author can run them — or see them fail — on their own branch **before** requesting a merge. The merge UI surfaces the failing run and links to its log so the author can fix it on the branch instead of finding out at the post-merge step.
-2. **Post-merge enforcement (the actual block):** `scripts/post-merge.sh` re-runs `pnpm run typecheck`, `pnpm run test`, and `pnpm --filter @workspace/db run migrate:dryrun` after `pnpm install` and **before** the real `pnpm --filter @workspace/db run migrate`. On failure the script:
+1. **Pre-merge visibility (per-branch):** registered as workspace **validations** named `typecheck` (shell: `pnpm run typecheck`), `test` (shell: `pnpm run test`), and `migrate-dryrun` (shell: `pnpm --filter @workspace/db run migrate:dryrun -- --seed`) with `isValidation = true` in `.replit`. They show up in the workspace UI next to the branch / merge controls so an author can run them — or see them fail — on their own branch **before** requesting a merge. The merge UI surfaces the failing run and links to its log so the author can fix it on the branch instead of finding out at the post-merge step.
+2. **Post-merge enforcement (the actual block):** `scripts/post-merge.sh` re-runs `pnpm run typecheck`, `pnpm run test`, and `pnpm --filter @workspace/db run migrate:dryrun -- --seed` after `pnpm install` and **before** the real `pnpm --filter @workspace/db run migrate`. On failure the script:
    - exits non-zero (`set -e` plus `set -o pipefail` so the `tee` pipeline doesn't mask `pnpm`'s exit code), so the platform records the merge as **failed**, the merge UI shows it as blocked with a link to this run's log, and the deploy is **not** triggered;
-   - prints an explicit `MERGE BLOCKED` banner with the path to the full log (e.g., `/tmp/post-merge-typecheck.log`, `/tmp/post-merge-migrate-dryrun.log`) and the exact command to reproduce locally (`pnpm run typecheck`, `pnpm run test`, or `pnpm --filter @workspace/db run migrate:dryrun`);
+   - prints an explicit `MERGE BLOCKED` banner with the path to the full log (e.g., `/tmp/post-merge-typecheck.log`, `/tmp/post-merge-migrate-dryrun.log`) and the exact command to reproduce locally (`pnpm run typecheck`, `pnpm run test`, or `pnpm --filter @workspace/db run migrate:dryrun -- --seed`);
    - **skips the real DB migration step**, so a regression can never apply schema changes to the shared Grudge DB.
 
 This is the layer that makes the gate enforceable rather than advisory: even if the pre-merge validation is ignored, or a hot-fix bypasses the per-branch check, the post-merge hook will still block the merge from reaching main / production.
@@ -204,7 +204,7 @@ branch instead of finding out from a red post-merge hook.
 non-zero, the post-merge hook is recorded as failed, and the publish flow
 surfaces it in the merge / deploy log instead of silently shipping a broken
 build. The order is: `pnpm install` → `pnpm run typecheck` →
-`pnpm run test` → `pnpm --filter @workspace/db run migrate:dryrun` →
+`pnpm run test` → `pnpm --filter @workspace/db run migrate:dryrun -- --seed` →
 `pnpm --filter @workspace/db run migrate`.
 
 ### Migration dry-run gate
@@ -218,22 +218,42 @@ post-merge, after the typecheck and test gates have already let the merge
 through, and can leave dev half-migrated (some statements applied, the bad
 one rolled back, subsequent statements never reached).
 
-How it works: `pnpm --filter @workspace/db run migrate:dryrun` runs
-`lib/db/src/migrate-dryrun-cli.ts`, which:
+How it works: `pnpm --filter @workspace/db run migrate:dryrun -- --seed`
+runs `lib/db/src/migrate-dryrun-cli.ts`, which:
 
 1. Connects with the same `DATABASE_URL` / `pg` pool the app uses (so any
    TLS / pooling / network issue surfaces the same way it would in prod).
 2. Creates a unique throwaway schema (`forge_migrate_dryrun_<pid>_<rand>`).
-3. Calls `runMigrations()` with `{ searchPath: <temp schema> }`. Because
+3. **Seeds the temp schema with representative production data** (only
+   when `--seed` is passed; both pre-merge validation and post-merge
+   hook do). For every `public.forge_*` table that currently exists,
+   the CLI runs:
+   - `CREATE TABLE "<temp>".<t> (LIKE public.<t> INCLUDING ALL)` — copies
+     columns, defaults, identity, check constraints, primary key, and
+     indexes. Foreign keys are deliberately NOT copied (they aren't
+     part of the `LIKE` clause), so a partial `LIMIT N` sample never
+     trips an FK check during INSERT.
+   - `INSERT INTO "<temp>".<t> SELECT * FROM public.<t> LIMIT N`
+     (default 100, override with `--seed-rows=<N>`).
+4. Calls `runMigrations()` with `{ searchPath: <temp schema> }`. Because
    every statement in `STATEMENTS` references unqualified relation names
    (`forge_projects`, `REFERENCES forge_projects(id)`, …), they all resolve
-   inside the temp schema — `CREATE TABLE IF NOT EXISTS` *actually* creates
-   (rather than no-oping against the existing `public.forge_projects`),
-   and any `ALTER TABLE … ADD COLUMN IF NOT EXISTS` lands on the dry-run
-   table rather than the real one.
-4. `DROP SCHEMA "<temp>" CASCADE` in `finally`, then `pool.end()`. The
+   inside the temp schema. With seeding on, `CREATE TABLE IF NOT EXISTS`
+   no-ops on the seeded copies and any `ALTER TABLE … ADD COLUMN IF NOT
+   EXISTS` lands on a *populated* table — so a guarded `ADD COLUMN ...
+   NOT NULL` without a default (or any other constraint that conflicts
+   with existing rows) fails on the author's branch instead of
+   half-applying post-merge. New tables that don't yet exist in
+   `public` are still created empty by `CREATE TABLE IF NOT EXISTS`,
+   exactly as before.
+5. `DROP SCHEMA "<temp>" CASCADE` in `finally`, then `pool.end()`. The
    cleanup runs even if a statement crashed mid-run, so a failing dry-run
-   never leaves dangling tables behind.
+   never leaves dangling tables (or seeded copies) behind.
+
+Without `--seed`, the temp schema starts empty: every `CREATE TABLE`
+succeeds and every `ALTER` lands on a zero-row table. That still
+catches syntax errors and broken FK targets but cannot catch
+data-incompatible migrations — which is why both gates pass `--seed`.
 
 #### Stale schema sweeper
 
@@ -281,7 +301,7 @@ to `/tmp/post-merge-migrate-dryrun.log`, and exits non-zero — the platform
 records the merge as failed, the real migration is skipped, and the
 deploy is not triggered.
 
-Reproduce locally: `pnpm --filter @workspace/db run migrate:dryrun`
+Reproduce locally: `pnpm --filter @workspace/db run migrate:dryrun -- --seed`
 (needs `DATABASE_URL` set).
 
 **Why these live here, not in `[deployment.postBuild]`:**

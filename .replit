@@ -56,7 +56,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pnpm --filter @workspace/db run migrate:dryrun"
+args = "pnpm --filter @workspace/db run migrate:dryrun -- --seed"
 
 [workflows.workflow.metadata]
 isValidation = true
