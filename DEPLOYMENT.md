@@ -182,13 +182,24 @@ Both call the same idempotent `runMigrations()`, so re-runs are no-ops. The
 post-merge hook exists so dev never lags behind a schema change; the boot
 hook exists so a fresh prod instance can never serve a half-migrated DB.
 
-## Typecheck gate (post-merge)
+## Typecheck gate (pre-merge and post-merge)
 
-`scripts/post-merge.sh` runs `pnpm run typecheck` after `pnpm install` and
-**before** `pnpm --filter @workspace/db run migrate`. Because the script is
-`set -e`, a typecheck failure exits non-zero, the post-merge hook is recorded
-as failed, and the publish flow surfaces it in the merge / deploy log instead
-of silently shipping a broken build.
+The same workspace-wide `pnpm run typecheck` runs in two places, for two
+different audiences:
+
+1. **Pre-merge (per-branch):** registered as a workspace **validation** named
+   `typecheck` (shell: `pnpm run typecheck`). It shows up in the workspace UI
+   alongside the branch / merge controls so an author can run it — or see it
+   fail — on their own branch **before** requesting a merge into main. A
+   failing validation is visible at the merge step; fix it on the branch
+   instead of finding out from a red post-merge hook.
+2. **Post-merge (safety net):** `scripts/post-merge.sh` re-runs
+   `pnpm run typecheck` after `pnpm install` and **before**
+   `pnpm --filter @workspace/db run migrate`. Because the script is `set -e`,
+   a typecheck failure exits non-zero, the post-merge hook is recorded as
+   failed, and the publish flow surfaces it in the merge / deploy log
+   instead of silently shipping a broken build. This still matters for
+   hot-fixes or out-of-band merges that bypass the per-branch validation.
 
 **Why it lives here, not in `[deployment.postBuild]`:**
 
@@ -199,13 +210,24 @@ of silently shipping a broken build.
 - `pnpm run typecheck` covers `tsc --build` for every composite lib **plus**
   `tsc --noEmit` for every leaf workspace package (api-server, game-forge,
   game-forge-desktop, mockup-sandbox, scripts). One command, one gate.
-- Running it on post-merge means the gate fires the moment a branch lands on
-  main, before the deploy is triggered — and also blocks dev from lagging
-  behind a broken merge.
+- Wiring the same command into both the pre-merge validation and the
+  post-merge hook means the gate fires while the author can still fix it on
+  their own branch, *and* again the moment a branch lands on main — before
+  the deploy is triggered.
 
-If a deploy goes out and prod is on fire, suspect a typecheck regression that
-slipped in via a hot-fix that bypassed the merge hook. Re-run
-`pnpm run typecheck` locally to confirm.
+### Where to look when it fails
+
+- **On your branch (pre-merge):** open the `typecheck` validation in the
+  workspace UI. The run summary lists the failing command and links to its
+  log. You can also reproduce locally with `pnpm run typecheck` from the
+  repo root.
+- **After merge (post-merge):** check the post-merge hook log for the
+  `[post-merge] running workspace typecheck...` line — anything below it is
+  the failing `tsc` output. The merge will be marked failed and the deploy
+  will not proceed.
+- **In a deploy that's already on fire:** suspect a typecheck regression
+  that slipped in via a hot-fix that bypassed both gates. Re-run
+  `pnpm run typecheck` locally to confirm, then patch forward.
 
 ## Out of scope here
 
