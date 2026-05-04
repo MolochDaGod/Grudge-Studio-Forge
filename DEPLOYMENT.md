@@ -235,6 +235,35 @@ How it works: `pnpm --filter @workspace/db run migrate:dryrun` runs
    cleanup runs even if a statement crashed mid-run, so a failing dry-run
    never leaves dangling tables behind.
 
+#### Stale schema sweeper
+
+Step 4's `finally` runs in 99% of cases. The 1% it doesn't is when the
+Node process is taken out hard between the `CREATE SCHEMA` and the
+`finally` — SIGKILL from an OOM, container eviction, the CI runner
+being yanked, or a hung pg client that survives `pool.end()`. In those
+cases the temp schema is left behind in the shared Grudge DB. The
+table contents are isolated from `public.forge_*` so they're harmless,
+but they accumulate and clutter `\dn` output.
+
+To keep things tidy, every dry-run runs `sweepStaleDryRunSchemas()`
+(`lib/db/src/migrate-dryrun-sweeper.ts`) **before** creating its own
+schema. The sweeper:
+
+1. Lists every `forge_migrate_dryrun_*` schema in the current DB.
+2. For each one, tries `pg_try_advisory_lock(<key>)` where the key is
+   a deterministic FNV-1a hash of the schema name. The live dry-run
+   holds that same advisory lock for the lifetime of its session
+   (released automatically by Postgres when the connection closes,
+   even on a hard crash) — so a successful `try_lock` proves no live
+   owner exists and the schema is orphaned.
+3. `DROP SCHEMA … CASCADE`s the orphans. Schemas owned by a parallel
+   in-flight dry-run on another runner are skipped.
+
+A sweeper failure is downgraded to a `WARN` and never blocks the real
+dry-run — the gate exists to catch broken migrations, not to flake on
+a transient connection blip during housekeeping. Sweeper output is
+prefixed `migrate-dryrun · sweeper` in the run log.
+
 Why a temp **schema** and not a temp **database**: creating a database
 requires `CREATEDB` on the role; the shared Grudge role does not have it.
 Schemas only need `USAGE` / `CREATE` on the current DB, which the app role

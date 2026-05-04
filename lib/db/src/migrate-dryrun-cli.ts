@@ -30,15 +30,25 @@
  * downgraded to a stderr WARN and do NOT change the exit code — the
  * gate exists to catch broken migrations, not to flake on a transient
  * connection blip during teardown after the migration already
- * succeeded. Leftover `forge_migrate_dryrun_*` schemas are harmless
- * (tables are isolated from `public.forge_*`), but they accumulate;
- * grep for `migrate-dryrun · WARN: failed to drop temp schema` in the
- * validation / post-merge logs to spot them, and drop manually with
- * `DROP SCHEMA "<name>" CASCADE` against the shared DB.
+ * succeeded.
+ *
+ * Crash-safety / leftover sweeper: if the Node process is taken out
+ * hard (SIGKILL, container eviction, OOM) between `CREATE SCHEMA` and
+ * the `finally`, the temp schema is left behind. To keep the shared DB
+ * tidy without risking a live concurrent run, this CLI runs
+ * `sweepStaleDryRunSchemas()` *before* creating its own schema. The
+ * sweeper drops every `forge_migrate_dryrun_*` schema whose advisory
+ * lock it can acquire — the live run below holds that lock for the
+ * lifetime of its session, so a parallel in-flight dry-run on another
+ * runner is never reaped. See `migrate-dryrun-sweeper.ts`.
  */
 import { randomBytes } from "node:crypto";
 import { pool } from "./index.js";
 import { runMigrations } from "./migrate.js";
+import {
+  lockKeyForSchema,
+  sweepStaleDryRunSchemas,
+} from "./migrate-dryrun-sweeper.js";
 
 function makeSchemaName(): string {
   // 8 hex chars of entropy is plenty to avoid collisions between
@@ -49,21 +59,42 @@ function makeSchemaName(): string {
 }
 
 async function main(): Promise<void> {
+  // Reap any orphaned schemas left behind by previously crashed runs
+  // before claiming our own. Best-effort: a sweeper failure must not
+  // mask a real migration regression, so log and continue.
+  try {
+    const result = await sweepStaleDryRunSchemas(pool, {
+      log: (msg) => process.stdout.write(`migrate-dryrun · ${msg}\n`),
+    });
+    process.stdout.write(
+      `migrate-dryrun · sweeper scanned=${result.scanned} dropped=${result.dropped.length} skipped=${result.skipped.length} failed=${result.failed.length}\n`,
+    );
+  } catch (err) {
+    process.stderr.write(
+      `migrate-dryrun · WARN: sweeper failed: ${
+        err instanceof Error ? err.message : String(err)
+      }\n`,
+    );
+  }
+
   const schema = makeSchemaName();
   process.stdout.write(`migrate-dryrun · schema=${schema}\n`);
 
   // Provision + tear down on a dedicated client so the temp schema's
   // lifetime is independent of whichever pool client `runMigrations`
-  // happens to grab.
+  // happens to grab. The same client also holds the advisory lock that
+  // tells a parallel sweeper "this schema is in use" — session-scoped
+  // advisory locks are released automatically when the connection
+  // closes, which is exactly what we want even on a hard crash.
   const setupClient = await pool.connect();
   let schemaCreated = false;
+  let lockHeld = false;
+  const lockKey = lockKeyForSchema(schema);
   try {
-    try {
-      await setupClient.query(`CREATE SCHEMA "${schema}"`);
-      schemaCreated = true;
-    } finally {
-      setupClient.release();
-    }
+    await setupClient.query("SELECT pg_advisory_lock($1)", [lockKey]);
+    lockHeld = true;
+    await setupClient.query(`CREATE SCHEMA "${schema}"`);
+    schemaCreated = true;
 
     await runMigrations(
       (name, ok) => {
@@ -77,20 +108,24 @@ async function main(): Promise<void> {
     process.stdout.write("migrate-dryrun · all statements applied\n");
   } finally {
     if (schemaCreated) {
-      const cleanupClient = await pool.connect();
       try {
-        await cleanupClient.query(`DROP SCHEMA "${schema}" CASCADE`);
+        await setupClient.query(`DROP SCHEMA "${schema}" CASCADE`);
       } catch (err) {
-        // Surface but do not mask an earlier failure.
         process.stderr.write(
           `migrate-dryrun · WARN: failed to drop temp schema ${schema}: ${
             err instanceof Error ? err.message : String(err)
           }\n`,
         );
-      } finally {
-        cleanupClient.release();
       }
     }
+    if (lockHeld) {
+      await setupClient
+        .query("SELECT pg_advisory_unlock($1)", [lockKey])
+        .catch(() => {
+          /* best-effort; closing the client below also releases it */
+        });
+    }
+    setupClient.release();
     await pool.end();
   }
 }
