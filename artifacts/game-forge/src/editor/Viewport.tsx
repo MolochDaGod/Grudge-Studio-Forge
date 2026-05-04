@@ -28,6 +28,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Hotbar } from "@/editor/Hotbar";
+import { gizmoDragGate, isGizmoSwallowingClick } from "@/editor/gizmoDragGate";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2, X } from "lucide-react";
@@ -124,14 +125,9 @@ function RenderNode({
  *
  *  150 ms is empirically enough to swallow the trailing event without
  *  noticeably delaying a real follow-up click on a different entity.  */
-const gizmoDragGate = {
-  active: false,
-  releasedAt: 0,
-};
-export function isGizmoSwallowingClick(): boolean {
-  if (gizmoDragGate.active) return true;
-  return performance.now() - gizmoDragGate.releasedAt < 150;
-}
+// Gate moved to ./gizmoDragGate so Viewport.tsx exports only its React
+// component (Fast Refresh requires consistent component exports — a
+// non-component named export here was breaking HMR).
 
 function SceneEditMode({
   data,
