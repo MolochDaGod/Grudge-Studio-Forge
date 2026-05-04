@@ -392,11 +392,27 @@ export function Toolbar({
 
   // Bridge for the centralized hotkey registry: Ctrl+S triggers a window
   // event so the keyboard handler in App.tsx doesn't need to know about
-  // this component's mutation state.
+  // this component's mutation state. The autosave hook in
+  // editorPersistence.ts dispatches the SAME event with
+  // `detail.autosave === true` — in that case we additionally refuse to
+  // run the "create new scene" branch, so a brand-new untitled scene
+  // doesn't get silently materialized as a row on every keystroke.
   useEffect(() => {
-    const onSaveEvt = () => {
+    const onSaveEvt = (evt: Event) => {
       if (saving || !projectId) return;
-      onSave();
+      const isAutosave =
+        evt instanceof CustomEvent && evt.detail && evt.detail.autosave === true;
+      if (isAutosave && !sceneId && !prefabSubScene) return;
+      void onSave().catch((err) => {
+        // Surface autosave failures into the editor console so a
+        // network blip doesn't corrupt the user's mental model of
+        // "saved". The localStorage draft mirror is the safety net.
+        const msg = err instanceof Error ? err.message : String(err);
+        useEditor.getState().pushLog(
+          "error",
+          `${isAutosave ? "Autosave" : "Save"} failed: ${msg}`,
+        );
+      });
     };
     const onOpenMapGen = () => setMapGenOpen(true);
     window.addEventListener("gameforge:save", onSaveEvt);

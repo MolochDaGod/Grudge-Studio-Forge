@@ -291,23 +291,67 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   loadScene: (sceneId, name, data) => {
     const raw = Array.isArray(data?.entities) ? data.entities : [];
-    const { entities, warnings } = sanitizeEntities(raw);
+    let { entities, warnings } = sanitizeEntities(raw);
+    let envFromServer = { ...DEFAULT_ENV, ...(data?.environment ?? {}) };
+
+    // Crash-recovery: if a localStorage draft exists for this scene, the
+    // previous session ended with unsaved changes (browser crash, tab
+    // close without save, network failure mid-save). Prefer the draft
+    // over the server copy and surface a console message so the user
+    // knows we restored their work. Cleared by `markSaved()` on the
+    // next confirmed save.
+    let draftRestoredAt: number | null = null;
+    try {
+      if (typeof window !== "undefined") {
+        const raw = window.localStorage.getItem(`gameforge:draft:${sceneId}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as
+            | { savedAt?: number; data?: { entities?: unknown; environment?: unknown } }
+            | null;
+          const draftEntities = parsed?.data?.entities;
+          if (Array.isArray(draftEntities)) {
+            const draft = sanitizeEntities(draftEntities);
+            entities = draft.entities;
+            warnings = [...warnings, ...draft.warnings];
+            envFromServer = {
+              ...DEFAULT_ENV,
+              ...((parsed?.data?.environment as Record<string, unknown>) ?? {}),
+            };
+            draftRestoredAt = typeof parsed?.savedAt === "number" ? parsed.savedAt : Date.now();
+          }
+        }
+      }
+    } catch {
+      // Corrupt or quota-blocked localStorage — just fall back to the
+      // server copy. Never block scene load on a draft read failure.
+    }
+
     // New scene = new editing context; previous undo entries reference
     // entity ids that no longer exist here.
     get().commandStack.clear();
     set({
       sceneId,
       sceneName: name,
-      sceneData: {
-        entities,
-        environment: { ...DEFAULT_ENV, ...(data?.environment ?? {}) },
-      },
+      sceneData: { entities, environment: envFromServer },
       selectedId: null,
-      isDirty: false,
+      isDirty: draftRestoredAt !== null,
       isPlaying: false,
       isPaused: false,
     });
     for (const w of warnings) get().pushLog("warn", `Scene load: ${w}`);
+    if (draftRestoredAt !== null) {
+      const ageSec = Math.max(1, Math.round((Date.now() - draftRestoredAt) / 1000));
+      const ageStr =
+        ageSec < 60
+          ? `${ageSec}s ago`
+          : ageSec < 3600
+            ? `${Math.round(ageSec / 60)}m ago`
+            : `${Math.round(ageSec / 3600)}h ago`;
+      get().pushLog(
+        "info",
+        `Recovered unsaved changes for "${name}" (last edit ${ageStr}). Press Ctrl+S to confirm.`,
+      );
+    }
   },
 
   setSceneName: (name) => set({ sceneName: name, isDirty: true }),
@@ -321,7 +365,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
     for (const w of warnings) get().pushLog("warn", `Scene data: ${w}`);
   },
-  markSaved: () => set({ isDirty: false }),
+  markSaved: () => {
+    // Confirmed save → drop the crash-recovery draft for this scene so
+    // a future load reads the canonical server copy (and so localStorage
+    // doesn't accumulate forever).
+    const sid = get().sceneId;
+    if (sid !== null && typeof window !== "undefined") {
+      try { window.localStorage.removeItem(`gameforge:draft:${sid}`); } catch {}
+    }
+    set({ isDirty: false });
+  },
 
   addEntity: (type, name, parentId) => {
     const entity = defaultsByType(type, name ?? `${type[0].toUpperCase()}${type.slice(1)}`);

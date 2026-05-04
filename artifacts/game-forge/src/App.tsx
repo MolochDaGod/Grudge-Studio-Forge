@@ -23,6 +23,13 @@ import { ViewportHost } from "@/editor/ViewportHost";
 import { useViewportLaunchQueue } from "@/lib/launchQueue";
 import { useEditor } from "@/store/editor";
 import { startEcsSync } from "@/lib/ecs";
+import {
+  useEditorAutosave,
+  useEditorDraftMirror,
+  useUnsavedChangesGuard,
+  useGlobalErrorCapture,
+} from "@/lib/editorPersistence";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles, Plus } from "lucide-react";
 import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
@@ -40,6 +47,17 @@ function EditorShell() {
   // GameForge"). Each file is opened in a fresh viewer tab so existing
   // tabs are never disturbed.
   useViewportLaunchQueue();
+
+  // Persistence + crash-resilience layer:
+  //   - autosave 2 s after any dirty mutation (existing scene / prefab only)
+  //   - mirror sceneData into localStorage every 500 ms as a crash backup
+  //   - prompt before tab close while there are unsaved changes
+  //   - route uncaught errors / unhandled rejections into the editor console
+  // See @/lib/editorPersistence for the rationale on each piece.
+  useEditorAutosave();
+  useEditorDraftMirror();
+  useUnsavedChangesGuard();
+  useGlobalErrorCapture();
 
   const { data: projects } = useListProjects();
 
@@ -308,7 +326,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <EditorShell />
+        {/* AppErrorBoundary contains EditorShell only — toasts and the
+            update toast must keep working even if the shell crashes,
+            so they live OUTSIDE the boundary. */}
+        <AppErrorBoundary>
+          <EditorShell />
+        </AppErrorBoundary>
         <Toaster />
         <UpdateToast />
       </TooltipProvider>
