@@ -17,4 +17,14 @@ pnpm install --frozen-lockfile
 echo "[post-merge] running workspace typecheck..."
 pnpm run typecheck
 
+# Workspace-wide test gate. Mirrors the typecheck gate above: the platform's
+# per-artifact build never runs tests, so a logic regression that compiles
+# cleanly (broken handler, wrong Drizzle query, regressed component) would
+# otherwise sail through to prod. `pnpm run test` fans out across every
+# workspace package via `pnpm -r --if-present run test`, so packages that
+# don't have a `test` script are silent no-ops and packages that do fail
+# loudly here. `set -e` ensures a failure aborts the rest of this script.
+echo "[post-merge] running workspace tests..."
+pnpm run test
+
 pnpm --filter @workspace/db run migrate

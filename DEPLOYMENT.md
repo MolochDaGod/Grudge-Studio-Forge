@@ -174,7 +174,7 @@ Two different hooks touch the database. They serve different purposes:
 | | `scripts/post-merge.sh` | Deploy boot |
 | --- | --- | --- |
 | Trigger | Branch merged into main | `Publish` button / autoscale cold start |
-| Runs | `pnpm install --frozen-lockfile` + `pnpm run typecheck` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
+| Runs | `pnpm install --frozen-lockfile` + `pnpm run typecheck` + `pnpm run test` + `pnpm --filter @workspace/db run migrate` | esbuild → `node dist/index.mjs` → `runMigrations()` → `app.listen` |
 | Target DB | Dev (shared) | Prod (shared) — same physical DB in this project |
 | Interactive? | No (stdin closed) | No |
 
@@ -182,52 +182,63 @@ Both call the same idempotent `runMigrations()`, so re-runs are no-ops. The
 post-merge hook exists so dev never lags behind a schema change; the boot
 hook exists so a fresh prod instance can never serve a half-migrated DB.
 
-## Typecheck gate (pre-merge and post-merge)
+## Pre-merge / post-merge gates (typecheck + test)
 
-The same workspace-wide `pnpm run typecheck` runs in two places, for two
-different audiences:
+Two workspace-wide gates run in two places each, for two different audiences.
+The same shell command is wired into a per-branch **validation** (so an
+author sees it fail before requesting a merge) *and* into
+`scripts/post-merge.sh` (so an out-of-band hot-fix can't bypass it).
 
-1. **Pre-merge (per-branch):** registered as a workspace **validation** named
-   `typecheck` (shell: `pnpm run typecheck`). It shows up in the workspace UI
-   alongside the branch / merge controls so an author can run it — or see it
-   fail — on their own branch **before** requesting a merge into main. A
-   failing validation is visible at the merge step; fix it on the branch
-   instead of finding out from a red post-merge hook.
-2. **Post-merge (safety net):** `scripts/post-merge.sh` re-runs
-   `pnpm run typecheck` after `pnpm install` and **before**
-   `pnpm --filter @workspace/db run migrate`. Because the script is `set -e`,
-   a typecheck failure exits non-zero, the post-merge hook is recorded as
-   failed, and the publish flow surfaces it in the merge / deploy log
-   instead of silently shipping a broken build. This still matters for
-   hot-fixes or out-of-band merges that bypass the per-branch validation.
+| Gate | Pre-merge validation | Post-merge hook | What it catches |
+| --- | --- | --- | --- |
+| `typecheck` | shell: `pnpm run typecheck` | `pnpm run typecheck` | Type errors across libs and leaf packages. |
+| `test` | shell: `pnpm run test` | `pnpm run test` | Logic regressions that compile cleanly — broken route handlers, wrong Drizzle queries, regressed component behavior. |
 
-**Why it lives here, not in `[deployment.postBuild]`:**
+Both validations show up in the workspace UI alongside the branch / merge
+controls. A failing validation is visible at the merge step; fix it on the
+branch instead of finding out from a red post-merge hook.
+
+`scripts/post-merge.sh` is `set -e`, so a failure in either gate exits
+non-zero, the post-merge hook is recorded as failed, and the publish flow
+surfaces it in the merge / deploy log instead of silently shipping a broken
+build. The order is: `pnpm install` → `pnpm run typecheck` →
+`pnpm run test` → `pnpm --filter @workspace/db run migrate`.
+
+**Why these live here, not in `[deployment.postBuild]`:**
 
 - The platform's per-artifact build (`artifact.toml` `build = ...`) only
-  typechecks the artifact it is currently building. A regression in
-  `lib/db` that breaks `api-server` would pass the `game-forge` build and
+  typechecks the artifact it is currently building, and never runs tests at
+  all. A regression in `lib/db` that breaks `api-server`, or a broken
+  Drizzle query that still compiles, would pass the `game-forge` build and
   could still ship.
 - `pnpm run typecheck` covers `tsc --build` for every composite lib **plus**
   `tsc --noEmit` for every leaf workspace package (api-server, game-forge,
   game-forge-desktop, mockup-sandbox, scripts). One command, one gate.
-- Wiring the same command into both the pre-merge validation and the
-  post-merge hook means the gate fires while the author can still fix it on
-  their own branch, *and* again the moment a branch lands on main — before
-  the deploy is triggered.
+- `pnpm run test` is `pnpm -r --workspace-concurrency=4 --if-present run test`.
+  It fans out across every workspace package in parallel (concurrency 4 to
+  keep the gate usable on every branch), and `--if-present` means packages
+  without a `test` script are silent no-ops. Adding tests to a package is a
+  one-line `package.json` edit — no further wiring needed; the gate picks
+  it up automatically.
+- Wiring the same commands into both the pre-merge validations and the
+  post-merge hook means each gate fires while the author can still fix it
+  on their own branch, *and* again the moment a branch lands on main —
+  before the deploy is triggered.
 
 ### Where to look when it fails
 
-- **On your branch (pre-merge):** open the `typecheck` validation in the
-  workspace UI. The run summary lists the failing command and links to its
-  log. You can also reproduce locally with `pnpm run typecheck` from the
-  repo root.
+- **On your branch (pre-merge):** open the `typecheck` or `test` validation
+  in the workspace UI. The run summary lists the failing command and links
+  to its log. Reproduce locally with `pnpm run typecheck` or `pnpm run test`
+  from the repo root.
 - **After merge (post-merge):** check the post-merge hook log for the
-  `[post-merge] running workspace typecheck...` line — anything below it is
-  the failing `tsc` output. The merge will be marked failed and the deploy
-  will not proceed.
-- **In a deploy that's already on fire:** suspect a typecheck regression
-  that slipped in via a hot-fix that bypassed both gates. Re-run
-  `pnpm run typecheck` locally to confirm, then patch forward.
+  `[post-merge] running workspace typecheck...` or
+  `[post-merge] running workspace tests...` line — anything below it is the
+  failing output. The merge will be marked failed and the deploy will not
+  proceed.
+- **In a deploy that's already on fire:** suspect a regression that slipped
+  in via a hot-fix that bypassed both gates. Re-run `pnpm run typecheck`
+  and `pnpm run test` locally to confirm, then patch forward.
 
 ## Out of scope here
 
