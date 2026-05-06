@@ -255,6 +255,92 @@ succeeds and every `ALTER` lands on a zero-row table. That still
 catches syntax errors and broken FK targets but cannot catch
 data-incompatible migrations — which is why both gates pass `--seed`.
 
+#### Seeding from a separate prod database (`--seed-from`)
+
+The `--seed` path above is faithful **only as long as dev and prod
+share one physical database**, which is true for the current autoscale
+setup. The moment Forge moves to a separate prod DB (read replica,
+logical replica, isolated cluster), seeding from `public.forge_*` on
+`DATABASE_URL` silently regresses to "data-incompatible against dev
+only" — the gate would still pass `--seed`, but the rows it samples
+are dev-only and a `NOT NULL ADD COLUMN` that conflicts with real
+prod data would sail through.
+
+To keep the gate honest as the data model diverges, the CLI accepts a
+read-only source pointer:
+
+- `--seed-from=<connection-url>` (CLI flag), or
+- `MIGRATE_DRYRUN_SEED_DATABASE_URL=<connection-url>` (env var).
+
+When set, the CLI opens a *second* `pg.Pool` against that connection
+string and uses it as the source of truth for table discovery, column
+shape, and row sampling — instead of the local `public.forge_*`. The
+target temp schema still lives in `DATABASE_URL` (i.e. the dev DB), so
+no write permission on the prod replica is required. Two safeguards
+make the source connection genuinely read-only:
+
+- The session immediately runs
+  `SET default_transaction_read_only = on`. Any accidental write
+  attempt against the source fails with a clear `read-only
+  transaction` error from Postgres.
+- The source pool is capped at `max: 1`. The CLI uses exactly one
+  client and the pool is short-lived, so a per-connection quota on a
+  prod replica is not a concern.
+
+Mechanically, for every `forge_*` table that exists in the source's
+`public` schema, the CLI:
+
+1. Introspects columns from `pg_catalog.pg_attribute` /
+   `pg_catalog.format_type`. The temp table is built with the
+   *source's* column names, types, and `NOT NULL` constraints — not
+   the target DB's. A divergent type or nullability constraint gets
+   exercised by the migration, which is exactly the point.
+2. Issues `CREATE TABLE "<temp>".<t> (col1 type1 [NOT NULL], …)` in
+   the target DB. Defaults, identity, indexes, primary key, and
+   foreign keys are deliberately omitted — same posture as the
+   single-DB `LIKE` path's intentional FK exclusion. Migrations that
+   ADD a PK / index / constraint will still run against the seeded
+   rows and surface conflicts.
+3. `SELECT`s up to `--seed-rows=<N>` rows from the source and
+   re-INSERTs them into the temp schema via parameterized batches.
+   `jsonb` / `json` values come back from the `pg` driver as parsed
+   JS values and are re-serialized before binding; everything else
+   (numbers, strings, `Date`, `Buffer`, native arrays for `text[]`)
+   round-trips through the driver as-is.
+
+Operational pattern (post-split): set
+`MIGRATE_DRYRUN_SEED_DATABASE_URL` in the workspace Secrets pane,
+pointing at a prod read replica with the standard `forge_*` tables.
+Both the pre-merge `migrate-dryrun` validation and the post-merge
+hook will pick it up automatically — the existing
+`pnpm --filter @workspace/db run migrate:dryrun -- --seed` invocation
+in `.replit` and `scripts/post-merge.sh` does not need to change.
+Reproduce locally with:
+
+```sh
+MIGRATE_DRYRUN_SEED_DATABASE_URL=<prod-replica-url> \
+  pnpm --filter @workspace/db run migrate:dryrun -- --seed
+```
+
+or, equivalently, with the explicit flag:
+
+```sh
+pnpm --filter @workspace/db run migrate:dryrun -- \
+  --seed --seed-from=<prod-replica-url>
+```
+
+The run log distinguishes the two modes: the `seed-source=external`
+field on the schema-creation line (and the `from external prod source
+(--seed-from)` suffix on the seeded-table count) confirms the prod
+sample was used. With neither the flag nor the env var set, behaviour
+is unchanged: the legacy single-DB `LIKE INCLUDING ALL` +
+`INSERT … SELECT * FROM public.<t>` path runs as before.
+
+Defensive guard: if `MIGRATE_DRYRUN_SEED_DATABASE_URL` is set but
+`--seed` was not passed on the CLI, the run exits non-zero rather
+than silently ignoring the prod sample source — that combination
+almost always indicates a misconfigured invocation.
+
 #### Stale schema sweeper
 
 Step 4's `finally` runs in 99% of cases. The 1% it doesn't is when the

@@ -75,6 +75,40 @@
  *   out-of-band (batched backfill, online schema change) before it
  *   bites production.
  *
+ * External seed source (`--seed-from=<url>` or
+ * `MIGRATE_DRYRUN_SEED_DATABASE_URL`):
+ *   Today Grudge runs autoscale where dev and prod share one physical
+ *   DB, so seeding from `public.forge_*` on `DATABASE_URL` is a faithful
+ *   prod sample. The moment the project moves to a separate prod DB
+ *   (read replica, logical replica, isolated cluster), that assumption
+ *   silently breaks: the gate would still pass `--seed`, but the rows
+ *   it copies are dev-only and a `NOT NULL` ADD COLUMN that is
+ *   incompatible with real prod data sails through.
+ *
+ *   `--seed-from=<conn-url>` (or the matching env var) makes the
+ *   guarantee explicit. When set, the CLI opens a *second* `pg.Pool`
+ *   against that connection string, marks the session
+ *   `default_transaction_read_only = on` so a misconfigured URL pointed
+ *   at a writable DB still cannot mutate it, and uses it as the source
+ *   of truth for both:
+ *     - table discovery (what `forge_*` tables exist in *prod*),
+ *     - column shape (introspected from `pg_catalog` so the temp table
+ *       matches prod's column names / types / nullability — not dev's),
+ *     - and row sampling.
+ *   Rows are SELECTed from the source and re-INSERTed into the temp
+ *   schema in the target DB via parameterized batches; jsonb/json
+ *   values are re-serialized because the `pg` driver returns them as
+ *   parsed JS values. The migration runner then applies STATEMENTS
+ *   against a temp schema whose contents reflect *prod's* shape and
+ *   data, regardless of how far dev has drifted.
+ *
+ *   `--seed-from` requires `--seed` and is mutually compatible with
+ *   `--seed-rows=<N>` and `--max-statement-ms=<N>`. With it unset,
+ *   behaviour is unchanged: the single-DB `LIKE INCLUDING ALL` +
+ *   `INSERT … SELECT * FROM public.<t>` path runs as before. See
+ *   `DEPLOYMENT.md` ("Migration dry-run gate") for the operational
+ *   pattern.
+ *
  * Failure semantics: any error from the migration itself (DDL,
  * connection, the initial `CREATE SCHEMA`, or any `--seed` step) exits
  * non-zero. The `.replit` `migrate-dryrun` validation and the
@@ -97,13 +131,16 @@
  * runner is never reaped. See `migrate-dryrun-sweeper.ts`.
  */
 import { randomBytes } from "node:crypto";
-import type { PoolClient } from "pg";
+import pg from "pg";
+import type { Pool, PoolClient } from "pg";
 import { pool } from "./index.js";
 import { runMigrations } from "./migrate.js";
 import {
   lockKeyForSchema,
   sweepStaleDryRunSchemas,
 } from "./migrate-dryrun-sweeper.js";
+
+const { Pool: PgPool } = pg;
 
 const DEFAULT_SEED_ROWS = 100;
 /**
@@ -126,12 +163,22 @@ interface CliOptions {
   seed: boolean;
   seedRows: number;
   maxStatementMs: number;
+  /**
+   * Optional read-only `pg` connection string used as the source of
+   * truth for both table structure and row sampling when seeding.
+   * Resolved from `--seed-from=<url>` or the
+   * `MIGRATE_DRYRUN_SEED_DATABASE_URL` env var. Unset → fall back to
+   * the legacy single-DB `public.forge_*` path.
+   */
+  seedFromUrl: string | undefined;
 }
 
 function parseArgs(argv: ReadonlyArray<string>): CliOptions {
   let seed = false;
   let seedRows = DEFAULT_SEED_ROWS;
   let maxStatementMs = DEFAULT_MAX_STATEMENT_MS;
+  let seedFromUrl: string | undefined =
+    process.env.MIGRATE_DRYRUN_SEED_DATABASE_URL || undefined;
   for (const arg of argv) {
     // pnpm forwards a bare `--` separator from `pnpm run … -- --seed`
     // through to the script, where Node leaves it in argv. Skip it so
@@ -164,9 +211,23 @@ function parseArgs(argv: ReadonlyArray<string>): CliOptions {
       }
       continue;
     }
+    const seedFromMatch = /^--seed-from=(.+)$/.exec(arg);
+    if (seedFromMatch) {
+      seed = true;
+      seedFromUrl = seedFromMatch[1];
+      continue;
+    }
     throw new Error(`migrate-dryrun: unknown argument ${JSON.stringify(arg)}`);
   }
-  return { seed, seedRows, maxStatementMs };
+  if (seedFromUrl !== undefined && !seed) {
+    // Defensive: parser sets `seed = true` whenever `--seed-from=` is
+    // passed on the CLI, so this only triggers for the env-var-only
+    // case where the operator forgot to also pass `--seed`.
+    throw new Error(
+      "migrate-dryrun: MIGRATE_DRYRUN_SEED_DATABASE_URL is set but --seed was not passed; refusing to silently ignore the prod sample source",
+    );
+  }
+  return { seed, seedRows, maxStatementMs, seedFromUrl };
 }
 
 function makeSchemaName(): string {
@@ -175,6 +236,14 @@ function makeSchemaName(): string {
   // human triaging leftover schemas can spot what created them.
   const suffix = randomBytes(4).toString("hex");
   return `forge_migrate_dryrun_${process.pid}_${suffix}`;
+}
+
+function assertSafeIdent(kind: string, ident: string): void {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(ident)) {
+    throw new Error(
+      `migrate-dryrun: refusing to seed unsafe ${kind} name ${JSON.stringify(ident)}`,
+    );
+  }
 }
 
 /**
@@ -205,11 +274,7 @@ async function seedTempSchema(
     // Identifier comes from information_schema for tables we own; still
     // double-quote and reject anything that isn't a plain identifier so
     // a future rename can't smuggle in SQL.
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table_name)) {
-      throw new Error(
-        `migrate-dryrun: refusing to seed unsafe table name ${JSON.stringify(table_name)}`,
-      );
-    }
+    assertSafeIdent("table", table_name);
     await client.query(
       `CREATE TABLE "${schema}"."${table_name}" (LIKE public."${table_name}" INCLUDING ALL)`,
     );
@@ -225,6 +290,154 @@ async function seedTempSchema(
   }
 
   return tables.length;
+}
+
+interface SourceColumn {
+  readonly name: string;
+  /** `pg_catalog.format_type` output, e.g. `integer`, `text`, `jsonb`, `timestamp without time zone`, `text[]`. */
+  readonly type: string;
+  readonly notNull: boolean;
+}
+
+/**
+ * Mirror every `public.forge_*` table from a *separate* read-only
+ * source DB (`--seed-from=<url>`) into the temp schema in the target
+ * DB, then copy up to `rows` representative rows per table. Used when
+ * dev and prod live in different physical databases and the legacy
+ * single-DB seed would otherwise sample dev-only data. See file
+ * header for the full rationale.
+ *
+ * Returns the number of tables seeded so the caller can log it.
+ */
+async function seedTempSchemaFromSource(
+  targetClient: PoolClient,
+  sourcePool: Pool,
+  schema: string,
+  rows: number,
+): Promise<number> {
+  const sourceClient = await sourcePool.connect();
+  try {
+    // Belt-and-braces read-only guard. The session-level setting
+    // applies to every implicit transaction we open below; even if a
+    // future maintainer accidentally points `--seed-from` at a writable
+    // DB, the SELECTs we issue cannot mutate it. Postgres rejects any
+    // write attempt with a clear `read-only transaction` error.
+    await sourceClient.query("SET default_transaction_read_only = on");
+
+    const { rows: tables } = await sourceClient.query<{ table_name: string }>(
+      `SELECT table_name
+         FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+          AND table_name LIKE 'forge\\_%' ESCAPE '\\'
+        ORDER BY table_name`,
+    );
+
+    for (const { table_name } of tables) {
+      assertSafeIdent("table", table_name);
+
+      // Introspect the source's actual column shape. We deliberately
+      // do NOT consult the target DB here — the whole point of this
+      // mode is that the temp table reflects *prod's* shape, not
+      // dev's, so a divergent column type or nullability constraint
+      // gets exercised by the migration.
+      const { rows: columns } = await sourceClient.query<{
+        column_name: string;
+        data_type: string;
+        not_null: boolean;
+      }>(
+        `SELECT a.attname AS column_name,
+                pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+                a.attnotnull AS not_null
+           FROM pg_catalog.pg_attribute a
+           JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+           JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relname = $1
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+          ORDER BY a.attnum`,
+        [table_name],
+      );
+
+      if (columns.length === 0) {
+        // Source table exists but has no readable columns — nothing
+        // sensible to mirror. Skip rather than emit a `CREATE TABLE
+        // ()` that Postgres will reject.
+        continue;
+      }
+
+      const cols: SourceColumn[] = columns.map((c) => {
+        assertSafeIdent("column", c.column_name);
+        return {
+          name: c.column_name,
+          type: c.data_type,
+          notNull: c.not_null,
+        };
+      });
+
+      // We deliberately omit defaults, identity, indexes, primary key,
+      // and foreign keys here — same posture as the `LIKE` path's
+      // intentional FK exclusion. Indexes and PKs are not required for
+      // the migration runner to exercise its statements; FKs would
+      // trip on the partial `LIMIT N` sample. Migrations that ADD a
+      // PK / index / constraint will still run against the seeded
+      // rows and surface conflicts.
+      const colDefs = cols
+        .map(
+          (c) =>
+            `"${c.name}" ${c.type}${c.notNull ? " NOT NULL" : ""}`,
+        )
+        .join(", ");
+      await targetClient.query(
+        `CREATE TABLE "${schema}"."${table_name}" (${colDefs})`,
+      );
+
+      if (rows > 0) {
+        const colList = cols.map((c) => `"${c.name}"`).join(", ");
+        const { rows: srcRows } = await sourceClient.query<
+          Record<string, unknown>
+        >(
+          `SELECT ${colList} FROM public."${table_name}" LIMIT $1`,
+          [rows],
+        );
+
+        if (srcRows.length === 0) {
+          continue;
+        }
+
+        // Re-insert one row at a time. Batch sizes are bounded by
+        // `--seed-rows` (default 100) per table, so this is fine —
+        // and keeping rows independent means a single bad row cannot
+        // poison the batch. jsonb / json values come back from the
+        // `pg` driver as already-parsed JS objects/arrays, so we
+        // re-serialize them before binding; everything else
+        // (numbers, strings, Date, Buffer, native arrays for
+        // `text[]` etc.) round-trips through the driver as-is.
+        const placeholders = cols
+          .map((_, i) => `$${i + 1}`)
+          .join(", ");
+        const insertSql = `INSERT INTO "${schema}"."${table_name}" (${colList}) VALUES (${placeholders})`;
+        for (const row of srcRows) {
+          const values = cols.map((c) => {
+            const v = row[c.name];
+            if (v === null || v === undefined) {
+              return null;
+            }
+            if (c.type === "jsonb" || c.type === "json") {
+              return JSON.stringify(v);
+            }
+            return v;
+          });
+          await targetClient.query(insertSql, values);
+        }
+      }
+    }
+
+    return tables.length;
+  } finally {
+    sourceClient.release();
+  }
 }
 
 async function main(): Promise<void> {
@@ -249,11 +462,29 @@ async function main(): Promise<void> {
   }
 
   const schema = makeSchemaName();
+  const seedSourceLabel = opts.seedFromUrl ? "external" : "public";
   process.stdout.write(
     `migrate-dryrun · schema=${schema} seed=${opts.seed}${
-      opts.seed ? ` seed-rows=${opts.seedRows}` : ""
+      opts.seed
+        ? ` seed-rows=${opts.seedRows} seed-source=${seedSourceLabel}`
+        : ""
     } max-statement-ms=${opts.maxStatementMs}\n`,
   );
+
+  // A separate pool for the read-only prod sample source. Created up
+  // front (rather than lazily inside the seed step) so a typo in the
+  // connection URL surfaces before we mutate the target DB, and so
+  // the `finally` always has a handle to close.
+  let sourcePool: Pool | undefined;
+  if (opts.seed && opts.seedFromUrl) {
+    sourcePool = new PgPool({
+      connectionString: opts.seedFromUrl,
+      // Cap to 1 connection — we use exactly one client and this pool
+      // is short-lived. Keeps us off any per-connection quota a prod
+      // replica might enforce.
+      max: 1,
+    });
+  }
 
   // Provision + tear down on a dedicated client so the temp schema's
   // lifetime is independent of whichever pool client `runMigrations`
@@ -271,13 +502,19 @@ async function main(): Promise<void> {
     await setupClient.query(`CREATE SCHEMA "${schema}"`);
     schemaCreated = true;
     if (opts.seed) {
-      const seeded = await seedTempSchema(
-        setupClient,
-        schema,
-        opts.seedRows,
-      );
+      const seeded = sourcePool
+        ? await seedTempSchemaFromSource(
+            setupClient,
+            sourcePool,
+            schema,
+            opts.seedRows,
+          )
+        : await seedTempSchema(setupClient, schema, opts.seedRows);
+      const sourceDesc = sourcePool
+        ? "external prod source (--seed-from)"
+        : "public.forge_*";
       process.stdout.write(
-        `migrate-dryrun · seeded ${seeded} table(s) from public.forge_* (up to ${opts.seedRows} rows each)\n`,
+        `migrate-dryrun · seeded ${seeded} table(s) from ${sourceDesc} (up to ${opts.seedRows} rows each)\n`,
       );
     }
 
@@ -350,6 +587,15 @@ async function main(): Promise<void> {
         });
     }
     setupClient.release();
+    if (sourcePool) {
+      await sourcePool.end().catch((err) => {
+        process.stderr.write(
+          `migrate-dryrun · WARN: failed to close seed-from pool: ${
+            err instanceof Error ? err.message : String(err)
+          }\n`,
+        );
+      });
+    }
     await pool.end();
   }
 }
