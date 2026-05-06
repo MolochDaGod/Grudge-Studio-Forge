@@ -26,6 +26,10 @@
  * full Blazor compile.
  */
 
+import type { TriggerEvent } from "./GameBus";
+
+export type { TriggerEvent };
+
 export interface CompiledScript {
   start?: (entity: ScriptEntity, ctx: ScriptContext) => void;
   update?: (entity: ScriptEntity, ctx: ScriptContext) => void;
@@ -107,6 +111,21 @@ export interface ScriptContext {
      *  during the current frame's update. Idempotent — calling with the same
      *  event name replaces the previous handler. */
     on: (event: string, handler: (payload: unknown, fromId: string) => void) => void;
+    /** Subscribe to "another body started overlapping this entity" events.
+     *
+     *  Fires whenever Rapier reports an intersection-enter for a sensor
+     *  pair that involves this entity (typically because this entity sits
+     *  on the `Trigger` / `Water` layer). Both participants of the pair
+     *  receive the event with swapped identities, so a script attached to
+     *  either the trigger volume OR the body that walked into it can react.
+     *  Handler is replace-on-register; calling it again swaps the closure. */
+    onEnterTrigger: (handler: (other: TriggerEvent) => void) => void;
+    /** Inverse of {@link onEnterTrigger}. Fires once when the overlap ends. */
+    onExitTrigger: (handler: (other: TriggerEvent) => void) => void;
+    /** Despawn an entity from the scene mid-play (removes it from the editor
+     *  store, which tears down its renderer + rigid body). Returns true if
+     *  the entity existed. Useful for pickups / consumables. */
+    despawn: (id: string) => boolean;
     /** Position of the active play-mode camera (head position for FPS, orbit
      *  position for TPS). Useful as a ray origin for player shooting. */
     cameraPosition: () => [number, number, number];

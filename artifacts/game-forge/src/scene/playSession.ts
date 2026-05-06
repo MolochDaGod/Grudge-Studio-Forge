@@ -1,4 +1,4 @@
-import { createGameBus, EntityInboxes, EntityStates, type GameBus } from "./GameBus";
+import { createGameBus, EntityInboxes, EntityStates, TriggerInbox, type GameBus } from "./GameBus";
 
 /**
  * Play session — module-level singleton. The HUD lives outside the R3F canvas
@@ -17,6 +17,10 @@ export interface PlaySession {
   bus: GameBus;
   inboxes: EntityInboxes;
   states: EntityStates;
+  /** Per-entity trigger / overlap event registry. Wired into Rapier
+   *  RigidBody intersection events by EntityRenderer; consumed by
+   *  scripts via `ctx.scene.onEnterTrigger` / `onExitTrigger`. */
+  triggers: TriggerInbox;
   /** Set of entity ids that should be IGNORED by external systems that
    *  normally write to their rigid body (e.g. {@link PlayCameraController}).
    *
@@ -48,6 +52,7 @@ export function getPlaySession(): PlaySession {
       bus: createGameBus(),
       inboxes: new EntityInboxes(),
       states: new EntityStates(),
+      triggers: new TriggerInbox(),
       frozenBodies: new Set(),
       pendingTeleportFrame: new Map(),
       epoch: 0,
@@ -61,6 +66,7 @@ export function resetPlaySession(): void {
   session.bus.reset();
   session.inboxes.reset();
   session.states.reset();
+  session.triggers.reset();
   session.frozenBodies.clear();
   session.pendingTeleportFrame.clear();
   session.epoch += 1;

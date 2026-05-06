@@ -1,6 +1,15 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { CapsuleCollider, CylinderCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
+import {
+  CapsuleCollider,
+  CylinderCollider,
+  RigidBody,
+  type IntersectionEnterPayload,
+  type IntersectionExitPayload,
+  type RapierRigidBody,
+} from "@react-three/rapier";
+import { getPlaySession } from "./playSession";
+import type { TriggerEvent } from "./GameBus";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
@@ -564,6 +573,60 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     [layer, env.collisionMatrix],
   );
 
+  // ── Trigger event dispatch ────────────────────────────────────────────────
+  // Rapier fires `onIntersectionEnter` / `onIntersectionExit` independently
+  // on EACH body in a sensor pair, so attaching the handler on every
+  // RigidBody already gives both participants their own callback — we
+  // therefore dispatch ONLY to `entity.id` and let the other side's
+  // EntityRenderer dispatch to its own id. Mirror-firing here would
+  // double every event (each entity would receive its callback both
+  // from its own RigidBody firing AND from the other body's firing).
+  // The userData stamped on `<RigidBody userData={…}>` below shows up
+  // on `payload.other.rigidBodyObject?.userData`.
+  const buildTriggerEvent = useMemo(() => {
+    return (payload: IntersectionEnterPayload | IntersectionExitPayload): TriggerEvent | null => {
+      const otherUd = (payload.other.rigidBodyObject?.userData ?? {}) as {
+        entityId?: string;
+        name?: string;
+        layer?: string;
+      };
+      if (!otherUd.entityId) return null;
+      return {
+        otherId: otherUd.entityId,
+        otherName: otherUd.name ?? "",
+        otherLayer: otherUd.layer ?? "Default",
+      };
+    };
+  }, []);
+
+  const handleIntersectionEnter = useMemo(() => {
+    return (payload: IntersectionEnterPayload) => {
+      const ev = buildTriggerEvent(payload);
+      if (!ev) return;
+      getPlaySession().triggers.fireEnter(entity.id, ev);
+    };
+  }, [entity.id, buildTriggerEvent]);
+
+  const handleIntersectionExit = useMemo(() => {
+    return (payload: IntersectionExitPayload) => {
+      const ev = buildTriggerEvent(payload);
+      if (!ev) return;
+      getPlaySession().triggers.fireExit(entity.id, ev);
+    };
+  }, [entity.id, buildTriggerEvent]);
+
+  // Clear this entity's trigger handlers when the renderer unmounts (the
+  // entity was despawned mid-play, or play mode stopped). The wider
+  // `resetPlaySession()` already wipes everything on play stop, but mid-
+  // play despawns would otherwise leave stale closures lingering in the
+  // session for the rest of the play-through.
+  useEffect(() => {
+    const id = entity.id;
+    return () => {
+      getPlaySession().triggers.clear(id);
+    };
+  }, [entity.id]);
+
   if (usePhysics) {
     const ph = entity.physics!;
     const colliderShape =
@@ -604,6 +667,8 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         rotation={tr.rotation}
         {...playerRotationLockProps}
         sensor={isSensor}
+        onIntersectionEnter={handleIntersectionEnter}
+        onIntersectionExit={handleIntersectionExit}
         collisionGroups={collisionGroups}
         solverGroups={collisionGroups}
         colliders={

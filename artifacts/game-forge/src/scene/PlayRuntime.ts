@@ -4,7 +4,7 @@ import type { LayerName } from "@workspace/scene-schema";
 import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit } from "./csTranspile";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
-import type { EntityInboxes, EntityStates, GameBus } from "./GameBus";
+import type { EntityInboxes, EntityStates, GameBus, TriggerInbox } from "./GameBus";
 
 export type Compiled = CompiledScript & { error?: string };
 
@@ -96,6 +96,8 @@ export function makeContext(opts: {
   inboxes: EntityInboxes;
   bus: GameBus;
   states: EntityStates;
+  triggers: TriggerInbox;
+  despawn: (id: string) => boolean;
   freeze: (id: string) => void;
   unfreeze: (id: string) => void;
   parentOf: (id: string) => ScriptEntity | undefined;
@@ -124,6 +126,9 @@ export function makeContext(opts: {
         opts.inboxes.send(targetId, event, payload, fromId),
       on: (event, handler) =>
         opts.inboxes.registerHandler(fromId, event, handler),
+      onEnterTrigger: (handler) => opts.triggers.registerEnter(fromId, handler),
+      onExitTrigger: (handler) => opts.triggers.registerExit(fromId, handler),
+      despawn: (id) => opts.despawn(id),
       cameraPosition: opts.cameraPosition,
       cameraDirection: opts.cameraDirection,
       freeze: opts.freeze,

@@ -77,7 +77,12 @@ export type BehaviorKind =
   | "player-deathmatch"
   | "enemy-deathmatch"
   | "gamemode-deathmatch"
-  | "spawnpoint";
+  | "spawnpoint"
+  /** Despawns this entity the moment a `Player`-named or `Player`-layer body
+   *  enters its sensor volume. Demonstrates the trigger-event API
+   *  (`ctx.scene.onEnterTrigger`) and is suitable as a starter behavior on
+   *  pickups, score zones, and consumables placed on the `Trigger` layer. */
+  | "pickup-trigger";
 
 export interface SceneEntity {
   id: string;

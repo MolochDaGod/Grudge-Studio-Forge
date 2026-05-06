@@ -110,6 +110,81 @@ export class EntityInboxes {
   }
 }
 
+/** Payload delivered to a trigger handler. Mirrors what scripts can read off
+ *  the *other* party of a Rapier intersection-events pair. The "other" is
+ *  always the participant that is NOT `this` entity (the one whose handler
+ *  is firing) — by symmetry both sides receive the same handler call with
+ *  swapped identities. */
+export interface TriggerEvent {
+  /** Scene-entity id of the other body in the intersection pair. */
+  otherId: string;
+  /** Display name of the other body (best-effort; empty string if missing). */
+  otherName: string;
+  /** Physics layer of the other body. Defaults to "Default" if missing. */
+  otherLayer: string;
+}
+
+export type TriggerHandler = (event: TriggerEvent) => void;
+
+/**
+ * Per-entity trigger / overlap event registry.
+ *
+ * EntityRenderer wires Rapier's RigidBody `onIntersectionEnter` /
+ * `onIntersectionExit` events into {@link fireEnter} / {@link fireExit}.
+ * Both participants of a sensor pair get notified so a script attached to
+ * either the trigger volume OR the body that walked into it can react —
+ * matching Unity's `OnTriggerEnter` flexibility (the player and the
+ * pickup can both observe the same overlap).
+ *
+ * Handlers are *replace-on-register* (`set`, not `add`): calling
+ * `onEnterTrigger(...)` from a script's `start()` again on hot-reload just
+ * swaps the latest closure, avoiding accidental duplicate firings.
+ */
+export class TriggerInbox {
+  private enter = new Map<string, TriggerHandler>();
+  private exit = new Map<string, TriggerHandler>();
+
+  registerEnter(entityId: string, handler: TriggerHandler): void {
+    this.enter.set(entityId, handler);
+  }
+
+  registerExit(entityId: string, handler: TriggerHandler): void {
+    this.exit.set(entityId, handler);
+  }
+
+  fireEnter(entityId: string, event: TriggerEvent): void {
+    const h = this.enter.get(entityId);
+    if (!h) return;
+    try {
+      h(event);
+    } catch (err) {
+      console.error(`[TriggerInbox] onEnterTrigger for ${entityId} threw:`, err);
+    }
+  }
+
+  fireExit(entityId: string, event: TriggerEvent): void {
+    const h = this.exit.get(entityId);
+    if (!h) return;
+    try {
+      h(event);
+    } catch (err) {
+      console.error(`[TriggerInbox] onExitTrigger for ${entityId} threw:`, err);
+    }
+  }
+
+  /** Drop just this entity's handlers (called when an entity is despawned
+   *  or unmounts mid-play, so a stale closure can't fire later). */
+  clear(entityId: string): void {
+    this.enter.delete(entityId);
+    this.exit.delete(entityId);
+  }
+
+  reset(): void {
+    this.enter.clear();
+    this.exit.clear();
+  }
+}
+
 /** Per-entity persistent state bag — exposed to scripts as `ctx.state`. */
 export class EntityStates {
   private states = new Map<string, Record<string, unknown>>();

@@ -569,6 +569,45 @@ function ScriptedEntities({
         inboxes: session.inboxes,
         bus: session.bus,
         states: session.states,
+        triggers: session.triggers,
+        despawn: (id: string) => {
+          // Bypass the command stack — play-mode despawns shouldn't bloat
+          // the editor undo history. The store's `removeEntity` is the
+          // command-wrapping path; reach for the raw entities mutation.
+          // We must walk the FULL descendant subtree (not just direct
+          // children) so deep hierarchies don't leave orphan grandchildren
+          // floating in scene data after their root despawns.
+          const store = useEditor.getState();
+          const exists = store.sceneData.entities.some((e) => e.id === id);
+          if (!exists) return false;
+          const childrenByParent = new Map<string, string[]>();
+          for (const e of store.sceneData.entities) {
+            if (!e.parentId) continue;
+            const arr = childrenByParent.get(e.parentId);
+            if (arr) arr.push(e.id);
+            else childrenByParent.set(e.parentId, [e.id]);
+          }
+          const toRemove = new Set<string>([id]);
+          const stack = [id];
+          while (stack.length) {
+            const cur = stack.pop()!;
+            const kids = childrenByParent.get(cur);
+            if (!kids) continue;
+            for (const k of kids) {
+              if (!toRemove.has(k)) {
+                toRemove.add(k);
+                stack.push(k);
+              }
+            }
+          }
+          useEditor.setState((s) => ({
+            sceneData: {
+              ...s.sceneData,
+              entities: s.sceneData.entities.filter((e) => !toRemove.has(e.id)),
+            },
+          }));
+          return true;
+        },
         freeze,
         unfreeze,
         parentOf,

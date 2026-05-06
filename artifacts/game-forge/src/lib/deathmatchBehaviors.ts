@@ -571,6 +571,25 @@ exports.start = function(entity, ctx) {
 `;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Pickup trigger — starter behavior demonstrating the trigger event API
+// ──────────────────────────────────────────────────────────────────────────────
+
+const PICKUP_TRIGGER = String.raw`
+// Despawn this entity when a body named "Player" — or any body on the
+// "Player" layer — overlaps its sensor volume. Place this on an entity
+// that lives on the "Trigger" layer (so it spawns as a Rapier sensor)
+// and gives the user a one-line example of trigger / overlap reactions.
+exports.start = function(entity, ctx) {
+  ctx.scene.onEnterTrigger(function(other) {
+    var isPlayer = other.otherName === "Player" || other.otherLayer === "Player";
+    if (!isPlayer) return;
+    ctx.events.emit("pickup", { id: entity.id, name: entity.name, by: other.otherId });
+    ctx.scene.despawn(entity.id);
+  });
+};
+`;
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Registry
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -579,4 +598,5 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "enemy-deathmatch": ENEMY_DEATHMATCH,
   "gamemode-deathmatch": GAMEMODE_DEATHMATCH,
   spawnpoint: "// marker — no behavior",
+  "pickup-trigger": PICKUP_TRIGGER,
 };
