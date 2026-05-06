@@ -40,6 +40,12 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const [respawning, setRespawning] = useState<number | null>(null);
   const [outcome, setOutcome] = useState<"win" | "lose" | null>(null);
 
+  // Pickup counter + short-lived toasts (auto-prune after PICKUP_TTL_MS).
+  const [pickupCount, setPickupCount] = useState(0);
+  const [pickupToasts, setPickupToasts] = useState<
+    Array<{ id: number; label: string; ts: number }>
+  >([]);
+
   useEffect(() => {
     const offs: Array<() => void> = [];
 
@@ -110,6 +116,20 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     );
     offs.push(bus.on("win", () => setOutcome("win")));
     offs.push(bus.on("lose", () => setOutcome("lose")));
+    offs.push(
+      bus.on("pickup", (p) => {
+        const obj = p as { id?: string; name?: string } | undefined;
+        const label = (obj?.name && String(obj.name)) || "Pickup";
+        setPickupCount((c) => c + 1);
+        setPickupToasts((t) => {
+          const next = [
+            { id: Date.now() + Math.random(), label, ts: Date.now() },
+            ...t,
+          ].slice(0, 4);
+          return next;
+        });
+      }),
+    );
 
     return () => {
       for (const off of offs) off();
@@ -144,6 +164,17 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     return () => window.clearInterval(id);
   }, [killFeed.length]);
 
+  // Pickup toasts auto-prune after PICKUP_TTL_MS.
+  const PICKUP_TTL_MS = 2000;
+  useEffect(() => {
+    if (pickupToasts.length === 0) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setPickupToasts((t) => t.filter((e) => now - e.ts < PICKUP_TTL_MS));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [pickupToasts.length]);
+
   const healthPct = Math.max(0, Math.min(1, playerHealth / Math.max(1, playerMaxHealth)));
 
   return (
@@ -172,6 +203,32 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         }
         .dive-aim-shoot { animation: diveAimShoot 150ms ease-out; }
       `}</style>
+
+      {/* Pickup counter — under health bar (top-left). Hidden until first pickup. */}
+      {pickupCount > 0 && (
+        <div className="absolute left-4 top-20 flex items-center gap-2 rounded bg-black/55 px-3 py-1.5 text-white shadow">
+          <span className="text-[10px] uppercase tracking-wider text-white/70">Pickups</span>
+          <span className="text-base font-bold tabular-nums text-amber-300">{pickupCount}</span>
+        </div>
+      )}
+
+      {/* Pickup toasts — stacked above the scoreboard, fade out over PICKUP_TTL_MS. */}
+      <div className="pointer-events-none absolute left-1/2 top-24 flex -translate-x-1/2 flex-col items-center gap-1">
+        {pickupToasts.map((t) => {
+          const age = Math.min(1, (Date.now() - t.ts) / PICKUP_TTL_MS);
+          const opacity = Math.max(0, 1 - age);
+          const lift = -8 * age;
+          return (
+            <div
+              key={t.id}
+              className="rounded border border-amber-300/60 bg-black/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-amber-300 shadow"
+              style={{ opacity, transform: `translateY(${lift}px)` }}
+            >
+              + {t.label}
+            </div>
+          );
+        })}
+      </div>
 
       {/* Health bar — top left */}
       <div className="absolute left-4 top-4 w-56 rounded bg-black/55 px-3 py-2 text-white shadow">
