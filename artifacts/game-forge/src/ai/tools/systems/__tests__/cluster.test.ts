@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { bounds, clusterPoints, type Point3 } from "../cluster";
+import {
+  bounds,
+  centroid,
+  clusterPoints,
+  nearestNeighborStats,
+  type Point3,
+} from "../cluster";
 
 const mk = (id: string, x: number, y: number, z: number): Point3 => ({ id, x, y, z });
 
@@ -20,6 +26,45 @@ describe("bounds", () => {
   });
 });
 
+describe("centroid", () => {
+  it("returns origin for empty input", () => {
+    expect(centroid([])).toEqual({ x: 0, y: 0, z: 0 });
+  });
+  it("averages each axis", () => {
+    const c = centroid([mk("a", 0, 0, 0), mk("b", 4, 8, 12)]);
+    expect(c).toEqual({ x: 2, y: 4, z: 6 });
+  });
+});
+
+describe("nearestNeighborStats", () => {
+  it("returns zeros + nulls for fewer than two points", () => {
+    const s = nearestNeighborStats([mk("only", 1, 2, 3)]);
+    expect(s).toEqual({
+      min: 0,
+      max: 0,
+      mean: 0,
+      median: 0,
+      closestPair: null,
+      loneliest: null,
+    });
+  });
+  it("identifies the closest pair and the loneliest entity", () => {
+    const s = nearestNeighborStats([
+      mk("a", 0, 0, 0),
+      mk("b", 1, 0, 0), // a-b are closest (distance 1)
+      mk("c", 100, 0, 0), // c is far from everyone
+    ]);
+    expect(s.closestPair).toEqual(["a", "b"]);
+    expect(s.min).toBe(1);
+    expect(s.loneliest).toBe("c");
+    expect(s.max).toBeGreaterThan(50);
+  });
+  it("returns sorted ids in closestPair regardless of input order", () => {
+    const s = nearestNeighborStats([mk("z", 0, 0, 0), mk("a", 0, 0, 1)]);
+    expect(s.closestPair).toEqual(["a", "z"]);
+  });
+});
+
 describe("clusterPoints", () => {
   it("returns empty for no points", () => {
     const r = clusterPoints([]);
@@ -35,12 +80,9 @@ describe("clusterPoints", () => {
     const points = [...blob(-50, 0, "L"), ...blob(0, 0, "M"), ...blob(50, 0, "R")];
     const r = clusterPoints(points, { maxK: 6, seed: 7 });
     expect(r.k).toBe(3);
-    // Sorted by centroid X ascending.
     expect(r.clusters[0].center.x).toBeLessThan(r.clusters[1].center.x);
     expect(r.clusters[1].center.x).toBeLessThan(r.clusters[2].center.x);
-    // Each cluster captures exactly its 6 members.
     for (const c of r.clusters) expect(c.memberIds).toHaveLength(6);
-    // 1-based, contiguous labels.
     expect(r.clusters.map((c) => c.index)).toEqual([1, 2, 3]);
   });
 

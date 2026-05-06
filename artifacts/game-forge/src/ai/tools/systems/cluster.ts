@@ -79,6 +79,93 @@ export function bounds(points: readonly Point3[]): AABB {
   };
 }
 
+/** Mean of all input points (the global centroid). Returns origin for an
+ *  empty set so callers don't have to guard. */
+export function centroid(points: readonly Point3[]): {
+  x: number;
+  y: number;
+  z: number;
+} {
+  if (points.length === 0) return { x: 0, y: 0, z: 0 };
+  let sx = 0,
+    sy = 0,
+    sz = 0;
+  for (const p of points) {
+    sx += p.x;
+    sy += p.y;
+    sz += p.z;
+  }
+  const n = points.length;
+  return { x: sx / n, y: sy / n, z: sz / n };
+}
+
+export interface NearestNeighborStats {
+  /** Smallest pairwise distance found. */
+  min: number;
+  /** Largest "nearest distance" — the loneliest entity. */
+  max: number;
+  /** Mean of every point's distance to its nearest other point. */
+  mean: number;
+  /** Median — robust against outliers. */
+  median: number;
+  /** Ids of the closest pair (lexicographically sorted). */
+  closestPair: [string, string] | null;
+  /** Id of the loneliest entity (largest nearest-distance). */
+  loneliest: string | null;
+}
+
+/** Brute-force O(N²) nearest-neighbor scan. Fine for the hundreds of
+ *  entities a single scene typically holds; no spatial index needed. */
+export function nearestNeighborStats(
+  points: readonly Point3[],
+): NearestNeighborStats {
+  if (points.length < 2) {
+    return {
+      min: 0,
+      max: 0,
+      mean: 0,
+      median: 0,
+      closestPair: null,
+      loneliest: null,
+    };
+  }
+  const nearest: number[] = new Array(points.length).fill(Infinity);
+  let closestPair: [string, string] | null = null;
+  let bestPair = Infinity;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d2 = dist2(points[i], points[j]);
+      if (d2 < nearest[i]) nearest[i] = d2;
+      if (d2 < nearest[j]) nearest[j] = d2;
+      if (d2 < bestPair) {
+        bestPair = d2;
+        const a = points[i].id;
+        const b = points[j].id;
+        closestPair = a < b ? [a, b] : [b, a];
+      }
+    }
+  }
+  const dists = nearest.map((v) => Math.sqrt(v));
+  let loneliestIdx = 0;
+  for (let i = 1; i < dists.length; i++) {
+    if (dists[i] > dists[loneliestIdx]) loneliestIdx = i;
+  }
+  const sorted = [...dists].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median =
+    sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  let sum = 0;
+  for (const d of dists) sum += d;
+  return {
+    min: round(sorted[0]),
+    max: round(sorted[sorted.length - 1]),
+    mean: round(sum / dists.length),
+    median: round(median),
+    closestPair,
+    loneliest: points[loneliestIdx].id,
+  };
+}
+
 /** k-means++ seeding — picks the first center at random, then each subsequent
  *  center weighted by squared distance to the nearest already-chosen one.
  *  This is the standard "smart" init; vs random it gives better clusters in

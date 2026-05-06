@@ -5,6 +5,9 @@
  * zero or more `Issue`s. The set is intentionally *opinionated and small*
  * — these are the gotchas that bite a user the first time they play a
  * scene the AI built. Stays side-effect free for testability.
+ *
+ * Async checks (HEAD'ing model URLs) live in `index.ts` because they
+ * require fetch; everything here is fully deterministic + synchronous.
  */
 
 import type { SceneEntity, BehaviorKind } from "@workspace/scene-schema";
@@ -31,9 +34,19 @@ export interface DiagnoseSceneInput {
   };
   /** When true, treat the scene as a deathmatch room — extra checks fire. */
   deathmatch?: boolean;
+  /** Project's known script ids (from the editor cache). When provided,
+   *  enables the `script-deleted` rule — entities pointing at a scriptId
+   *  no longer in this set get flagged. */
+  validScriptIds?: ReadonlySet<number>;
 }
 
 const TYPES_NEEDING_GROUND = new Set(["box", "sphere", "cylinder", "model"]);
+
+/** Returns true iff a number is a finite non-zero value. Used for collider
+ *  extent sanity (NaN or zero scale → physics will crash or no-op). */
+function isPositiveFinite(n: number | undefined): boolean {
+  return typeof n === "number" && Number.isFinite(n) && Math.abs(n) > 1e-6;
+}
 
 export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
   const issues: Issue[] = [];
@@ -58,6 +71,20 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
       message:
         "No directional light found — point/spot lights only will give a flat look.",
       hint: "Add one directional light to act as the sun.",
+    });
+  }
+  // Zero-intensity (or negative) lights are invisible — usually a typo.
+  const dimLights = lights.filter((l) => {
+    const i = l.light?.intensity;
+    return typeof i === "number" && i <= 0;
+  });
+  if (dimLights.length > 0) {
+    issues.push({
+      rule: "zero-intensity-light",
+      severity: "warn",
+      message: `${dimLights.length} light(s) have intensity ≤ 0 and will not illuminate anything.`,
+      entityIds: dimLights.map((l) => l.id),
+      hint: "Set light.intensity to a positive value (try 1 for directional, 5–20 for point).",
     });
   }
 
@@ -95,6 +122,20 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
       message: `${controllers.length} entities have a controller — only one is supported per scene.`,
       entityIds: controllers.map((e) => e.id),
       hint: "Set controllerKind='none' on all but the intended player.",
+    });
+  }
+
+  // Spawn-points: any scene with a player benefits from at least one
+  // spawnpoint behavior. We surface this independently of deathmatch
+  // because Play Mode's respawn logic uses spawnpoints in every mode.
+  const spawnpoints = ents.filter((e) => e.behavior === "spawnpoint");
+  if (controllers.length > 0 && spawnpoints.length === 0) {
+    issues.push({
+      rule: "player-without-spawnpoint",
+      severity: "info",
+      message:
+        "Player exists but no entity has behavior='spawnpoint' — respawn will use the origin.",
+      hint: "Add an empty entity at a safe location and set behavior='spawnpoint'.",
     });
   }
 
@@ -151,8 +192,7 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
 
   // ── Physics sanity ──────────────────────────────────────────────────
   const dynamicWithoutCollider = ents.filter(
-    (e) =>
-      e.physics?.bodyType === "dynamic" && !e.physics?.colliderType,
+    (e) => e.physics?.bodyType === "dynamic" && !e.physics?.colliderType,
   );
   if (dynamicWithoutCollider.length > 0) {
     issues.push({
@@ -161,6 +201,31 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
       message: `${dynamicWithoutCollider.length} dynamic bodies have no colliderType set.`,
       entityIds: dynamicWithoutCollider.map((e) => e.id),
       hint: "Set physics.colliderType to 'cuboid', 'ball', 'cylinder', or 'trimesh'.",
+    });
+  }
+
+  // Collider extents come from the entity's transform.scale (Rapier
+  // builds half-extents from it). Zero or NaN on any axis crashes the
+  // physics step or yields an invisible/zero-volume collider.
+  const badExtents: string[] = [];
+  for (const e of ents) {
+    if (!e.physics?.colliderType) continue;
+    const s = e.transform?.scale as readonly number[] | undefined;
+    if (!s || s.length < 3) {
+      badExtents.push(e.id);
+      continue;
+    }
+    if (!isPositiveFinite(s[0]) || !isPositiveFinite(s[1]) || !isPositiveFinite(s[2])) {
+      badExtents.push(e.id);
+    }
+  }
+  if (badExtents.length > 0) {
+    issues.push({
+      rule: "invalid-collider-extents",
+      severity: "error",
+      message: `${badExtents.length} entities with a collider have a zero or NaN scale axis — physics will fail.`,
+      entityIds: badExtents,
+      hint: "Set transform.scale to positive finite values (e.g. [1, 1, 1]).",
     });
   }
 
@@ -181,6 +246,26 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
         severity: "info",
         message: `Player entity "${e.name}" has no script attached — relying on the built-in controller only.`,
         entityIds: [e.id],
+      });
+    }
+  }
+  // Script-attachment integrity — entity references a scriptId the project
+  // no longer contains. Symptom: silently no behavior at runtime.
+  if (input.validScriptIds) {
+    const valid = input.validScriptIds;
+    const stale: string[] = [];
+    for (const e of ents) {
+      if (typeof e.scriptId === "number" && !valid.has(e.scriptId)) {
+        stale.push(e.id);
+      }
+    }
+    if (stale.length > 0) {
+      issues.push({
+        rule: "script-deleted",
+        severity: "error",
+        message: `${stale.length} entities point at a scriptId that no longer exists in the project.`,
+        entityIds: stale,
+        hint: "Re-attach a real script with attach_script, or set scriptId=null.",
       });
     }
   }
@@ -227,5 +312,28 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
 export function summarizeBySeverity(issues: readonly Issue[]): Record<IssueSeverity, number> {
   const out: Record<IssueSeverity, number> = { error: 0, warn: 0, info: 0 };
   for (const i of issues) out[i.severity] = (out[i.severity] ?? 0) + 1;
+  return out;
+}
+
+/** Collect distinct (entityId, url) pairs for every model entity that
+ *  references a remote asset URL — used by the async URL-reachability
+ *  check in the diagnose_scene tool wrapper. Capped at `limit` to keep
+ *  the tool latency-bounded. */
+export function collectModelUrls(
+  entities: readonly SceneEntity[],
+  limit = 8,
+): { id: string; url: string }[] {
+  const out: { id: string; url: string }[] = [];
+  const seenUrls = new Set<string>();
+  for (const e of entities) {
+    if (e.type !== "model") continue;
+    const url = e.model?.url;
+    if (typeof url !== "string" || url.length === 0) continue;
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("/")) continue;
+    if (seenUrls.has(url)) continue;
+    seenUrls.add(url);
+    out.push({ id: e.id, url });
+    if (out.length >= limit) break;
+  }
   return out;
 }

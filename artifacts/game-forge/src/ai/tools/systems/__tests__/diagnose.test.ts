@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { diagnoseScene, summarizeBySeverity } from "../diagnose";
+import {
+  collectModelUrls,
+  diagnoseScene,
+  summarizeBySeverity,
+} from "../diagnose";
 import type { SceneEntity } from "@workspace/scene-schema";
 
-const ent = (overrides: Partial<SceneEntity> & { id: string; type: SceneEntity["type"] }): SceneEntity => ({
+const ent = (
+  overrides: Partial<SceneEntity> & { id: string; type: SceneEntity["type"] },
+): SceneEntity => ({
   id: overrides.id,
   name: overrides.name ?? overrides.id,
   type: overrides.type,
@@ -75,6 +81,90 @@ describe("diagnoseScene", () => {
     expect(issues.some((i) => i.rule === "orphan-parent")).toBe(true);
   });
 
+  it("flags zero-intensity lights", () => {
+    const issues = diagnoseScene({
+      entities: [
+        ent({ id: "p", type: "plane" }),
+        ent({
+          id: "L",
+          type: "light",
+          light: { kind: "directional", intensity: 0 },
+        }),
+      ],
+      environment: {},
+    });
+    const i = issues.find((x) => x.rule === "zero-intensity-light");
+    expect(i?.entityIds).toEqual(["L"]);
+    expect(i?.severity).toBe("warn");
+  });
+
+  it("flags zero / NaN collider extents", () => {
+    const issues = diagnoseScene({
+      entities: [
+        ent({ id: "p", type: "plane" }),
+        ent({ id: "L", type: "light", light: { kind: "directional" } }),
+        ent({
+          id: "z",
+          type: "box",
+          transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 0, 1] },
+          physics: { colliderType: "cuboid" },
+        }),
+        ent({
+          id: "n",
+          type: "box",
+          transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, NaN] },
+          physics: { colliderType: "cuboid" },
+        }),
+      ],
+      environment: {},
+    });
+    const i = issues.find((x) => x.rule === "invalid-collider-extents");
+    expect(i?.entityIds?.sort()).toEqual(["n", "z"]);
+    expect(i?.severity).toBe("error");
+  });
+
+  it("flags entities pointing at deleted scriptIds", () => {
+    const issues = diagnoseScene({
+      entities: [
+        ent({ id: "p", type: "plane" }),
+        ent({ id: "L", type: "light", light: { kind: "directional" } }),
+        ent({ id: "a", type: "box", scriptId: 1 }),
+        ent({ id: "b", type: "box", scriptId: 99 }),
+      ],
+      environment: {},
+      validScriptIds: new Set([1, 2, 3]),
+    });
+    const i = issues.find((x) => x.rule === "script-deleted");
+    expect(i?.entityIds).toEqual(["b"]);
+    expect(i?.severity).toBe("error");
+  });
+
+  it("flags player without spawnpoint as info", () => {
+    const issues = diagnoseScene({
+      entities: [
+        ent({ id: "p", type: "plane" }),
+        ent({ id: "L", type: "light", light: { kind: "directional" } }),
+        ent({ id: "hero", type: "model", controllerKind: "thirdPerson" }),
+      ],
+      environment: {},
+    });
+    const i = issues.find((x) => x.rule === "player-without-spawnpoint");
+    expect(i?.severity).toBe("info");
+  });
+
+  it("does NOT flag missing spawnpoint when one exists", () => {
+    const issues = diagnoseScene({
+      entities: [
+        ent({ id: "p", type: "plane" }),
+        ent({ id: "L", type: "light", light: { kind: "directional" } }),
+        ent({ id: "hero", type: "model", controllerKind: "thirdPerson" }),
+        ent({ id: "spawn", type: "empty", behavior: "spawnpoint" }),
+      ],
+      environment: {},
+    });
+    expect(issues.some((i) => i.rule === "player-without-spawnpoint")).toBe(false);
+  });
+
   it("flags deathmatch scene missing gamemode + spawnpoint when deathmatch:true", () => {
     const issues = diagnoseScene({
       entities: [
@@ -108,5 +198,21 @@ describe("diagnoseScene", () => {
       { rule: "d", severity: "info", message: "" },
     ]);
     expect(counts).toEqual({ error: 1, warn: 2, info: 1 });
+  });
+});
+
+describe("collectModelUrls", () => {
+  it("returns only model entities with http(s) or absolute paths, deduped, capped", () => {
+    const urls = collectModelUrls(
+      [
+        ent({ id: "a", type: "model", model: { url: "https://example.com/a.glb" } }),
+        ent({ id: "b", type: "model", model: { url: "https://example.com/a.glb" } }), // dup
+        ent({ id: "c", type: "model", model: { url: "/local.glb" } }),
+        ent({ id: "d", type: "model", model: { url: "data:foo" } }), // skipped
+        ent({ id: "e", type: "box", model: { url: "https://example.com/x.glb" } }), // wrong type
+      ],
+      8,
+    );
+    expect(urls.map((u) => u.id)).toEqual(["a", "c"]);
   });
 });

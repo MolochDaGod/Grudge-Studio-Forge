@@ -7,15 +7,38 @@
  * `{ defs, handlers }` shape so `aiTools.ts` can spread them in with a
  * single import — keeping merge surface minimal between this task and
  * the parallel ones.
+ *
+ * Project-data lookups (scripts, scenes, prefabs, assets) read through
+ * the React Query cache used by the editor panels. We use
+ * `queryClient.fetchQuery(...)` so a cached value (the panels are
+ * usually mounted) is returned synchronously without a refetch — and
+ * if the panel was never opened we transparently warm the cache with
+ * one fetch instead of bypassing the store entirely.
  */
 
+import {
+  getListAssetsQueryKey,
+  getListPrefabsQueryKey,
+  getListScenesQueryKey,
+  getListScriptsQueryKey,
+  listAssets,
+  listPrefabs,
+  listScenes,
+  listScripts,
+  type Asset,
+  type Prefab,
+  type Scene,
+  type Script,
+} from "@workspace/api-client-react";
+import type { QueryKey } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
+import { queryClient } from "@/lib/queryClient";
 import {
   getRecentAiCalls,
   type AiAuditEntry,
 } from "@/ai/aiAuditLog";
-import { diagnoseScene, summarizeBySeverity } from "./diagnose";
-import { bounds, clusterPoints } from "./cluster";
+import { collectModelUrls, diagnoseScene, summarizeBySeverity, type Issue } from "./diagnose";
+import { bounds, centroid, clusterPoints, nearestNeighborStats } from "./cluster";
 
 interface ToolDef {
   name: string;
@@ -25,22 +48,42 @@ interface ToolDef {
 type ToolResult = { ok: boolean; data?: unknown; error?: string };
 type ToolHandler = (input: Record<string, unknown>) => Promise<ToolResult>;
 
-const apiUrl = (path: string) => `/api/${path.replace(/^\/+/, "")}`;
-
-async function fetchJson(path: string): Promise<unknown> {
-  const res = await fetch(apiUrl(path));
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`GET ${path} → ${res.status}: ${body.slice(0, 200)}`);
-  }
-  return res.json();
+/** Read project data through the editor's existing React Query cache.
+ *  Returns the cached value immediately when present; otherwise fires a
+ *  single fetch and caches the result so subsequent panels reuse it.
+ *  Either way we go through the same store the UI uses — no duplicate
+ *  state to drift out of sync. */
+async function readFromCache<T>(
+  queryKey: QueryKey,
+  queryFn: () => Promise<T>,
+): Promise<T> {
+  const cached = queryClient.getQueryData<T>(queryKey);
+  if (cached !== undefined) return cached;
+  return queryClient.fetchQuery<T>({ queryKey, queryFn });
 }
+
+const loadScripts = (projectId: number) =>
+  readFromCache<Script[]>(getListScriptsQueryKey(projectId), () =>
+    listScripts(projectId),
+  );
+const loadScenes = (projectId: number) =>
+  readFromCache<Scene[]>(getListScenesQueryKey(projectId), () =>
+    listScenes(projectId),
+  );
+const loadPrefabs = (projectId: number) =>
+  readFromCache<Prefab[]>(getListPrefabsQueryKey(projectId), () =>
+    listPrefabs(projectId),
+  );
+const loadAssets = (projectId: number) =>
+  readFromCache<Asset[]>(getListAssetsQueryKey(projectId), () =>
+    listAssets(projectId),
+  );
 
 // ── diagnose_scene ─────────────────────────────────────────────────────
 const DIAGNOSE_SCENE: ToolDef = {
   name: "diagnose_scene",
   description:
-    "Lint the current scene for common authoring mistakes (no lights, no ground, missing camera target, orphan parents, dynamic body without a collider, multiple controllers, …). Returns an `issues[]` list with severity, rule id, message, and a fix hint. Always cheap to call — read-only and runs in-memory. Pass `deathmatch:true` to also check for deathmatch-specific behaviors (gamemode/spawnpoint/enemy).",
+    "Lint the current scene for common authoring mistakes (no lights, zero-intensity lights, no ground, missing camera target, orphan parents, dynamic body without a collider, NaN/zero collider extents, multiple controllers, scripts pointing at deleted ids, missing spawnpoint with a player, deathmatch tagging, …). Returns an `issues[]` list with severity, rule id, message, and a fix hint. Optionally HEAD-checks remote model URLs for reachability when checkUrls:true (capped at 8 unique URLs, 1.5s each).",
   input_schema: {
     type: "object",
     properties: {
@@ -49,16 +92,59 @@ const DIAGNOSE_SCENE: ToolDef = {
         description:
           "When true, also flag missing deathmatch behaviors (gamemode, spawnpoints, enemies).",
       },
+      checkUrls: {
+        type: "boolean",
+        description:
+          "When true, HEAD-request up to 8 unique model URLs and report any unreachable ones (rule: model-url-unreachable).",
+      },
     },
   },
 };
 const diagnoseSceneHandler: ToolHandler = async (input) => {
   const s = useEditor.getState();
-  const issues = diagnoseScene({
+  let validScriptIds: Set<number> | undefined;
+  if (s.projectId) {
+    // Only enable the `script-deleted` rule when we actually have an
+    // inventory — a load failure must NOT be treated as "all scripts
+    // are deleted" (would flag every entity).
+    const scripts = await loadScripts(s.projectId).catch(
+      () => null as Script[] | null,
+    );
+    if (scripts) validScriptIds = new Set(scripts.map((sc) => sc.id));
+  }
+  const issues: Issue[] = diagnoseScene({
     entities: s.sceneData.entities,
     environment: s.sceneData.environment,
     deathmatch: input.deathmatch === true,
+    validScriptIds,
   });
+  if (input.checkUrls === true) {
+    const urls = collectModelUrls(s.sceneData.entities, 8);
+    const broken: string[] = [];
+    await Promise.all(
+      urls.map(async ({ id, url }) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 1500);
+        try {
+          const res = await fetch(url, { method: "HEAD", signal: ctrl.signal });
+          if (!res.ok) broken.push(id);
+        } catch {
+          broken.push(id);
+        } finally {
+          clearTimeout(t);
+        }
+      }),
+    );
+    if (broken.length > 0) {
+      issues.push({
+        rule: "model-url-unreachable",
+        severity: "error",
+        message: `${broken.length} model entities reference a URL that returned an error or timed out.`,
+        entityIds: broken,
+        hint: "Re-upload the asset, or update model.url to a reachable file.",
+      });
+    }
+  }
   return {
     ok: true,
     data: {
@@ -113,7 +199,7 @@ const getActiveSceneMetaHandler: ToolHandler = async () => {
 const GET_PROJECT_SUMMARY: ToolDef = {
   name: "get_project_summary",
   description:
-    "High-level overview of the open project from the API: counts of scripts, scenes, prefabs, and assets, plus the active scene's name. Use this once at the start of a conversation to know what's already in the project before re-creating things.",
+    "High-level overview of the open project pulled from the editor's cache: counts AND name+id of every script, scene, prefab, and asset. Use this once at the start of a conversation to know what's already in the project before re-creating things. Names are sorted alphabetically per category for stable AI scanning.",
   input_schema: { type: "object", properties: {} },
 };
 const getProjectSummaryHandler: ToolHandler = async () => {
@@ -121,12 +207,13 @@ const getProjectSummaryHandler: ToolHandler = async () => {
   if (!s.projectId) return { ok: false, error: "No project open." };
   try {
     const [scripts, scenes, prefabs, assets] = await Promise.all([
-      fetchJson(`projects/${s.projectId}/scripts`).catch(() => []),
-      fetchJson(`projects/${s.projectId}/scenes`).catch(() => []),
-      fetchJson(`projects/${s.projectId}/prefabs`).catch(() => []),
-      fetchJson(`projects/${s.projectId}/assets`).catch(() => []),
+      loadScripts(s.projectId).catch(() => [] as Script[]),
+      loadScenes(s.projectId).catch(() => [] as Scene[]),
+      loadPrefabs(s.projectId).catch(() => [] as Prefab[]),
+      loadAssets(s.projectId).catch(() => [] as Asset[]),
     ]);
-    const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+    const byName = <T extends { name: string }>(arr: T[]) =>
+      [...arr].sort((a, b) => a.name.localeCompare(b.name));
     return {
       ok: true,
       data: {
@@ -134,12 +221,33 @@ const getProjectSummaryHandler: ToolHandler = async () => {
         activeSceneId: s.sceneId,
         activeSceneName: s.sceneName,
         counts: {
-          scripts: arr(scripts).length,
-          scenes: arr(scenes).length,
-          prefabs: arr(prefabs).length,
-          assets: arr(assets).length,
+          scripts: scripts.length,
+          scenes: scenes.length,
+          prefabs: prefabs.length,
+          assets: assets.length,
           entities: s.sceneData.entities.length,
         },
+        scripts: byName(scripts).map((sc) => ({
+          id: sc.id,
+          name: sc.name,
+          language: sc.language,
+        })),
+        scenes: byName(scenes).map((sc) => ({
+          id: sc.id,
+          name: sc.name,
+          isActive: sc.id === s.sceneId,
+        })),
+        prefabs: byName(prefabs).map((p) => ({
+          id: p.id,
+          name: p.name,
+          entityCount: Array.isArray(p.data?.entities) ? p.data.entities.length : 0,
+        })),
+        assets: byName(assets).map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          source: a.source,
+        })),
       },
     };
   } catch (err) {
@@ -151,28 +259,22 @@ const getProjectSummaryHandler: ToolHandler = async () => {
 const LIST_ASSETS: ToolDef = {
   name: "list_assets",
   description:
-    "List all assets registered against the current project (id, name, kind, source, url). These are first-class assets stored in the database (not the per-AI object-storage bucket — for that use list_user_assets). Useful before importing a new asset to avoid duplicates.",
+    "List all assets registered against the current project (id, name, type, source, url). Reads from the editor's asset-browser cache — no extra fetch when the panel has been opened. Useful before importing a new asset to avoid duplicates.",
   input_schema: { type: "object", properties: {} },
 };
 const listAssetsHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
   try {
-    const assets = (await fetchJson(`projects/${s.projectId}/assets`)) as Array<{
-      id: number;
-      name: string;
-      kind?: string;
-      source?: string;
-      url?: string;
-    }>;
+    const assets = await loadAssets(s.projectId);
     return {
       ok: true,
       data: assets.map((a) => ({
         id: a.id,
         name: a.name,
-        kind: a.kind ?? null,
-        source: a.source ?? null,
-        url: a.url ?? null,
+        type: a.type,
+        source: a.source,
+        url: a.url,
       })),
     };
   } catch (err) {
@@ -184,24 +286,21 @@ const listAssetsHandler: ToolHandler = async () => {
 const LIST_PREFABS: ToolDef = {
   name: "list_prefabs",
   description:
-    "List all reusable Prefabs in the current project (id, name, plus a count of root entities in each). Use this before spawning to discover what's available; pair with the prefab spawn tools or open the prefab via the editor UI.",
+    "List all reusable Prefabs in the current project (id, name, entityCount, isPlayerPrefab). Reads from the prefabs-panel cache. Pair with the prefab spawn tools or open a prefab via the editor UI.",
   input_schema: { type: "object", properties: {} },
 };
 const listPrefabsHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
   try {
-    const prefabs = (await fetchJson(`projects/${s.projectId}/prefabs`)) as Array<{
-      id: number;
-      name: string;
-      data?: { entities?: unknown[] };
-    }>;
+    const prefabs = await loadPrefabs(s.projectId);
     return {
       ok: true,
       data: prefabs.map((p) => ({
         id: p.id,
         name: p.name,
-        entityCount: Array.isArray(p.data?.entities) ? p.data!.entities!.length : 0,
+        entityCount: Array.isArray(p.data?.entities) ? p.data.entities.length : 0,
+        isPlayerPrefab: p.data?.isPlayerPrefab === true,
       })),
     };
   } catch (err) {
@@ -213,18 +312,14 @@ const listPrefabsHandler: ToolHandler = async () => {
 const LIST_SCENES: ToolDef = {
   name: "list_scenes",
   description:
-    "List all scenes belonging to the current project (id, name, updatedAt, isActive). Useful to know what other scenes exist before suggesting the user load one, or to recall an old scene name.",
+    "List all scenes belonging to the current project (id, name, updatedAt, isActive). Reads from the scene-list cache. Use this to recall an old scene name before suggesting a load.",
   input_schema: { type: "object", properties: {} },
 };
 const listScenesHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
   try {
-    const scenes = (await fetchJson(`projects/${s.projectId}/scenes`)) as Array<{
-      id: number;
-      name: string;
-      updatedAt: string;
-    }>;
+    const scenes = await loadScenes(s.projectId);
     return {
       ok: true,
       data: scenes.map((sc) => ({
@@ -354,7 +449,7 @@ const getConsoleErrorsHandler: ToolHandler = async (input) => {
 const DESCRIBE_LAYOUT: ToolDef = {
   name: "describe_layout",
   description:
-    "Summarize the spatial layout of the scene: overall axis-aligned bounding box, dominant axis, density, and k-means clusters of entity positions (auto-K via elbow heuristic, max 6). Use before adding new content so you can place it where it actually fits — e.g. 'put a tower in the empty NE corner'. Filter by entity type to cluster only specific kinds (e.g. just 'enemy' models).",
+    "Summarize the spatial layout of the scene: AABB, dominant axis, density, global centroid, nearest-neighbor stats (closest pair + loneliest entity), and k-means clusters of entity positions (auto-K via elbow heuristic, max 6). Use before adding new content so you can place it where it actually fits — e.g. 'put a tower in the empty NE corner'. Filter by entity type to cluster only specific kinds (e.g. just 'enemy' models).",
   input_schema: {
     type: "object",
     properties: {
@@ -396,6 +491,8 @@ const describeLayoutHandler: ToolHandler = async (input) => {
       data: {
         sampleSize: 0,
         bounds: bounds([]),
+        centroid: { x: 0, y: 0, z: 0 },
+        nearestNeighbor: nearestNeighborStats([]),
         clusters: [],
         note: "No entities match the filter.",
       },
@@ -409,6 +506,8 @@ const describeLayoutHandler: ToolHandler = async (input) => {
   };
   const dominantAxis: "x" | "y" | "z" =
     span.x >= span.y && span.x >= span.z ? "x" : span.y >= span.z ? "y" : "z";
+  const c = centroid(points);
+  const nn = nearestNeighborStats(points);
   const { clusters, k } = clusterPoints(points, {
     maxK: Math.min(6, Math.max(1, Number(input.maxClusters ?? 4))),
   });
@@ -420,6 +519,8 @@ const describeLayoutHandler: ToolHandler = async (input) => {
       bounds: aabb,
       span,
       dominantAxis,
+      centroid: roundXYZ(c),
+      nearestNeighbor: nn,
       densityPerXZUnit: round(points.length / volume, 4),
       k,
       clusters,
@@ -430,6 +531,9 @@ const describeLayoutHandler: ToolHandler = async (input) => {
 function round(n: number, digits = 2): number {
   const m = 10 ** digits;
   return Math.round(n * m) / m;
+}
+function roundXYZ(p: { x: number; y: number; z: number }) {
+  return { x: round(p.x), y: round(p.y), z: round(p.z) };
 }
 
 // ── Bundled exports ────────────────────────────────────────────────────
