@@ -1,7 +1,7 @@
 import * as YUKA from "yuka";
 import * as THREE from "three";
-import type { LayerName } from "@workspace/scene-schema";
-import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit } from "./csTranspile";
+import type { LayerName, SurfaceKind } from "@workspace/scene-schema";
+import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle } from "./csTranspile";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
 import type { EntityInboxes, EntityStates, GameBus, TriggerInbox } from "./GameBus";
@@ -109,6 +109,25 @@ export function makeContext(opts: {
     deep?: boolean,
   ) => ScriptEntity[];
   worldPosition: (id: string) => [number, number, number];
+  /** Look up the per-entity agent handle (driven by the play-mode
+   *  agent runtime in Viewport.tsx). Returns `undefined` when the
+   *  entity has no `navAgent` component or play mode hasn't spawned
+   *  an actor yet. */
+  agentFor: (id: string) => AgentHandle | undefined;
+  /** Wraps `findPath` against the currently-loaded navmesh. Returns
+   *  `null` when no navmesh is baked or the endpoints are off-mesh.
+   *  Optional `options.areaFilter` is forwarded to the recast query
+   *  filter so callers can restrict pathfinding to specific surfaces
+   *  (Walk-only, Swim-only, etc.). */
+  navFindPath: (
+    start: [number, number, number],
+    end: [number, number, number],
+    options?: { areaFilter?: SurfaceKind[] },
+  ) => [number, number, number][] | null;
+  /** Wraps `sampleNavmesh` (snap to nearest walkable poly). */
+  navSample: (
+    position: [number, number, number],
+  ) => { point: [number, number, number]; areaId: number } | null;
 }): ScriptContext {
   const fromId = opts.entityId;
   return {
@@ -138,6 +157,11 @@ export function makeContext(opts: {
       descendantsOf: opts.descendantsOf,
       findChildren: opts.findChildren,
       worldPosition: opts.worldPosition,
+      agent: opts.agentFor,
+    },
+    nav: {
+      findPath: opts.navFindPath,
+      sample: opts.navSample,
     },
     events: {
       emit: (event, payload) => opts.bus.emit(event, payload),

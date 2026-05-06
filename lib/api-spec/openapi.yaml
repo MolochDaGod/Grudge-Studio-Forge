@@ -817,6 +817,26 @@ components:
           items:
             type: string
           description: Layers spawned as Rapier sensors (no contact response, intersection events only).
+        navmeshAssetId:
+          type: number
+          nullable: true
+          description: Pointer to the persisted Recast navmesh blob (uploaded by `POST /navmesh/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null/undefined when the scene has no navmesh yet.
+        navmeshBlobKey:
+          type: string
+          nullable: true
+          description: Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST /navmesh/blob`; read on reload to hydrate the in-memory blob via `GET /navmesh/blob/:id`.
+        navmeshAreas:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              color:
+                type: string
+              cost:
+                type: number
+              label:
+                type: string
+          description: Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`/`Climb`/`Swim`/`Jump`/`Dig`).
 
     Entity:
       type: object
@@ -860,6 +880,35 @@ components:
           type: string
           description: Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.
           enum: [Default, Terrain, Player, NPC, Item, Projectile, Trigger, Water, IgnoreRaycast, UI3D]
+        surface:
+          type: string
+          description: Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk/Jump/Climb/Dig→Terrain, Swim→Water).
+          enum: [Walk, Climb, Swim, Jump, Dig, None]
+        navAgent:
+          type: object
+          nullable: true
+          description: When present + entity in play mode, the runtime spins up one XState machine (idle/patrol/chase/climb/swim/stuck/dead) to drive it.
+          properties:
+            filter:
+              type: array
+              items:
+                type: string
+                enum: [Walk, Climb, Swim, Jump, Dig, None]
+            speed:
+              type: number
+            radius:
+              type: number
+            height:
+              type: number
+            acceleration:
+              type: number
+            turnSpeed:
+              type: number
+            animationClips:
+              type: object
+              description: Override map for animation clip names (state → clip).
+              additionalProperties:
+                type: string
 
     Transform:
       type: object
@@ -886,7 +935,11 @@ components:
           enum: [fixed, dynamic, kinematicPosition, kinematicVelocity]
         colliderType:
           type: string
-          enum: [cuboid, ball, cylinder, trimesh]
+          enum: [cuboid, ball, cylinder, trimesh, convex-decomp]
+        collidersAssetId:
+          type: number
+          nullable: true
+          description: Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.
         mass:
           type: number
         restitution:

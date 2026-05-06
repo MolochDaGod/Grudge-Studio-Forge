@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useEditor } from "@/store/editor";
 import {
   LAYERS,
@@ -10,6 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { useNavmeshDebug } from "@/scene/NavmeshDebugOverlay";
+import { bakeSceneNavmesh } from "@/lib/navmeshBake";
 
 /**
  * Unity-style "Edit > Project Settings > Tags & Layers > Collision Matrix"
@@ -26,6 +29,42 @@ export function LayersPanel() {
   const cmdSetEnv = useEditor((s) => s.cmdSetEnvironment);
   const matrix = env.collisionMatrix;
   const sensors = env.sensorLayers ?? DEFAULT_SENSOR_LAYERS;
+  const navmeshAssetId = env.navmeshAssetId;
+  const showNavmesh = useNavmeshDebug((s) => s.show);
+  const setShowNavmesh = useNavmeshDebug((s) => s.setShow);
+  const [baking, setBaking] = useState(false);
+  const [bakeMessage, setBakeMessage] = useState<{
+    kind: "info" | "error";
+    text: string;
+  } | null>(null);
+  const taggedCount = useEditor(
+    (s) =>
+      s.sceneData.entities.filter((e) => e.surface && e.surface !== "None")
+        .length,
+  );
+
+  const onBake = async () => {
+    setBaking(true);
+    setBakeMessage({ kind: "info", text: "Baking navmesh…" });
+    try {
+      const result = await bakeSceneNavmesh();
+      setBakeMessage({
+        kind: "info",
+        text: `Baked ${result.stats.polyCount} polys (${(
+          result.stats.bytes / 1024
+        ).toFixed(1)} KB) in ${result.stats.durationMs}ms${
+          result.cached ? " — server cache hit" : ""
+        }.`,
+      });
+    } catch (err) {
+      setBakeMessage({
+        kind: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBaking(false);
+    }
+  };
 
   const togglePair = (a: LayerName, b: LayerName) => {
     const key = pairKey(a, b);
@@ -139,6 +178,58 @@ export function LayersPanel() {
                 />
               </div>
             ))}
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+            Navmesh
+          </h3>
+          <p className="text-[11px] text-muted-foreground mb-3">
+            {navmeshAssetId === undefined
+              ? "No navmesh baked yet — tag walkable meshes with a Surface in the Inspector, then click Bake."
+              : `Baked navmesh asset #${navmeshAssetId}. Toggle to show the polygons in the viewport.`}
+          </p>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <Button
+              size="sm"
+              onClick={onBake}
+              disabled={baking || taggedCount === 0}
+              data-testid="bake-navmesh"
+            >
+              {baking
+                ? "Baking…"
+                : navmeshAssetId === undefined
+                  ? `Bake NavMesh (${taggedCount} tagged)`
+                  : `Re-bake (${taggedCount} tagged)`}
+            </Button>
+            {bakeMessage && (
+              <span
+                className={`text-[11px] ${
+                  bakeMessage.kind === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}
+                data-testid="bake-navmesh-status"
+              >
+                {bakeMessage.text}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded border border-border">
+            <Label
+              htmlFor="show-navmesh"
+              className="text-xs cursor-pointer"
+            >
+              Show navmesh
+            </Label>
+            <Switch
+              id="show-navmesh"
+              checked={showNavmesh}
+              disabled={navmeshAssetId === undefined}
+              onCheckedChange={(v) => setShowNavmesh(!!v)}
+              data-testid="toggle-show-navmesh"
+            />
           </div>
         </div>
       </div>

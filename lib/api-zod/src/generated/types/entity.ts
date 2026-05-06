@@ -7,6 +7,8 @@
  */
 import type { EntityControllerKind } from "./entityControllerKind";
 import type { EntityLayer } from "./entityLayer";
+import type { EntityNavAgent } from "./entityNavAgent";
+import type { EntitySurface } from "./entitySurface";
 import type { EntityType } from "./entityType";
 import type { LightComponent } from "./lightComponent";
 import type { MaterialComponent } from "./materialComponent";
@@ -33,4 +35,8 @@ export interface Entity {
   controllerKind?: EntityControllerKind;
   /** Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`. */
   layer?: EntityLayer;
+  /** Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk/Jump/Climb/Dig→Terrain, Swim→Water). */
+  surface?: EntitySurface;
+  /** When present + entity in play mode, the runtime spins up one XState machine (idle/patrol/chase/climb/swim/stuck/dead) to drive it. */
+  navAgent?: EntityNavAgent;
 }

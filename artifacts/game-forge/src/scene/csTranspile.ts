@@ -64,6 +64,36 @@ export interface MouseState {
   locked: boolean;
 }
 
+/** Script-facing handle on an agent's state machine. Backed by an
+ *  `AgentActor` from `agentRuntime.ts` — the runtime keeps one per
+ *  entity carrying a `navAgent` component during play mode. */
+export interface AgentHandle {
+  /** Current state name: idle / patrol / chase / attack / climb / swim / stuck / dead. */
+  state: () => string;
+  /** Animation clip name the renderer should currently be crossfading to. */
+  currentClip: () => string;
+  /** Convenience for `state() === "stuck"` — true while the failed-
+   *  path watchdog has the agent parked. */
+  isStuck: () => boolean;
+  /** Drop into Patrol from any non-terminal state. */
+  patrol: () => void;
+  /** Pursue an entity by id (Chase). */
+  chase: (targetId: string) => void;
+  /** Move to either a world position OR a target entity id. The
+   *  entity-id form pulls the live world position of the target each
+   *  tick, so a moving target keeps the agent honest. */
+  moveTo: (target: string | [number, number, number]) => void;
+  /** Engage the named entity (Attack state — drives the attack clip
+   *  and parks locomotion until `chase` / `moveTo` / `stop` clears
+   *  it). */
+  attack: (targetId: string) => void;
+  /** Force a re-plan after a Stuck stall — the runtime re-samples the
+   *  nearest walkable poly and bounces back into Chase. */
+  replan: () => void;
+  /** Stop and return to Idle. */
+  stop: () => void;
+}
+
 export interface RaycastHit {
   /** Entity id of the closest object hit, or null for terrain (no entity). */
   entityId: string | null;
@@ -155,6 +185,45 @@ export interface ScriptContext {
      *  (rotation + scale honoured). Returns the entity's local position when
      *  it has no parent. */
     worldPosition: (id: string) => [number, number, number];
+    /** Look up the per-entity nav-agent handle for an entity carrying a
+     *  `navAgent` component. Returns `undefined` when the entity has no
+     *  agent or play mode hasn't spawned one yet. The handle proxies
+     *  the agent's XState actor with a script-friendly surface:
+     *
+     *  ```ts
+     *  const a = ctx.scene.agent(targetId);
+     *  if (a?.state() === "idle") a.chase(playerId);
+     *  ```
+     *
+     *  Mutating calls (`patrol`, `chase`, `moveTo`, `stop`) are queued
+     *  to the actor on the same frame and observed on the next. */
+    agent: (id: string) => AgentHandle | undefined;
+  };
+  /** Navmesh query helpers, available whenever the scene has a baked
+   *  navmesh (`Environment.navmeshAssetId` set). Returns `null` when
+   *  the navmesh isn't loaded yet — scripts should treat that as a
+   *  transient miss and fall back to direct steering. */
+  nav: {
+    /** Compute a corridor of waypoints between two world positions.
+     *  Returns `null` when no path exists or either endpoint is
+     *  off-mesh.
+     *
+     *  Optional `options.areaFilter` restricts pathfinding to specific
+     *  Recast areas — pass e.g. `["Walk","Jump"]` to refuse routes
+     *  through Swim / Climb polys, or `["Swim"]` for swim-only AI. */
+    findPath: (
+      start: [number, number, number],
+      end: [number, number, number],
+      options?: {
+        areaFilter?: Array<"Walk" | "Jump" | "Climb" | "Swim" | "Dig">;
+      },
+    ) => [number, number, number][] | null;
+    /** Snap a world position onto the nearest walkable poly. Returns
+     *  `{ point, areaId }` or `null` when no poly is found within the
+     *  default search extent. */
+    sample: (
+      position: [number, number, number],
+    ) => { point: [number, number, number]; areaId: number } | null;
   };
   /** Global game event bus — used to drive the HUD (kill counter, damage flash,
    *  hit indicator, win/lose banner). */

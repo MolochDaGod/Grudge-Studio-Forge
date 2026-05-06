@@ -22,10 +22,20 @@ import {
   setLayersCommand,
   setEnvironmentCommand,
   patchEntityCommand,
+  setSurfacesCommand,
+  setNavAgentCommand,
+  setNavAgentsBatchCommand,
+  bakeNavmeshCommand,
   type Command,
   type StoreLike,
+  type SurfaceChange,
 } from "@/lib/commands";
-import { inferDefaultLayer, type LayerName } from "@workspace/scene-schema";
+import {
+  inferDefaultLayer,
+  type LayerName,
+  type SurfaceKind,
+  type NavAgentComponent,
+} from "@workspace/scene-schema";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type ConsoleLevel = "log" | "warn" | "error" | "info";
@@ -204,6 +214,19 @@ interface EditorState {
   cmdAddEmptyChild: (parentId: string | null) => SceneEntity;
   /** Undoable: assign `layer` to one or more entities in a single step. */
   cmdSetEntityLayer: (ids: string[], layer: LayerName) => void;
+  /** Lockstep surface tagger (also writes the matching physics layer). */
+  cmdSetEntitySurface: (ids: string[], surface: SurfaceKind) => void;
+  /** Set / clear the per-entity nav-agent component. Pass `null` to remove. */
+  cmdSetEntityNavAgent: (id: string, agent: NavAgentComponent | null) => void;
+  /** Batched: set/clear the same nav-agent component on many entities
+   *  in a single undoable step. */
+  cmdSetEntityNavAgents: (ids: string[], agent: NavAgentComponent | null) => void;
+  /** Set the scene-level baked navmesh asset id + persisted blob key.
+   *  Both write together so reload-hydration can derive the id from
+   *  the server-assigned key. Pass `null` to clear both. */
+  cmdBakeNavmesh: (
+    next: { assetId: number; blobKey?: string } | null,
+  ) => void;
   /** Undoable: patch one or more `Environment` keys (collision matrix, sensor
    *  layers, lighting presets) in a single step. */
   cmdSetEnvironment: (env: Partial<SceneData["environment"]>, label?: string) => void;
@@ -982,6 +1005,76 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (changes.length === 0) return;
     const store = makeStoreLike(get);
     get().commandStack.push(setLayersCommand(store, changes));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntitySurface: (ids, surface) => {
+    const entities = get().sceneData.entities;
+    const changes: SurfaceChange[] = ids
+      .map((id) => entities.find((e) => e.id === id))
+      .filter((e): e is SceneEntity => Boolean(e))
+      .filter((e) => (e.surface ?? undefined) !== surface)
+      .map((e) => ({
+        id: e.id,
+        fromSurface: e.surface,
+        fromLayer: e.layer,
+        toSurface: surface,
+      }));
+    if (changes.length === 0) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setSurfacesCommand(store, changes));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityNavAgent: (id, agent) => {
+    const before = get().sceneData.entities.find((e) => e.id === id);
+    if (!before) return;
+    const after = agent ?? undefined;
+    if (JSON.stringify(before.navAgent ?? null) === JSON.stringify(after ?? null)) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setNavAgentCommand(store, id, before.navAgent, after));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityNavAgents: (ids, agent) => {
+    const after = agent ?? undefined;
+    const ents = get().sceneData.entities;
+    const changes = ids
+      .map((id) => ents.find((e) => e.id === id))
+      .filter((e): e is NonNullable<typeof e> => !!e)
+      .map((e) => ({ id: e.id, before: e.navAgent, after }))
+      .filter(
+        (c) => JSON.stringify(c.before ?? null) !== JSON.stringify(c.after ?? null),
+      );
+    if (changes.length === 0) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(
+      setNavAgentsBatchCommand(
+        store,
+        changes,
+        after ? "Set nav agents" : "Remove nav agents",
+      ),
+    );
+    set({ isDirty: true });
+  },
+
+  cmdBakeNavmesh: (next) => {
+    const env = get().sceneData.environment;
+    const before = {
+      assetId: env.navmeshAssetId,
+      blobKey: env.navmeshBlobKey,
+    };
+    const after = next
+      ? { assetId: next.assetId, blobKey: next.blobKey }
+      : { assetId: undefined, blobKey: undefined };
+    if (
+      before.assetId === after.assetId &&
+      before.blobKey === after.blobKey
+    ) {
+      return;
+    }
+    const store = makeStoreLike(get);
+    get().commandStack.push(bakeNavmeshCommand(store, before, after));
     set({ isDirty: true });
   },
 

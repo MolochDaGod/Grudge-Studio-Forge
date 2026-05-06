@@ -1,5 +1,5 @@
 import type { SceneEntity } from "@/scene/types";
-import { inferDefaultLayer } from "@workspace/scene-schema";
+import { inferDefaultLayer, inferDefaultSurface } from "@workspace/scene-schema";
 import { nanoid } from "nanoid";
 
 /** Returns ids of all descendants (children, grandchildren, …) of `rootId`.
@@ -146,6 +146,13 @@ export function sanitizeEntities(
   // values (or AI-set values) survive a reload untouched.
   for (const e of cleaned) {
     if (!e.layer) e.layer = inferDefaultLayer(e);
+  }
+
+  // Pass 5: surface tag inference. Like the layer pass above, only fills
+  // in entities the user (or AI) hasn't explicitly tagged. Runs *after*
+  // the layer pass so the layer-derived heuristics can fire.
+  for (const e of cleaned) {
+    if (!e.surface) e.surface = inferDefaultSurface(e);
   }
 
   return { entities: cleaned, warnings };

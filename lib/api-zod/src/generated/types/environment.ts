@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EnvironmentCollisionMatrix } from "./environmentCollisionMatrix";
+import type { EnvironmentNavmeshAreas } from "./environmentNavmeshAreas";
 
 export interface Environment {
   skyColor?: string;
@@ -17,4 +18,10 @@ export interface Environment {
   collisionMatrix?: EnvironmentCollisionMatrix;
   /** Layers spawned as Rapier sensors (no contact response, intersection events only). */
   sensorLayers?: string[];
+  /** Pointer to the persisted Recast navmesh blob (uploaded by `POST /navmesh/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null/undefined when the scene has no navmesh yet. */
+  navmeshAssetId?: number | null;
+  /** Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST /navmesh/blob`; read on reload to hydrate the in-memory blob via `GET /navmesh/blob/:id`. */
+  navmeshBlobKey?: string | null;
+  /** Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`/`Climb`/`Swim`/`Jump`/`Dig`). */
+  navmeshAreas?: EnvironmentNavmeshAreas;
 }

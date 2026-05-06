@@ -1,13 +1,15 @@
 import { useAnimations, useGLTF } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import {
   CapsuleCollider,
+  ConvexHullCollider,
   CylinderCollider,
   RigidBody,
   type IntersectionEnterPayload,
   type IntersectionExitPayload,
   type RapierRigidBody,
 } from "@react-three/rapier";
+import { deserializeHullSet, type ConvexHullSet } from "@/lib/colliderBaker";
 import { getPlaySession } from "./playSession";
 import type { TriggerEvent } from "./GameBus";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
@@ -207,6 +209,7 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
     >
       <LoadedModel
         url={url}
+        entityId={entity.id}
         clip={entity.model?.clip}
         tint={entity.model?.tint}
         label={entity.model?.label}
@@ -223,7 +226,18 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
         // (PlayRuntime → groundProbe) can identify what they hit.
         // Future: extend to read entity.model?.surface for water /
         // ladder / dig zones authored at the template level.
-        surfaceTag={entity.name?.toLowerCase() === "map" ? "walk" : undefined}
+        surfaceTag={
+          // Prefer the explicit surface tag set on the entity (drives
+          // pathfinding + the agent FSM via userData lookups). Fall
+          // back to the legacy name="Map"→walk heuristic so older
+          // scenes that pre-date the surface field still spatially
+          // probe the same way.
+          entity.surface && entity.surface !== "None"
+            ? entity.surface.toLowerCase()
+            : entity.name?.toLowerCase() === "map"
+              ? "walk"
+              : undefined
+        }
       />
     </Suspense>
   );
@@ -285,7 +299,19 @@ function buildLabelSprite(text: string): THREE.Sprite {
  *  textures get GC'd normally when the GLB unloads. */
 const touchedTextures: WeakSet<THREE.Texture> = new WeakSet();
 
+/** Per-entity desired clip name published by the agent FSM (Viewport.tsx
+ *  refreshes it each play-mode tick). When present it overrides the
+ *  static `entity.model.clip` so the renderer can crossfade in response
+ *  to FSM transitions without coupling to agentRuntime. */
+function readAgentClip(entityId: string): string | undefined {
+  const w = window as unknown as { __agentClips?: Map<string, string> };
+  return w.__agentClips?.get(entityId);
+}
+
 interface LoadedModelProps {
+  /** Entity id — required so the animation manager can pull the FSM's
+   *  current clip override out of `window.__agentClips`. */
+  entityId: string;
   url: string;
   clip?: string;
   tint?: string;
@@ -307,7 +333,7 @@ interface LoadedModelProps {
   surfaceTag?: string;
 }
 
-function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
+function LoadedModel({ entityId, url, clip, tint, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
   // `false, false` so drei does NOT install its own DRACO/Meshopt
@@ -435,22 +461,46 @@ function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround, s
     });
   }, [gltf, gl]);
 
-  // ── Animation: explicit `clip` wins; otherwise fall back to idle/loop heuristic.
-  useEffect(() => {
-    if (!names.length) return;
-    const requested = clip && names.includes(clip) ? clip : null;
-    const chosen =
-      requested ??
+  // ── Animation: agent FSM clip override > explicit `clip` prop > idle/loop heuristic.
+  //
+  // `useFrame` polls the per-entity clip published by Viewport's agent
+  // bridge each render tick. When the desired clip changes we crossfade
+  // (0.2s) into it and stop the prior action with a matching fade-out
+  // — driven entirely by drei's `useAnimations` actions, so the mixer
+  // (which `useAnimations` already updates on every frame) handles the
+  // blend without us calling `mixer.update` ourselves.
+  const currentActionRef = useRef<THREE.AnimationAction | null>(null);
+  const currentClipNameRef = useRef<string | null>(null);
+  const pickClipName = (): string | null => {
+    if (!names.length) return null;
+    const fsmClip = readAgentClip(entityId);
+    if (fsmClip && names.includes(fsmClip)) return fsmClip;
+    if (clip && names.includes(clip)) return clip;
+    return (
       names.find((n) => /idle/i.test(n)) ??
       names.find((n) => /loop/i.test(n)) ??
-      names[0];
-    const action = actions[chosen];
-    if (!action) return;
-    action.reset().fadeIn(0.2).play();
+      names[0] ??
+      null
+    );
+  };
+  useFrame(() => {
+    const desired = pickClipName();
+    if (!desired || desired === currentClipNameRef.current) return;
+    const next = actions[desired];
+    if (!next) return;
+    const prev = currentActionRef.current;
+    if (prev && prev !== next) prev.fadeOut(0.2);
+    next.reset().fadeIn(0.2).play();
+    currentActionRef.current = next;
+    currentClipNameRef.current = desired;
+  });
+  useEffect(() => {
     return () => {
-      action.fadeOut(0.2);
+      currentActionRef.current?.fadeOut(0.2);
+      currentActionRef.current = null;
+      currentClipNameRef.current = null;
     };
-  }, [actions, names, clip]);
+  }, []);
 
   // ── Tint: clone materials so coloring one entity doesn't bleed across
   // every spawned copy that shares the cached GLB material instances.
@@ -646,6 +696,25 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     const isModel = entity.type === "model";
     const explicitForModel = isModel && (colliderShape === "cylinder" || colliderShape === "ball");
 
+    // Convex-decomp: read the serialized hull set from the
+    // window-scoped Map populated by `bake_convex_hulls` and emit
+    // one ConvexHullCollider per hull. Missing cache falls through
+    // to the regular collider switch.
+    const useConvexDecomp =
+      colliderShape === "convex-decomp" && ph.collidersAssetId !== undefined;
+    let hullSet: ConvexHullSet | null = null;
+    if (useConvexDecomp) {
+      const w = window as unknown as {
+        __colliderHullSets?: Map<
+          number,
+          { hulls: { vertices: number[]; indices?: number[] }[]; totalVerts: number }
+        >;
+      };
+      const raw = w.__colliderHullSets?.get(ph.collidersAssetId!);
+      if (raw) hullSet = deserializeHullSet(raw);
+    }
+    const renderConvexHulls = useConvexDecomp && !!hullSet;
+
     // Player-controlled bodies must yaw freely but never tip over from a
     // sideways collision impulse. Allowing only Y-axis rotation gives us
     // physics-friendly characters without needing a full kinematic-character
@@ -677,7 +746,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         collisionGroups={collisionGroups}
         solverGroups={collisionGroups}
         colliders={
-          explicitForModel
+          explicitForModel || renderConvexHulls
             ? false
             : colliderShape === "ball"
               ? "ball"
@@ -690,7 +759,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         restitution={ph.restitution ?? 0.4}
         friction={ph.friction ?? 0.6}
         mass={ph.mass ?? 1}
-        userData={{ entityId: entity.id, name: entity.name, layer }}
+        userData={{ entityId: entity.id, name: entity.name, layer, surface: entity.surface }}
       >
         {/* Capsule for character-shaped models, sphere for round ones.
             Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
@@ -702,6 +771,14 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         {explicitForModel && colliderShape === "ball" && (
           <CylinderCollider args={[0.5, 0.5]} position={[0, 0.5, 0]} />
         )}
+        {/* convex-decomp: one ConvexHullCollider per baked hull. The
+            collider takes a flat `Float32Array` of XYZ vertices —
+            Rapier internally builds the hull from the point cloud,
+            so we don't need to forward the index buffer. */}
+        {renderConvexHulls &&
+          hullSet!.hulls.map((h, i) => (
+            <ConvexHullCollider key={i} args={[h.vertices]} />
+          ))}
         {/* `onContextMenu` lives on the inner group rather than on
             RigidBody itself — @react-three/rapier's RigidBody doesn't
             forward DOM-style pointer events. The group catches the same
@@ -720,7 +797,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       position={tr.position}
       rotation={tr.rotation}
       scale={tr.scale}
-      userData={{ entityId: entity.id, name: entity.name, layer }}
+      userData={{ entityId: entity.id, name: entity.name, layer, surface: entity.surface }}
       onContextMenu={handleContext}
     >
       <MeshBody {...props} />

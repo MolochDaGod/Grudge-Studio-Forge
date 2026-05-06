@@ -57,6 +57,11 @@ import {
   handlers as layersToolHandlers,
   destructiveToolNames as layersDestructiveTools,
 } from "@/ai/tools/layers";
+import {
+  defs as navToolDefs,
+  handlers as navToolHandlers,
+  destructiveToolNames as navDestructiveTools,
+} from "@/ai/tools/nav";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -73,6 +78,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...scriptingDestructiveTools,
   ...designDestructiveTools,
   ...layersDestructiveTools,
+  ...navDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1068,6 +1074,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: layersToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ── Navigation / surface / nav-agent tools ────────────────────────
+  // Sourced from src/ai/tools/nav/. Same one-import-one-spread shape.
+  ...navToolDefs.map((def) => ({
+    def,
+    exec: navToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1135,6 +1148,7 @@ export function buildSystemPrompt(): string {
     `- For player characters prefer the built-in 'blake' model.`,
     `- To pull a fresh asset off the web, use import_asset_from_url (returns a URL you can immediately drop into add_model_entity's modelUrl). Reuse list_user_assets to recall what you've already imported for this project before re-downloading.`,
     `- To checkpoint the user's work or hand them a sharable scene, use save_scene_snapshot — it returns a public URL.`,
+    `- Navigation, surfaces & nav-agents: every entity also carries a Surface tag (Walk/Jump/Climb/Swim/Dig/None) that lockstep-pins its physics layer (Walk/Jump/Climb/Dig→Terrain, Swim→Water). Use list_surfaces to see the registry, set_surface to tag a floor/ladder/water mesh, then bake_navmesh to produce a Recast navmesh stored on Environment.navmeshAssetId. Once baked, find_path / sample_navmesh let you query corridors and snap points; list_navmesh_stats summarizes what would re-bake. Drop a nav-agent on an NPC with set_nav_agent (filter chooses which areas the agent traverses) — at play-time it runs an XState idle/patrol/chase/climb/swim/stuck/dead machine and crossfades its animation clips automatically. set_surface, set_nav_agent and bake_navmesh are all DESTRUCTIVE (undoable in one step).`,
     `- Physics layers (Unity-style): every entity has a fixed-registry layer (Default/Terrain/Player/NPC/Item/Projectile/Trigger/Water/IgnoreRaycast/UI3D). Use list_layers + get_layer_matrix to inspect, set_layer to retag one entity (find_entities_by_layer for bulk lookup), set_layer_matrix to toggle which pairs collide. Trigger / Water default to Rapier sensors (intersection events fire, no contact). Setting a sensible layer (NPC for enemies, Item for pickups, Projectile for bullets) is usually enough — only edit the matrix when the user wants pass-through behaviour.`,
     `- Design & spatial-sense tools: when the user says the scene "looks bad / busy / empty / dark / boring", first call diagnose_scene then polish_scene (one-shot palette + lighting + framing + screenshot). When arranging more than 5 entities into a pattern, prefer arrange_entities (grid/ring/line/scatter/cluster) over moving them one at a time. Use apply_palette (id or string[] hex) with assignment 'random' | 'by-index' | 'by-distance-from-origin'; use apply_lighting_preset (studio-3pt | golden-hour | night-neon | overcast | interior-warm) — lights it spawns are tagged 'auto:lighting' so re-applying replaces cleanly. Always call frame_camera (and capture_viewport) before declaring a creative task done — you literally see the screenshot on the next turn. Use list_palettes / list_lighting_presets / list_camera_bookmarks / recall_camera_bookmark to inspect or restore.`,
     `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,

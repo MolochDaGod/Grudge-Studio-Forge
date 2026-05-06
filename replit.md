@@ -4,13 +4,13 @@ Grudge GameForge is a browser-based 3D game prototyping environment for building
 
 ## Run & Operate
 
-*   **Run desktop app:** `pnpm --filter @workspace/game-forge-desktop run dev` (sets `GAMEFORGE_DEV_URL`)
+*   **Run desktop app:** `pnpm --filter @workspace/game-forge-desktop run dev`
 *   **Build desktop app (Windows):** `pnpm --filter @workspace/game-forge-desktop run build:win`
 *   **Run web app:** `pnpm --filter @workspace/game-forge run dev`
 *   **Build web app:** `pnpm --filter @workspace/game-forge run build`
 *   **Run API server:** `pnpm --filter @workspace/api-server run dev`
 *   **Run migrations:** `pnpm --filter @workspace/api-server run migrate`
-*   **Required Env Vars:** `R2_BUCKET_ASSETS`, `CF_ACCOUNT_ID`, `TEMPLATES_VERSION` (for R2-seeded templates), `DATABASE_URL` (PostgreSQL), `AUTH_SECRET` (Puter Auth), `ANTHROPIC_API_KEY` (for AI worker).
+*   **Required Env Vars:** `R2_BUCKET_ASSETS`, `CF_ACCOUNT_ID`, `TEMPLATES_VERSION`, `DATABASE_URL`, `AUTH_SECRET`, `ANTHROPIC_API_KEY`.
 
 ## Stack
 
@@ -23,49 +23,49 @@ Grudge GameForge is a browser-based 3D game prototyping environment for building
 *   **Build Tool:** Vite
 *   **Validation:** Zod
 *   **API Client Gen:** orval
-*   **Runtime:** Node.js (backend), Browser (frontend), Electron (desktop)
+*   **Runtime:** Node.js, Browser, Electron
 
 ## Where things live
 
 *   **Desktop App:** `artifacts/game-forge-desktop/`
 *   **Web App:** `artifacts/game-forge/`
 *   **API Server:** `artifacts/api-server/`
-*   **Shared Libraries (API specs, Zod, Drizzle):** `packages/`
+*   **Shared Libraries:** `packages/`
 *   **DB Schema:** `artifacts/api-server/src/db/schema.ts`
 *   **API Contracts:** `packages/api/openapi.yaml`
-*   **Scene Templates:** `@workspace/scene-templates` lib (pure builder functions)
-*   **Editor UI Components:** `artifacts/game-forge/src/editor/`
-*   **AI Worker:** `artifacts/game-forge/src/ai/` (tools split per-folder under `ai/tools/<area>/` with `{ defs, handlers }` shape; `aiTools.ts` spreads them in)
-*   **AI Scripting Tools:** `artifacts/game-forge/src/ai/tools/scripting/` (defs/handlers wired into `lib/aiTools.ts` via single import + spread)
+*   **AI Worker:** `artifacts/game-forge/src/ai/` (tools in `ai/tools/<area>/`)
+*   **Navmesh + Collider Bakers:** `artifacts/game-forge/src/lib/navmesh.ts`, `artifacts/game-forge/src/lib/colliderBaker.ts`
 *   **Deployment Notes:** `DEPLOYMENT.md`
-*   **Animation Skill Doc:** `.agents/skills/animation-and-skinned-meshes/SKILL.md`
-*   **Spatial Queries Skill Doc:** `.agents/skills/spatial-queries-and-surfaces/SKILL.md`
+*   **Skill Docs:** `.agents/skills/`
 
 ## Architecture decisions
 
-*   **Monorepo Structure:** All artifacts and shared libraries reside in a single pnpm monorepo for simplified dependency management and code sharing.
-*   **Desktop build strategy:** Electron wraps the same React tree as the web build, sharing most UI code, with platform-specific features exposed via a `contextBridge` and IPC.
-*   **Scene Template Storage:** Starter scene templates are seeded into Cloudflare R2 via the API server at boot-time for efficient public access and versioning, rather than being bundled with the editor.
-*   **GLB Decoder Sharing:** A singleton `DRACOLoader` and `MeshoptDecoder` are wired into all GLTF loading paths to ensure decoders are downloaded and initialized only once per session.
-*   **Production Chunking:** Heavy vendors are split, but React and Radix are intentionally kept in the main entry chunk to avoid a production-only `forwardRef` crash caused by `vite-plugin-top-level-await` and module evaluation order.
+*   **Monorepo Structure:** All artifacts and shared libraries in a single pnpm monorepo.
+*   **Desktop App:** Electron wraps the web app's React tree, using `contextBridge` for platform-specific features.
+*   **Scene Template Storage:** Templates are seeded into Cloudflare R2 via the API server at boot-time for public access and versioning.
+*   **GLB Decoder Sharing:** A singleton `DRACOLoader` and `MeshoptDecoder` ensure decoders are initialized once.
 *   **AI Assistant:** Uses client-side tools and Anthropic Claude via Replit AI proxy for direct editor manipulation.
-*   **Physics layers (Unity-style):** Fixed registry in `@workspace/scene-schema` (`LAYERS`, `DEFAULT_COLLISION_MATRIX`, `DEFAULT_SENSOR_LAYERS`); per-entity `layer` field + `Environment.collisionMatrix` / `sensorLayers` drive Rapier `collisionGroups` and the sensor flag in `EntityRenderer`. Inspector exposes a Layer dropdown; the BottomPanel "Layers" tab renders the collision matrix; AI tools live under `src/ai/tools/layers/`.
-*   **CommandStack discipline:** Inspector + AI tool scene mutations route through `cmd*` actions on `useEditor` (defined in `store/editor.ts`) so every user-driven edit is undoable. Intentional bypasses are marked with `// command-stack: bypass — <reason>` and limited to: `addEntityRaw` (id-preserving import), `spawnPlayerPrefab` (play-only, never persisted), `setSceneData` (wholesale replace, used by `clear_scene`), and `explodeGlbHierarchy` (async GLB walk).
-*   **AI tool registration shape:** Every `src/ai/tools/<area>/index.ts` exports the same `{ defs, handlers, destructiveToolNames }` triple — even read-only folders ship `destructiveToolNames: []` for symmetry — so `lib/aiTools.ts` can spread per-folder destructive sets uniformly without per-area conditionals.
-*   **Default scene constants:** `DEFAULT_GRAVITY` and `DEFAULT_FOG` live in `lib/scene-schema/src/index.ts` so the editor (Viewport, Inspector, tunableParams, AI tools) and api-server agree on a single canonical value.
-*   **Server logging:** `console.*` is forbidden in `artifacts/api-server/src` via a flat ESLint config (`artifacts/api-server/eslint.config.mjs`) — server code uses `req.log` in routes and the singleton `logger` for non-request paths so structured pino output stays consistent. Run `pnpm --filter @workspace/api-server run lint`.
+*   **Physics Layers:** Fixed registry in `@workspace/scene-schema` for Rapier `collisionGroups`.
+*   **CommandStack Discipline:** All user-driven editor mutations route through `cmd*` actions for undoability.
+*   **Navmesh Storage:** Per-scene Recast bake stored as `Uint8Array` in a session-scoped `window.__navmeshBlobs` map and persisted to R2; `Environment.navmeshAssetId` (FNV-1a id) + `navmeshBlobKey` (raw server id) let `Viewport` call `hydrateNavmeshFromServer(blobKey)` after a reload.
+*   **Area-filtered pathfinding:** `findPath({areaFilter:SurfaceKind[]})` builds a per-call recast `QueryFilter` (`includeFlags = OR(1<<areaId)`) and frees the `dtQueryFilter` after use; same filter flows through `ctx.nav.findPath`, AI `find_path`, and `agentRuntime` (`NavAgentComponent.filter`).
+*   **Agent FSM:** Per-entity XState v5 machine — Idle / Patrol / Chase / Climb / Swim / Stuck / Dead / Attack — with global `replan` event. `AgentHandle` exposes `state/currentClip/isStuck/patrol/chase/attack(id)/moveTo(id|vec3)/replan/stop`. Surface guards read `event.surface` (XState v5 child-transition ordering).
+*   **Animation crossfade bridge:** `Viewport` publishes `actor.currentClip()` per agent into `window.__agentClips`; `EntityRenderer.LoadedModel` reads it each frame and crossfades (0.2s) between drei `useAnimations` actions. FSM clip > `entity.model.clip` > idle/loop heuristic.
+*   **Convex-decomp colliders:** When `colliderType === "convex-decomp"` and `__colliderHullSets[collidersAssetId]` exists, `EntityRenderer` sets `<RigidBody colliders={false}>` and emits one `<ConvexHullCollider/>` per baked hull. Missing cache falls through to the regular collider switch.
+*   **V-HACD substitute:** `v-hacd-js` is no longer published on npm — `colliderBaker.ts` ships a single quickhull3d hull per mesh under the same `{hulls,totalVerts}` contract a real V-HACD baker would expose, so swapping in a true WASM V-HACD later is a one-function change.
+*   **Batched nav-agent assignment:** AI `set_nav_agent` routes through `cmdSetEntityNavAgents(changes[])` → single `setNavAgentsBatchCommand`, so multi-entity setup is one undo step.
 
 ## Product
 
 *   Browser-based 3D game prototyping with primitives, physics, and scripting.
-*   Integrated 3D viewport with multi-tab system, hierarchy, and inspector.
-*   Supports JavaScript and C# scripting with live preview.
-*   Visual node editor for Scene, Logic (future), and Shader graphs (future).
+*   Integrated 3D viewport, multi-tab system, hierarchy, and inspector.
+*   JavaScript and C# scripting with live preview.
+*   Visual node editor (future: Scene, Logic, Shader graphs).
 *   Drag-and-drop asset ingestion (3D models, images, audio, scene JSON).
 *   Reusable Prefabs with dedicated editor mode.
 *   In-editor AI chat assistant for scene manipulation.
 *   Desktop app with native file dialogs and 3D format conversion tools.
-*   PWA with file handler registration for direct opening of 3D files.
+*   PWA with file handler registration.
 *   Deathmatch game mode with AI enemies and scripting API extensions.
 *   Publishing functionality to Puter hosting.
 
@@ -81,10 +81,10 @@ I need full traceability for AI-driven changes, with expandable chips showing in
 
 ## Gotchas
 
-*   **R2 `ContentMD5`:** Do not set `ContentMD5` on `PutObjectCommand` when uploading to Cloudflare R2; the AWS SDK v3's flexible-checksums middleware handles CRC32, and R2 rejects requests with both.
-*   **React/Radix Chunking:** Do not separate React, Radix, etc., into their own chunks in `vite.config.ts` due to `vite-plugin-top-level-await` causing a `forwardRef` crash in production.
-*   **Template Loading Dialog:** Follows a specific contract for progress bar and auto-closing behavior; ensure changes adhere to it.
-*   **Entity IDs:** Scene template entity IDs are deterministic (counter-based, scoped by `version/key`) to enable ETag-based idempotency checks for R2 uploads.
+*   **R2 `ContentMD5`:** Do not set `ContentMD5` on `PutObjectCommand` for Cloudflare R2; use AWS SDK v3's flexible-checksums.
+*   **React/Radix Chunking:** Avoid separating React/Radix into their own chunks due to `vite-plugin-top-level-await` causing a `forwardRef` crash in production.
+*   **Template Loading Dialog:** Adhere to its specific contract for progress bar and auto-closing behavior.
+*   **Entity IDs:** Scene template entity IDs are deterministic for ETag-based idempotency checks.
 
 ## Pointers
 

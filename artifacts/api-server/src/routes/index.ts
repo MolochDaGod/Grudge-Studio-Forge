@@ -12,6 +12,7 @@ import storageRouter from "./storage";
 import aiStorageRouter from "./aiStorage";
 import templatesRouter from "./templates";
 import aiRouter from "./ai";
+import navmeshRouter from "./navmesh";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(storageRouter);
 router.use(aiStorageRouter);
 router.use(templatesRouter);
 router.use(aiRouter);
+router.use(navmeshRouter);
 
 export default router;

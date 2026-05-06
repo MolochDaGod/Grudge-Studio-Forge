@@ -14,4 +14,5 @@ export const PhysicsComponentColliderType = {
   ball: "ball",
   cylinder: "cylinder",
   trimesh: "trimesh",
+  "convex-decomp": "convex-decomp",
 } as const;

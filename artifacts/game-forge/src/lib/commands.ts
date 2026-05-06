@@ -10,6 +10,7 @@
  */
 
 import type { SceneData, SceneEntity, Vec3 } from "@/scene/types";
+import { surfaceToLayer, type SurfaceKind } from "@workspace/scene-schema";
 
 export interface Command {
   /** Stable kind discriminator (used for coalescing). */
@@ -449,5 +450,151 @@ export function patchEntityCommand(
       store.setEntities(store.getEntities().map((e) => (e.id === id ? before : e)));
     },
     coalesceWith: (p) => p.kind === "patchEntity" && p.target === id,
+  };
+}
+
+/** Atomic surface tagger. Surface, physics layer, and the runtime
+ *  `userData.surface` tag are kept in lockstep so spatial queries,
+ *  pathfinding, and the agent state machine never disagree. The same
+ *  command writes both fields on the entity and on every snapshotted
+ *  child (the EntityRenderer's mount-time stamper picks the new
+ *  surface up on the next render). */
+export interface SurfaceChange {
+  id: string;
+  /** Snapshot of the prior surface (undefined when unset). */
+  fromSurface?: SurfaceKind;
+  /** Snapshot of the prior layer (undefined when unset). */
+  fromLayer?: SceneEntity["layer"];
+  /** New surface to apply. */
+  toSurface: SurfaceKind;
+}
+
+export function setSurfacesCommand(
+  store: StoreLike,
+  changes: SurfaceChange[],
+  label = "Set surface",
+): Command {
+  return {
+    kind: "setSurfaces",
+    label,
+    do: () => {
+      const map = new Map(changes.map((c) => [c.id, c]));
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const ch = map.get(e.id);
+          if (!ch) return e;
+          const lockstepLayer = surfaceToLayer(ch.toSurface);
+          return {
+            ...e,
+            surface: ch.toSurface,
+            // Lockstep: assign the matching layer when the surface
+            // dictates one. Surfaces with no opinion (None / Jump /
+            // Dig) leave whatever layer the user already set alone.
+            layer: lockstepLayer ?? e.layer,
+          };
+        }),
+      );
+    },
+    undo: () => {
+      const map = new Map(changes.map((c) => [c.id, c]));
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const ch = map.get(e.id);
+          if (!ch) return e;
+          return { ...e, surface: ch.fromSurface, layer: ch.fromLayer };
+        }),
+      );
+    },
+  };
+}
+
+/** Set / clear the per-entity nav-agent component (single id). */
+export function setNavAgentCommand(
+  store: StoreLike,
+  id: string,
+  before: SceneEntity["navAgent"],
+  after: SceneEntity["navAgent"],
+): Command {
+  return {
+    kind: "setNavAgent",
+    target: id,
+    label: after ? "Set nav agent" : "Remove nav agent",
+    do: () => {
+      store.setEntities(
+        store.getEntities().map((e) => (e.id === id ? { ...e, navAgent: after } : e)),
+      );
+    },
+    undo: () => {
+      store.setEntities(
+        store.getEntities().map((e) => (e.id === id ? { ...e, navAgent: before } : e)),
+      );
+    },
+  };
+}
+
+/** Atomic batched nav-agent set/clear. Multiple ids ripple in one
+ *  undo step so AI tools that re-tag squads of NPCs collapse into a
+ *  single CommandStack entry (rather than N entries the user has to
+ *  Ctrl-Z N times to undo). */
+export interface NavAgentChange {
+  id: string;
+  before: SceneEntity["navAgent"];
+  after: SceneEntity["navAgent"];
+}
+
+export function setNavAgentsBatchCommand(
+  store: StoreLike,
+  changes: NavAgentChange[],
+  label = "Set nav agents",
+): Command {
+  return {
+    kind: "setNavAgents",
+    label,
+    do: () => {
+      const map = new Map(changes.map((c) => [c.id, c.after]));
+      store.setEntities(
+        store.getEntities().map((e) =>
+          map.has(e.id) ? { ...e, navAgent: map.get(e.id) } : e,
+        ),
+      );
+    },
+    undo: () => {
+      const map = new Map(changes.map((c) => [c.id, c.before]));
+      store.setEntities(
+        store.getEntities().map((e) =>
+          map.has(e.id) ? { ...e, navAgent: map.get(e.id) } : e,
+        ),
+      );
+    },
+  };
+}
+
+/** Pin / clear the scene-level baked navmesh — both the numeric
+ *  `navmeshAssetId` and the persisted `navmeshBlobKey` are written
+ *  in lockstep so a reload can re-derive the asset id from the
+ *  server key (and short-circuit re-bakes when the same blob hash
+ *  comes back from the server). */
+export function bakeNavmeshCommand(
+  store: StoreLike,
+  before: { assetId?: number; blobKey?: string },
+  after: { assetId?: number; blobKey?: string },
+): Command {
+  if (!store.setEnvironmentRaw) {
+    throw new Error("bakeNavmeshCommand requires StoreLike.setEnvironmentRaw");
+  }
+  const setRaw = store.setEnvironmentRaw;
+  return {
+    kind: "bakeNavmesh",
+    label: after.assetId ? "Bake navmesh" : "Clear navmesh",
+    do: () =>
+      setRaw({
+        navmeshAssetId: after.assetId,
+        navmeshBlobKey: after.blobKey,
+      }),
+    undo: () =>
+      setRaw({
+        navmeshAssetId: before.assetId,
+        navmeshBlobKey: before.blobKey,
+      }),
   };
 }

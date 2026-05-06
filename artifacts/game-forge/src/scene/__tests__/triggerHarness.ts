@@ -56,6 +56,11 @@ export function makePickupContext(): {
       descendantsOf: () => [],
       findChildren: () => [],
       worldPosition: () => [0, 0, 0] as [number, number, number],
+      agent: () => undefined,
+    },
+    nav: {
+      findPath: () => null,
+      sample: () => null,
     },
     events: { emit, on: noop },
     state: {},

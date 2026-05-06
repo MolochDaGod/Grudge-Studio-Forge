@@ -24,10 +24,18 @@ export interface Transform {
 
 export interface PhysicsComponent {
   bodyType?: BodyType;
-  colliderType?: "cuboid" | "ball" | "cylinder" | "trimesh";
+  /** `convex-decomp` reads V-HACD output stored alongside the GLB asset
+   *  (sibling JSON of convex hull point arrays) and renders a compound
+   *  collider built from those hulls — produces dynamic-friendly
+   *  collisions for non-convex props that would otherwise require slow
+   *  trimeshes. See `lib/colliderBaker.ts`. */
+  colliderType?: "cuboid" | "ball" | "cylinder" | "trimesh" | "convex-decomp";
   mass?: number;
   restitution?: number;
   friction?: number;
+  /** When `colliderType === "convex-decomp"`, points to the asset id
+   *  holding the precomputed hull set (array of Vec3 vertex arrays). */
+  collidersAssetId?: number;
 }
 
 export interface MaterialComponent {
@@ -68,6 +76,130 @@ export interface ModelComponent {
 }
 
 export type ControllerKind = "none" | "thirdPerson" | "firstPerson";
+
+/** Multi-area surface kinds. Drives **both** pathfinding (Recast area
+ *  type filtering — see {@link surfaceToAreaId}) and gameplay state
+ *  (the matching `userData.surface` tag is read by spatial queries and
+ *  the agent state machine, e.g. entering a `Swim` surface flips the
+ *  agent into the Swim state). When a surface is set on an entity the
+ *  command stack also pins the matching {@link LayerName} so the three
+ *  systems (surface, layer, userData tag) move in lockstep. */
+export type SurfaceKind = "Walk" | "Climb" | "Swim" | "Jump" | "Dig" | "None";
+
+export const SURFACES: readonly SurfaceKind[] = [
+  "Walk",
+  "Climb",
+  "Swim",
+  "Jump",
+  "Dig",
+  "None",
+] as const;
+
+/** Recast area-type id assigned to walkable polys baked over a mesh that
+ *  carries this surface. Recast reserves 0 = unwalkable; we use 1 for
+ *  generic walk and increment per kind. Stable and forward-compatible:
+ *  callers that bake an old scene against a new schema can still read
+ *  the same id for Walk. */
+export function surfaceToAreaId(s: SurfaceKind | undefined): number {
+  switch (s) {
+    case "Walk":
+      return 1;
+    case "Jump":
+      return 2;
+    case "Climb":
+      return 3;
+    case "Swim":
+      return 4;
+    case "Dig":
+      return 5;
+    default:
+      return 0;
+  }
+}
+
+/** Inverse of {@link surfaceToAreaId} — used by the navmesh debug
+ *  overlay to colour walkable polys per area. */
+export function areaIdToSurface(a: number): SurfaceKind {
+  switch (a) {
+    case 1:
+      return "Walk";
+    case 2:
+      return "Jump";
+    case 3:
+      return "Climb";
+    case 4:
+      return "Swim";
+    case 5:
+      return "Dig";
+    default:
+      return "None";
+  }
+}
+
+/** Surface → physics layer mapping used by the lockstep
+ *  {@link SurfaceKind}/Layer/`userData.surface` writer in the editor. */
+export function surfaceToLayer(s: SurfaceKind): LayerName | undefined {
+  switch (s) {
+    case "Walk":
+    case "Jump":
+    case "Climb":
+    case "Dig":
+      return "Terrain";
+    case "Swim":
+      return "Water";
+    default:
+      return undefined;
+  }
+}
+
+/** Inverse hint — when a user assigns a layer the editor offers the
+ *  matching default surface (so the three lockstep fields agree without
+ *  the user touching every dropdown). */
+export function layerToSurface(l: LayerName | undefined): SurfaceKind {
+  switch (l) {
+    case "Terrain":
+      return "Walk";
+    case "Water":
+      return "Swim";
+    default:
+      return "None";
+  }
+}
+
+/** Per-NPC nav-agent component. Editor renders an Inspector card; the
+ *  runtime ({@link agentRuntime}) wires one XState machine per agent
+ *  in play mode. `filter` is the set of surface kinds this agent can
+ *  traverse (defaults to `["Walk", "Jump"]` when omitted). */
+export interface NavAgentComponent {
+  filter?: SurfaceKind[];
+  /** Steering speed cap (m/s). Default 4. */
+  speed?: number;
+  /** Capsule radius used for crowd separation + path corridor width. */
+  radius?: number;
+  /** Capsule height — informational, surfaced to the runtime so future
+   *  off-mesh links can route under-ceiling crawls. */
+  height?: number;
+  /** Steering acceleration (m/s²). */
+  acceleration?: number;
+  /** Maximum yaw rate (radians/s). */
+  turnSpeed?: number;
+  /** Optional explicit override map for animation clip names — keys are
+   *  agent state names (idle/walk/run/climb/swim/dead). When omitted the
+   *  runtime maps states to clips by convention. */
+  animationClips?: Partial<Record<
+    "idle" | "walk" | "run" | "climb" | "swim" | "dead",
+    string
+  >>;
+}
+
+export const DEFAULT_NAV_AGENT: Required<Omit<NavAgentComponent, "animationClips">> = {
+  filter: ["Walk", "Jump"],
+  speed: 4,
+  radius: 0.4,
+  height: 1.8,
+  acceleration: 8,
+  turnSpeed: Math.PI * 2,
+};
 
 /** Built-in deathmatch behaviors run by the script runtime in play mode.
  *  These are equivalent to attaching a pre-written script — they live in
@@ -112,6 +244,17 @@ export interface SceneEntity {
    *  unset; the editor's loader runs an inference pass to upgrade Map /
    *  player / enemy / spawnpoint entities to more specific layers. */
   layer?: LayerName;
+  /** Multi-area surface tag. Drives Recast area-type filtering during
+   *  navmesh bake AND the agent state machine's surface-driven
+   *  transitions. Setting this through `cmdSetEntitySurface` also pins
+   *  the matching {@link LayerName} so the editor's three signals stay
+   *  in lockstep. Inferred from layer when unset (Terrain → Walk,
+   *  Water → Swim) without overwriting an explicit value. */
+  surface?: SurfaceKind;
+  /** Optional nav-agent component. When set + the entity is in play
+   *  mode, the agent runtime instantiates one XState machine to drive
+   *  it (idle/patrol/chase/climb/swim/stuck/dead). */
+  navAgent?: NavAgentComponent;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";
@@ -154,6 +297,25 @@ export interface Environment {
   /** Layers spawned as Rapier sensors (no contact response, intersection
    *  events only). Defaults to {@link DEFAULT_SENSOR_LAYERS}. */
   sensorLayers?: LayerName[];
+  /** Asset id for the baked Recast navmesh blob (a `Uint8Array` produced
+   *  by {@link import("@/lib/navmesh").bakeNavmesh}). Stored on the
+   *  scene-level R2 asset pipeline; the editor lazily loads it when
+   *  agents need it or when the debug overlay is shown. Derived
+   *  (FNV-1a) from `navmeshBlobKey` so cross-session reloads land on
+   *  the same id. */
+  navmeshAssetId?: number;
+  /** Server-assigned content-addressed key (16-char hex SHA-1 prefix)
+   *  for the persisted navmesh blob — written by `bakeSceneNavmesh`
+   *  after `POST /api/navmesh/blob` succeeds. The editor uses this
+   *  string to fetch the blob back via `GET /api/navmesh/blob/:id` on
+   *  reload, hydrate `window.__navmeshBlobs[navmeshAssetId]`, and let
+   *  agents resume pathfinding without a re-bake. Absent during
+   *  in-memory-only bakes (e.g. dev environments without R2). */
+  navmeshBlobKey?: string;
+  /** Per-area palette for the navmesh debug overlay — colour, label,
+   *  cost. Sparse; missing entries fall back to per-{@link SurfaceKind}
+   *  defaults. */
+  navmeshAreas?: Partial<Record<SurfaceKind, { color?: string; cost?: number; label?: string }>>;
 }
 
 export interface SceneData {
@@ -205,6 +367,27 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
   if (e.behavior === "spawnpoint") return "Trigger";
   return "Default";
+}
+
+/** Pick the most useful default surface tag for an entity that has no
+ *  explicit `surface` set. Prefers the most specific signal: explicit
+ *  layer first (Terrain → Walk, Water → Swim), then a name heuristic
+ *  for ladders / climb walls, finally `None` so non-environment props
+ *  don't pollute the navmesh bake. The sanitizer applies this without
+ *  ever overwriting an existing value. */
+export function inferDefaultSurface(
+  e: Pick<SceneEntity, "type" | "name" | "layer" | "controllerKind" | "behavior">,
+): SurfaceKind {
+  const lower = (e.name ?? "").toLowerCase();
+  if (lower.includes("ladder") || lower.includes("climb")) return "Climb";
+  if (lower.includes("water") || lower.includes("pool") || lower.includes("ocean")) return "Swim";
+  const fromLayer = layerToSurface(e.layer);
+  if (fromLayer !== "None") return fromLayer;
+  // Map / terrain naming wins even when the layer hasn't been set yet
+  // (sanitizer runs surface-inference before the layer pass for some
+  // import paths, e.g. AI-generated scenes).
+  if (e.type === "plane" || lower === "map" || lower === "terrain") return "Walk";
+  return "None";
 }
 
 export const DEFAULT_TRANSFORM = (): Transform => ({

@@ -265,8 +265,14 @@ export const ListScenesResponseItem = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -329,6 +335,33 @@ export const ListScenesResponseItem = zod.object({
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
           ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -348,6 +381,31 @@ export const ListScenesResponseItem = zod.object({
         .optional()
         .describe(
           "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
+      navmeshAssetId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+        ),
+      navmeshBlobKey: zod
+        .string()
+        .nullish()
+        .describe(
+          "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+        ),
+      navmeshAreas: zod
+        .record(
+          zod.string(),
+          zod.object({
+            color: zod.string().optional(),
+            cost: zod.number().optional(),
+            label: zod.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
         ),
     }),
   }),
@@ -391,8 +449,20 @@ export const CreateSceneBody = zod.object({
                 ])
                 .optional(),
               colliderType: zod
-                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .enum([
+                  "cuboid",
+                  "ball",
+                  "cylinder",
+                  "trimesh",
+                  "convex-decomp",
+                ])
                 .optional(),
+              collidersAssetId: zod
+                .number()
+                .nullish()
+                .describe(
+                  "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+                ),
               mass: zod.number().optional(),
               restitution: zod.number().optional(),
               friction: zod.number().optional(),
@@ -455,6 +525,35 @@ export const CreateSceneBody = zod.object({
             .describe(
               "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
             ),
+          surface: zod
+            .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+            .optional()
+            .describe(
+              "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+            ),
+          navAgent: zod
+            .object({
+              filter: zod
+                .array(
+                  zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]),
+                )
+                .optional(),
+              speed: zod.number().optional(),
+              radius: zod.number().optional(),
+              height: zod.number().optional(),
+              acceleration: zod.number().optional(),
+              turnSpeed: zod.number().optional(),
+              animationClips: zod
+                .record(zod.string(), zod.string())
+                .optional()
+                .describe(
+                  "Override map for animation clip names (state → clip).",
+                ),
+            })
+            .nullish()
+            .describe(
+              "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+            ),
         }),
       ),
       environment: zod.object({
@@ -474,6 +573,31 @@ export const CreateSceneBody = zod.object({
           .optional()
           .describe(
             "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+          ),
+        navmeshAssetId: zod
+          .number()
+          .nullish()
+          .describe(
+            "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+          ),
+        navmeshBlobKey: zod
+          .string()
+          .nullish()
+          .describe(
+            "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+          ),
+        navmeshAreas: zod
+          .record(
+            zod.string(),
+            zod.object({
+              color: zod.string().optional(),
+              cost: zod.number().optional(),
+              label: zod.string().optional(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
           ),
       }),
     })
@@ -519,8 +643,14 @@ export const GetSceneResponse = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -583,6 +713,33 @@ export const GetSceneResponse = zod.object({
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
           ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -602,6 +759,31 @@ export const GetSceneResponse = zod.object({
         .optional()
         .describe(
           "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
+      navmeshAssetId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+        ),
+      navmeshBlobKey: zod
+        .string()
+        .nullish()
+        .describe(
+          "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+        ),
+      navmeshAreas: zod
+        .record(
+          zod.string(),
+          zod.object({
+            color: zod.string().optional(),
+            cost: zod.number().optional(),
+            label: zod.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
         ),
     }),
   }),
@@ -647,8 +829,20 @@ export const UpdateSceneBody = zod.object({
                 ])
                 .optional(),
               colliderType: zod
-                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .enum([
+                  "cuboid",
+                  "ball",
+                  "cylinder",
+                  "trimesh",
+                  "convex-decomp",
+                ])
                 .optional(),
+              collidersAssetId: zod
+                .number()
+                .nullish()
+                .describe(
+                  "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+                ),
               mass: zod.number().optional(),
               restitution: zod.number().optional(),
               friction: zod.number().optional(),
@@ -711,6 +905,35 @@ export const UpdateSceneBody = zod.object({
             .describe(
               "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
             ),
+          surface: zod
+            .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+            .optional()
+            .describe(
+              "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+            ),
+          navAgent: zod
+            .object({
+              filter: zod
+                .array(
+                  zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]),
+                )
+                .optional(),
+              speed: zod.number().optional(),
+              radius: zod.number().optional(),
+              height: zod.number().optional(),
+              acceleration: zod.number().optional(),
+              turnSpeed: zod.number().optional(),
+              animationClips: zod
+                .record(zod.string(), zod.string())
+                .optional()
+                .describe(
+                  "Override map for animation clip names (state → clip).",
+                ),
+            })
+            .nullish()
+            .describe(
+              "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+            ),
         }),
       ),
       environment: zod.object({
@@ -730,6 +953,31 @@ export const UpdateSceneBody = zod.object({
           .optional()
           .describe(
             "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+          ),
+        navmeshAssetId: zod
+          .number()
+          .nullish()
+          .describe(
+            "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+          ),
+        navmeshBlobKey: zod
+          .string()
+          .nullish()
+          .describe(
+            "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+          ),
+        navmeshAreas: zod
+          .record(
+            zod.string(),
+            zod.object({
+              color: zod.string().optional(),
+              cost: zod.number().optional(),
+              label: zod.string().optional(),
+            }),
+          )
+          .optional()
+          .describe(
+            "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
           ),
       }),
     })
@@ -771,8 +1019,14 @@ export const UpdateSceneResponse = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -835,6 +1089,33 @@ export const UpdateSceneResponse = zod.object({
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
           ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -854,6 +1135,31 @@ export const UpdateSceneResponse = zod.object({
         .optional()
         .describe(
           "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
+      navmeshAssetId: zod
+        .number()
+        .nullish()
+        .describe(
+          "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+        ),
+      navmeshBlobKey: zod
+        .string()
+        .nullish()
+        .describe(
+          "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+        ),
+      navmeshAreas: zod
+        .record(
+          zod.string(),
+          zod.object({
+            color: zod.string().optional(),
+            cost: zod.number().optional(),
+            label: zod.string().optional(),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
         ),
     }),
   }),
@@ -990,8 +1296,14 @@ export const ListPrefabsResponseItem = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -1054,6 +1366,33 @@ export const ListPrefabsResponseItem = zod.object({
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
           ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+          ),
       }),
     ),
     rootId: zod.string().nullish(),
@@ -1104,8 +1443,20 @@ export const CreatePrefabBody = zod.object({
                 ])
                 .optional(),
               colliderType: zod
-                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .enum([
+                  "cuboid",
+                  "ball",
+                  "cylinder",
+                  "trimesh",
+                  "convex-decomp",
+                ])
                 .optional(),
+              collidersAssetId: zod
+                .number()
+                .nullish()
+                .describe(
+                  "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+                ),
               mass: zod.number().optional(),
               restitution: zod.number().optional(),
               friction: zod.number().optional(),
@@ -1167,6 +1518,35 @@ export const CreatePrefabBody = zod.object({
             .optional()
             .describe(
               "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+            ),
+          surface: zod
+            .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+            .optional()
+            .describe(
+              "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+            ),
+          navAgent: zod
+            .object({
+              filter: zod
+                .array(
+                  zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]),
+                )
+                .optional(),
+              speed: zod.number().optional(),
+              radius: zod.number().optional(),
+              height: zod.number().optional(),
+              acceleration: zod.number().optional(),
+              turnSpeed: zod.number().optional(),
+              animationClips: zod
+                .record(zod.string(), zod.string())
+                .optional()
+                .describe(
+                  "Override map for animation clip names (state → clip).",
+                ),
+            })
+            .nullish()
+            .describe(
+              "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
             ),
         }),
       ),
@@ -1220,8 +1600,14 @@ export const GetPrefabResponse = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -1284,6 +1670,33 @@ export const GetPrefabResponse = zod.object({
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
           ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+          ),
       }),
     ),
     rootId: zod.string().nullish(),
@@ -1336,8 +1749,20 @@ export const UpdatePrefabBody = zod.object({
                 ])
                 .optional(),
               colliderType: zod
-                .enum(["cuboid", "ball", "cylinder", "trimesh"])
+                .enum([
+                  "cuboid",
+                  "ball",
+                  "cylinder",
+                  "trimesh",
+                  "convex-decomp",
+                ])
                 .optional(),
+              collidersAssetId: zod
+                .number()
+                .nullish()
+                .describe(
+                  "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+                ),
               mass: zod.number().optional(),
               restitution: zod.number().optional(),
               friction: zod.number().optional(),
@@ -1400,6 +1825,35 @@ export const UpdatePrefabBody = zod.object({
             .describe(
               "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
             ),
+          surface: zod
+            .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+            .optional()
+            .describe(
+              "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+            ),
+          navAgent: zod
+            .object({
+              filter: zod
+                .array(
+                  zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]),
+                )
+                .optional(),
+              speed: zod.number().optional(),
+              radius: zod.number().optional(),
+              height: zod.number().optional(),
+              acceleration: zod.number().optional(),
+              turnSpeed: zod.number().optional(),
+              animationClips: zod
+                .record(zod.string(), zod.string())
+                .optional()
+                .describe(
+                  "Override map for animation clip names (state → clip).",
+                ),
+            })
+            .nullish()
+            .describe(
+              "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+            ),
         }),
       ),
       rootId: zod.string().nullish(),
@@ -1448,8 +1902,14 @@ export const UpdatePrefabResponse = zod.object({
               ])
               .optional(),
             colliderType: zod
-              .enum(["cuboid", "ball", "cylinder", "trimesh"])
+              .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
               .optional(),
+            collidersAssetId: zod
+              .number()
+              .nullish()
+              .describe(
+                "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+              ),
             mass: zod.number().optional(),
             restitution: zod.number().optional(),
             friction: zod.number().optional(),
@@ -1511,6 +1971,33 @@ export const UpdatePrefabResponse = zod.object({
           .optional()
           .describe(
             "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
+        surface: zod
+          .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+          .optional()
+          .describe(
+            "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+          ),
+        navAgent: zod
+          .object({
+            filter: zod
+              .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+              .optional(),
+            speed: zod.number().optional(),
+            radius: zod.number().optional(),
+            height: zod.number().optional(),
+            acceleration: zod.number().optional(),
+            turnSpeed: zod.number().optional(),
+            animationClips: zod
+              .record(zod.string(), zod.string())
+              .optional()
+              .describe(
+                "Override map for animation clip names (state → clip).",
+              ),
+          })
+          .nullish()
+          .describe(
+            "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
           ),
       }),
     ),
@@ -1640,8 +2127,14 @@ export const GetTemplateResponse = zod.object({
             ])
             .optional(),
           colliderType: zod
-            .enum(["cuboid", "ball", "cylinder", "trimesh"])
+            .enum(["cuboid", "ball", "cylinder", "trimesh", "convex-decomp"])
             .optional(),
+          collidersAssetId: zod
+            .number()
+            .nullish()
+            .describe(
+              "Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp.",
+            ),
           mass: zod.number().optional(),
           restitution: zod.number().optional(),
           friction: zod.number().optional(),
@@ -1704,6 +2197,31 @@ export const GetTemplateResponse = zod.object({
         .describe(
           "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
         ),
+      surface: zod
+        .enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"])
+        .optional()
+        .describe(
+          "Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk\/Jump\/Climb\/Dig→Terrain, Swim→Water).",
+        ),
+      navAgent: zod
+        .object({
+          filter: zod
+            .array(zod.enum(["Walk", "Climb", "Swim", "Jump", "Dig", "None"]))
+            .optional(),
+          speed: zod.number().optional(),
+          radius: zod.number().optional(),
+          height: zod.number().optional(),
+          acceleration: zod.number().optional(),
+          turnSpeed: zod.number().optional(),
+          animationClips: zod
+            .record(zod.string(), zod.string())
+            .optional()
+            .describe("Override map for animation clip names (state → clip)."),
+        })
+        .nullish()
+        .describe(
+          "When present + entity in play mode, the runtime spins up one XState machine (idle\/patrol\/chase\/climb\/swim\/stuck\/dead) to drive it.",
+        ),
     }),
   ),
   environment: zod.object({
@@ -1723,6 +2241,31 @@ export const GetTemplateResponse = zod.object({
       .optional()
       .describe(
         "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+      ),
+    navmeshAssetId: zod
+      .number()
+      .nullish()
+      .describe(
+        "Pointer to the persisted Recast navmesh blob (uploaded by `POST \/navmesh\/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null\/undefined when the scene has no navmesh yet.",
+      ),
+    navmeshBlobKey: zod
+      .string()
+      .nullish()
+      .describe(
+        "Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST \/navmesh\/blob`; read on reload to hydrate the in-memory blob via `GET \/navmesh\/blob\/:id`.",
+      ),
+    navmeshAreas: zod
+      .record(
+        zod.string(),
+        zod.object({
+          color: zod.string().optional(),
+          cost: zod.number().optional(),
+          label: zod.string().optional(),
+        }),
+      )
+      .optional()
+      .describe(
+        "Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`\/`Climb`\/`Swim`\/`Jump`\/`Dig`).",
       ),
   }),
 });

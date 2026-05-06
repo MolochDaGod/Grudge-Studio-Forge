@@ -7,7 +7,13 @@ import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey, type Script } from "@workspace/api-client-react";
 import { EntityRenderer } from "@/scene/EntityRenderer";
+import { NavmeshDebugOverlay } from "@/scene/NavmeshDebugOverlay";
 import { getCompiledBehavior, getCompiledScript, groundProbe, makeContext, raycastEntities, type Compiled } from "@/scene/PlayRuntime";
+import { spawnAgent, type AgentActor } from "@/scene/agentRuntime";
+import { loadNavmesh, findPath as navFindPath, sampleNavmesh as navSampleNavmesh } from "@/lib/navmesh";
+import { getCachedBlob, hydrateNavmeshFromServer } from "@/lib/navmeshBake";
+import type { AgentHandle } from "@/scene/csTranspile";
+import type { SurfaceKind } from "@workspace/scene-schema";
 import { computeFramingPose } from "@/lib/framing";
 import {
   applyGroundSnap,
@@ -314,6 +320,26 @@ function ScriptedEntities({
 
   const startedRef = useRef<Set<string>>(new Set());
   const elapsedRef = useRef(0);
+  // ── Per-entity nav-agent actors ────────────────────────────────────
+  // We spawn one XState v5 actor per entity carrying a `navAgent`
+  // component the moment ScriptedEntities sees it, hold the actors in
+  // a plain Map<entityId, AgentActor>, and dispose every actor when
+  // play mode tears down so the FSMs don't leak across play sessions.
+  // The script runtime gets a thin `AgentHandle` view (no XState
+  // surface area) via `ctx.scene.agent(id)`.
+  const agentsRef = useRef<Map<string, AgentActor>>(new Map());
+  // Last destination forwarded to a chasing agent — keyed by agent id.
+  // Used to throttle pursuit replans so a 60Hz target update doesn't
+  // burn a Recast plan every frame.
+  const chaseLastDest = useRef<Map<string, [number, number, number]>>(new Map());
+  // Cached `LoadedNavmesh` for the current scene's `navmeshAssetId`.
+  // Lazy: filled the first time a script calls `ctx.nav.findPath` /
+  // `ctx.nav.sample`, invalidated when the asset id flips.
+  const loadedNavRef = useRef<{
+    assetId: number | null;
+    promise: Promise<Awaited<ReturnType<typeof loadNavmesh>>> | null;
+    loaded: Awaited<ReturnType<typeof loadNavmesh>> | null;
+  }>({ assetId: null, promise: null, loaded: null });
   /** Pending teleports queued by `scene.setPosition` — applied after all
    *  scripts run so a script that moves another entity doesn't observe a
    *  half-applied state mid-iteration. The corresponding entity-ids are
@@ -329,6 +355,18 @@ function ScriptedEntities({
     startedRef.current.clear();
     elapsedRef.current = 0;
     return () => {
+      // Tear down every spawned agent actor so the XState services
+      // don't keep holding references to closures that captured this
+      // component's render scope.
+      for (const a of agentsRef.current.values()) {
+        try {
+          a.stop();
+        } catch {
+          /* actor was never started or already stopped */
+        }
+      }
+      agentsRef.current.clear();
+      loadedNavRef.current = { assetId: null, promise: null, loaded: null };
       resetPlaySession();
     };
   }, []);
@@ -390,6 +428,261 @@ function ScriptedEntities({
   useFrame((state, delta) => {
     if (isPaused) return;
     elapsedRef.current += delta;
+
+    // ── Reconcile the agent map against the current scene ────────────
+    // Spawn an actor for any entity that gained a `navAgent` since
+    // last frame; dispose the actor for any entity that lost it (or
+    // was despawned). Cheap: the loop is O(entities) but each pass
+    // bails fast on the common "nothing changed" case.
+    const liveAgentIds = new Set<string>();
+    for (const ent of sceneData.entities) {
+      if (!ent.navAgent) continue;
+      liveAgentIds.add(ent.id);
+      if (!agentsRef.current.has(ent.id)) {
+        agentsRef.current.set(ent.id, spawnAgent(ent.navAgent));
+      }
+    }
+    for (const id of [...agentsRef.current.keys()]) {
+      if (!liveAgentIds.has(id)) {
+        try {
+          agentsRef.current.get(id)?.stop();
+        } catch {
+          /* ignore */
+        }
+        agentsRef.current.delete(id);
+      }
+    }
+
+    // Surface-driven FSM ticks: drop a short ground probe under each
+    // agent and feed the resulting surface tag into its actor as a
+    // `{type:"surface", surface}` event. The XState v5 child-state
+    // guards read `event.surface` (NOT `context.currentSurface`) so
+    // the Climb/Swim transitions land on the same frame as the probe.
+    for (const [id, actor] of agentsRef.current) {
+      const ent = sceneData.entities.find((e) => e.id === id);
+      if (!ent) continue;
+      const bg = bodyRefs.current.get(id);
+      let pos: [number, number, number] | null = null;
+      if (bg) {
+        if ("translation" in bg) {
+          const t = bg.translation();
+          pos = [t.x, t.y, t.z];
+        } else {
+          pos = [bg.position.x, bg.position.y, bg.position.z];
+        }
+      } else {
+        pos = [...ent.transform.position];
+      }
+      const probe = groundProbe(threeScene, pos, { layerMask: [] });
+      const tag = (probe?.surface ?? "Walk").toLowerCase();
+      // userData.surface tags are stored lowercased ("walk"/"climb"/…),
+      // SurfaceKind values are PascalCase. Map back so the actor's
+      // guards line up.
+      const mapped: SurfaceKind =
+        tag === "climb"
+          ? "Climb"
+          : tag === "swim"
+            ? "Swim"
+            : tag === "jump"
+              ? "Jump"
+              : tag === "dig"
+                ? "Dig"
+                : tag === "none"
+                  ? "None"
+                  : "Walk";
+      actor.send({ type: "surface", surface: mapped });
+    }
+
+    // Lazily prepare the loaded navmesh whenever the scene's
+    // `navmeshAssetId` changes. We never block the script tick on the
+    // import — first frame after a bake reports `null` from
+    // `ctx.nav.findPath` and the script falls through to direct
+    // steering until the next frame. When the asset id is set but
+    // its blob is missing from the in-memory cache (typical post-
+    // reload state) AND the scene carries a server-side `navmeshBlobKey`,
+    // we kick a one-shot hydration fetch so the navmesh comes back
+    // online without forcing the user to re-bake.
+    const navAssetId = sceneData.environment.navmeshAssetId ?? null;
+    const navBlobKey = sceneData.environment.navmeshBlobKey ?? null;
+    if (loadedNavRef.current.assetId !== navAssetId) {
+      loadedNavRef.current = { assetId: navAssetId, promise: null, loaded: null };
+      if (navAssetId !== null) {
+        const blob = getCachedBlob(navAssetId);
+        const blobPromise: Promise<Uint8Array | null> = blob
+          ? Promise.resolve(blob)
+          : navBlobKey
+            ? hydrateNavmeshFromServer(navBlobKey, projectId).then(() =>
+                getCachedBlob(navAssetId),
+              )
+            : Promise.resolve(null);
+        loadedNavRef.current.promise = blobPromise.then((b) =>
+          b ? loadNavmesh(b, navAssetId) : (null as never),
+        );
+        loadedNavRef.current.promise
+          .then((l) => {
+            if (l && loadedNavRef.current.assetId === navAssetId) {
+              loadedNavRef.current.loaded = l;
+            }
+          })
+          .catch(() => {
+            /* corrupt blob / 404 — leave loaded as null so scripts
+               get a transient miss rather than a hard crash. */
+          });
+      }
+    }
+    const loadedNav = loadedNavRef.current.loaded;
+    const navFindPathFn = (
+      start: [number, number, number],
+      end: [number, number, number],
+      options?: { areaFilter?: SurfaceKind[] },
+    ): [number, number, number][] | null =>
+      loadedNav ? navFindPath(loadedNav, start, end, options ?? {}) : null;
+    const navSampleFn = (pos: [number, number, number]) =>
+      loadedNav ? navSampleNavmesh(loadedNav, pos) : null;
+
+    // Snapshot the live world position of an entity (Rapier body or
+    // plain group) — used by `agent.moveTo(targetId)` so the FSM
+    // chases a moving target's actual coordinates each tick.
+    const livePositionOf = (id: string): [number, number, number] | null => {
+      const bg = bodyRefs.current.get(id);
+      if (bg) {
+        if ("translation" in bg) {
+          const t = bg.translation();
+          return [t.x, t.y, t.z];
+        }
+        return [bg.position.x, bg.position.y, bg.position.z];
+      }
+      const ent = sceneData.entities.find((e) => e.id === id);
+      return ent ? ([...ent.transform.position] as [number, number, number]) : null;
+    };
+
+    // Build the per-entity AgentHandle view (closes over the resolved
+    // actor; the `agent(id)` call site doesn't pay actor lookup cost
+    // when the requested entity has no navAgent).
+    const agentFor = (id: string): AgentHandle | undefined => {
+      const actor = agentsRef.current.get(id);
+      if (!actor) return undefined;
+      return {
+        state: () => actor.state(),
+        currentClip: () => actor.currentClip(),
+        isStuck: () => actor.isStuck(),
+        patrol: () => actor.send({ type: "patrol" }),
+        chase: (targetId: string) => actor.send({ type: "chase", targetId }),
+        moveTo: (target) => {
+          if (typeof target === "string") {
+            const dest = livePositionOf(target);
+            if (dest) actor.send({ type: "moveTo", destination: dest });
+          } else {
+            actor.send({ type: "moveTo", destination: target });
+          }
+        },
+        attack: (targetId: string) => actor.send({ type: "attack", targetId }),
+        replan: () => actor.send({ type: "replan" }),
+        stop: () => actor.send({ type: "stop" }),
+      };
+    };
+
+    // ── Animation crossfade bridge ─────────────────────────────────
+    // Each agent's currently-desired clip is published to a window-
+    // scoped map that EntityRenderer's LoadedModel reads in its own
+    // animation effect — this lets the FSM drive the renderer's
+    // crossfade without coupling EntityRenderer to the agent runtime.
+    // We refresh on every frame so a state transition (chase→attack→
+    // chase) lands on the next render tick.
+    const w = window as unknown as {
+      __agentClips?: Map<string, string>;
+    };
+    w.__agentClips ??= new Map();
+    for (const [id, actor] of agentsRef.current) {
+      w.__agentClips.set(id, actor.currentClip());
+    }
+    // Drop dead entries so a despawned agent's last clip doesn't
+    // pin the renderer to e.g. "attack" forever on a future entity
+    // that happens to reuse the same id.
+    for (const id of [...w.__agentClips.keys()]) {
+      if (!agentsRef.current.has(id)) w.__agentClips.delete(id);
+    }
+
+    // ── Drain queued AI `move_agent_to` requests. The tool runs at
+    // edit-time and pushes destinations onto `__pendingAgentMoves`;
+    // we forward them once the matching agent exists in play mode.
+    const pendingW = window as unknown as {
+      __pendingAgentMoves?: Map<
+        string,
+        [number, number, number] | { entityId: string }
+      >;
+    };
+    if (pendingW.__pendingAgentMoves) {
+      for (const [aid, target] of [...pendingW.__pendingAgentMoves]) {
+        const actor = agentsRef.current.get(aid);
+        if (!actor) continue;
+        if (Array.isArray(target)) {
+          actor.send({ type: "moveTo", destination: target });
+        } else {
+          const dest = livePositionOf(target.entityId);
+          if (dest) actor.send({ type: "moveTo", destination: dest });
+        }
+        pendingW.__pendingAgentMoves.delete(aid);
+      }
+    }
+
+    // ── Locomotion: ask each agent for its desired velocity this
+    // frame and apply it to the matching Rapier body / Object3D. The
+    // path planner is bound to the agent's `filter` so swim-only / no-
+    // water agents share one navmesh without colliding routes.
+    for (const [id, actor] of agentsRef.current) {
+      const ent = sceneData.entities.find((e) => e.id === id);
+      if (!ent) continue;
+      // Continuous pursuit — when an agent is chasing a target entity,
+      // refresh `destination` from the target's live position each
+      // frame so the planner re-routes as the target moves.
+      const snap = actor.ref.getSnapshot();
+      const stateName = snap.value as string;
+      const targetId = (snap.context as { targetId: string | null }).targetId;
+      if ((stateName === "chase" || stateName === "attack") && targetId) {
+        const live = livePositionOf(targetId);
+        if (live) {
+          // Only resend (and replan) when the target has drifted >0.5m
+          // from the last forwarded destination — keeps us off the
+          // Recast hot path during 60Hz target updates.
+          const last = chaseLastDest.current.get(id);
+          const moved =
+            !last ||
+            Math.hypot(live[0] - last[0], live[2] - last[2]) > 0.5;
+          if (moved) {
+            chaseLastDest.current.set(id, live);
+            actor.send({ type: "moveTo", destination: live });
+          }
+        }
+      } else if (chaseLastDest.current.has(id)) {
+        chaseLastDest.current.delete(id);
+      }
+      const bg = bodyRefs.current.get(id);
+      let pos: [number, number, number];
+      if (bg && "translation" in bg) {
+        const t = bg.translation();
+        pos = [t.x, t.y, t.z];
+      } else if (bg) {
+        pos = [bg.position.x, bg.position.y, bg.position.z];
+      } else {
+        pos = [...ent.transform.position];
+      }
+      const filter = ent.navAgent?.filter;
+      const plan = loadedNav
+        ? (s: [number, number, number], e: [number, number, number]) =>
+            navFindPath(loadedNav, s, e, { areaFilter: filter })
+        : undefined;
+      const { velocity, reached } = actor.tick({ position: pos, dt: delta, plan });
+      if (bg && "setLinvel" in bg) {
+        // Preserve the body's current Y so gravity / jumps stay intact.
+        const cur = bg.linvel();
+        bg.setLinvel({ x: velocity[0], y: cur.y, z: velocity[2] }, true);
+      } else if (bg) {
+        bg.position.x += velocity[0] * delta;
+        bg.position.z += velocity[2] * delta;
+      }
+      if (reached) actor.send({ type: "stop" });
+    }
 
     // Pre-build helpers reused across all scripts this frame.
     const findEntity = (name: string): ScriptEntity | undefined => {
@@ -616,6 +909,9 @@ function ScriptedEntities({
         descendantsOf,
         findChildren,
         worldPosition,
+        agentFor,
+        navFindPath: navFindPathFn,
+        navSample: navSampleFn,
       });
 
       // Run start() once — for either source. Both run on the same frame.
@@ -1371,6 +1667,7 @@ export function Viewport() {
                   />
                 )}
               </Suspense>
+              <NavmeshDebugOverlay />
               <EffectsRig highQuality={renderQuality === "high"} />
               {showStats && <Stats className="!left-auto !right-3 !top-3" />}
               {!isPlaying && (

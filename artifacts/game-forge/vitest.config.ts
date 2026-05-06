@@ -10,5 +10,14 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",
+    server: {
+      deps: {
+        // quickhull3d's published ESM uses extension-less internal
+        // imports (`./QuickHull`) which Node's strict ESM resolver
+        // rejects. Inlining lets Vite bundle it through its own
+        // (forgiving) resolver so the colliderBaker tests load.
+        inline: ["quickhull3d"],
+      },
+    },
   },
 });

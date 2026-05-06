@@ -8,8 +8,28 @@ import { Separator } from "@/components/ui/separator";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
 import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
-import { LAYERS, type LayerName, DEFAULT_GRAVITY } from "@workspace/scene-schema";
-import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2, User, Camera, Layers as LayersIcon } from "lucide-react";
+import {
+  LAYERS,
+  type LayerName,
+  DEFAULT_GRAVITY,
+  SURFACES,
+  DEFAULT_NAV_AGENT,
+  type SurfaceKind,
+  type NavAgentComponent,
+} from "@workspace/scene-schema";
+import {
+  Box,
+  FlaskConical,
+  Lightbulb,
+  Palette,
+  Settings2,
+  Code2,
+  User,
+  Camera,
+  Layers as LayersIcon,
+  Map as MapIcon,
+  Bot,
+} from "lucide-react";
 
 function NumberInput({
   value,
@@ -89,6 +109,101 @@ function Section({
         {title}
       </div>
       <div className="p-3 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+/** Sub-card rendered inside the "Nav Agent" section when the selected
+ *  entity already has `navAgent` set. Lets the user retune the FSM
+ *  parameters (filter / speed / radius / height / accel / turn) and
+ *  remove the component. Every change routes through `cmdSetEntityNavAgent`
+ *  so undo works one-step. */
+function NavAgentEditor({
+  entity,
+}: {
+  entity: { id: string; navAgent?: NavAgentComponent };
+}) {
+  const raw = entity.navAgent ?? DEFAULT_NAV_AGENT;
+  // Normalize to a fully-populated agent so the editor controls never
+  // see undefined fields. The narrowed shape mirrors DEFAULT_NAV_AGENT
+  // (filter is always an array) which keeps the per-field handlers
+  // below trivially typed.
+  const agent: Required<Omit<NavAgentComponent, "animationClips">> & {
+    animationClips?: NavAgentComponent["animationClips"];
+  } = {
+    ...DEFAULT_NAV_AGENT,
+    ...raw,
+    filter: raw.filter ?? DEFAULT_NAV_AGENT.filter,
+  };
+  const update = (patch: Partial<NavAgentComponent>) =>
+    useEditor
+      .getState()
+      .cmdSetEntityNavAgent(entity.id, { ...agent, ...patch });
+  const toggleFilter = (s: SurfaceKind) => {
+    const has = agent.filter.includes(s);
+    update({
+      filter: has ? agent.filter.filter((x) => x !== s) : [...agent.filter, s],
+    });
+  };
+  return (
+    <div className="space-y-2">
+      <div>
+        <Label className="text-[11px] text-muted-foreground">
+          Surface filter
+        </Label>
+        <div className="flex flex-wrap gap-1 mt-1">
+          {SURFACES.filter((s) => s !== "None").map((s) => {
+            const active = agent.filter.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                data-testid={`nav-agent-filter-${s}`}
+                onClick={() => toggleFilter(s)}
+                className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border text-muted-foreground"
+                }`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {(
+        [
+          ["speed", 0.1],
+          ["radius", 0.05],
+          ["height", 0.1],
+          ["acceleration", 0.5],
+          ["turnSpeed", 0.5],
+        ] as Array<
+          [
+            "speed" | "radius" | "height" | "acceleration" | "turnSpeed",
+            number,
+          ]
+        >
+      ).map(([k, step]) => (
+        <div key={k} className="flex items-center gap-2">
+          <Label className="text-[11px] text-muted-foreground w-20">{k}</Label>
+          <NumberInput
+            value={agent[k]}
+            step={step}
+            onChange={(n) => update({ [k]: n })}
+          />
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs w-full text-destructive"
+        data-testid="btn-remove-nav-agent"
+        onClick={() => useEditor.getState().cmdSetEntityNavAgent(entity.id, null)}
+      >
+        Remove nav-agent
+      </Button>
     </div>
   );
 }
@@ -268,6 +383,55 @@ export function Inspector() {
             Drives Rapier collision groups via the scene's collision matrix
             (Layers panel). Trigger / Water default to sensors.
           </p>
+        </Section>
+
+        <Section title="Surface" Icon={MapIcon}>
+          <Select
+            value={(entity.surface as SurfaceKind | undefined) ?? "None"}
+            onValueChange={(v) =>
+              useEditor
+                .getState()
+                .cmdSetEntitySurface([entity.id], v as SurfaceKind)
+            }
+          >
+            <SelectTrigger
+              className="h-7 text-xs"
+              data-testid="select-entity-surface"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SURFACES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Recast area + lockstep layer (Walk/Jump/Climb/Dig→Terrain,
+            Swim→Water). Re-bake the navmesh after retagging.
+          </p>
+        </Section>
+
+        <Section title="Nav Agent" Icon={Bot}>
+          {entity.navAgent ? (
+            <NavAgentEditor entity={entity} />
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs w-full"
+              data-testid="btn-add-nav-agent"
+              onClick={() =>
+                useEditor
+                  .getState()
+                  .cmdSetEntityNavAgent(entity.id, { ...DEFAULT_NAV_AGENT })
+              }
+            >
+              Add nav-agent
+            </Button>
+          )}
         </Section>
 
         <Section title="Transform" Icon={Settings2}>

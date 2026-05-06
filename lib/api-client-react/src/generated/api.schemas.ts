@@ -118,11 +118,14 @@ export const PhysicsComponentColliderType = {
   ball: "ball",
   cylinder: "cylinder",
   trimesh: "trimesh",
+  "convex-decomp": "convex-decomp",
 } as const;
 
 export interface PhysicsComponent {
   bodyType?: PhysicsComponentBodyType;
   colliderType?: PhysicsComponentColliderType;
+  /** Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp. */
+  collidersAssetId?: number | null;
   mass?: number;
   restitution?: number;
   friction?: number;
@@ -183,6 +186,51 @@ export const EntityLayer = {
   UI3D: "UI3D",
 } as const;
 
+/**
+ * Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk/Jump/Climb/Dig→Terrain, Swim→Water).
+ */
+export type EntitySurface = (typeof EntitySurface)[keyof typeof EntitySurface];
+
+export const EntitySurface = {
+  Walk: "Walk",
+  Climb: "Climb",
+  Swim: "Swim",
+  Jump: "Jump",
+  Dig: "Dig",
+  None: "None",
+} as const;
+
+export type EntityNavAgentFilterItem =
+  (typeof EntityNavAgentFilterItem)[keyof typeof EntityNavAgentFilterItem];
+
+export const EntityNavAgentFilterItem = {
+  Walk: "Walk",
+  Climb: "Climb",
+  Swim: "Swim",
+  Jump: "Jump",
+  Dig: "Dig",
+  None: "None",
+} as const;
+
+/**
+ * Override map for animation clip names (state → clip).
+ */
+export type EntityNavAgentAnimationClips = { [key: string]: string };
+
+/**
+ * When present + entity in play mode, the runtime spins up one XState machine (idle/patrol/chase/climb/swim/stuck/dead) to drive it.
+ */
+export type EntityNavAgent = {
+  filter?: EntityNavAgentFilterItem[];
+  speed?: number;
+  radius?: number;
+  height?: number;
+  acceleration?: number;
+  turnSpeed?: number;
+  /** Override map for animation clip names (state → clip). */
+  animationClips?: EntityNavAgentAnimationClips;
+} | null;
+
 export interface Entity {
   id: string;
   name: string;
@@ -202,12 +250,27 @@ export interface Entity {
   controllerKind?: EntityControllerKind;
   /** Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`. */
   layer?: EntityLayer;
+  /** Multi-area surface tag. Drives Recast area filtering during navmesh bake AND the agent FSM's surface-driven transitions. Lockstep with `layer` (Walk/Jump/Climb/Dig→Terrain, Swim→Water). */
+  surface?: EntitySurface;
+  /** When present + entity in play mode, the runtime spins up one XState machine (idle/patrol/chase/climb/swim/stuck/dead) to drive it. */
+  navAgent?: EntityNavAgent;
 }
 
 /**
  * Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.
  */
 export type EnvironmentCollisionMatrix = { [key: string]: boolean };
+
+/**
+ * Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`/`Climb`/`Swim`/`Jump`/`Dig`).
+ */
+export type EnvironmentNavmeshAreas = {
+  [key: string]: {
+    color?: string;
+    cost?: number;
+    label?: string;
+  };
+};
 
 export interface Environment {
   skyColor?: string;
@@ -219,6 +282,12 @@ export interface Environment {
   collisionMatrix?: EnvironmentCollisionMatrix;
   /** Layers spawned as Rapier sensors (no contact response, intersection events only). */
   sensorLayers?: string[];
+  /** Pointer to the persisted Recast navmesh blob (uploaded by `POST /navmesh/blob` from the client bake). Derived (FNV-1a) from `navmeshBlobKey` so reload-hydration lands on the same id. Null/undefined when the scene has no navmesh yet. */
+  navmeshAssetId?: number | null;
+  /** Server-assigned content-addressed key (16-char hex SHA-1 prefix) for the persisted navmesh blob. Written by the client after `POST /navmesh/blob`; read on reload to hydrate the in-memory blob via `GET /navmesh/blob/:id`. */
+  navmeshBlobKey?: string | null;
+  /** Per-surface palette for the navmesh debug overlay. Keys are surface names (`Walk`/`Climb`/`Swim`/`Jump`/`Dig`). */
+  navmeshAreas?: EnvironmentNavmeshAreas;
 }
 
 export interface SceneData {

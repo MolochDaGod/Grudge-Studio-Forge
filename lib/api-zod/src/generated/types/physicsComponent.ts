@@ -11,6 +11,8 @@ import type { PhysicsComponentColliderType } from "./physicsComponentColliderTyp
 export interface PhysicsComponent {
   bodyType?: PhysicsComponentBodyType;
   colliderType?: PhysicsComponentColliderType;
+  /** Pointer to a serialized convex-hull set (see colliderBaker) when colliderType is convex-decomp. */
+  collidersAssetId?: number | null;
   mass?: number;
   restitution?: number;
   friction?: number;
