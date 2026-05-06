@@ -179,6 +179,72 @@ exports.update = function(entity, ctx) {
     },
   },
   {
+    key: "pickup-trigger",
+    name: "Pickup Trigger",
+    description:
+      "Despawns this entity when a body matching `targetName` (or any body on the `Player` layer) overlaps its sensor volume. Emits an `event` payload first so the HUD/score system can react. Place on an entity whose layer is `Trigger` so it spawns as a Rapier sensor.",
+    params: [
+      {
+        name: "targetName",
+        description:
+          "Exact name of the entity that triggers the pickup (matched as `other.otherName === targetName`). Any body on the `Player` layer also triggers regardless. Default 'Player'.",
+        type: "string",
+        default: "Player",
+      },
+      {
+        name: "event",
+        description: "Game-bus event to emit before despawning. Default 'pickup'.",
+        type: "string",
+        default: "pickup",
+      },
+    ],
+    render: (p) => {
+      const target = str(p.targetName, "Player");
+      const event = str(p.event, "pickup");
+      return `// Despawn when "${target}" (or any Player-layer body) overlaps. Place on a
+// Trigger-layer entity so Rapier spawns it as a sensor. Uses the
+// onEnterTrigger / despawn ScriptContext members.
+exports.start = function(entity, ctx) {
+  ctx.scene.onEnterTrigger(function(other) {
+    var isPlayer = other.otherName === ${JSON.stringify(target)} || other.otherLayer === "Player";
+    if (!isPlayer) return;
+    ctx.events.emit(${JSON.stringify(event)}, { id: entity.id, name: entity.name, by: other.otherId });
+    ctx.scene.despawn(entity.id);
+  });
+};
+`;
+    },
+  },
+  {
+    key: "trigger-zone",
+    name: "Trigger Zone (enter/exit log)",
+    description:
+      "Logs every onEnterTrigger / onExitTrigger pair on this entity. Useful as a starting point for damage zones, score zones, or save points — extend the handler bodies with your own logic. Place on a Trigger-layer entity.",
+    params: [
+      {
+        name: "label",
+        description: "Free-form label included in every log line.",
+        type: "string",
+        default: "zone",
+      },
+    ],
+    render: (p) => {
+      const label = str(p.label, "zone");
+      return `// Log every overlap enter/exit on this trigger. Replace the log calls with
+// your gameplay reaction (deal damage, award score, despawn, etc.). Pair
+// with a Trigger-layer entity so it spawns as a Rapier sensor.
+exports.start = function(entity, ctx) {
+  ctx.scene.onEnterTrigger(function(other) {
+    ctx.log("[${label}] enter", other.otherName, "(layer", other.otherLayer + ")");
+  });
+  ctx.scene.onExitTrigger(function(other) {
+    ctx.log("[${label}] exit", other.otherName, "(layer", other.otherLayer + ")");
+  });
+};
+`;
+    },
+  },
+  {
     key: "log-on-collision",
     name: "Log On Message",
     description:

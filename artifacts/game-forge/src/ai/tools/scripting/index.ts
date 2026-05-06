@@ -8,8 +8,24 @@
  *     internally by every write tool — the AI cannot persist a broken
  *     script through these handlers)
  *   - attach / detach / inspect on entities
- *   - scaffold from built-in behavior templates
+ *   - attach / detach BUILT-IN behaviors (`attach_behavior`,
+ *     `detach_behavior` — wires the BehaviorKind tag without touching
+ *     the user's scriptId)
+ *   - scaffold from built-in behavior templates (including the
+ *     `pickup-trigger` and `trigger-zone` templates that demonstrate
+ *     the trigger-event surface)
  *   - read script-emitted runtime logs to close the feedback loop
+ *
+ * Trigger / pickup ScriptContext surface (see `scene/csTranspile.ts`):
+ *   - `ctx.scene.onEnterTrigger((other) => …)` — fires when another
+ *     body starts overlapping a sensor on this entity. `other` is a
+ *     `TriggerEvent` with `otherId`, `otherName`, `otherLayer`.
+ *   - `ctx.scene.onExitTrigger((other) => …)` — inverse of enter.
+ *   - `ctx.scene.despawn(id)` — remove an entity from the scene
+ *     mid-play (returns true if it existed). Useful for pickups.
+ *   The matching built-in behavior is `pickup-trigger`; attach it via
+ *   `attach_behavior` for the canonical "touch a Trigger-layer entity
+ *   to consume it" flow.
  *
  * Mutations to the editor's scene-graph go through the existing Zustand
  * store actions so undo continues to work the same as a user edit.
@@ -478,6 +494,133 @@ const reorderEntityScriptsHandler: ToolHandler = async (input) => {
   };
 };
 
+// ── attach_behavior ────────────────────────────────────────────────────
+const ATTACH_BEHAVIOR: ToolDef = {
+  name: "attach_behavior",
+  description:
+    "Tag an entity with a built-in BehaviorKind. Built-in behaviors run alongside any user script (behavior first, user script second), so this is the right tool for 'turn this into a pickup', 'mark this as the player', 'add an enemy AI'. For trigger-style behaviors (`pickup-trigger`) make sure the entity's layer is `Trigger` so Rapier spawns it as a sensor — the AI can do that with `set_layer` from the layers tools. Use list_builtin_behaviors to see valid keys.",
+  input_schema: {
+    type: "object",
+    required: ["entityId", "behavior"],
+    properties: {
+      entityId: { type: "string" },
+      behavior: {
+        type: "string",
+        enum: Object.keys(BUILTIN_BEHAVIORS),
+        description:
+          "BehaviorKind tag. `pickup-trigger` despawns the entity when a Player-layer body overlaps its sensor — pair with set_layer({ layer: 'Trigger' }).",
+      },
+    },
+  },
+};
+const attachBehaviorHandler: ToolHandler = async (input) => {
+  const id = String(input.entityId ?? "");
+  const behaviorRaw = String(input.behavior ?? "");
+  if (!Object.hasOwn(BUILTIN_BEHAVIORS, behaviorRaw)) {
+    return {
+      ok: false,
+      error: `Unknown behavior "${behaviorRaw}". Valid: ${Object.keys(BUILTIN_BEHAVIORS).join(", ")}.`,
+    };
+  }
+  const s = useEditor.getState();
+  const ent = s.sceneData.entities.find((e) => e.id === id);
+  if (!ent) return { ok: false, error: `No entity with id "${id}".` };
+  const previous = ent.behavior ?? null;
+  const behavior = behaviorRaw as keyof typeof BUILTIN_BEHAVIORS;
+  s.updateEntity(id, (e) => {
+    e.behavior = behavior;
+  });
+  const layerHint =
+    behavior === "pickup-trigger" && (ent.layer ?? "Default") !== "Trigger"
+      ? "Entity's layer is not 'Trigger' — pickup-trigger relies on a sensor body. Call set_layer to put it on the Trigger layer."
+      : undefined;
+  return {
+    ok: true,
+    data: {
+      entityId: id,
+      entityName: ent.name,
+      behavior,
+      previousBehavior: previous,
+      layer: ent.layer ?? "Default",
+      hint: layerHint,
+    },
+  };
+};
+
+// ── detach_behavior ────────────────────────────────────────────────────
+const DETACH_BEHAVIOR: ToolDef = {
+  name: "detach_behavior",
+  description:
+    "Remove the built-in behavior tag from an entity (the user script attachment, if any, is preserved). Pass-through to the same store update path the inspector uses, so undo works.",
+  input_schema: {
+    type: "object",
+    required: ["entityId"],
+    properties: { entityId: { type: "string" } },
+  },
+};
+const detachBehaviorHandler: ToolHandler = async (input) => {
+  const id = String(input.entityId ?? "");
+  const s = useEditor.getState();
+  const ent = s.sceneData.entities.find((e) => e.id === id);
+  if (!ent) return { ok: false, error: `No entity with id "${id}".` };
+  const previous = ent.behavior ?? null;
+  s.updateEntity(id, (e) => {
+    e.behavior = undefined;
+  });
+  return { ok: true, data: { entityId: id, previousBehavior: previous } };
+};
+
+// ── list_builtin_behaviors ─────────────────────────────────────────────
+const LIST_BUILTIN_BEHAVIORS: ToolDef = {
+  name: "list_builtin_behaviors",
+  description:
+    "List the built-in BehaviorKind tags an entity can be wired with via attach_behavior. Each entry includes a short description plus the recommended physics layer (e.g. `pickup-trigger` → `Trigger` so it spawns as a Rapier sensor).",
+  input_schema: { type: "object", properties: {} },
+};
+const BEHAVIOR_DOCS: Record<
+  keyof typeof BUILTIN_BEHAVIORS,
+  { description: string; recommendedLayer?: string }
+> = {
+  "player-deathmatch": {
+    description:
+      "Wire LMB-shoot, health, damage, respawn for the player entity. Pair with controllerKind=firstPerson|thirdPerson.",
+    recommendedLayer: "Player",
+  },
+  "enemy-deathmatch": {
+    description:
+      "Yuka-driven AI with patrol/chase/attack/flee FSM, line-of-sight raycasts, group alerts.",
+    recommendedLayer: "NPC",
+  },
+  "gamemode-deathmatch": {
+    description:
+      "Score tracker for player vs. enemy kills; emits win/lose when scoreLimit is reached. Attach to a hidden empty named 'GameManager'.",
+  },
+  spawnpoint: {
+    description:
+      "Pure marker — lets player/enemy behaviors find spawn points by behavior tag.",
+    recommendedLayer: "Trigger",
+  },
+  "pickup-trigger": {
+    description:
+      "Despawns this entity when a Player-named or Player-layer body overlaps. Demonstrates the onEnterTrigger / despawn ScriptContext API.",
+    recommendedLayer: "Trigger",
+  },
+};
+const listBuiltinBehaviorsHandler: ToolHandler = async () => {
+  return {
+    ok: true,
+    data: {
+      behaviors: (Object.keys(BUILTIN_BEHAVIORS) as Array<keyof typeof BUILTIN_BEHAVIORS>).map(
+        (key) => ({
+          key,
+          description: BEHAVIOR_DOCS[key]?.description ?? "",
+          recommendedLayer: BEHAVIOR_DOCS[key]?.recommendedLayer,
+        }),
+      ),
+    },
+  };
+};
+
 // ── list_script_templates ──────────────────────────────────────────────
 const LIST_SCRIPT_TEMPLATES: ToolDef = {
   name: "list_script_templates",
@@ -646,6 +789,9 @@ export const defs: ToolDef[] = [
   ATTACH_SCRIPT_TO_ENTITY,
   DETACH_SCRIPT_FROM_ENTITY,
   REORDER_ENTITY_SCRIPTS,
+  ATTACH_BEHAVIOR,
+  DETACH_BEHAVIOR,
+  LIST_BUILTIN_BEHAVIORS,
   LIST_SCRIPT_TEMPLATES,
   CREATE_SCRIPT_FROM_TEMPLATE,
   GET_SCRIPT_LOGS,
@@ -661,6 +807,9 @@ export const handlers: Record<string, ToolHandler> = {
   attach_script_to_entity: attachScriptToEntityHandler,
   detach_script_from_entity: detachScriptFromEntityHandler,
   reorder_entity_scripts: reorderEntityScriptsHandler,
+  attach_behavior: attachBehaviorHandler,
+  detach_behavior: detachBehaviorHandler,
+  list_builtin_behaviors: listBuiltinBehaviorsHandler,
   list_script_templates: listScriptTemplatesHandler,
   create_script_from_template: createScriptFromTemplateHandler,
   get_script_logs: getScriptLogsHandler,
@@ -673,4 +822,6 @@ export const destructiveToolNames: string[] = [
   "patch_script",
   "delete_script",
   "create_script_from_template",
+  "attach_behavior",
+  "detach_behavior",
 ];
