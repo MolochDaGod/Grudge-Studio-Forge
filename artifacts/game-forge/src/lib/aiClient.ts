@@ -17,6 +17,7 @@
  *   { type: "error",       error }
  */
 import { runTool, DESTRUCTIVE_TOOLS, type ToolDef } from "@/lib/aiTools";
+import { recordAiToolCall } from "@/ai/aiAuditLog";
 
 export type TextBlock = { type: "text"; text: string };
 export type ToolUseBlock = {
@@ -141,6 +142,9 @@ export async function runConversation(
       } else {
         result = await runTool(call.name, call.input);
       }
+      // Record into the in-memory audit log first so `get_last_ai_changes`
+      // sees this call even if a downstream onTool consumer throws.
+      recordAiToolCall({ name: call.name, input: call.input, result });
       handlers.onTool({
         id: call.id,
         name: call.name,

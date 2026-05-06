@@ -30,6 +30,12 @@ import {
   queryEntities as ecsQueryEntities,
   type EcsFilter,
 } from "@/lib/ecs";
+// Introspection tools live in their own folder so each parallel AI-tools
+// task touches one isolated import + spread, avoiding merge conflicts.
+import {
+  defs as systemsToolDefs,
+  handlers as systemsToolHandlers,
+} from "@/ai/tools/systems";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -987,6 +993,15 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       return { ok: true, data };
     },
   },
+
+  // ── Introspection / "systems understanding" tools ──────────────────
+  // Sourced from src/ai/tools/systems/. Keep this block last so parallel
+  // tasks adding new tools can append above without merging into this
+  // marker section. Do NOT inline these — keep the spread import-driven.
+  ...systemsToolDefs.map((def) => ({
+    def,
+    exec: systemsToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -994,6 +1009,18 @@ export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
 const TOOL_INDEX: Record<string, ToolExecutor> = Object.fromEntries(
   AI_TOOLS.map((t) => [t.def.name, t.exec]),
 );
+
+// Fail fast in dev if a sub-module's `defs` and `handlers` drift apart —
+// the spread above types `exec` as ToolExecutor but won't catch a missing
+// handler at compile time (the cast covers it). Without this, an undefined
+// executor would surface only as a confusing "Unknown tool" at runtime.
+for (const t of AI_TOOLS) {
+  if (typeof t.exec !== "function") {
+    throw new Error(
+      `AI tool "${t.def.name}" has no executor — check that its defs/handlers map agree.`,
+    );
+  }
+}
 
 export async function runTool(
   name: string,
@@ -1033,6 +1060,9 @@ export function buildSystemPrompt(): string {
     `- Take initiative. If the user asks for a "playable scene", combine multiple tools (generate_map → add_model_entity for player → set_player → maybe set_environment).`,
     `- For "feel" tweaks ("warmer", "snappier", "more floaty", "first person") prefer set_tunable_param — call list_tunable_params first to see the current value and the allowed range.`,
     `- For bulk questions about the scene ("how many enemies?", "any dynamic bodies without a script?") use count_entities / query_entities — they read from a denormalized ECS mirror with rich structural filters, so they're far more ergonomic than reasoning over list_entities output.`,
+    `- BEFORE building anything substantial, orient yourself: call get_active_scene_meta to confirm what's open, get_project_summary for project-wide counts, and describe_layout to see where existing geometry sits so you place new content in empty space. Use list_scenes / list_prefabs / list_assets to discover what already exists rather than re-creating it.`,
+    `- Use diagnose_scene after a chunk of edits to catch missing lights, missing ground, dangling camera targets, orphan parents, and similar gotchas — fix any 'error' severity issues before declaring the task done.`,
+    `- When the user reports something broken ("nothing happens", "it crashed", "the script doesn't run"), call get_console_errors first — runtime errors and asset-load failures land there. Use get_recent_history (editor-wide undo stack) and get_last_ai_changes (AI-only audit log) to remember what was just touched.`,
     `- Use list_entities to look up real ids before update_entity / delete_entity / attach_script — never guess ids.`,
     `- For player characters prefer the built-in 'blake' model.`,
     `- To pull a fresh asset off the web, use import_asset_from_url (returns a URL you can immediately drop into add_model_entity's modelUrl). Reuse list_user_assets to recall what you've already imported for this project before re-downloading.`,

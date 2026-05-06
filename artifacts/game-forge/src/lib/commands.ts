@@ -33,6 +33,16 @@ export interface Command {
 
 const COALESCE_WINDOW_MS = 800;
 
+/** Read-only snapshot of a stack entry, exposed for introspection
+ *  (e.g. the AI `get_recent_history` tool, debug overlays). Does NOT
+ *  expose `do/undo` closures — these are non-portable. */
+export interface CommandSummary {
+  kind: string;
+  label: string;
+  target: string | null;
+  ts: number;
+}
+
 export class CommandStack {
   private undoStack: { cmd: Command; ts: number }[] = [];
   private redoStack: Command[] = [];
@@ -110,6 +120,39 @@ export class CommandStack {
   }
   peekRedoLabel(): string | null {
     return this.redoStack[this.redoStack.length - 1]?.label ?? null;
+  }
+
+  /** Return the undo entries newest-first as immutable summaries.
+   *  Read-only — the do/undo closures stay encapsulated so callers
+   *  can't accidentally re-fire side effects. */
+  getUndoEntries(limit = Infinity): CommandSummary[] {
+    const out: CommandSummary[] = [];
+    const cap = Math.max(0, Math.min(limit, this.undoStack.length));
+    for (let i = this.undoStack.length - 1; i >= 0 && out.length < cap; i--) {
+      const e = this.undoStack[i];
+      out.push({
+        kind: e.cmd.kind,
+        label: e.cmd.label,
+        target: e.cmd.target ?? null,
+        ts: e.ts,
+      });
+    }
+    return out;
+  }
+
+  /** Return the redo entries newest-first as immutable summaries. */
+  getRedoEntries(limit = Infinity): Omit<CommandSummary, "ts">[] {
+    const out: Omit<CommandSummary, "ts">[] = [];
+    const cap = Math.max(0, Math.min(limit, this.redoStack.length));
+    for (let i = this.redoStack.length - 1; i >= 0 && out.length < cap; i--) {
+      const c = this.redoStack[i];
+      out.push({
+        kind: c.kind,
+        label: c.label,
+        target: c.target ?? null,
+      });
+    }
+    return out;
   }
 
   subscribe(fn: () => void): () => void {
