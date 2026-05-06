@@ -48,36 +48,26 @@ interface ToolDef {
 type ToolResult = { ok: boolean; data?: unknown; error?: string };
 type ToolHandler = (input: Record<string, unknown>) => Promise<ToolResult>;
 
-/** Read project data through the editor's existing React Query cache.
- *  Returns the cached value immediately when present; otherwise fires a
- *  single fetch and caches the result so subsequent panels reuse it.
- *  Either way we go through the same store the UI uses — no duplicate
- *  state to drift out of sync. */
-async function readFromCache<T>(
-  queryKey: QueryKey,
-  queryFn: () => Promise<T>,
-): Promise<T> {
-  const cached = queryClient.getQueryData<T>(queryKey);
-  if (cached !== undefined) return cached;
-  return queryClient.fetchQuery<T>({ queryKey, queryFn });
+/** Strict cache-only read: returns the cached value if present in React
+ *  Query, or `undefined` if the panel that owns this key has not been
+ *  opened yet this session. We deliberately do NOT issue a network
+ *  fetch here — Task #39 requires introspection to mirror what the
+ *  user/editor already has, never to invent fresh state. Callers must
+ *  surface `cache-miss` to the AI so it knows to ask the user to open
+ *  the panel (or use a non-introspective tool) instead of pretending
+ *  the project is empty. */
+function readCache<T>(queryKey: QueryKey): T | undefined {
+  return queryClient.getQueryData<T>(queryKey);
 }
 
-const loadScripts = (projectId: number) =>
-  readFromCache<Script[]>(getListScriptsQueryKey(projectId), () =>
-    listScripts(projectId),
-  );
-const loadScenes = (projectId: number) =>
-  readFromCache<Scene[]>(getListScenesQueryKey(projectId), () =>
-    listScenes(projectId),
-  );
-const loadPrefabs = (projectId: number) =>
-  readFromCache<Prefab[]>(getListPrefabsQueryKey(projectId), () =>
-    listPrefabs(projectId),
-  );
-const loadAssets = (projectId: number) =>
-  readFromCache<Asset[]>(getListAssetsQueryKey(projectId), () =>
-    listAssets(projectId),
-  );
+const cachedScripts = (projectId: number) =>
+  readCache<Script[]>(getListScriptsQueryKey(projectId));
+const cachedScenes = (projectId: number) =>
+  readCache<Scene[]>(getListScenesQueryKey(projectId));
+const cachedPrefabs = (projectId: number) =>
+  readCache<Prefab[]>(getListPrefabsQueryKey(projectId));
+const cachedAssets = (projectId: number) =>
+  readCache<Asset[]>(getListAssetsQueryKey(projectId));
 
 // ── diagnose_scene ─────────────────────────────────────────────────────
 const DIAGNOSE_SCENE: ToolDef = {
@@ -102,14 +92,13 @@ const DIAGNOSE_SCENE: ToolDef = {
 };
 const diagnoseSceneHandler: ToolHandler = async (input) => {
   const s = useEditor.getState();
+  // Only enable the `script-deleted` rule when we actually have an
+  // inventory in the cache. If the Scripts panel has never been opened
+  // we leave validScriptIds undefined — flagging every entity as
+  // "script deleted" because the cache is cold would be a false alarm.
   let validScriptIds: Set<number> | undefined;
   if (s.projectId) {
-    // Only enable the `script-deleted` rule when we actually have an
-    // inventory — a load failure must NOT be treated as "all scripts
-    // are deleted" (would flag every entity).
-    const scripts = await loadScripts(s.projectId).catch(
-      () => null as Script[] | null,
-    );
+    const scripts = cachedScripts(s.projectId);
     if (scripts) validScriptIds = new Set(scripts.map((sc) => sc.id));
   }
   const issues: Issue[] = diagnoseScene({
@@ -205,54 +194,72 @@ const GET_PROJECT_SUMMARY: ToolDef = {
 const getProjectSummaryHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
-  try {
-    const [scripts, scenes, prefabs, assets] = await Promise.all([
-      loadScripts(s.projectId).catch(() => [] as Script[]),
-      loadScenes(s.projectId).catch(() => [] as Scene[]),
-      loadPrefabs(s.projectId).catch(() => [] as Prefab[]),
-      loadAssets(s.projectId).catch(() => [] as Asset[]),
-    ]);
-    const byName = <T extends { name: string }>(arr: T[]) =>
-      [...arr].sort((a, b) => a.name.localeCompare(b.name));
-    return {
-      ok: true,
-      data: {
-        projectId: s.projectId,
-        activeSceneId: s.sceneId,
-        activeSceneName: s.sceneName,
-        counts: {
-          scripts: scripts.length,
-          scenes: scenes.length,
-          prefabs: prefabs.length,
-          assets: assets.length,
-          entities: s.sceneData.entities.length,
-        },
-        scripts: byName(scripts).map((sc) => ({
-          id: sc.id,
-          name: sc.name,
-          language: sc.language,
-        })),
-        scenes: byName(scenes).map((sc) => ({
-          id: sc.id,
-          name: sc.name,
-          isActive: sc.id === s.sceneId,
-        })),
-        prefabs: byName(prefabs).map((p) => ({
-          id: p.id,
-          name: p.name,
-          entityCount: Array.isArray(p.data?.entities) ? p.data.entities.length : 0,
-        })),
-        assets: byName(assets).map((a) => ({
-          id: a.id,
-          name: a.name,
-          type: a.type,
-          source: a.source,
-        })),
+  const scripts = cachedScripts(s.projectId);
+  const scenes = cachedScenes(s.projectId);
+  const prefabs = cachedPrefabs(s.projectId);
+  const assets = cachedAssets(s.projectId);
+  const byName = <T extends { name: string }>(arr: T[]) =>
+    [...arr].sort((a, b) => a.name.localeCompare(b.name));
+  // Categories not yet in the editor cache (panel never opened) come
+  // back as null + recorded in `cacheMisses`, NEVER as empty arrays —
+  // empty arrays would mislead the AI into thinking the project has
+  // no scripts/scenes/etc.
+  const cacheMisses: string[] = [];
+  if (!scripts) cacheMisses.push("scripts");
+  if (!scenes) cacheMisses.push("scenes");
+  if (!prefabs) cacheMisses.push("prefabs");
+  if (!assets) cacheMisses.push("assets");
+  return {
+    ok: true,
+    data: {
+      projectId: s.projectId,
+      activeSceneId: s.sceneId,
+      activeSceneName: s.sceneName,
+      cacheMisses,
+      cacheNote:
+        cacheMisses.length > 0
+          ? `These categories are not in the editor cache yet (their panels have not been opened this session): ${cacheMisses.join(", ")}. Counts/lists for them are null — ask the user to open the relevant panel rather than assuming empty.`
+          : null,
+      counts: {
+        scripts: scripts ? scripts.length : null,
+        scenes: scenes ? scenes.length : null,
+        prefabs: prefabs ? prefabs.length : null,
+        assets: assets ? assets.length : null,
+        entities: s.sceneData.entities.length,
       },
-    };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
+      scripts: scripts
+        ? byName(scripts).map((sc) => ({
+            id: sc.id,
+            name: sc.name,
+            language: sc.language,
+          }))
+        : null,
+      scenes: scenes
+        ? byName(scenes).map((sc) => ({
+            id: sc.id,
+            name: sc.name,
+            isActive: sc.id === s.sceneId,
+          }))
+        : null,
+      prefabs: prefabs
+        ? byName(prefabs).map((p) => ({
+            id: p.id,
+            name: p.name,
+            entityCount: Array.isArray(p.data?.entities)
+              ? p.data.entities.length
+              : 0,
+          }))
+        : null,
+      assets: assets
+        ? byName(assets).map((a) => ({
+            id: a.id,
+            name: a.name,
+            type: a.type,
+            source: a.source,
+          }))
+        : null,
+    },
+  };
 };
 
 // ── list_assets ────────────────────────────────────────────────────────
@@ -265,21 +272,24 @@ const LIST_ASSETS: ToolDef = {
 const listAssetsHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
-  try {
-    const assets = await loadAssets(s.projectId);
+  const assets = cachedAssets(s.projectId);
+  if (!assets) {
     return {
-      ok: true,
-      data: assets.map((a) => ({
-        id: a.id,
-        name: a.name,
-        type: a.type,
-        source: a.source,
-        url: a.url,
-      })),
+      ok: false,
+      error:
+        "Assets are not in the editor cache yet — ask the user to open the Assets panel once, then retry.",
     };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
   }
+  return {
+    ok: true,
+    data: assets.map((a) => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      source: a.source,
+      url: a.url,
+    })),
+  };
 };
 
 // ── list_prefabs ───────────────────────────────────────────────────────
@@ -292,20 +302,23 @@ const LIST_PREFABS: ToolDef = {
 const listPrefabsHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
-  try {
-    const prefabs = await loadPrefabs(s.projectId);
+  const prefabs = cachedPrefabs(s.projectId);
+  if (!prefabs) {
     return {
-      ok: true,
-      data: prefabs.map((p) => ({
-        id: p.id,
-        name: p.name,
-        entityCount: Array.isArray(p.data?.entities) ? p.data.entities.length : 0,
-        isPlayerPrefab: p.data?.isPlayerPrefab === true,
-      })),
+      ok: false,
+      error:
+        "Prefabs are not in the editor cache yet — ask the user to open the Prefabs panel once, then retry.",
     };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
   }
+  return {
+    ok: true,
+    data: prefabs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      entityCount: Array.isArray(p.data?.entities) ? p.data.entities.length : 0,
+      isPlayerPrefab: p.data?.isPlayerPrefab === true,
+    })),
+  };
 };
 
 // ── list_scenes ────────────────────────────────────────────────────────
@@ -318,20 +331,23 @@ const LIST_SCENES: ToolDef = {
 const listScenesHandler: ToolHandler = async () => {
   const s = useEditor.getState();
   if (!s.projectId) return { ok: false, error: "No project open." };
-  try {
-    const scenes = await loadScenes(s.projectId);
+  const scenes = cachedScenes(s.projectId);
+  if (!scenes) {
     return {
-      ok: true,
-      data: scenes.map((sc) => ({
-        id: sc.id,
-        name: sc.name,
-        updatedAt: sc.updatedAt,
-        isActive: sc.id === s.sceneId,
-      })),
+      ok: false,
+      error:
+        "Scenes are not in the editor cache yet — ask the user to open the Scenes panel (or load a scene) once, then retry.",
     };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
   }
+  return {
+    ok: true,
+    data: scenes.map((sc) => ({
+      id: sc.id,
+      name: sc.name,
+      updatedAt: sc.updatedAt,
+      isActive: sc.id === s.sceneId,
+    })),
+  };
 };
 
 // ── get_recent_history ─────────────────────────────────────────────────
