@@ -16,6 +16,7 @@
  * one fetch instead of bypassing the store entirely.
  */
 
+import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
 import {
   getListAssetsQueryKey,
   getListPrefabsQueryKey,
@@ -177,7 +178,7 @@ const getActiveSceneMetaHandler: ToolHandler = async () => {
       environment: {
         cameraMode: env.cameraMode ?? "editor",
         cameraTargetEntityId: env.cameraTargetEntityId ?? null,
-        gravity: env.gravity ?? [0, -9.81, 0],
+        gravity: env.gravity ?? DEFAULT_GRAVITY,
         skyColor: env.skyColor ?? null,
       },
     },
@@ -578,3 +579,9 @@ export const handlers: Record<string, ToolHandler> = {
   get_console_errors: getConsoleErrorsHandler,
   describe_layout: describeLayoutHandler,
 };
+
+/** Tool names that mutate state. None — every tool in this folder is
+ *  read-only by design (introspection / diagnostics). Exported for symmetry
+ *  with `tools/scripting`, `tools/layers`, `tools/design` so `aiTools.ts`
+ *  can spread destructive sets uniformly without per-folder special casing. */
+export const destructiveToolNames: string[] = [];

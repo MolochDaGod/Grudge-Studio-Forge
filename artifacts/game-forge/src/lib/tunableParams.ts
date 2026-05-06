@@ -14,6 +14,7 @@
 
 import { useEditor } from "@/store/editor";
 import type { Environment } from "@/scene/types";
+import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
 
 type NumericRange = {
   kind: "number";
@@ -47,7 +48,7 @@ interface TunableParam {
 /** Apply an env patch through the editor store, marking the scene dirty
  *  via the same path the Inspector uses. */
 function patchEnv(env: Partial<Environment>): void {
-  useEditor.getState().setEnvironment(env);
+  useEditor.getState().cmdSetEnvironment(env);
 }
 
 function readEnv<K extends keyof Environment>(key: K): Environment[K] {
@@ -123,10 +124,10 @@ const PARAMS: TunableParam[] = [
     description:
       "World gravity along Y in m/s² (negative = down). Earth = -9.81; moon-feel = -1.6; floaty = -3.",
     spec: { kind: "number", min: -30, max: 30, step: 0.1 },
-    read: () => (readEnv("gravity") ?? [0, -9.81, 0])[1],
+    read: () => (readEnv("gravity") ?? DEFAULT_GRAVITY)[1],
     write: (v) => {
       const g = clampNumber({ kind: "number", min: -30, max: 30 }, v);
-      const cur = readEnv("gravity") ?? [0, -9.81, 0];
+      const cur = readEnv("gravity") ?? DEFAULT_GRAVITY;
       patchEnv({ gravity: [cur[0], g, cur[2]] as [number, number, number] });
     },
   },

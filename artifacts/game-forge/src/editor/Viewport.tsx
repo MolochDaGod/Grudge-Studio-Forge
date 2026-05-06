@@ -22,6 +22,7 @@ import { useMouseState } from "@/scene/useMouseState";
 import { PlayCameraController } from "@/scene/CameraControllers";
 import { buildTree } from "@/lib/hierarchy";
 import type { SceneEntity, EntityType } from "@/scene/types";
+import { DEFAULT_GRAVITY, DEFAULT_FOG } from "@workspace/scene-schema";
 import { BUILTIN_BEHAVIORS } from "@/lib/deathmatchBehaviors";
 import { getPlaySession, resetPlaySession } from "@/scene/playSession";
 import { PlayHUD } from "@/editor/PlayHUD";
@@ -725,7 +726,7 @@ function ScenePlayMode() {
   // otherwise allocate a fresh tuple on every render → new prop reference →
   // forced remount of the entire physics tree.
   const gravity = useMemo<[number, number, number]>(
-    () => (envGravity ?? [0, -9.81, 0]) as [number, number, number],
+    () => (envGravity ?? DEFAULT_GRAVITY) as [number, number, number],
     [envGravity],
   );
   const bodyRefs = useRef<Map<string, RapierRigidBody | THREE.Group>>(new Map());
@@ -896,6 +897,8 @@ function FocusCameraController() {
     const persp = camera as THREE.PerspectiveCamera;
     const fov = persp.fov ?? 45;
     const aspect = persp.aspect ?? (size.width > 0 ? size.width / size.height : 1);
+    // reason: drei's `useThree().controls` is typed as `EventDispatcher`;
+    // narrow to the OrbitControls-shaped subset we actually touch.
     const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
     const curTarget = c?.target?.clone() ?? new THREE.Vector3();
 
@@ -929,6 +932,8 @@ function FocusCameraController() {
     // without overshooting the entity.
     const e = 1 - Math.pow(1 - k, 3);
     camera.position.lerpVectors(t.startCam, t.endCam, e);
+    // reason: see above — narrow drei's loosely-typed `controls` to the
+    // OrbitControls subset.
     const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
     if (c?.target) c.target.lerpVectors(t.startTarget, t.endTarget, e);
     c?.update?.();
@@ -1350,8 +1355,8 @@ export function Viewport() {
                 attach="fog"
                 args={[
                   env.fog?.color ?? env.skyColor ?? "#0a0a14",
-                  env.fog?.near ?? 80,
-                  env.fog?.far ?? 320,
+                  env.fog?.near ?? DEFAULT_FOG.near,
+                  env.fog?.far ?? DEFAULT_FOG.far,
                 ]}
               />
               <Lights />

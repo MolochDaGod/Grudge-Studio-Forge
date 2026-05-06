@@ -141,6 +141,8 @@ function reconcile(entities: readonly SceneEntity[]): void {
         "script",
         "scriptId",
       ] as const;
+      // reason: miniplex Entity is typed as a union of partials; we need
+      // an indexable view to `delete` keys that the new patch dropped.
       const bag = existing as unknown as Record<string, unknown>;
       for (const k of tagKeys) {
         if (!(k in next)) delete bag[k];

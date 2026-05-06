@@ -44,6 +44,8 @@ let dreiPromise: Promise<DreiPreloadModule> | null = null;
 
 function getDrei(): Promise<DreiPreloadModule> {
   if (!dreiPromise) {
+    // reason: drei's barrel exports hundreds of names; we narrow the
+    // dynamic-import payload to just `useGLTF.preload` here.
     dreiPromise = import("@react-three/drei").then(
       (m) => m as unknown as DreiPreloadModule,
     );

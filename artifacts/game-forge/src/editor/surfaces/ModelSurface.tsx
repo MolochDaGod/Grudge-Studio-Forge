@@ -134,6 +134,8 @@ function disposeGltfGraph(scene: THREE.Object3D) {
       // own property because three's material classes expose textures on
       // varying named slots (`map`, `normalMap`, `metalnessMap`, …).
       for (const key of Object.keys(m) as (keyof THREE.Material)[]) {
+        // reason: same as EntityRenderer — material slot names vary by
+        // subtype; iterate own keys and runtime-check Texture identity.
         const val = (m as unknown as Record<string, unknown>)[key as string];
         if (val && (val as THREE.Texture).isTexture) {
           (val as THREE.Texture).dispose();

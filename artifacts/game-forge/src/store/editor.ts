@@ -21,6 +21,8 @@ import {
   setParentCommand,
   setLayersCommand,
   setEnvironmentCommand,
+  patchEntityCommand,
+  type Command,
   type StoreLike,
 } from "@/lib/commands";
 import { inferDefaultLayer, type LayerName } from "@workspace/scene-schema";
@@ -205,6 +207,19 @@ interface EditorState {
   /** Undoable: patch one or more `Environment` keys (collision matrix, sensor
    *  layers, lighting presets) in a single step. */
   cmdSetEnvironment: (env: Partial<SceneData["environment"]>, label?: string) => void;
+  /** Undoable: arbitrary entity patch via the same Immer-style updater the
+   *  Inspector uses. Captures before/after snapshots so material/physics/light
+   *  edits all flow through one path. Coalesces consecutive edits to the same
+   *  entity (so a slider drag becomes one undo step). */
+  cmdUpdateEntity: (id: string, updater: (e: SceneEntity) => void) => void;
+  /** Undoable: assign / clear an entity's attached script. */
+  cmdSetEntityScript: (id: string, scriptId: number | null) => void;
+  /** Undoable: change an entity's player controller. Captures the multi-entity
+   *  side effects (clearing other controllers, retargeting the camera) in a
+   *  single command. */
+  cmdSetEntityController: (id: string, kind: ControllerKind) => void;
+  /** Undoable: toggle the hierarchy `collapsed` flag on an entity. */
+  cmdToggleCollapsed: (id: string) => void;
 }
 
 const emptyScene = (): SceneData => ({
@@ -378,6 +393,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSceneName: (name) => set({ sceneName: name, isDirty: true }),
   setSceneData: (data) => {
+    // command-stack: bypass — wholesale scene replacement is used by AI
+    // `clear_scene` / scene import flows where capturing every intermediate
+    // entity in a single before/after diff would balloon the undo stack.
+    // Callers that want undo-safety should issue per-entity commands instead.
     const { entities, warnings } = sanitizeEntities(
       Array.isArray(data?.entities) ? data.entities : [],
     );
@@ -410,6 +429,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   addEntityRaw: (entity) => {
+    // command-stack: bypass — used by import/restore paths where the entity
+    // must land verbatim (preserving its existing id) without going through
+    // defaultsByType. Routing through the command stack would force a re-id
+    // and break references from sibling entities / scripts. Callers needing
+    // undo should use cmdAddEntity instead.
     set((s) => ({
       sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, entity] },
       selectedId: entity.id,
@@ -419,6 +443,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   explodeGlbHierarchy: async (parentEntityId) => {
+    // command-stack: bypass — async GLB load + late entity append doesn't fit
+    // the synchronous before/after capture model the CommandStack expects.
+    // Re-running undo would also have to re-fetch the GLB to know which
+    // proxies to recreate. Treated as a one-shot derived action; users can
+    // remove the proxies via cmdRemoveEntity.
     // Mutex against concurrent / double-click re-entry on the same parent.
     // The async load below means a fast second click could otherwise pass the
     // `alreadyExposed` guard a second time and append duplicate proxies.
@@ -693,6 +722,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   setPlayerPrefabResolver: (fn) => set({ playerPrefabResolver: fn }),
 
   spawnPlayerPrefab: (entities, prefabId) => {
+    // command-stack: bypass — play-only entities must NEVER be persisted to
+    // the saved scene, and undo must not bring them back into edit mode.
+    // Tracking is done via `playOnlyEntityIds`; setPlaying(false) sweeps them.
     if (!entities || entities.length === 0) return null;
     const s = get();
     const { entities: spawned, rootIds } = reidTree(entities, null);
@@ -956,6 +988,67 @@ export const useEditor = create<EditorState>((set, get) => ({
   cmdSetEnvironment: (env, label) => {
     const store = makeStoreLike(get);
     get().commandStack.push(setEnvironmentCommand(store, env, label));
+    set({ isDirty: true });
+  },
+
+  cmdUpdateEntity: (id, updater) => {
+    const before = get().sceneData.entities.find((e) => e.id === id);
+    if (!before) return;
+    const after: SceneEntity = JSON.parse(JSON.stringify(before));
+    updater(after);
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(patchEntityCommand(store, id, before, after, "Edit entity"));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityScript: (id, scriptId) => {
+    const before = get().sceneData.entities.find((e) => e.id === id);
+    if (!before || (before.scriptId ?? null) === scriptId) return;
+    const after: SceneEntity = { ...before, scriptId };
+    const store = makeStoreLike(get);
+    get().commandStack.push(patchEntityCommand(store, id, before, after, "Set script"));
+    set({ isDirty: true });
+  },
+
+  cmdToggleCollapsed: (id) => {
+    const ent = get().sceneData.entities.find((e) => e.id === id);
+    if (!ent) return;
+    const before: SceneEntity = { ...ent, collapsed: ent.collapsed };
+    const after: SceneEntity = { ...ent, collapsed: !ent.collapsed };
+    const store = makeStoreLike(get);
+    get().commandStack.push(patchEntityCommand(store, id, before, after, "Toggle collapse"));
+  },
+
+  cmdSetEntityController: (id, kind) => {
+    // Snapshot the multi-entity + env side effects: setEntityController also
+    // clears any other controller-flagged entity and retargets the play-mode
+    // camera. Capturing entire entities + env arrays as before/after lets the
+    // CommandStack roll the entire ripple back in one undo step.
+    const beforeEntities = get().sceneData.entities;
+    const beforeEnv = { ...get().sceneData.environment };
+    get().setEntityController(id, kind);
+    const afterEntities = get().sceneData.entities;
+    const afterEnv = { ...get().sceneData.environment };
+    // Revert so the command's do() applies cleanly when pushed.
+    set({
+      sceneData: { entities: beforeEntities, environment: beforeEnv },
+    });
+    const store = makeStoreLike(get);
+    const cmd: Command = {
+      kind: "setController",
+      target: id,
+      label: "Set controller",
+      do: () => {
+        store.setEntities(afterEntities);
+        store.setEnvironmentRaw?.(afterEnv);
+      },
+      undo: () => {
+        store.setEntities(beforeEntities);
+        store.setEnvironmentRaw?.(beforeEnv);
+      },
+    };
+    get().commandStack.push(cmd);
     set({ isDirty: true });
   },
 }));

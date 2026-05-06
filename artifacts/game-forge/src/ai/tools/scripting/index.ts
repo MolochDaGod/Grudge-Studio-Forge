@@ -383,8 +383,8 @@ const deleteScriptHandler: ToolHandler = async (input) => {
     const current = await resolveScript({ ...input, projectId });
     const detached = entitiesUsingScript(current.id);
     if (detached.length > 0) {
-      const setEntityScript = useEditor.getState().setEntityScript;
-      for (const e of detached) setEntityScript(e.id, null);
+      const cmdSetEntityScript = useEditor.getState().cmdSetEntityScript;
+      for (const e of detached) cmdSetEntityScript(e.id, null);
     }
     await deleteScriptOnServer(current.id);
     return {
@@ -423,7 +423,7 @@ const attachScriptToEntityHandler: ToolHandler = async (input) => {
     if (!ent) return { ok: false, error: `No entity with id "${id}".` };
     const projectId = activeProjectId();
     const script = await resolveScript({ ...input, projectId });
-    s.setEntityScript(id, script.id);
+    s.cmdSetEntityScript(id, script.id);
     return {
       ok: true,
       data: { entityId: id, scriptId: script.id, scriptName: script.name },
@@ -450,7 +450,7 @@ const detachScriptFromEntityHandler: ToolHandler = async (input) => {
   const ent = s.sceneData.entities.find((e) => e.id === id);
   if (!ent) return { ok: false, error: `No entity with id "${id}".` };
   const prev = ent.scriptId ?? null;
-  s.setEntityScript(id, null);
+  s.cmdSetEntityScript(id, null);
   return { ok: true, data: { entityId: id, detachedScriptId: prev } };
 };
 
@@ -479,7 +479,7 @@ const reorderEntityScriptsHandler: ToolHandler = async (input) => {
   const ent = s.sceneData.entities.find((e) => e.id === id);
   if (!ent) return { ok: false, error: `No entity with id "${id}".` };
   const next = typeof ids[0] === "number" ? (ids[0] as number) : null;
-  s.setEntityScript(id, next);
+  s.cmdSetEntityScript(id, next);
   return {
     ok: true,
     data: {
@@ -527,7 +527,7 @@ const attachBehaviorHandler: ToolHandler = async (input) => {
   if (!ent) return { ok: false, error: `No entity with id "${id}".` };
   const previous = ent.behavior ?? null;
   const behavior = behaviorRaw as keyof typeof BUILTIN_BEHAVIORS;
-  s.updateEntity(id, (e) => {
+  s.cmdUpdateEntity(id, (e) => {
     e.behavior = behavior;
   });
   const layerHint =
@@ -564,7 +564,7 @@ const detachBehaviorHandler: ToolHandler = async (input) => {
   const ent = s.sceneData.entities.find((e) => e.id === id);
   if (!ent) return { ok: false, error: `No entity with id "${id}".` };
   const previous = ent.behavior ?? null;
-  s.updateEntity(id, (e) => {
+  s.cmdUpdateEntity(id, (e) => {
     e.behavior = undefined;
   });
   return { ok: true, data: { entityId: id, previousBehavior: previous } };

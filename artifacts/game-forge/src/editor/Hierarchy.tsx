@@ -256,7 +256,7 @@ export function Hierarchy() {
   const cmdRenameEntity = useEditor((s) => s.cmdRenameEntity);
   const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
   const requestFocus = useEditor((s) => s.requestFocus);
-  const toggleCollapsed = useEditor((s) => s.toggleCollapsed);
+  const toggleCollapsed = useEditor((s) => s.cmdToggleCollapsed);
   const snapshotSubtree = useEditor((s) => s.snapshotSubtree);
   const pushLog = useEditor((s) => s.pushLog);
   const setBottomTab = useEditor((s) => s.setBottomTab);

@@ -47,6 +47,9 @@ const SHARED_LOADER = new GLTFLoader();
 // just like drei's `useGLTF` over in EntityRenderer. Cast to the
 // three.js (vs three-stdlib) GLTFLoader type since they share the same
 // runtime class but ship subtly different .d.ts files in pnpm.
+// reason: three.js and three-stdlib ship the same runtime GLTFLoader class
+// under subtly different .d.ts declarations in pnpm; cast through unknown
+// to bridge the structural mismatch. See note above.
 extendGltfLoader(SHARED_LOADER as unknown as Parameters<typeof extendGltfLoader>[0]);
 /** In-flight de-duplication: if two callers ask for the same URL while a
  *  load is pending, they share one fetch. The entry is removed once the

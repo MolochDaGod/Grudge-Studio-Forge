@@ -11,6 +11,7 @@ import { nanoid } from "nanoid";
 
 import { useEditor } from "@/store/editor";
 import type { SceneEntity, Vec3 } from "@/scene/types";
+import type { Command } from "@/lib/commands";
 import { getViewportBridge } from "@/scene/viewportBridge";
 import {
   setCameraBookmark,
@@ -216,7 +217,7 @@ const arrangeEntitiesHandler: ToolHandler = async (input) => {
       continue;
     }
     const pos = positions[i];
-    store.updateEntity(id, (e) => {
+    store.cmdUpdateEntity(id, (e) => {
       e.transform.position = [pos[0], pos[1], pos[2]];
     });
     updated.push({ id, position: [pos[0], pos[1], pos[2]] });
@@ -328,7 +329,7 @@ const applyPaletteHandler: ToolHandler = async (input) => {
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
     const c = assigned[i];
-    store.updateEntity(t.id, (e) => {
+    store.cmdUpdateEntity(t.id, (e) => {
       // Preserve emissive / metalness / roughness — only swap base color.
       const prev = e.material;
       e.material = {
@@ -342,7 +343,7 @@ const applyPaletteHandler: ToolHandler = async (input) => {
   }
   let environmentPatched = false;
   if (input.includeEnvironment === true) {
-    store.setEnvironment({
+    store.cmdSetEnvironment({
       skyColor: colors[0],
       groundColor: colors[1] ?? colors[0],
     });
@@ -397,14 +398,17 @@ const applyLightingPresetHandler: ToolHandler = async (input) => {
   const preset = getLightingPreset(String(input.presetId ?? ""));
   if (!preset) return { ok: false, error: `Unknown lighting preset '${input.presetId}'` };
   const store = useEditor.getState();
-  // Remove any prior auto:lighting-tagged lights (regardless of which preset spawned them).
-  const stale = store.sceneData.entities.filter(
+  // Atomic snapshot: capture before/after of the entire scene, then push a
+  // single Command so undo rolls the whole preset application back in one
+  // step (env patch + stale-light removals + new-light additions).
+  const beforeEntities = store.sceneData.entities;
+  const beforeEnv = { ...store.sceneData.environment };
+  const stale = beforeEntities.filter(
     (e) => e.type === "light" && e.name.includes(AUTO_LIGHTING_TAG),
   );
-  for (const s of stale) store.removeEntity(s.id);
-  store.setEnvironment(preset.environment);
+  const staleIds = new Set(stale.map((e) => e.id));
   const created: { id: string; name: string }[] = [];
-  for (const l of preset.lights) {
+  const newLights: SceneEntity[] = preset.lights.map((l) => {
     const e: SceneEntity = {
       id: nanoid(8),
       name: `[${AUTO_LIGHTING_TAG}] ${preset.id} · ${l.label}`,
@@ -422,9 +426,27 @@ const applyLightingPresetHandler: ToolHandler = async (input) => {
         distance: l.distance,
       },
     };
-    store.addEntityRaw(e);
     created.push({ id: e.id, name: e.name });
-  }
+    return e;
+  });
+  const afterEntities: SceneEntity[] = [
+    ...beforeEntities.filter((e) => !staleIds.has(e.id)),
+    ...newLights,
+  ];
+  const afterEnv = { ...beforeEnv, ...preset.environment };
+  const cmd: Command = {
+    kind: "applyLightingPreset",
+    label: `Apply lighting: ${preset.id}`,
+    do: () => {
+      store.setEntities(afterEntities);
+      store.setEnvironment(afterEnv);
+    },
+    undo: () => {
+      store.setEntities(beforeEntities);
+      store.setEnvironment(beforeEnv);
+    },
+  };
+  store.commandStack.push(cmd);
   return {
     ok: true,
     data: {
@@ -830,3 +852,15 @@ export const handlers: Record<string, ToolHandler> = {
   capture_viewport: captureViewportHandler,
   polish_scene: polishSceneHandler,
 };
+
+/** Tool names that mutate scene state — the aiClient confirms these with
+ *  the user before running them. Camera framing, listing, screenshots, and
+ *  bookmark recall are non-destructive so they don't appear here.
+ *  Exported for symmetry with `tools/scripting`, `tools/layers`, `tools/systems`
+ *  so `aiTools.ts` can spread destructive sets uniformly. */
+export const destructiveToolNames: string[] = [
+  "arrange_entities",
+  "apply_palette",
+  "apply_lighting_preset",
+  "polish_scene",
+];

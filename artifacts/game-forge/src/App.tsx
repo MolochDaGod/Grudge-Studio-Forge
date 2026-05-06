@@ -103,6 +103,8 @@ function EditorShell() {
           throw new Error("Scene JSON missing 'entities' array");
         }
         const store = useEditor.getState();
+        // command-stack: bypass — load of a published scene from URL is a
+        // wholesale scene replace, not an undoable user edit.
         store.setSceneData({
           entities: data.entities as never,
           environment: (data.environment as never) ?? {},

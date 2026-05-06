@@ -161,12 +161,26 @@ export interface SceneData {
   environment: Environment;
 }
 
+/** Earth-strength gravity used as the default for new scenes and as the
+ *  fallback whenever `Environment.gravity` is unset. Centralised here so
+ *  the editor inspector, the AI tools, and the play-mode `<Physics>` rig
+ *  all read the same vector — change it once, every fallback updates. */
+export const DEFAULT_GRAVITY: Vec3 = [0, -9.81, 0];
+
+/** Default linear-fog distances (world units). The viewport falls back to
+ *  these when `Environment.fog` is unset. Sized for the current ~120u arena
+ *  scale so the fog wall sits on the horizon, not behind the player. */
+export const DEFAULT_FOG = {
+  near: 80,
+  far: 320,
+} as const;
+
 export const DEFAULT_ENV: Environment = {
   skyColor: "#0a0a14",
   groundColor: "#1a1a2e",
   ambientIntensity: 0.4,
   sunIntensity: 1.2,
-  gravity: [0, -9.81, 0],
+  gravity: DEFAULT_GRAVITY,
   cameraMode: "editor",
   cameraTargetEntityId: null,
   playerMoveSpeed: 6,

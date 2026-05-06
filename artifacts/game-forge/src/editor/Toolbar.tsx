@@ -147,7 +147,7 @@ export function Toolbar({
     window.addEventListener("gameforge:openTool", handler);
     return () => window.removeEventListener("gameforge:openTool", handler);
   }, []);
-  const setEnvironment = useEditor((s) => s.setEnvironment);
+  const setEnvironment = useEditor((s) => s.cmdSetEnvironment);
   const cameraMode: CameraMode = sceneData.environment.cameraMode ?? "editor";
   const setSceneName = useEditor((s) => s.setSceneName);
   const markSaved = useEditor((s) => s.markSaved);
@@ -231,6 +231,8 @@ export function Toolbar({
         pushLog("error", `${file.name}: missing 'entities' array`);
         return;
       }
+      // command-stack: bypass — wholesale scene replace on import (same
+      // contract as the documented setSceneData bypass in store/editor.ts).
       setSceneData({ entities: parsed.entities, environment: parsed.environment ?? {} });
       const cleanName = file.name.replace(/\.(gfscene\.)?json$/i, "").replace(/\.gfscene$/i, "");
       setSceneName(cleanName || "Imported Scene");

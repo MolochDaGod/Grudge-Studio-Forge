@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
 import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
-import { LAYERS, type LayerName } from "@workspace/scene-schema";
+import { LAYERS, type LayerName, DEFAULT_GRAVITY } from "@workspace/scene-schema";
 import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2, User, Camera, Layers as LayersIcon } from "lucide-react";
 
 function NumberInput({
@@ -100,12 +100,16 @@ export function Inspector() {
     s.selectedId ? s.sceneData.entities.find((e) => e.id === s.selectedId) ?? null : null,
   );
   const env = useEditor((s) => s.sceneData.environment);
-  const setEnv = useEditor((s) => s.setEnvironment);
-  const updateEntity = useEditor((s) => s.updateEntity);
-  const setEntityTransform = useEditor((s) => s.setEntityTransform);
-  const renameEntity = useEditor((s) => s.renameEntity);
-  const setEntityScript = useEditor((s) => s.setEntityScript);
-  const setEntityController = useEditor((s) => s.setEntityController);
+  // All scene mutations route through the cmd* wrappers so every edit is
+  // captured by the CommandStack and reachable via Ctrl+Z / redo. Direct
+  // `setEnvironment` / `updateEntity` etc. on the store remain available
+  // but bypass undo — only use them for non-user-driven internal flows.
+  const setEnv = useEditor((s) => s.cmdSetEnvironment);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const setEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
+  const renameEntity = useEditor((s) => s.cmdRenameEntity);
+  const setEntityScript = useEditor((s) => s.cmdSetEntityScript);
+  const setEntityController = useEditor((s) => s.cmdSetEntityController);
   const entities = useEditor((s) => s.sceneData.entities);
   const explodeGlbHierarchy = useEditor((s) => s.explodeGlbHierarchy);
 
@@ -156,7 +160,7 @@ export function Inspector() {
             </div>
             <Vec3Field
               label="Gravity"
-              value={(env.gravity ?? [0, -9.81, 0]) as Vec3}
+              value={(env.gravity ?? DEFAULT_GRAVITY) as Vec3}
               onChange={(v) => setEnv({ gravity: v })}
               step={0.1}
             />

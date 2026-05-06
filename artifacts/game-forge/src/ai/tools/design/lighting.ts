@@ -37,6 +37,12 @@ export interface LightingPreset {
   lights: readonly PresetLight[];
 }
 
+// Note: each preset's `fog` literal is intentionally distinct from
+// `DEFAULT_FOG` (in `@workspace/scene-schema`) — the whole point of a
+// lighting preset is to override the default with a hand-tuned mood
+// (tight neon-night fog, warm golden-hour haze, overcast wash, etc.).
+// Do not collapse these to `DEFAULT_FOG`; the constant is the editor
+// baseline, not a preset value.
 export const LIGHTING_PRESETS: readonly LightingPreset[] = [
   {
     id: "studio-3pt",

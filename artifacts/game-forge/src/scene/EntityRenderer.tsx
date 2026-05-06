@@ -327,6 +327,8 @@ function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround, s
     resolved,
     false,
     false,
+    // reason: drei's useGLTF expects its own (three-stdlib) GLTFLoader
+    // extender shape; runtime is identical, the .d.ts files diverge.
     extendGltfLoader as unknown as Parameters<typeof useGLTF>[3],
   );
   // SkeletonUtils.clone preserves bone bindings for skinned meshes (regular
@@ -417,6 +419,9 @@ function LoadedModel({ url, clip, tint, label, selected, onPick, dropToGround, s
           "emissiveMap", "aoMap", "alphaMap",
         ];
         for (const slot of slots) {
+          // reason: three.js Material slot names vary by subtype; probe
+          // each named slot via an indexed view, then runtime-check it's
+          // a Texture before mutating.
           const tex = (m as unknown as Record<string, unknown>)[slot];
           if (!(tex instanceof THREE.Texture)) continue;
           if (touchedTextures.has(tex)) continue;

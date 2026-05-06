@@ -81,7 +81,9 @@ function moveBody(
     body.position.z += desiredVel.z * delta;
     return;
   }
-  const type = body.bodyType() as unknown as number;
+  // bodyType() already returns Rapier's numeric RigidBodyType enum (a number
+  // at runtime); compare directly against the numeric constant.
+  const type: number = body.bodyType();
   if (type === RB_KIN_POS) {
     const cur = body.translation();
     const target = {
@@ -143,7 +145,8 @@ function rotateBody(
   }
   const q = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
   const r = { x: q.x, y: q.y, z: q.z, w: q.w };
-  const type = body.bodyType() as unknown as number;
+  // bodyType() already returns Rapier's numeric RigidBodyType enum.
+  const type: number = body.bodyType();
   if (type === RB_KIN_POS) {
     if (typeof body.setNextKinematicRotation === "function") {
       body.setNextKinematicRotation(r);

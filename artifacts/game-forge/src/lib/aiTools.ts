@@ -20,7 +20,9 @@ import {
   addEntitiesCommand,
   type StoreLike,
 } from "@/lib/commands";
-import type { SceneEntity, EntityType, ControllerKind, Vec3 } from "@/scene/types";
+import type { SceneEntity, EntityType, ControllerKind, Vec3, SceneData } from "@/scene/types";
+import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
+type Environment = SceneData["environment"];
 import {
   listTunableParams,
   setTunableParam,
@@ -30,11 +32,15 @@ import {
   queryEntities as ecsQueryEntities,
   type EcsFilter,
 } from "@/lib/ecs";
-// Introspection tools live in their own folder so each parallel AI-tools
-// task touches one isolated import + spread, avoiding merge conflicts.
+// Per-area AI tool folders all expose the same `{ defs, handlers,
+// destructiveToolNames }` shape so this file can spread them in uniformly —
+// each parallel AI-tools task touches one isolated import + spread, avoiding
+// merge conflicts. Read-only folders still export `destructiveToolNames: []`
+// for symmetry; do not special-case them here.
 import {
   defs as systemsToolDefs,
   handlers as systemsToolHandlers,
+  destructiveToolNames as systemsDestructiveTools,
 } from "@/ai/tools/systems";
 import {
   defs as scriptingToolDefs,
@@ -44,6 +50,7 @@ import {
 import {
   defs as designToolDefs,
   handlers as designToolHandlers,
+  destructiveToolNames as designDestructiveTools,
 } from "@/ai/tools/design";
 import {
   defs as layersToolDefs,
@@ -54,14 +61,17 @@ import {
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
  *  running any of these so the AI can never wipe / overwrite without sign-off.
- */
+ *  Per-folder destructive sets are spread in symmetrically — keep this list
+ *  for tools defined inline in this file only. */
 export const DESTRUCTIVE_TOOLS = new Set<string>([
   "clear_scene",
   "delete_entity",
   "create_script",
   "set_player",
   "generate_map",
+  ...systemsDestructiveTools,
   ...scriptingDestructiveTools,
+  ...designDestructiveTools,
   ...layersDestructiveTools,
 ]);
 
@@ -406,7 +416,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       const s = useEditor.getState();
       const ent = s.sceneData.entities.find((e) => e.id === id);
       if (!ent) return { ok: false, error: `No entity with id "${id}"` };
-      s.updateEntity(id, (e) => {
+      s.cmdUpdateEntity(id, (e) => {
         if (typeof input.name === "string") e.name = input.name;
         if (Array.isArray(input.position)) e.transform.position = asVec3(input.position);
         if (Array.isArray(input.rotation)) e.transform.rotation = asVec3(input.rotation);
@@ -481,9 +491,26 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       },
     },
     exec: async (input) => {
-      // setEnvironment merges into existing env; cast through unknown because
-      // the AI's loose JSON schema can't perfectly mirror SceneEnvironment.
-      useEditor.getState().setEnvironment(input as Parameters<ReturnType<typeof useEditor.getState>["setEnvironment"]>[0]);
+      // Build a typed Partial<Environment> by extracting only known keys
+      // from the AI input — avoids an `as unknown as` cast and keeps
+      // unknown keys out of the env entirely.
+      const patch: Partial<Environment> = {};
+      if (typeof input.skyColor === "string") patch.skyColor = input.skyColor;
+      if (typeof input.groundColor === "string") patch.groundColor = input.groundColor;
+      if (typeof input.ambientIntensity === "number") patch.ambientIntensity = input.ambientIntensity;
+      if (typeof input.sunIntensity === "number") patch.sunIntensity = input.sunIntensity;
+      if (Array.isArray(input.gravity) && input.gravity.length === 3) {
+        patch.gravity = asVec3(input.gravity);
+      }
+      if (
+        input.cameraMode === "editor" ||
+        input.cameraMode === "rts" ||
+        input.cameraMode === "thirdPerson" ||
+        input.cameraMode === "firstPerson"
+      ) {
+        patch.cameraMode = input.cameraMode;
+      }
+      useEditor.getState().cmdSetEnvironment(patch);
       return { ok: true, data: useEditor.getState().sceneData.environment };
     },
   },
@@ -498,6 +525,8 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     exec: async () => {
       const s = useEditor.getState();
       const removed = s.sceneData.entities.length;
+      // command-stack: bypass — `clear_scene` is a wholesale scene replace
+      // (same contract as the documented setSceneData bypass).
       s.setSceneData({ entities: [], environment: s.sceneData.environment });
       return { ok: true, data: { removed } };
     },
@@ -532,7 +561,9 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         seed: typeof input.seed === "number" ? input.seed : Date.now() & 0xffff,
       });
       const s = useEditor.getState();
-      for (const e of entities) s.addEntityRaw(e);
+      s.commandStack.push(
+        addEntitiesCommand(makeStoreLike(), entities, `Generate map: ${kind}`, entities[0]?.id ?? null),
+      );
       return { ok: true, data: { added: entities.length, kind } };
     },
   },
@@ -639,7 +670,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       if (!ent) return { ok: false, error: `No entity with id "${eid}"` };
       const sid =
         typeof input.scriptId === "number" ? input.scriptId : input.scriptId === null ? null : null;
-      s.setEntityScript(eid, sid);
+      s.cmdSetEntityScript(eid, sid);
       return { ok: true, data: { entityId: eid, scriptId: sid } };
     },
   },
@@ -690,7 +721,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       const s = useEditor.getState();
       const ent = s.sceneData.entities.find((e) => e.id === eid);
       if (!ent) return { ok: false, error: `No entity with id "${eid}"` };
-      s.setEntityController(eid, kind);
+      s.cmdSetEntityController(eid, kind);
       return { ok: true, data: { entityId: eid, controllerKind: kind } };
     },
   },
@@ -1087,7 +1118,7 @@ export function buildSystemPrompt(): string {
     `- projectId: ${s.projectId ?? "(none — most tools will fail until a project is open)"}`,
     `- sceneName: "${s.sceneName}"  isPlaying: ${s.isPlaying}`,
     `- entityCount: ${s.sceneData.entities.length}  byType: ${JSON.stringify(counts)}`,
-    `- environment.cameraMode: ${env.cameraMode ?? "editor"}  gravity: ${JSON.stringify(env.gravity ?? [0, -9.81, 0])}`,
+    `- environment.cameraMode: ${env.cameraMode ?? "editor"}  gravity: ${JSON.stringify(env.gravity ?? DEFAULT_GRAVITY)}`,
     `- selectedId: ${s.selectedId ?? "(none)"}`,
     `- builtin models available: ${Object.keys(BUILTIN_MODELS).join(", ")}`,
     ``,

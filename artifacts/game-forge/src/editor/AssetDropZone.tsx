@@ -23,8 +23,8 @@ import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2 } from "luci
 export function AssetDropZone({ children }: { children: React.ReactNode }) {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.addEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const setSceneData = useEditor((s) => s.setSceneData);
   const setSceneName = useEditor((s) => s.setSceneName);
 
@@ -67,6 +67,8 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
         return;
       }
       const env = data.environment ?? {};
+      // command-stack: bypass — wholesale scene replace on import (same
+      // contract as the documented setSceneData bypass in store/editor.ts).
       setSceneData({ entities: data.entities, environment: env });
       const cleanName = fileName.replace(/\.(gfscene\.)?json$/i, "").replace(/\.gfscene$/i, "");
       setSceneName(cleanName || "Imported Scene");

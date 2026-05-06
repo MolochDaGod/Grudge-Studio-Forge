@@ -80,9 +80,11 @@ export function MenuBar({
     return () => window.removeEventListener("gameforge:openShortcuts", open);
   }, []);
 
-  const setEnvironment = useEditor.getState().setEnvironment;
   const setCameraMode = (mode: CameraMode) =>
-    setEnvironment({ ...sceneData.environment, cameraMode: mode });
+    useEditor.getState().cmdSetEnvironment(
+      { ...sceneData.environment, cameraMode: mode },
+      `Set camera mode: ${mode}`,
+    );
 
   const addPrimitive = (type: EntityType) => {
     useEditor.getState().cmdAddEntity(

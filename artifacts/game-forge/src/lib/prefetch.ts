@@ -34,7 +34,9 @@ type RequestIdleCallback = (
  */
 export function whenIdle(cb: () => void, fallbackDelayMs = 1500): void {
   if (typeof window === "undefined") return;
-  const ric = (window as unknown as { requestIdleCallback?: RequestIdleCallback })
+  // `requestIdleCallback` is not in lib.dom for older TS targets — read it as
+  // an optional own-property of `window` rather than asserting through unknown.
+  const ric = (window as Window & { requestIdleCallback?: RequestIdleCallback })
     .requestIdleCallback;
   if (typeof ric === "function") {
     ric(() => cb(), { timeout: 4000 });
@@ -51,7 +53,10 @@ export function whenIdle(cb: () => void, fallbackDelayMs = 1500): void {
  */
 function shouldSkipPrefetch(): boolean {
   if (typeof navigator === "undefined") return false;
-  const conn = (navigator as unknown as {
+  // `connection` (NetworkInformation) is non-standard but widely supported.
+  // Treat it as an optional own-property of `navigator` rather than asserting
+  // through unknown.
+  const conn = (navigator as Navigator & {
     connection?: { saveData?: boolean; effectiveType?: string };
   }).connection;
   if (!conn) return false;

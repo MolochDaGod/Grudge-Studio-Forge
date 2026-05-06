@@ -55,6 +55,27 @@ export const MUTATING_TOOLS = new Set<string>([
   "set_tunable_param",
   "save_scene_snapshot",
   "import_asset_from_url",
+  // Design tools (apply_* / arrange_* / polish_*) mutate scene entities or
+  // environment, so they must participate in AI-turn snapshotting.
+  "arrange_entities",
+  "apply_palette",
+  "apply_lighting_preset",
+  "polish_scene",
+  // Scripting mutators — anything that writes a script body, attaches a
+  // behavior, or rewires entity script lists changes the scene's runtime
+  // behavior and must be undoable as part of the AI turn.
+  "update_script",
+  "patch_script",
+  "delete_script",
+  "attach_script_to_entity",
+  "detach_script_from_entity",
+  "reorder_entity_scripts",
+  "attach_behavior",
+  "detach_behavior",
+  "create_script_from_template",
+  // Layer mutators
+  "set_layer",
+  "set_layer_matrix",
 ]);
 
 /** Keys we'll harvest as entity ids. Strict allow-list — the heuristic

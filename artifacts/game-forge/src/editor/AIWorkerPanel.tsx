@@ -352,6 +352,9 @@ export function AIWorkerPanel({
         const cmd = makeAITurnCommand({
           label,
           steps: turnSteps,
+          // command-stack: bypass — invoked from inside the AI turn command's
+          // own do/undo to replace the scene snapshot; the surrounding
+          // makeAITurnCommand IS the undoable record.
           apply: (data) => useEditor.getState().setSceneData(data),
         });
         // The stack runs cmd.do() on push, which would re-apply the same

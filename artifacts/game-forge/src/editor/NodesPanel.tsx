@@ -94,7 +94,7 @@ function NodesPanelInner() {
 
   const projectId = useEditor((s) => s.projectId);
   const cmdAddEntity = useEditor((s) => s.cmdAddEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const selectEntity = useEditor((s) => s.selectEntity);
   const log = useEditor((s) => s.pushLog);
 

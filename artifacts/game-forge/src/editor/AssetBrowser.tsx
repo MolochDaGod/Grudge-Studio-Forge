@@ -423,8 +423,8 @@ function GrudgeGrid({
 }) {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.addEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const [query, setQuery] = useState("");
@@ -560,8 +560,8 @@ function GrudgeGrid({
 function ProjectAssets() {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.addEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const openTab = useViewportTabs((s) => s.openTab);
   const qc = useQueryClient();
   const { data: assets = [], isLoading } = useListAssets(projectId ?? 0, {
@@ -976,8 +976,8 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
   const PAGE = 60;
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.addEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const { data, isLoading, error } = usePolyHaven(kind);
@@ -1212,8 +1212,8 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
 function RacesGrid() {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.addEntity);
-  const updateEntity = useEditor((s) => s.updateEntity);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const [query, setQuery] = useState("");

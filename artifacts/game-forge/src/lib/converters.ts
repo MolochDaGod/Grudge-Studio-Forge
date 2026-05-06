@@ -38,6 +38,10 @@ export async function objToGlb(text: string, fileName: string): Promise<File> {
       const old = mesh.material as THREE.Material | THREE.Material[];
       const materials = Array.isArray(old) ? old : [old];
       mesh.material = materials.map((m) => {
+        // reason: three.js Material is a discriminated union; only the
+        // standard/basic variants expose `.color`. Probing through unknown
+        // is the standard escape hatch when normalizing arbitrary material
+        // imports without listing every concrete subtype.
         const c = (m as unknown as { color?: THREE.Color }).color;
         return new THREE.MeshStandardMaterial({
           color: c?.clone() ?? new THREE.Color(0xd4af37),
