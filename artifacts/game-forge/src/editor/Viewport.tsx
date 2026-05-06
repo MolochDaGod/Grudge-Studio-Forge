@@ -30,6 +30,7 @@ import {
 import { Hotbar } from "@/editor/Hotbar";
 import { gizmoDragGate, isGizmoSwallowingClick } from "@/editor/gizmoDragGate";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
+import { ViewportBridge } from "@/scene/viewportBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2, X } from "lucide-react";
 import {
@@ -1141,6 +1142,7 @@ export function Viewport() {
             >
               {isPlaying && <PointerLockBridge onChange={setIsPointerLocked} />}
               <DevtoolsBridge label="Forge · Scene" />
+              <ViewportBridge />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
               {/*
                 Fog far plane was 80 units — at the new 2.5–3× map
@@ -1149,7 +1151,14 @@ export function Viewport() {
                 map. Pushed near→far to 80→320 so fog only kisses the
                 horizon instead of swallowing the playable area.
               */}
-              <fog attach="fog" args={[env.skyColor ?? "#0a0a14", 80, 320]} />
+              <fog
+                attach="fog"
+                args={[
+                  env.fog?.color ?? env.skyColor ?? "#0a0a14",
+                  env.fog?.near ?? 80,
+                  env.fog?.far ?? 320,
+                ]}
+              />
               <Lights />
               <Suspense fallback={null}>
                 {isPlaying ? (

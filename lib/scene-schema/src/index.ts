@@ -123,6 +123,16 @@ export interface Environment {
   scoreLimit?: number;
   /** Deathmatch: respawn delay in seconds (default 5). */
   respawnDelay?: number;
+  /** Optional linear fog. When unset the viewport falls back to fogging
+   *  with the sky color over a long range. AI lighting presets set this
+   *  so a "neon night" feels misty without changing the sky. */
+  fog?: {
+    color?: string;
+    /** World-space distance where fog starts (default ~80). */
+    near?: number;
+    /** World-space distance where fog reaches full density (default ~320). */
+    far?: number;
+  };
 }
 
 export interface SceneData {

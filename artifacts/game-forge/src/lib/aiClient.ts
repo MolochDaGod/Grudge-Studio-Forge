@@ -26,10 +26,17 @@ export type ToolUseBlock = {
   name: string;
   input: Record<string, unknown>;
 };
+export type ToolResultContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    };
 export type ToolResultBlock = {
   type: "tool_result";
   tool_use_id: string;
-  content: string;
+  /** String for text-only results; array for multimodal (text + image). */
+  content: string | ToolResultContentBlock[];
   is_error?: boolean;
 };
 export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock;
@@ -195,12 +202,37 @@ export async function runConversation(
         input: call.input,
         result,
       });
-      resultBlocks.push({
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: JSON.stringify(result),
-        is_error: !result.ok,
-      });
+      // If a tool returned an `__image` payload (e.g. capture_viewport),
+      // strip it from the textual content and attach it as a separate
+      // image block so the model can actually see the screenshot on the
+      // next turn (multimodal). Anthropic accepts a tool_result.content
+      // array of text + image blocks.
+      const image = extractToolImage(result);
+      if (image) {
+        resultBlocks.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: [
+            { type: "text", text: JSON.stringify(image.scrubbed) },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: image.mediaType,
+                data: image.base64,
+              },
+            },
+          ],
+          is_error: !result.ok,
+        });
+      } else {
+        resultBlocks.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: JSON.stringify(result),
+          is_error: !result.ok,
+        });
+      }
     }
 
     transcript.push({ role: "user", content: resultBlocks });
@@ -208,6 +240,29 @@ export async function runConversation(
 
   handlers.onError(`Stopped after ${MAX_TURNS} turns (max tool-use loop reached).`);
   return transcript;
+}
+
+/** Pull the `__image` marker off a tool result (set by capture_viewport /
+ *  polish_scene) so the multimodal payload can travel as a proper image
+ *  content block instead of as inline base64 text. */
+function extractToolImage(
+  result: unknown,
+): { mediaType: string; base64: string; scrubbed: unknown } | null {
+  if (!result || typeof result !== "object") return null;
+  const r = result as { data?: unknown };
+  if (!r.data || typeof r.data !== "object") return null;
+  const data = r.data as Record<string, unknown>;
+  const img = data.__image as { mediaType?: unknown; base64?: unknown } | undefined;
+  if (!img || typeof img.mediaType !== "string" || typeof img.base64 !== "string") {
+    return null;
+  }
+  if (img.base64.length === 0) return null;
+  // Don't ship the (huge) base64 inside the text block — give the model the
+  // metadata only and let the image block carry the pixels.
+  const { __image: _omit, ...scrubbedData } = data;
+  void _omit;
+  const scrubbed = { ...(r as object), data: scrubbedData };
+  return { mediaType: img.mediaType, base64: img.base64, scrubbed };
 }
 
 async function fetchChatStream(
