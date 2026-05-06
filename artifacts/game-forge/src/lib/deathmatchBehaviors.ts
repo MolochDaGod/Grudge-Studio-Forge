@@ -613,4 +613,5 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   // accidentally appear in physics queries.
   "gamemode-deathmatch": null,
   spawnpoint: "Trigger",
+  "pickup-trigger": "Trigger",
 };
