@@ -465,13 +465,73 @@ function ToolCallChip({ tool }: { tool: ToolEvent }) {
             <div className="text-muted-foreground text-[9px] uppercase tracking-wider mb-0.5">
               {ok ? "result" : "error"}
             </div>
-            <pre className="whitespace-pre-wrap break-all text-foreground/90">
-              {ok ? safeStringify(tool.result.data) : tool.result.error ?? "(no detail)"}
-            </pre>
+            {ok && extractDiff(tool.result.data) ? (
+              <DiffBlock diff={extractDiff(tool.result.data)!} />
+            ) : (
+              <pre className="whitespace-pre-wrap break-all text-foreground/90">
+                {ok ? safeStringify(tool.result.data) : tool.result.error ?? "(no detail)"}
+              </pre>
+            )}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function extractDiff(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  if (typeof d.diff === "string" && d.diff.includes("@@")) return d.diff;
+  if (typeof d.before === "string" && typeof d.after === "string") {
+    return synthesizeDiff(d.before, d.after);
+  }
+  return null;
+}
+
+function synthesizeDiff(before: string, after: string): string {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  const out: string[] = [];
+  const max = Math.max(a.length, b.length);
+  for (let i = 0; i < max; i++) {
+    if (a[i] === b[i]) {
+      if (a[i] !== undefined) out.push(`  ${a[i]}`);
+    } else {
+      if (a[i] !== undefined) out.push(`- ${a[i]}`);
+      if (b[i] !== undefined) out.push(`+ ${b[i]}`);
+    }
+  }
+  return out.join("\n");
+}
+
+function DiffBlock({ diff }: { diff: string }) {
+  const lines = diff.split("\n");
+  return (
+    <pre className="whitespace-pre overflow-x-auto text-[10px] leading-snug rounded border border-border/40 bg-background/40 p-1.5">
+      {lines.map((line, i) => {
+        const isMeta =
+          line.startsWith("@@") ||
+          line.startsWith("---") ||
+          line.startsWith("+++") ||
+          line.startsWith("===");
+        const isAdd = !isMeta && line.startsWith("+");
+        const isDel = !isMeta && line.startsWith("-");
+        return (
+          <div
+            key={i}
+            className={cn(
+              "px-1",
+              isMeta && "text-muted-foreground/70",
+              isAdd && "bg-emerald-500/10 text-emerald-400",
+              isDel && "bg-rose-500/10 text-rose-400",
+            )}
+          >
+            {line || "\u00a0"}
+          </div>
+        );
+      })}
+    </pre>
   );
 }
 

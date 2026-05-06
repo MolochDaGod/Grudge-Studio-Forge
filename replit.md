@@ -36,6 +36,7 @@ Grudge GameForge is a browser-based 3D game prototyping environment for building
 *   **Scene Templates:** `@workspace/scene-templates` lib (pure builder functions)
 *   **Editor UI Components:** `artifacts/game-forge/src/editor/`
 *   **AI Worker:** `artifacts/game-forge/src/ai/`
+*   **AI Scripting Tools:** `artifacts/game-forge/src/ai/tools/scripting/` (defs/handlers wired into `lib/aiTools.ts` via single import + spread)
 *   **Deployment Notes:** `DEPLOYMENT.md`
 *   **Animation Skill Doc:** `.agents/skills/animation-and-skinned-meshes/SKILL.md`
 *   **Spatial Queries Skill Doc:** `.agents/skills/spatial-queries-and-surfaces/SKILL.md`

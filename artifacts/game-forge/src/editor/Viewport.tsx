@@ -467,7 +467,11 @@ function ScriptedEntities({
         elapsed: elapsedRef.current,
         keys: keysRef.current,
         mouse: mouseRef.state,
-        log: (level, text) => pushLog(level, `[${entity.name}] ${text}`),
+        log: (level, text) =>
+          pushLog(level, `[${entity.name}] ${text}`, {
+            scriptId: entity.scriptId ?? null,
+            entityId: entity.id,
+          }),
         findEntity,
         findEntities,
         findEntityById,
@@ -514,7 +518,10 @@ function ScriptedEntities({
         if (behaviorCompiled?.update) behaviorCompiled.update(scriptEntity, ctx);
         if (userCompiled?.update && !userCompiled.error) userCompiled.update(scriptEntity, ctx);
       } catch (err) {
-        pushLog("error", `[${entity.name}] ${(err as Error).message}`);
+        pushLog("error", `[${entity.name}] ${(err as Error).message}`, {
+          scriptId: entity.scriptId ?? null,
+          entityId: entity.id,
+        });
         continue;
       }
 

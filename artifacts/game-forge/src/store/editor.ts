@@ -30,6 +30,12 @@ export interface ConsoleMessage {
   level: ConsoleLevel;
   text: string;
   ts: number;
+  /** Set when the line came from a script (either a user script attached
+   *  to an entity, or a built-in behavior). Lets the AI assistant filter
+   *  the console down to "what did THIS script print?" without parsing
+   *  the `[entity name]` text prefix. */
+  scriptId?: number | null;
+  entityId?: string | null;
 }
 
 /** Sub-scene editing context for prefabs (Unity-style "Open Prefab" mode).
@@ -149,7 +155,11 @@ interface EditorState {
       | null,
   ) => void;
 
-  pushLog: (level: ConsoleLevel, text: string) => void;
+  pushLog: (
+    level: ConsoleLevel,
+    text: string,
+    meta?: { scriptId?: number | null; entityId?: string | null },
+  ) => void;
   clearConsole: () => void;
   setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes") => void;
 
@@ -706,9 +716,19 @@ export const useEditor = create<EditorState>((set, get) => ({
   setPaused: (paused) => set({ isPaused: paused }),
   setTransformMode: (m) => set({ transformMode: m }),
 
-  pushLog: (level, text) =>
+  pushLog: (level, text, meta) =>
     set((s) => ({
-      consoleMessages: [...s.consoleMessages, { id: nanoid(6), level, text, ts: Date.now() }].slice(-200),
+      consoleMessages: [
+        ...s.consoleMessages,
+        {
+          id: nanoid(6),
+          level,
+          text,
+          ts: Date.now(),
+          scriptId: meta?.scriptId ?? null,
+          entityId: meta?.entityId ?? null,
+        },
+      ].slice(-200),
     })),
 
   clearConsole: () => set({ consoleMessages: [] }),

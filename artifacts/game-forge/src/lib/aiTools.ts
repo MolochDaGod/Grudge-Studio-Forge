@@ -36,6 +36,11 @@ import {
   defs as systemsToolDefs,
   handlers as systemsToolHandlers,
 } from "@/ai/tools/systems";
+import {
+  defs as scriptingToolDefs,
+  handlers as scriptingToolHandlers,
+  destructiveToolNames as scriptingDestructiveTools,
+} from "@/ai/tools/scripting";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -47,6 +52,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   "create_script",
   "set_player",
   "generate_map",
+  ...scriptingDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1002,6 +1008,10 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: systemsToolHandlers[def.name] as ToolExecutor,
   })),
+  ...scriptingToolDefs.map((def) => ({
+    def,
+    exec: scriptingToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1064,6 +1074,8 @@ export function buildSystemPrompt(): string {
     `- Use diagnose_scene after a chunk of edits to catch missing lights, missing ground, dangling camera targets, orphan parents, and similar gotchas — fix any 'error' severity issues before declaring the task done.`,
     `- When the user reports something broken ("nothing happens", "it crashed", "the script doesn't run"), call get_console_errors first — runtime errors and asset-load failures land there. Use get_recent_history (editor-wide undo stack) and get_last_ai_changes (AI-only audit log) to remember what was just touched.`,
     `- Use list_entities to look up real ids before update_entity / delete_entity / attach_script — never guess ids.`,
+    `- SCRIPT EDITS: never write a script body blind. Call get_script (or list_script_attachments → get_script) to read the current source, edit it, then prefer patch_script with a unified diff for small changes (use update_script only for full rewrites). Both write tools call validate_script internally and refuse to save broken code, so check the returned validation.errors and self-correct. After scripted behavior runs, use get_script_logs to confirm it actually did what you intended.`,
+    `- For new behaviors, look at list_script_templates first — scaffolding from a template (create_script_from_template) is faster and less error-prone than writing from scratch.`,
     `- For player characters prefer the built-in 'blake' model.`,
     `- To pull a fresh asset off the web, use import_asset_from_url (returns a URL you can immediately drop into add_model_entity's modelUrl). Reuse list_user_assets to recall what you've already imported for this project before re-downloading.`,
     `- To checkpoint the user's work or hand them a sharable scene, use save_scene_snapshot — it returns a public URL.`,
