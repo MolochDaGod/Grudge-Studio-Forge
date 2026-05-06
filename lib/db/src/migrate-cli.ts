@@ -12,8 +12,10 @@ import { runMigrations } from "./migrate.js";
 
 async function main(): Promise<void> {
   try {
-    await runMigrations((name, ok) => {
-      process.stdout.write(`migrate · ${name} … ${ok ? "ok" : "FAIL"}\n`);
+    await runMigrations((name, ok, durationMs) => {
+      process.stdout.write(
+        `migrate · ${name} … ${ok ? "ok" : "FAIL"} (${durationMs.toFixed(1)}ms)\n`,
+      );
     });
   } finally {
     await pool.end();

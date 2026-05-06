@@ -146,7 +146,7 @@ export interface RunMigrationsOptions {
 }
 
 export async function runMigrations(
-  log: (name: string, ok: boolean) => void = () => {},
+  log: (name: string, ok: boolean, durationMs: number) => void = () => {},
   options: RunMigrationsOptions = {},
 ): Promise<void> {
   const client = await pool.connect();
@@ -164,11 +164,16 @@ export async function runMigrations(
     ]);
     try {
       for (const { name, sql } of STATEMENTS) {
+        const startedAt = process.hrtime.bigint();
         try {
           await client.query(sql);
-          log(name, true);
+          const durationMs =
+            Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+          log(name, true, durationMs);
         } catch (err) {
-          log(name, false);
+          const durationMs =
+            Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+          log(name, false, durationMs);
           throw err;
         }
       }

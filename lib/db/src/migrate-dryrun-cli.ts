@@ -56,6 +56,25 @@
  *     - `DROP SCHEMA … CASCADE` in `finally` cleans up the seeded
  *       tables, their indexes, and their owned sequences in one shot.
  *
+ * Per-statement timing budget (`--max-statement-ms=<N>`, default
+ * 30000):
+ *   `runMigrations()` reports wall-clock duration for every
+ *   STATEMENT it applies. The dry-run logs the duration alongside the
+ *   ok/FAIL line, calls out the slowest statement, and — if any
+ *   statement exceeded the budget — exits non-zero with a message
+ *   naming the offenders. Pass `--max-statement-ms=0` to disable the
+ *   gate entirely (timings are still logged).
+ *
+ *   Why this matters: at deploy time `runMigrations()` runs before the
+ *   API server starts answering health probes. A single statement that
+ *   rewrites every row of a populated table (the seeded copy gives us
+ *   a representative sample) can easily exceed the Autoscale startup
+ *   probe window, which kills the new instance before it ever serves
+ *   traffic and stalls the deploy. Surfacing the slow statement
+ *   pre-merge gives the author a chance to move the heavy work
+ *   out-of-band (batched backfill, online schema change) before it
+ *   bites production.
+ *
  * Failure semantics: any error from the migration itself (DDL,
  * connection, the initial `CREATE SCHEMA`, or any `--seed` step) exits
  * non-zero. The `.replit` `migrate-dryrun` validation and the
@@ -87,15 +106,32 @@ import {
 } from "./migrate-dryrun-sweeper.js";
 
 const DEFAULT_SEED_ROWS = 100;
+/**
+ * Default per-statement wall-clock budget for the dry-run.
+ *
+ * Autoscale boots a new instance, runs `runMigrations()` before the
+ * server starts listening, and only then begins answering health
+ * probes. If a single migration statement (typically an `ALTER TABLE`
+ * that rewrites every row) takes longer than the startup probe window,
+ * the new instance is killed before it ever serves traffic and the
+ * deploy stalls.
+ *
+ * 30s is comfortably under the default Replit Autoscale startup probe
+ * timeout but big enough that small index builds against the seeded
+ * sample don't false-positive. Override with `--max-statement-ms=<N>`.
+ */
+const DEFAULT_MAX_STATEMENT_MS = 30_000;
 
 interface CliOptions {
   seed: boolean;
   seedRows: number;
+  maxStatementMs: number;
 }
 
 function parseArgs(argv: ReadonlyArray<string>): CliOptions {
   let seed = false;
   let seedRows = DEFAULT_SEED_ROWS;
+  let maxStatementMs = DEFAULT_MAX_STATEMENT_MS;
   for (const arg of argv) {
     // pnpm forwards a bare `--` separator from `pnpm run … -- --seed`
     // through to the script, where Node leaves it in argv. Skip it so
@@ -118,9 +154,19 @@ function parseArgs(argv: ReadonlyArray<string>): CliOptions {
       }
       continue;
     }
+    const maxMsMatch = /^--max-statement-ms=(\d+)$/.exec(arg);
+    if (maxMsMatch) {
+      maxStatementMs = Number.parseInt(maxMsMatch[1]!, 10);
+      if (!Number.isFinite(maxStatementMs) || maxStatementMs < 0) {
+        throw new Error(
+          `migrate-dryrun: --max-statement-ms must be a non-negative integer, got ${arg}`,
+        );
+      }
+      continue;
+    }
     throw new Error(`migrate-dryrun: unknown argument ${JSON.stringify(arg)}`);
   }
-  return { seed, seedRows };
+  return { seed, seedRows, maxStatementMs };
 }
 
 function makeSchemaName(): string {
@@ -206,7 +252,7 @@ async function main(): Promise<void> {
   process.stdout.write(
     `migrate-dryrun · schema=${schema} seed=${opts.seed}${
       opts.seed ? ` seed-rows=${opts.seedRows}` : ""
-    }\n`,
+    } max-statement-ms=${opts.maxStatementMs}\n`,
   );
 
   // Provision + tear down on a dedicated client so the temp schema's
@@ -235,16 +281,55 @@ async function main(): Promise<void> {
       );
     }
 
+    const timings: Array<{ name: string; durationMs: number }> = [];
     await runMigrations(
-      (name, ok) => {
+      (name, ok, durationMs) => {
+        timings.push({ name, durationMs });
         process.stdout.write(
-          `migrate-dryrun · ${name} … ${ok ? "ok" : "FAIL"}\n`,
+          `migrate-dryrun · ${name} … ${ok ? "ok" : "FAIL"} (${durationMs.toFixed(1)}ms)\n`,
         );
       },
       { searchPath: schema },
     );
 
     process.stdout.write("migrate-dryrun · all statements applied\n");
+
+    // Per-statement budget enforcement.
+    //
+    // The dry-run runs against a seeded copy of `public.forge_*`, so a
+    // statement that takes too long here is a strong signal that the
+    // same statement on real production data will blow past the
+    // Autoscale startup health probe and stall the deploy. Surface this
+    // pre-merge so the author sees it on their branch instead of after
+    // a half-applied migration in production. We always log the slowest
+    // statement for visibility; we only fail when the budget is set
+    // (>0) and at least one statement crossed it.
+    const slowest = [...timings].sort(
+      (a, b) => b.durationMs - a.durationMs,
+    )[0];
+    if (slowest) {
+      process.stdout.write(
+        `migrate-dryrun · slowest statement: ${slowest.name} (${slowest.durationMs.toFixed(1)}ms)\n`,
+      );
+    }
+    if (opts.maxStatementMs > 0) {
+      const overBudget = timings.filter(
+        (t) => t.durationMs > opts.maxStatementMs,
+      );
+      if (overBudget.length > 0) {
+        const detail = overBudget
+          .map((t) => `${t.name}=${t.durationMs.toFixed(1)}ms`)
+          .join(", ");
+        // Throw inside the try so the existing finally still runs the
+        // schema teardown, advisory unlock, client release, and pool
+        // end before we exit non-zero in `main().catch(...)`.
+        throw new Error(
+          `migrate-dryrun: ${overBudget.length} statement(s) exceeded budget of ${opts.maxStatementMs}ms: ${detail}. ` +
+            `On a populated production table, this is likely to exceed the Autoscale startup health probe and stall the deploy. ` +
+            `Either rewrite the migration to do the heavy work out-of-band (e.g. backfill in batches) or raise --max-statement-ms after confirming the boot probe can absorb it.`,
+        );
+      }
+    }
   } finally {
     if (schemaCreated) {
       try {
