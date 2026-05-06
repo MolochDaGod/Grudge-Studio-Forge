@@ -11,12 +11,24 @@
 
 export type HotkeyAction = (e: KeyboardEvent) => boolean | void;
 
+export type HotkeyCategory =
+  | "Gizmo"
+  | "Camera"
+  | "Selection"
+  | "Edit"
+  | "Playback"
+  | "Scene"
+  | "View"
+  | "Misc";
+
 export interface Hotkey {
   id: string;
   /** What the user sees in the cheatsheet, e.g. "Ctrl+Z". */
   label: string;
   /** What it does, plain English. */
   description: string;
+  /** Grouping bucket for the `?` cheatsheet overlay. Defaults to "Misc". */
+  category?: HotkeyCategory;
   /** Match: lowercase letter or named key ("Escape", "Delete", " ", "1"). */
   key: string;
   ctrlOrMeta?: boolean;

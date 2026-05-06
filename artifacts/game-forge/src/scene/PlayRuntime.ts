@@ -258,10 +258,21 @@ export interface GroundProbeHit {
 export function groundProbe(
   scene: THREE.Object3D,
   position: [number, number, number],
-  options?: { originOffset?: number; maxDistance?: number },
+  options?: {
+    originOffset?: number;
+    maxDistance?: number;
+    /** Ignore hits whose parent chain includes any of these entity IDs.
+     *  Used by the editor's ground-snap gizmo modifier so the dragged
+     *  entity doesn't self-intersect and snap to its own collider. */
+    excludeEntityIds?: readonly string[];
+  },
 ): GroundProbeHit | null {
   const originOffset = options?.originOffset ?? 0.1;
   const maxDistance = options?.maxDistance ?? 0.35;
+  const excluded =
+    options?.excludeEntityIds && options.excludeEntityIds.length > 0
+      ? new Set(options.excludeEntityIds)
+      : null;
   SHARED_RAYCASTER.set(
     new THREE.Vector3(position[0], position[1] + originOffset, position[2]),
     new THREE.Vector3(0, -1, 0),
@@ -272,31 +283,45 @@ export function groundProbe(
   SHARED_RAYCASTER.far = originOffset + maxDistance;
   const hits = SHARED_RAYCASTER.intersectObjects(scene.children, true);
   if (hits.length === 0) return null;
-  const hit = hits[0];
-  // Walk the parent chain for both `surface` (terrain tag) and
-  // `entityId` (so callers know which entity, if any, owns the
-  // surface). Mirrors `raycastEntities`'s pattern.
-  let surface: string | null = null;
-  let entityId: string | null = null;
-  let cur: THREE.Object3D | null = hit.object;
-  while (cur) {
-    const ud = cur.userData as { surface?: string; entityId?: string } | undefined;
-    if (!surface && ud?.surface) surface = ud.surface;
-    if (!entityId && ud?.entityId) entityId = ud.entityId;
-    if (surface && entityId) break;
-    cur = cur.parent;
-  }
-  return {
-    point: [hit.point.x, hit.point.y, hit.point.z],
-    distance: hit.distance - originOffset,
-    normal:
-      hit.face && hit.object instanceof THREE.Mesh
-        ? (() => {
-            const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
-            return [n.x, n.y, n.z] as [number, number, number];
-          })()
-        : [0, 1, 0],
-    surface: surface ?? "walk",
-    entityId,
+
+  // Walk the parent chain helper. Returns first surface tag and entity ID
+  // up the ancestry. Used both for the exclude filter and the result.
+  const inspect = (obj: THREE.Object3D): { surface: string | null; entityId: string | null } => {
+    let surface: string | null = null;
+    let entityId: string | null = null;
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      const ud = cur.userData as { surface?: string; entityId?: string } | undefined;
+      if (!surface && ud?.surface) surface = ud.surface;
+      if (!entityId && ud?.entityId) entityId = ud.entityId;
+      if (surface && entityId) break;
+      cur = cur.parent;
+    }
+    return { surface, entityId };
   };
+
+  // Find the first hit whose chain isn't excluded. We iterate rather
+  // than just taking [0] so the dragged entity's own collider gets
+  // skipped instead of poisoning the snap.
+  for (const hit of hits) {
+    const meta = inspect(hit.object);
+    if (excluded && meta.entityId && excluded.has(meta.entityId)) continue;
+    return {
+      point: [hit.point.x, hit.point.y, hit.point.z],
+      distance: hit.distance - originOffset,
+      normal:
+        hit.face && hit.object instanceof THREE.Mesh
+          ? (() => {
+              const n = hit.face.normal
+                .clone()
+                .transformDirection(hit.object.matrixWorld)
+                .normalize();
+              return [n.x, n.y, n.z] as [number, number, number];
+            })()
+          : [0, 1, 0],
+      surface: meta.surface ?? "walk",
+      entityId: meta.entityId,
+    };
+  }
+  return null;
 }

@@ -7,7 +7,15 @@ import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey, type Script } from "@workspace/api-client-react";
 import { EntityRenderer } from "@/scene/EntityRenderer";
-import { getCompiledBehavior, getCompiledScript, makeContext, raycastEntities, type Compiled } from "@/scene/PlayRuntime";
+import { getCompiledBehavior, getCompiledScript, groundProbe, makeContext, raycastEntities, type Compiled } from "@/scene/PlayRuntime";
+import { computeFramingPose } from "@/lib/framing";
+import {
+  applyGroundSnap,
+  DEFAULT_WALKABLE_SURFACES,
+  getEntitySurfaceTag,
+  isGroundSnapModifierHeld,
+  shouldGroundSnap,
+} from "@/lib/groundSnap";
 import type { ScriptEntity } from "@/scene/csTranspile";
 import { useKeyboardState } from "@/lib/keyboard";
 import { useMouseState } from "@/scene/useMouseState";
@@ -155,6 +163,33 @@ function SceneEditMode({
     removeEventListener: (type: string, fn: (e: { value: boolean }) => void) => void;
   } | null>(null);
 
+  // Live modifier state — read inside `onObjectChange` (which has no
+  // KeyboardEvent context) to decide whether the dragged entity should
+  // ground-snap. Updated on every keydown/keyup/blur so a modifier
+  // released mid-drag immediately stops snapping.
+  const modKeysRef = useRef({ shift: false, ctrl: false });
+  useEffect(() => {
+    const update = (e: KeyboardEvent) => {
+      modKeysRef.current.shift = e.shiftKey;
+      modKeysRef.current.ctrl = e.ctrlKey || e.metaKey;
+    };
+    const reset = () => {
+      modKeysRef.current.shift = false;
+      modKeysRef.current.ctrl = false;
+    };
+    window.addEventListener("keydown", update);
+    window.addEventListener("keyup", update);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("keydown", update);
+      window.removeEventListener("keyup", update);
+      window.removeEventListener("blur", reset);
+    };
+  }, []);
+
+  // The whole r3f scene — needed for the ground-snap raycast.
+  const { scene: threeScene } = useThree();
+
   // Listen for TransformControls' `dragging-changed` event so we know
   // exactly when a gizmo drag begins and ends. The drei wrapper forwards
   // the underlying three.js event verbatim — `e.value` is the new
@@ -205,6 +240,47 @@ function SceneEditMode({
             if (!selectedId || !selectedRef) return;
             const o = selectedRef;
             if (transformMode === "translate") {
+              // Shift+Ctrl (or Shift+Meta) ground-snap: continuously
+              // override the dragged entity's Y to whatever ground
+              // surface lies beneath its current XZ. Skip the dragged
+              // entity itself so it can't snap to its own collider.
+              // The cmdSetEntityTransform call below uses the snapped
+              // value, so the undo step records the snapped pose
+              // (still coalesced into a single drag). See
+              // .agents/skills/spatial-queries-and-surfaces/SKILL.md
+              // for the underlying probe pattern.
+              if (
+                isGroundSnapModifierHeld({
+                  shiftKey: modKeysRef.current.shift,
+                  ctrlKey: modKeysRef.current.ctrl,
+                })
+              ) {
+                // Don't snap terrain TO terrain — if the dragged
+                // entity itself carries a walkable surface tag
+                // (typically stamped on a DESCENDANT, e.g. the cloned
+                // model root for a Map entity), the user is
+                // repositioning the ground and shouldn't have it
+                // teleport onto whatever lies beneath. We early-out
+                // before raycasting so terrain drags stay free-Y and
+                // we don't waste a probe per frame.
+                const draggedSurface = getEntitySurfaceTag(o);
+                const draggedIsTerrain =
+                  !!draggedSurface && DEFAULT_WALKABLE_SURFACES.includes(draggedSurface);
+                if (!draggedIsTerrain) {
+                  const hit = groundProbe(
+                    threeScene,
+                    [o.position.x, o.position.y, o.position.z],
+                    {
+                      originOffset: 50,
+                      maxDistance: 200,
+                      excludeEntityIds: [selectedId],
+                    },
+                  );
+                  if (shouldGroundSnap({ hit, draggedEntitySurface: draggedSurface })) {
+                    applyGroundSnap(o, hit);
+                  }
+                }
+              }
               cmdSetEntityTransform(selectedId, "position", [o.position.x, o.position.y, o.position.z]);
             } else if (transformMode === "rotate") {
               cmdSetEntityTransform(selectedId, "rotation", [o.rotation.x, o.rotation.y, o.rotation.z]);
@@ -710,36 +786,106 @@ function PointerLockBridge({ onChange }: { onChange: (locked: boolean) => void }
   return null;
 }
 
-/** Snap the orbit-controls target onto the selected entity whenever the user
- *  presses F (or picks "Focus camera" from a context menu). We bump
- *  `focusToken` in the store and the effect below re-runs.
+/** Smoothly tween the editor camera + orbit target onto the selected
+ *  entity whenever the user presses F (or picks "Focus camera" from a
+ *  context menu). We bump `focusToken` in the store and the effect
+ *  below re-runs.
  *
- *  The effect deliberately depends ONLY on `focusToken` — selecting a new
- *  entity should NOT auto-focus (that's surprising). */
+ *  Behavior:
+ *   - Distance is computed from the entity's WORLD-SPACE AABB so a
+ *     10-unit plane backs the camera up further than a unit cube.
+ *   - View direction is preserved (we only change distance + target
+ *     position), so repeated F presses are idempotent and the user
+ *     doesn't lose their current orbit angle.
+ *   - The pose change is interpolated over ~250ms via useFrame
+ *     (ease-out cubic) instead of teleporting.
+ *
+ *  Pure framing math lives in `@/lib/framing` and is unit-tested. */
 function FocusCameraController() {
   const focusToken = useEditor((s) => s.focusToken);
-  const { camera, controls } = useThree();
+  const { camera, controls, scene, size } = useThree();
+
+  // Active tween bookkeeping. Null means "no tween in flight"; useFrame
+  // bails immediately. The effect populates this when focusToken bumps.
+  const tweenRef = useRef<{
+    startTime: number;
+    duration: number;
+    startCam: THREE.Vector3;
+    startTarget: THREE.Vector3;
+    endCam: THREE.Vector3;
+    endTarget: THREE.Vector3;
+  } | null>(null);
+
   useEffect(() => {
     if (focusToken === 0) return; // initial mount, don't snap
-    const { selectedId, sceneData } = useEditor.getState();
+    const { selectedId } = useEditor.getState();
     if (!selectedId) return;
-    const e = sceneData.entities.find((x) => x.id === selectedId);
-    if (!e) return;
-    const [x, y, z] = e.transform.position;
-    // OrbitControls extends EventDispatcher; useThree types `controls` as the
-    // base class. Cast through `unknown` to access the orbit-specific fields.
-    const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
-    if (c && c.target) {
-      const target = new THREE.Vector3(x, y, z);
-      // Keep the camera's current direction; move it to a fixed distance
-      // from the new target so the entity is centered.
-      const dir = camera.position.clone().sub(c.target).normalize();
-      const dist = Math.max(6, camera.position.distanceTo(c.target));
-      c.target.copy(target);
-      camera.position.copy(target.clone().add(dir.multiplyScalar(dist)));
-      c.update?.();
+
+    // Find the entity's actual three.js group via `userData.entityId`
+    // (stamped by EntityRenderer). Traversing the scene means we don't
+    // need cross-component group ref plumbing.
+    let target: THREE.Object3D | null = null;
+    scene.traverse((o) => {
+      if (target) return;
+      const ud = o.userData as { entityId?: string } | undefined;
+      if (ud?.entityId === selectedId) target = o;
+    });
+    if (!target) return;
+
+    // Force a world-matrix update so Box3 reads post-transform bounds.
+    (target as THREE.Object3D).updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(target);
+    if (box.isEmpty() || !Number.isFinite(box.min.x)) {
+      // Empties / lights have no geometry — fall back to a unit AABB at
+      // the object's world position so we at least frame SOMETHING
+      // sensible.
+      const wp = new THREE.Vector3();
+      (target as THREE.Object3D).getWorldPosition(wp);
+      box.setFromCenterAndSize(wp, new THREE.Vector3(1, 1, 1));
     }
-  }, [focusToken, camera, controls]);
+
+    const persp = camera as THREE.PerspectiveCamera;
+    const fov = persp.fov ?? 45;
+    const aspect = persp.aspect ?? (size.width > 0 ? size.width / size.height : 1);
+    const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
+    const curTarget = c?.target?.clone() ?? new THREE.Vector3();
+
+    const pose = computeFramingPose({
+      bbox: {
+        min: [box.min.x, box.min.y, box.min.z],
+        max: [box.max.x, box.max.y, box.max.z],
+      },
+      cameraPosition: [camera.position.x, camera.position.y, camera.position.z],
+      currentTarget: [curTarget.x, curTarget.y, curTarget.z],
+      fovDegrees: fov,
+      aspect,
+    });
+
+    tweenRef.current = {
+      startTime: performance.now(),
+      duration: 250,
+      startCam: camera.position.clone(),
+      startTarget: curTarget,
+      endCam: new THREE.Vector3(pose.position[0], pose.position[1], pose.position[2]),
+      endTarget: new THREE.Vector3(pose.target[0], pose.target[1], pose.target[2]),
+    };
+  }, [focusToken, camera, controls, scene, size]);
+
+  useFrame(() => {
+    const t = tweenRef.current;
+    if (!t) return;
+    const now = performance.now();
+    const k = Math.min(1, (now - t.startTime) / t.duration);
+    // Ease-out cubic — fast departure, soft arrival; feels responsive
+    // without overshooting the entity.
+    const e = 1 - Math.pow(1 - k, 3);
+    camera.position.lerpVectors(t.startCam, t.endCam, e);
+    const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
+    if (c?.target) c.target.lerpVectors(t.startTarget, t.endTarget, e);
+    c?.update?.();
+    if (k >= 1) tweenRef.current = null;
+  });
+
   return null;
 }
 

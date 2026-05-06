@@ -32,7 +32,9 @@ import {
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { useListProjects } from "@workspace/api-client-react";
 import { Sparkles, Plus } from "lucide-react";
-import { dispatchHotkey, isInputFocused, type Hotkey } from "@/lib/hotkeys";
+import { dispatchHotkey, isInputFocused } from "@/lib/hotkeys";
+import { buildEditorHotkeys } from "@/lib/editorHotkeys";
+import { HotkeyCheatsheet } from "@/editor/HotkeyCheatsheet";
 
 function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -153,89 +155,10 @@ function EditorShell() {
   // as a "?" cheatsheet without re-deriving anything from the handler.
   useEffect(() => {
     const get = useEditor.getState;
-    const HOTKEYS: Hotkey[] = [
-      // --- Gizmo modes
-      { id: "gizmo.translate", label: "W", description: "Translate gizmo", key: "w",
-        action: () => { get().setTransformMode("translate"); } },
-      { id: "gizmo.rotate", label: "E", description: "Rotate gizmo", key: "e",
-        action: () => { get().setTransformMode("rotate"); } },
-      { id: "gizmo.scale", label: "R", description: "Scale gizmo", key: "r",
-        action: () => { get().setTransformMode("scale"); } },
-
-      // --- Playback
-      { id: "play.toggle", label: "P", description: "Toggle play / stop", key: "p",
-        whilePlaying: true,
-        action: (e) => {
-          if (e.repeat) return false;
-          get().togglePlay();
-          return true;
-        } },
-      { id: "play.escape", label: "Esc", description: "Stop play mode", key: "Escape",
-        whilePlaying: true,
-        action: () => {
-          if (!get().isPlaying) return false;
-          get().togglePlay();
-          return true;
-        } },
-
-      // --- Undo / redo (Ctrl+Y also accepted as Windows convention)
-      { id: "edit.undo", label: "Ctrl+Z", description: "Undo last action", key: "z",
-        ctrlOrMeta: true,
-        action: () => {
-          const label = get().commandStack.undo();
-          if (label) get().pushLog("info", `Undo: ${label}`);
-        } },
-      { id: "edit.redo.shift", label: "Ctrl+Shift+Z", description: "Redo", key: "z",
-        ctrlOrMeta: true, shift: true,
-        action: () => {
-          const label = get().commandStack.redo();
-          if (label) get().pushLog("info", `Redo: ${label}`);
-        } },
-      { id: "edit.redo.y", label: "Ctrl+Y", description: "Redo (alt)", key: "y",
-        ctrlOrMeta: true,
-        action: () => {
-          const label = get().commandStack.redo();
-          if (label) get().pushLog("info", `Redo: ${label}`);
-        } },
-
-      // --- Selection actions
-      { id: "edit.delete", label: "Delete", description: "Delete selected entity", key: "Delete",
-        action: () => {
-          const id = get().selectedId;
-          if (!id) return false;
-          get().cmdRemoveEntity(id);
-          return true;
-        } },
-      { id: "edit.duplicate", label: "Ctrl+D", description: "Duplicate selected entity", key: "d",
-        ctrlOrMeta: true,
-        action: () => {
-          const id = get().selectedId;
-          if (!id) return false;
-          get().cmdDuplicateEntity(id);
-          return true;
-        } },
-      { id: "view.focus", label: "F", description: "Focus camera on selection", key: "f",
-        action: () => {
-          if (!get().selectedId) return false;
-          get().requestFocus();
-          return true;
-        } },
-
-      // --- Save (handled by Toolbar, dispatched as a window event)
-      { id: "scene.save", label: "Ctrl+S", description: "Save scene / prefab", key: "s",
-        ctrlOrMeta: true,
-        action: () => { window.dispatchEvent(new CustomEvent("gameforge:save")); } },
-
-      // --- Forge selection as prefab (handled by Hierarchy)
-      { id: "scene.forgePrefab", label: "Ctrl+G", description: "Forge selection as prefab", key: "g",
-        ctrlOrMeta: true,
-        action: () => {
-          const id = get().selectedId;
-          if (!id) return false;
-          window.dispatchEvent(new CustomEvent("gameforge:forgePrefab", { detail: { entityId: id } }));
-          return true;
-        } },
-    ];
+    const HOTKEYS = buildEditorHotkeys({
+      toggleCheatsheet: () =>
+        window.dispatchEvent(new CustomEvent("gameforge:toggleHotkeyCheatsheet")),
+    });
 
     const handler = (e: KeyboardEvent) => {
       dispatchHotkey(HOTKEYS, e, {
@@ -311,6 +234,8 @@ function EditorShell() {
       <ProjectPicker open={pickerOpen} onOpenChange={setPickerOpen} />
 
       <AIWorkerPanel open={aiOpen} onClose={() => setAiOpen(false)} />
+
+      <HotkeyCheatsheet />
 
       {isPlaying && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-accent/20 border border-accent text-accent text-xs font-mono pointer-events-none shadow-lg">
