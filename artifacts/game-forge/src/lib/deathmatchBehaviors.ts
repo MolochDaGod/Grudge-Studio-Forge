@@ -37,6 +37,7 @@
  *     find spawn points by `behavior === "spawnpoint"`.
  */
 
+import type { LayerName } from "@workspace/scene-schema";
 import type { BehaviorKind } from "@/scene/types";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -599,4 +600,17 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "gamemode-deathmatch": GAMEMODE_DEATHMATCH,
   spawnpoint: "// marker — no behavior",
   "pickup-trigger": PICKUP_TRIGGER,
+};
+
+/** Default physics layer per built-in behavior. Lets prefab definitions and
+ *  the hierarchy sanitizer tag entities correctly without re-deriving the
+ *  role from name/heuristics every time. `null` means "no opinion — leave
+ *  whatever the entity already has, or fall back to inferDefaultLayer". */
+export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
+  "player-deathmatch": "Player",
+  "enemy-deathmatch": "NPC",
+  // GameManager is a hidden empty marker — keep on Default so it doesn't
+  // accidentally appear in physics queries.
+  "gamemode-deathmatch": null,
+  spawnpoint: "Trigger",
 };

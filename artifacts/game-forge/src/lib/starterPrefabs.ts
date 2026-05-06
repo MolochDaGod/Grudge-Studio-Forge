@@ -156,6 +156,7 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
         // Capsule-ish proxy collider (cylinder ~1.7m tall, 0.4m radius) so the
         // physics body doesn't hug the visual mesh exactly — keeps movement clean.
         physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, friction: 0.6, restitution: 0 },
+        layer: "Player",
       },
     ],
   },
@@ -176,6 +177,7 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
         transform: { position: [4, 1, 0], rotation: [0, 0, 0], scale: [0.6, 1, 0.6] },
         material: { color: "#cc3333", metalness: 0.1, roughness: 0.5, emissive: "#220000" },
         physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, friction: 0.6, restitution: 0 },
+        layer: "NPC",
       },
     ],
   },
@@ -195,6 +197,7 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
         parentId: null,
         transform: { position: [0, 1.2, 2], rotation: [Math.PI / 2, 0, 0], scale: [0.4, 0.08, 0.4] },
         material: { color: "#f4d03f", metalness: 0.9, roughness: 0.15, emissive: "#3a2a00" },
+        layer: "Item",
       },
     ],
   },
@@ -250,6 +253,7 @@ export const STARTER_PREFABS: StarterPrefabDef[] = [
         parentId: null,
         transform: { position: [3, 1, 0], rotation: [0, 0, 0], scale: [2, 2, 2] },
         material: { color: "#3aaaff", metalness: 0, roughness: 1, emissive: "#001a33" },
+        layer: "Trigger",
       },
     ],
   },
@@ -343,6 +347,10 @@ export const STARTER_VFX: VfxPrefabDef[] = [
         parentId: null,
         transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
         model: { url: "builtin:vfx-trail" },
+        // Tagged Projectile so AI prompts like "make pickups ignore bullets"
+        // and the default collision matrix (Projectile ignores Item / other
+        // Projectiles) work without manual re-tagging.
+        layer: "Projectile",
       },
     ],
   },

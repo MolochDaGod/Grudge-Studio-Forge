@@ -710,10 +710,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     const root = spawned.find((e) => e.id === rootId);
     if (root) {
       root.transform = { ...root.transform, position: spawnPos };
-      // Auto-spawned player prefabs are, by definition, the Player. Stamp the
-      // root if it wasn't already tagged so collision matrix / raycast filters
-      // ("ignore Player") work without manual re-tagging.
-      if (!root.layer) root.layer = "Player";
+    }
+    // Auto-spawned player prefabs are, by definition, the Player. Stamp the
+    // root and any descendant that has no layer yet so collision matrix /
+    // raycast filters ("ignore Player") work for the whole rig — child
+    // hitboxes, weapon attachments, etc. — without manual re-tagging.
+    // Entities that ship with an explicit layer (e.g. a child Trigger volume)
+    // are left alone.
+    for (const e of spawned) {
+      if (!e.layer) e.layer = "Player";
     }
     if (prefabId != null) {
       for (const e of spawned) e.prefabId = prefabId;
