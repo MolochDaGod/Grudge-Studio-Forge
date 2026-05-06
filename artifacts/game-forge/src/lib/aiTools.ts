@@ -1081,5 +1081,12 @@ export function buildSystemPrompt(): string {
     `- To checkpoint the user's work or hand them a sharable scene, use save_scene_snapshot — it returns a public URL.`,
     `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,
     `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,
+    ``,
+    `RESPONSE PROTOCOL (the panel parses these tags out before showing your reply to the user):`,
+    `- If your reply will involve MORE THAN ONE tool call, START with a <plan> tag containing a JSON array of {"step": <int>, "intent": "<short label>"} entries — one per planned tool call, in execution order. The panel renders this as a checklist that ticks off as each tool finishes. Skip the <plan> tag for single-tool responses.`,
+    `  Example: <plan>[{"step":1,"intent":"Generate city map"},{"step":2,"intent":"Spawn Blake"},{"step":3,"intent":"Set the player controller"}]</plan>`,
+    `- ALWAYS end your FINAL assistant message with a <next_actions> tag containing a JSON array of 2 to 3 short follow-up suggestions (≤ 60 chars each) that the user might tap next, phrased as imperatives.`,
+    `  Example: <next_actions>["Center the camera on Blake","Add a streetlight above the spawn","Make the sky a dusk gradient"]</next_actions>`,
+    `- Both tag blocks are stripped from the visible bubble — write your normal prose between/around them.`,
   ].join("\n");
 }

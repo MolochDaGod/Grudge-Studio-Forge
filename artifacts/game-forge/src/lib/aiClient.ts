@@ -62,15 +62,33 @@ function confirmDestructive(name: string, input: unknown): boolean {
 export interface RunHandlers {
   /** Called for every text delta (token-level streaming). */
   onTextDelta: (text: string) => void;
+  /** Called immediately before each tool dispatch, after the destructive-op
+   *  confirmation but before any state mutation. Lets the caller capture a
+   *  pre-tool snapshot for atomic undo. */
+  onBeforeTool?: (call: { id: string; name: string; input: unknown }) => void;
   /** Called once per tool call, with its execution result. */
   onTool: (call: { id: string; name: string; input: unknown; result: unknown }) => void;
   /** Called when a turn finishes (after tools run, before the next turn). */
   onTurnEnd: (assistantMsg: ChatMessage) => void;
   /** Called once for fatal errors. */
   onError: (err: string) => void;
+  /** When set + signalled, the in-flight network request and any pending
+   *  tool dispatches abort cleanly. The panel uses this to power the
+   *  Interrupt button. */
+  signal?: AbortSignal;
 }
 
 const MAX_TURNS = 8;
+
+/** Sentinel error thrown internally when the caller aborts mid-stream. We
+ *  swallow this in runConversation so the caller's onError isn't fired with
+ *  a generic "AbortError" — a user-initiated cancel isn't a failure. */
+class UserAbortError extends Error {
+  constructor() {
+    super("User aborted AI turn.");
+    this.name = "UserAbortError";
+  }
+}
 
 export async function runConversation(
   messages: ChatMessage[],
@@ -79,9 +97,18 @@ export async function runConversation(
   handlers: RunHandlers,
 ): Promise<ChatMessage[]> {
   const transcript: ChatMessage[] = [...messages];
+  const signal = handlers.signal;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const stream = await fetchChatStream(transcript, tools, system);
+    if (signal?.aborted) return transcript;
+    let stream: ReadableStream<Uint8Array> | null;
+    try {
+      stream = await fetchChatStream(transcript, tools, system, signal);
+    } catch (err) {
+      if (signal?.aborted) return transcript;
+      handlers.onError(err instanceof Error ? err.message : String(err));
+      return transcript;
+    }
     if (!stream) return transcript;
 
     const assistantBlocks: ContentBlock[] = [];
@@ -89,7 +116,7 @@ export async function runConversation(
     let aborted = false;
 
     try {
-      await readSSE(stream, (event) => {
+      await readSSE(stream, signal, (event) => {
         if (event.type === "text_delta") {
           handlers.onTextDelta(event.text as string);
         } else if (event.type === "text_block") {
@@ -109,11 +136,13 @@ export async function runConversation(
         }
       });
     } catch (err) {
+      if (err instanceof UserAbortError || signal?.aborted) return transcript;
       handlers.onError(err instanceof Error ? err.message : String(err));
       return transcript;
     }
 
     if (aborted) return transcript;
+    if (signal?.aborted) return transcript;
 
     const assistantMsg: ChatMessage = { role: "assistant", content: assistantBlocks };
     transcript.push(assistantMsg);
@@ -134,12 +163,27 @@ export async function runConversation(
     const resultBlocks: ToolResultBlock[] = [];
     for (const call of toolCalls) {
       let result: Awaited<ReturnType<typeof runTool>>;
-      if (DESTRUCTIVE_TOOLS.has(call.name) && !confirmDestructive(call.name, call.input)) {
+      if (signal?.aborted) {
+        // User pressed Interrupt mid-batch. Skip the remaining tool calls
+        // and return the cancelled-by-user marker so the model has a
+        // structured signal if we ever resume.
+        result = {
+          ok: false,
+          error: `Cancelled by user before '${call.name}' ran.`,
+        };
+      } else if (DESTRUCTIVE_TOOLS.has(call.name) && !confirmDestructive(call.name, call.input)) {
         result = {
           ok: false,
           error: `User declined to run destructive tool '${call.name}'.`,
         };
       } else {
+        // Notify caller so it can snapshot store state immediately
+        // before the mutation lands.
+        try {
+          handlers.onBeforeTool?.({ id: call.id, name: call.name, input: call.input });
+        } catch {
+          // never let a snapshotting bug abort the tool dispatch
+        }
         result = await runTool(call.name, call.input);
       }
       // Record into the in-memory audit log first so `get_last_ai_changes`
@@ -170,11 +214,13 @@ async function fetchChatStream(
   messages: ChatMessage[],
   tools: ToolDef[],
   system: string,
+  signal?: AbortSignal,
 ): Promise<ReadableStream<Uint8Array> | null> {
   const res = await fetch(apiUrl("ai/chat"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, tools, system }),
+    signal,
   });
   if (!res.ok || !res.body) {
     throw new Error(`AI chat HTTP ${res.status}: ${await res.text().catch(() => "")}`);
@@ -182,15 +228,31 @@ async function fetchChatStream(
   return res.body;
 }
 
-/** Minimal SSE parser — yields one parsed JSON event per `data: ...` line. */
+/** Minimal SSE parser — yields one parsed JSON event per `data: ...` line.
+ *  When `signal` is aborted mid-stream we cancel the underlying reader and
+ *  throw `UserAbortError`, which `runConversation` swallows so the panel
+ *  doesn't surface the user's own cancel as a fatal error. */
 async function readSSE(
   body: ReadableStream<Uint8Array>,
+  signal: AbortSignal | undefined,
   onEvent: (event: Record<string, unknown>) => void,
 ): Promise<void> {
   const reader = body.getReader();
+  const onAbort = () => {
+    try { reader.cancel().catch(() => undefined); } catch { /* already closed */ }
+  };
+  if (signal) {
+    if (signal.aborted) {
+      onAbort();
+      throw new UserAbortError();
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
   const decoder = new TextDecoder();
   let buf = "";
+  try {
   while (true) {
+    if (signal?.aborted) throw new UserAbortError();
     const { value, done } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
@@ -210,5 +272,8 @@ async function readSSE(
         }
       }
     }
+  }
+  } finally {
+    if (signal) signal.removeEventListener("abort", onAbort);
   }
 }
