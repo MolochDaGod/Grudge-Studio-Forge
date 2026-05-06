@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EntityControllerKind } from "./entityControllerKind";
+import type { EntityLayer } from "./entityLayer";
 import type { EntityType } from "./entityType";
 import type { LightComponent } from "./lightComponent";
 import type { MaterialComponent } from "./materialComponent";
@@ -30,4 +31,6 @@ export interface Entity {
   /** UI hint — collapsed in the hierarchy tree. */
   collapsed?: boolean;
   controllerKind?: EntityControllerKind;
+  /** Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`. */
+  layer?: EntityLayer;
 }

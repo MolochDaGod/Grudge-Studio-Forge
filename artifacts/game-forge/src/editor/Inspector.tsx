@@ -8,7 +8,8 @@ import { Separator } from "@/components/ui/separator";
 import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
 import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
-import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2, User, Camera } from "lucide-react";
+import { LAYERS, type LayerName } from "@workspace/scene-schema";
+import { Box, FlaskConical, Lightbulb, Palette, Settings2, Code2, User, Camera, Layers as LayersIcon } from "lucide-react";
 
 function NumberInput({
   value,
@@ -241,6 +242,30 @@ export function Inspector() {
       </div>
 
       <ScrollArea className="flex-1">
+        <Section title="Layer" Icon={LayersIcon}>
+          <Select
+            value={(entity.layer as LayerName | undefined) ?? "Default"}
+            onValueChange={(v) =>
+              useEditor.getState().cmdSetEntityLayer([entity.id], v as LayerName)
+            }
+          >
+            <SelectTrigger className="h-7 text-xs" data-testid="select-entity-layer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LAYERS.map((l) => (
+                <SelectItem key={l} value={l}>
+                  {l}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            Drives Rapier collision groups via the scene's collision matrix
+            (Layers panel). Trigger / Water default to sensors.
+          </p>
+        </Section>
+
         <Section title="Transform" Icon={Settings2}>
           <Vec3Field
             label="Position"

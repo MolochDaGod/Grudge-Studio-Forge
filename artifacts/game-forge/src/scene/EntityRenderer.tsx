@@ -6,6 +6,12 @@ import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel } from "@/lib/builtinModels";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
+import {
+  DEFAULT_SENSOR_LAYERS,
+  rapierCollisionGroups,
+  type LayerName,
+} from "@workspace/scene-schema";
+import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 
 /** Resolve a model URL. Order:
@@ -547,6 +553,17 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   const tr = entity.transform;
   const usePhysics = playMode && entity.physics && entity.type !== "light" && entity.type !== "camera";
 
+  // Layer-driven collision filtering. Subscribe to env so toggling the
+  // collision matrix in the Layers panel re-renders bodies live during Play.
+  const env = useEditor((s) => s.sceneData.environment);
+  const layer: LayerName = (entity.layer as LayerName | undefined) ?? "Default";
+  const sensorLayers = env.sensorLayers ?? DEFAULT_SENSOR_LAYERS;
+  const isSensor = sensorLayers.includes(layer);
+  const collisionGroups = useMemo(
+    () => rapierCollisionGroups(layer, env.collisionMatrix),
+    [layer, env.collisionMatrix],
+  );
+
   if (usePhysics) {
     const ph = entity.physics!;
     const colliderShape =
@@ -586,6 +603,9 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         position={tr.position}
         rotation={tr.rotation}
         {...playerRotationLockProps}
+        sensor={isSensor}
+        collisionGroups={collisionGroups}
+        solverGroups={collisionGroups}
         colliders={
           explicitForModel
             ? false
@@ -600,7 +620,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         restitution={ph.restitution ?? 0.4}
         friction={ph.friction ?? 0.6}
         mass={ph.mass ?? 1}
-        userData={{ entityId: entity.id, name: entity.name }}
+        userData={{ entityId: entity.id, name: entity.name, layer }}
       >
         {/* Capsule for character-shaped models, sphere for round ones.
             Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
@@ -630,7 +650,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       position={tr.position}
       rotation={tr.rotation}
       scale={tr.scale}
-      userData={{ entityId: entity.id, name: entity.name }}
+      userData={{ entityId: entity.id, name: entity.name, layer }}
       onContextMenu={handleContext}
     >
       <MeshBody {...props} />

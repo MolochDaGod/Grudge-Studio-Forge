@@ -2,8 +2,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Console } from "./Console";
 import { AssetBrowser } from "./AssetBrowser";
 import { PrefabsPanel } from "./PrefabsPanel";
+import { LayersPanel } from "./LayersPanel";
 import { useEditor } from "@/store/editor";
-import { Terminal, Boxes, Code2, Package, Loader2, Network } from "lucide-react";
+import { Terminal, Boxes, Code2, Package, Loader2, Network, Layers as LayersIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 /**
@@ -56,6 +57,9 @@ export function BottomPanel() {
         <TabsTrigger value="nodes" className="text-xs gap-1.5" data-testid="tab-nodes">
           <Network className="size-3" /> Nodes
         </TabsTrigger>
+        <TabsTrigger value="layers" className="text-xs gap-1.5" data-testid="tab-layers">
+          <LayersIcon className="size-3" /> Layers
+        </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
         <TabsContent value="console" className="m-0 h-full">
@@ -76,6 +80,9 @@ export function BottomPanel() {
           <Suspense fallback={<ScriptEditorFallback />}>
             <NodesPanel />
           </Suspense>
+        </TabsContent>
+        <TabsContent value="layers" className="m-0 h-full">
+          <LayersPanel />
         </TabsContent>
       </div>
     </Tabs>

@@ -19,8 +19,11 @@ import {
   setTransformCommand,
   renameEntityCommand,
   setParentCommand,
+  setLayersCommand,
+  setEnvironmentCommand,
   type StoreLike,
 } from "@/lib/commands";
+import { inferDefaultLayer, type LayerName } from "@workspace/scene-schema";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type ConsoleLevel = "log" | "warn" | "error" | "info";
@@ -65,7 +68,7 @@ interface EditorState {
   isPaused: boolean;
   transformMode: TransformMode;
   consoleMessages: ConsoleMessage[];
-  bottomTab: "console" | "assets" | "scripts" | "prefabs" | "nodes";
+  bottomTab: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers";
   /** When non-null, the editor is in Prefab Edit Mode and the viewport
    *  reflects the prefab buffer instead of the scene buffer. */
   prefabSubScene: PrefabSubScene | null;
@@ -161,7 +164,7 @@ interface EditorState {
     meta?: { scriptId?: number | null; entityId?: string | null },
   ) => void;
   clearConsole: () => void;
-  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes") => void;
+  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers") => void;
 
   // Prefab sub-scene editing — temporarily swap sceneData for a prefab's
   // entities, then restore the original scene on close.
@@ -197,6 +200,11 @@ interface EditorState {
   cmdSetEntityParent: (id: string, parentId: string | null) => void;
   /** Undoable: add an empty entity as a child of `parentId`. */
   cmdAddEmptyChild: (parentId: string | null) => SceneEntity;
+  /** Undoable: assign `layer` to one or more entities in a single step. */
+  cmdSetEntityLayer: (ids: string[], layer: LayerName) => void;
+  /** Undoable: patch one or more `Environment` keys (collision matrix, sensor
+   *  layers, lighting presets) in a single step. */
+  cmdSetEnvironment: (env: Partial<SceneData["environment"]>, label?: string) => void;
 }
 
 const emptyScene = (): SceneData => ({
@@ -216,6 +224,10 @@ const defaultsByType = (type: EntityType, name: string): SceneEntity => {
     type,
     transform: DEFAULT_TRANSFORM(),
   };
+  // Stamp a sensible default layer at creation time so collision matrix /
+  // raycast filters work immediately (planes → Terrain, etc). Sanitizer
+  // does the same for legacy scenes on load.
+  base.layer = inferDefaultLayer({ type, name, controllerKind: undefined, behavior: undefined });
   switch (type) {
     case "box":
       return {
@@ -698,6 +710,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     const root = spawned.find((e) => e.id === rootId);
     if (root) {
       root.transform = { ...root.transform, position: spawnPos };
+      // Auto-spawned player prefabs are, by definition, the Player. Stamp the
+      // root if it wasn't already tagged so collision matrix / raycast filters
+      // ("ignore Player") work without manual re-tagging.
+      if (!root.layer) root.layer = "Player";
     }
     if (prefabId != null) {
       for (const e of spawned) e.prefabId = prefabId;
@@ -918,6 +934,25 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ isDirty: true });
     return entity;
   },
+
+  cmdSetEntityLayer: (ids, layer) => {
+    const entities = get().sceneData.entities;
+    const changes = ids
+      .map((id) => entities.find((e) => e.id === id))
+      .filter((e): e is SceneEntity => Boolean(e))
+      .filter((e) => (e.layer ?? undefined) !== layer)
+      .map((e) => ({ id: e.id, from: e.layer, to: layer }));
+    if (changes.length === 0) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setLayersCommand(store, changes));
+    set({ isDirty: true });
+  },
+
+  cmdSetEnvironment: (env, label) => {
+    const store = makeStoreLike(get);
+    get().commandStack.push(setEnvironmentCommand(store, env, label));
+    set({ isDirty: true });
+  },
 }));
 
 /** Build the StoreLike used by command factories.  We thread `get` through
@@ -929,5 +964,7 @@ function makeStoreLike(get: () => EditorState): StoreLike {
     getEntities: () => get().sceneData.entities,
     setEntities: (next) => get().setEntities(next),
     selectEntity: (id) => get().selectEntity(id),
+    getEnvironment: () => get().sceneData.environment,
+    setEnvironmentRaw: (env) => get().setEnvironment(env),
   };
 }

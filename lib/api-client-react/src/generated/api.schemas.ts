@@ -165,6 +165,24 @@ export const EntityControllerKind = {
   firstPerson: "firstPerson",
 } as const;
 
+/**
+ * Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.
+ */
+export type EntityLayer = (typeof EntityLayer)[keyof typeof EntityLayer];
+
+export const EntityLayer = {
+  Default: "Default",
+  Terrain: "Terrain",
+  Player: "Player",
+  NPC: "NPC",
+  Item: "Item",
+  Projectile: "Projectile",
+  Trigger: "Trigger",
+  Water: "Water",
+  IgnoreRaycast: "IgnoreRaycast",
+  UI3D: "UI3D",
+} as const;
+
 export interface Entity {
   id: string;
   name: string;
@@ -182,7 +200,14 @@ export interface Entity {
   /** UI hint — collapsed in the hierarchy tree. */
   collapsed?: boolean;
   controllerKind?: EntityControllerKind;
+  /** Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`. */
+  layer?: EntityLayer;
 }
+
+/**
+ * Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.
+ */
+export type EnvironmentCollisionMatrix = { [key: string]: boolean };
 
 export interface Environment {
   skyColor?: string;
@@ -190,6 +215,10 @@ export interface Environment {
   ambientIntensity?: number;
   sunIntensity?: number;
   gravity?: number[];
+  /** Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`. */
+  collisionMatrix?: EnvironmentCollisionMatrix;
+  /** Layers spawned as Rapier sensors (no contact response, intersection events only). */
+  sensorLayers?: string[];
 }
 
 export interface SceneData {

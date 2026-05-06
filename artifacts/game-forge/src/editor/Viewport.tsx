@@ -348,6 +348,7 @@ function ScriptedEntities({
       position: [...entity.transform.position] as [number, number, number],
       rotation: [...entity.transform.rotation] as [number, number, number],
       scale: [...entity.transform.scale] as [number, number, number],
+      layer: entity.layer ?? "Default",
     };
     const bodyOrGroup = bodyRefs.current.get(entity.id);
     if (bodyOrGroup) {
@@ -523,7 +524,15 @@ function ScriptedEntities({
       direction: [number, number, number],
       maxDistance: number,
       excludeIds: string[] | undefined,
-    ) => raycastEntities(threeScene, origin, direction, maxDistance, excludeIds);
+      layerMask: string[] | undefined,
+    ) => raycastEntities(threeScene, origin, direction, maxDistance, excludeIds, layerMask);
+    const findEntitiesByLayer = (name: string): ScriptEntity[] => {
+      const out: ScriptEntity[] = [];
+      for (const e of sceneData.entities) {
+        if ((e.layer ?? "Default") === name) out.push(snapshot(e));
+      }
+      return out;
+    };
 
     for (const entity of sceneData.entities) {
       // Resolve up to two compiled scripts: the built-in behavior (if any)
@@ -554,6 +563,7 @@ function ScriptedEntities({
         findEntityById,
         setEntityPosition,
         castRay,
+        findEntitiesByLayer,
         cameraPosition,
         cameraDirection,
         inboxes: session.inboxes,

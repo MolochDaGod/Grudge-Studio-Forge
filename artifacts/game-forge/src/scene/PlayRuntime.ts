@@ -1,5 +1,6 @@
 import * as YUKA from "yuka";
 import * as THREE from "three";
+import type { LayerName } from "@workspace/scene-schema";
 import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit } from "./csTranspile";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
@@ -87,7 +88,9 @@ export function makeContext(opts: {
     direction: [number, number, number],
     maxDistance: number,
     excludeIds: string[] | undefined,
+    layerMask: string[] | undefined,
   ) => RaycastHit | null;
+  findEntitiesByLayer: (name: string) => ScriptEntity[];
   cameraPosition: () => [number, number, number];
   cameraDirection: () => [number, number, number];
   inboxes: EntityInboxes;
@@ -114,8 +117,9 @@ export function makeContext(opts: {
       findAll: opts.findEntities,
       findById: opts.findEntityById,
       setPosition: opts.setEntityPosition,
-      castRay: (origin, direction, maxDistance, excludeIds) =>
-        opts.castRay(origin, direction, maxDistance ?? 200, excludeIds),
+      castRay: (origin, direction, maxDistance, excludeIds, layerMask) =>
+        opts.castRay(origin, direction, maxDistance ?? 200, excludeIds, layerMask),
+      findEntitiesByLayer: opts.findEntitiesByLayer,
       send: (targetId, event, payload) =>
         opts.inboxes.send(targetId, event, payload, fromId),
       on: (event, handler) =>
@@ -171,6 +175,7 @@ export function raycastEntities(
   direction: [number, number, number],
   maxDistance: number,
   excludeIds: string[] | undefined,
+  layerMask?: string[],
 ): RaycastHit | null {
   SHARED_RAYCASTER.set(
     new THREE.Vector3(origin[0], origin[1], origin[2]),
@@ -180,19 +185,26 @@ export function raycastEntities(
   const hits = SHARED_RAYCASTER.intersectObjects(scene.children, true);
   if (hits.length === 0) return null;
   const exclude = new Set(excludeIds ?? []);
+  const mask = layerMask && layerMask.length > 0 ? new Set(layerMask) : null;
   for (const hit of hits) {
-    // Walk up to find an entity-bearing ancestor.
+    // Walk up to find an entity-bearing ancestor (and its layer, if any).
     let entityId: string | null = null;
+    let layer: string | null = null;
     let cur: THREE.Object3D | null = hit.object;
     while (cur) {
-      const ud = cur.userData as { entityId?: string } | undefined;
-      if (ud?.entityId) {
-        entityId = ud.entityId;
-        break;
-      }
+      const ud = cur.userData as { entityId?: string; layer?: string } | undefined;
+      if (!entityId && ud?.entityId) entityId = ud.entityId;
+      if (!layer && ud?.layer) layer = ud.layer;
+      if (entityId && layer) break;
       cur = cur.parent;
     }
     if (entityId && exclude.has(entityId)) continue;
+    // Layer-mask filter: applies only to entity-bearing hits. Decorative
+    // non-entity meshes (no `userData.entityId` anywhere up the chain) are
+    // always returned so a wall in the map model still blocks line-of-sight
+    // even when the mask is `["NPC"]`.
+    if (mask && entityId && layer && !mask.has(layer)) continue;
+    if (mask && entityId && !layer && !mask.has("Default")) continue;
     return {
       entityId,
       point: [hit.point.x, hit.point.y, hit.point.z],
@@ -265,6 +277,10 @@ export function groundProbe(
      *  Used by the editor's ground-snap gizmo modifier so the dragged
      *  entity doesn't self-intersect and snap to its own collider. */
     excludeEntityIds?: readonly string[];
+    /** Restrict hits to entities on these layers. Decorative non-entity
+     *  meshes (raw map geometry without an entityId in the parent chain)
+     *  are always allowed. Pass `[]` to disable layer filtering. */
+    layerMask?: string[];
   },
 ): GroundProbeHit | null {
   const originOffset = options?.originOffset ?? 0.1;
@@ -273,6 +289,12 @@ export function groundProbe(
     options?.excludeEntityIds && options.excludeEntityIds.length > 0
       ? new Set(options.excludeEntityIds)
       : null;
+  // Default to the Terrain layer so player/NPC ground checks ignore each
+  // other's capsule colliders, projectiles in flight, etc. Pass an empty
+  // array to disable filtering entirely (the editor ground-snap path does
+  // this so it can snap onto any collider, regardless of layer).
+  const layerMask = options?.layerMask ?? ["Terrain"];
+  const mask = layerMask.length > 0 ? new Set(layerMask) : null;
   SHARED_RAYCASTER.set(
     new THREE.Vector3(position[0], position[1] + originOffset, position[2]),
     new THREE.Vector3(0, -1, 0),
@@ -283,29 +305,40 @@ export function groundProbe(
   SHARED_RAYCASTER.far = originOffset + maxDistance;
   const hits = SHARED_RAYCASTER.intersectObjects(scene.children, true);
   if (hits.length === 0) return null;
-
-  // Walk the parent chain helper. Returns first surface tag and entity ID
-  // up the ancestry. Used both for the exclude filter and the result.
-  const inspect = (obj: THREE.Object3D): { surface: string | null; entityId: string | null } => {
+  // Walk the parent chain helper. Returns first surface tag, entity ID, and
+  // layer up the ancestry — used by both the exclude filter, the layer-mask
+  // filter, and the result payload.
+  const inspect = (
+    obj: THREE.Object3D,
+  ): { surface: string | null; entityId: string | null; layer: string | null } => {
     let surface: string | null = null;
     let entityId: string | null = null;
+    let layer: string | null = null;
     let cur: THREE.Object3D | null = obj;
     while (cur) {
-      const ud = cur.userData as { surface?: string; entityId?: string } | undefined;
+      const ud = cur.userData as
+        | { surface?: string; entityId?: string; layer?: string }
+        | undefined;
       if (!surface && ud?.surface) surface = ud.surface;
       if (!entityId && ud?.entityId) entityId = ud.entityId;
-      if (surface && entityId) break;
+      if (!layer && ud?.layer) layer = ud.layer;
+      if (surface && entityId && layer) break;
       cur = cur.parent;
     }
-    return { surface, entityId };
+    return { surface, entityId, layer };
   };
 
-  // Find the first hit whose chain isn't excluded. We iterate rather
-  // than just taking [0] so the dragged entity's own collider gets
-  // skipped instead of poisoning the snap.
+  // Find the first hit whose chain isn't excluded AND (if a layer mask is
+  // active) belongs to an allowed layer. Decorative non-entity meshes (no
+  // entityId on their parent chain) are always allowed — they represent
+  // unmarked terrain geometry, so a wall in the map model still blocks the
+  // probe even with `layerMask: ["Terrain"]`.
   for (const hit of hits) {
     const meta = inspect(hit.object);
     if (excluded && meta.entityId && excluded.has(meta.entityId)) continue;
+    if (mask && meta.entityId) {
+      if (!mask.has(meta.layer ?? "Default")) continue;
+    }
     return {
       point: [hit.point.x, hit.point.y, hit.point.z],
       distance: hit.distance - originOffset,

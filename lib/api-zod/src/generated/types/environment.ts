@@ -5,6 +5,7 @@
  * Grudge GameForge API — projects, scenes, scripts, assets, and Grudge Studio data proxy
  * OpenAPI spec version: 0.1.0
  */
+import type { EnvironmentCollisionMatrix } from "./environmentCollisionMatrix";
 
 export interface Environment {
   skyColor?: string;
@@ -12,4 +13,8 @@ export interface Environment {
   ambientIntensity?: number;
   sunIntensity?: number;
   gravity?: number[];
+  /** Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`. */
+  collisionMatrix?: EnvironmentCollisionMatrix;
+  /** Layers spawned as Rapier sensors (no contact response, intersection events only). */
+  sensorLayers?: string[];
 }

@@ -49,6 +49,7 @@ Grudge GameForge is a browser-based 3D game prototyping environment for building
 *   **GLB Decoder Sharing:** A singleton `DRACOLoader` and `MeshoptDecoder` are wired into all GLTF loading paths to ensure decoders are downloaded and initialized only once per session.
 *   **Production Chunking:** Heavy vendors are split, but React and Radix are intentionally kept in the main entry chunk to avoid a production-only `forwardRef` crash caused by `vite-plugin-top-level-await` and module evaluation order.
 *   **AI Assistant:** Uses client-side tools and Anthropic Claude via Replit AI proxy for direct editor manipulation.
+*   **Physics layers (Unity-style):** Fixed registry in `@workspace/scene-schema` (`LAYERS`, `DEFAULT_COLLISION_MATRIX`, `DEFAULT_SENSOR_LAYERS`); per-entity `layer` field + `Environment.collisionMatrix` / `sensorLayers` drive Rapier `collisionGroups` and the sensor flag in `EntityRenderer`. Inspector exposes a Layer dropdown; the BottomPanel "Layers" tab renders the collision matrix; AI tools live under `src/ai/tools/layers/`.
 
 ## Product
 

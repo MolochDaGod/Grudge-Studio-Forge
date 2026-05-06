@@ -37,6 +37,12 @@ export interface ScriptEntity {
   position: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
+  /** Unity-style physics layer (`"Default"` | `"Terrain"` | `"Player"` |
+   *  `"NPC"` | `"Item"` | `"Projectile"` | `"Trigger"` | `"Water"` |
+   *  `"IgnoreRaycast"` | `"UI3D"`). Set by the editor's sanitizer; user
+   *  scripts can compare against it to filter peers without re-querying
+   *  the scene graph. */
+  layer?: string;
 }
 
 export interface MouseState {
@@ -80,13 +86,20 @@ export interface ScriptContext {
     setPosition: (id: string, position: [number, number, number]) => boolean;
     /** Cast a ray through the THREE scene graph; returns the closest mesh hit
      *  (excluding entities in `excludeIds`). Mesh-level raycast — respects map
-     *  geometry occlusion. */
+     *  geometry occlusion. Pass `layerMask` to limit hits to entities whose
+     *  `layer` is included in the mask (decorative meshes with no entity are
+     *  always returned). */
     castRay: (
       origin: [number, number, number],
       direction: [number, number, number],
       maxDistance?: number,
       excludeIds?: string[],
+      layerMask?: string[],
     ) => RaycastHit | null;
+    /** Return every entity whose `layer` matches `name`. Cheap pre-filter
+     *  for AI perception loops ("nearest NPC", "any Trigger overlapping
+     *  the player"). */
+    findEntitiesByLayer: (name: string) => ScriptEntity[];
     /** Send a typed message to another entity's inbox (delivered next frame).
      *  Recipient reads with `scene.on(event, handler)`. */
     send: (targetId: string, event: string, payload?: unknown) => void;

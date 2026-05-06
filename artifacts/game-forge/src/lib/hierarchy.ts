@@ -1,4 +1,5 @@
 import type { SceneEntity } from "@/scene/types";
+import { inferDefaultLayer } from "@workspace/scene-schema";
 import { nanoid } from "nanoid";
 
 /** Returns ids of all descendants (children, grandchildren, …) of `rootId`.
@@ -138,6 +139,13 @@ export function sanitizeEntities(
       const next = cleaned.find((x) => x.id === cursor);
       cursor = next?.parentId ?? null;
     }
+  }
+
+  // Pass 4: infer Unity-style physics layer for any entity that doesn't
+  // already have one. Existing layers are never overwritten so user-set
+  // values (or AI-set values) survive a reload untouched.
+  for (const e of cleaned) {
+    if (!e.layer) e.layer = inferDefaultLayer(e);
   }
 
   return { entities: cleaned, warnings };

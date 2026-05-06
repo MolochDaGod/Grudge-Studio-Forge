@@ -9,7 +9,7 @@
  * last entry on the stack so a single drag = single undo step.
  */
 
-import type { SceneEntity, Vec3 } from "@/scene/types";
+import type { SceneData, SceneEntity, Vec3 } from "@/scene/types";
 
 export interface Command {
   /** Stable kind discriminator (used for coalescing). */
@@ -177,6 +177,9 @@ export interface StoreLike {
   getEntities: () => SceneEntity[];
   setEntities: (next: SceneEntity[]) => void;
   selectEntity: (id: string | null) => void;
+  /** Optional — only used by `setEnvironmentCommand`. */
+  getEnvironment?: () => SceneData["environment"];
+  setEnvironmentRaw?: (env: Partial<SceneData["environment"]>) => void;
 }
 
 export function addEntityCommand(store: StoreLike, entity: SceneEntity): Command {
@@ -337,6 +340,89 @@ export function setParentCommand(
           e.id === id ? { ...e, parentId: prevParent ?? null } : e,
         ),
       );
+    },
+  };
+}
+
+/**
+ * Patch one or more entities' `layer` field in a single command. Used by the
+ * Inspector's Layer dropdown and the AI `set_layer` tool so layer edits land
+ * on the undo stack.
+ */
+export function setLayersCommand(
+  store: StoreLike,
+  changes: { id: string; from: string | undefined; to: string }[],
+  label = changes.length === 1 ? `Set layer to ${changes[0].to}` : `Set layer (${changes.length})`,
+): Command {
+  const byId = new Map(changes.map((c) => [c.id, c] as const));
+  return {
+    kind: changes.length === 1 ? `setLayer:${changes[0].id}` : "setLayers",
+    target: changes.length === 1 ? changes[0].id : undefined,
+    label,
+    do: () => {
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const c = byId.get(e.id);
+          return c ? { ...e, layer: c.to as SceneEntity["layer"] } : e;
+        }),
+      );
+    },
+    undo: () => {
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const c = byId.get(e.id);
+          if (!c) return e;
+          const next = { ...e } as SceneEntity;
+          if (c.from === undefined) delete (next as { layer?: string }).layer;
+          else next.layer = c.from as SceneEntity["layer"];
+          return next;
+        }),
+      );
+    },
+    coalesceWith: (p) =>
+      changes.length === 1 && p.kind === `setLayer:${changes[0].id}`,
+  };
+}
+
+/**
+ * Patch `Environment` keys in a single undoable step. Snapshots the previous
+ * values for exactly the keys being changed so undo restores (or removes)
+ * just those keys without trampling unrelated env state.
+ */
+export function setEnvironmentCommand(
+  store: StoreLike,
+  next: Partial<SceneData["environment"]>,
+  label = "Edit environment",
+): Command {
+  const get = store.getEnvironment;
+  const setRaw = store.setEnvironmentRaw;
+  if (!get || !setRaw) {
+    throw new Error(
+      "setEnvironmentCommand requires StoreLike.getEnvironment and setEnvironmentRaw",
+    );
+  }
+  let before: Record<string, unknown> = {};
+  let beforeKeys: string[] = [];
+  return {
+    kind: "setEnvironment",
+    label,
+    do: () => {
+      const cur = get();
+      if (beforeKeys.length === 0) {
+        beforeKeys = Object.keys(next);
+        before = {};
+        for (const k of beforeKeys) {
+          before[k] = (cur as Record<string, unknown>)[k];
+        }
+      }
+      setRaw(next);
+    },
+    undo: () => {
+      const restore: Partial<SceneData["environment"]> = {};
+      for (const k of beforeKeys) {
+        (restore as Record<string, unknown>)[k] = before[k];
+      }
+      setRaw(restore);
     },
   };
 }

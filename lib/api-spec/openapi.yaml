@@ -807,6 +807,16 @@ components:
           type: array
           items:
             type: number
+        collisionMatrix:
+          type: object
+          additionalProperties:
+            type: boolean
+          description: Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.
+        sensorLayers:
+          type: array
+          items:
+            type: string
+          description: Layers spawned as Rapier sensors (no contact response, intersection events only).
 
     Entity:
       type: object
@@ -846,6 +856,10 @@ components:
         controllerKind:
           type: string
           enum: [none, thirdPerson, firstPerson]
+        layer:
+          type: string
+          description: Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.
+          enum: [Default, Terrain, Player, NPC, Item, Projectile, Trigger, Water, IgnoreRaycast, UI3D]
 
     Transform:
       type: object

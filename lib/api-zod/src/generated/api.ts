@@ -312,6 +312,23 @@ export const ListScenesResponseItem = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -320,6 +337,18 @@ export const ListScenesResponseItem = zod.object({
       ambientIntensity: zod.number().optional(),
       sunIntensity: zod.number().optional(),
       gravity: zod.array(zod.number()).optional(),
+      collisionMatrix: zod
+        .record(zod.string(), zod.boolean())
+        .optional()
+        .describe(
+          "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+        ),
+      sensorLayers: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
     }),
   }),
   createdAt: zod.string(),
@@ -409,6 +438,23 @@ export const CreateSceneBody = zod.object({
           controllerKind: zod
             .enum(["none", "thirdPerson", "firstPerson"])
             .optional(),
+          layer: zod
+            .enum([
+              "Default",
+              "Terrain",
+              "Player",
+              "NPC",
+              "Item",
+              "Projectile",
+              "Trigger",
+              "Water",
+              "IgnoreRaycast",
+              "UI3D",
+            ])
+            .optional()
+            .describe(
+              "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+            ),
         }),
       ),
       environment: zod.object({
@@ -417,6 +463,18 @@ export const CreateSceneBody = zod.object({
         ambientIntensity: zod.number().optional(),
         sunIntensity: zod.number().optional(),
         gravity: zod.array(zod.number()).optional(),
+        collisionMatrix: zod
+          .record(zod.string(), zod.boolean())
+          .optional()
+          .describe(
+            "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+          ),
+        sensorLayers: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+          ),
       }),
     })
     .optional(),
@@ -508,6 +566,23 @@ export const GetSceneResponse = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -516,6 +591,18 @@ export const GetSceneResponse = zod.object({
       ambientIntensity: zod.number().optional(),
       sunIntensity: zod.number().optional(),
       gravity: zod.array(zod.number()).optional(),
+      collisionMatrix: zod
+        .record(zod.string(), zod.boolean())
+        .optional()
+        .describe(
+          "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+        ),
+      sensorLayers: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
     }),
   }),
   createdAt: zod.string(),
@@ -607,6 +694,23 @@ export const UpdateSceneBody = zod.object({
           controllerKind: zod
             .enum(["none", "thirdPerson", "firstPerson"])
             .optional(),
+          layer: zod
+            .enum([
+              "Default",
+              "Terrain",
+              "Player",
+              "NPC",
+              "Item",
+              "Projectile",
+              "Trigger",
+              "Water",
+              "IgnoreRaycast",
+              "UI3D",
+            ])
+            .optional()
+            .describe(
+              "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+            ),
         }),
       ),
       environment: zod.object({
@@ -615,6 +719,18 @@ export const UpdateSceneBody = zod.object({
         ambientIntensity: zod.number().optional(),
         sunIntensity: zod.number().optional(),
         gravity: zod.array(zod.number()).optional(),
+        collisionMatrix: zod
+          .record(zod.string(), zod.boolean())
+          .optional()
+          .describe(
+            "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+          ),
+        sensorLayers: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+          ),
       }),
     })
     .optional(),
@@ -702,6 +818,23 @@ export const UpdateSceneResponse = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     environment: zod.object({
@@ -710,6 +843,18 @@ export const UpdateSceneResponse = zod.object({
       ambientIntensity: zod.number().optional(),
       sunIntensity: zod.number().optional(),
       gravity: zod.array(zod.number()).optional(),
+      collisionMatrix: zod
+        .record(zod.string(), zod.boolean())
+        .optional()
+        .describe(
+          "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+        ),
+      sensorLayers: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+        ),
     }),
   }),
   createdAt: zod.string(),
@@ -892,6 +1037,23 @@ export const ListPrefabsResponseItem = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     rootId: zod.string().nullish(),
@@ -989,6 +1151,23 @@ export const CreatePrefabBody = zod.object({
           controllerKind: zod
             .enum(["none", "thirdPerson", "firstPerson"])
             .optional(),
+          layer: zod
+            .enum([
+              "Default",
+              "Terrain",
+              "Player",
+              "NPC",
+              "Item",
+              "Projectile",
+              "Trigger",
+              "Water",
+              "IgnoreRaycast",
+              "UI3D",
+            ])
+            .optional()
+            .describe(
+              "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+            ),
         }),
       ),
       rootId: zod.string().nullish(),
@@ -1088,6 +1267,23 @@ export const GetPrefabResponse = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     rootId: zod.string().nullish(),
@@ -1187,6 +1383,23 @@ export const UpdatePrefabBody = zod.object({
           controllerKind: zod
             .enum(["none", "thirdPerson", "firstPerson"])
             .optional(),
+          layer: zod
+            .enum([
+              "Default",
+              "Terrain",
+              "Player",
+              "NPC",
+              "Item",
+              "Projectile",
+              "Trigger",
+              "Water",
+              "IgnoreRaycast",
+              "UI3D",
+            ])
+            .optional()
+            .describe(
+              "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+            ),
         }),
       ),
       rootId: zod.string().nullish(),
@@ -1282,6 +1495,23 @@ export const UpdatePrefabResponse = zod.object({
         controllerKind: zod
           .enum(["none", "thirdPerson", "firstPerson"])
           .optional(),
+        layer: zod
+          .enum([
+            "Default",
+            "Terrain",
+            "Player",
+            "NPC",
+            "Item",
+            "Projectile",
+            "Trigger",
+            "Water",
+            "IgnoreRaycast",
+            "UI3D",
+          ])
+          .optional()
+          .describe(
+            "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+          ),
       }),
     ),
     rootId: zod.string().nullish(),
@@ -1457,6 +1687,23 @@ export const GetTemplateResponse = zod.object({
       controllerKind: zod
         .enum(["none", "thirdPerson", "firstPerson"])
         .optional(),
+      layer: zod
+        .enum([
+          "Default",
+          "Terrain",
+          "Player",
+          "NPC",
+          "Item",
+          "Projectile",
+          "Trigger",
+          "Water",
+          "IgnoreRaycast",
+          "UI3D",
+        ])
+        .optional()
+        .describe(
+          "Unity-style physics layer. Drives Rapier collision groups via the scene's `collisionMatrix`.",
+        ),
     }),
   ),
   environment: zod.object({
@@ -1465,5 +1712,17 @@ export const GetTemplateResponse = zod.object({
     ambientIntensity: zod.number().optional(),
     sunIntensity: zod.number().optional(),
     gravity: zod.array(zod.number()).optional(),
+    collisionMatrix: zod
+      .record(zod.string(), zod.boolean())
+      .optional()
+      .describe(
+        "Sparse layer-vs-layer collision matrix. Keys are alphabetically-sorted pairs like `Player|Trigger`.",
+      ),
+    sensorLayers: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Layers spawned as Rapier sensors (no contact response, intersection events only).",
+      ),
   }),
 });

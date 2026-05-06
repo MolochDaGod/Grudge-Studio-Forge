@@ -1,3 +1,7 @@
+export * from "./layers";
+import type { LayerName } from "./layers";
+import { DEFAULT_SENSOR_LAYERS } from "./layers";
+
 export type Vec3 = [number, number, number];
 
 export type EntityType =
@@ -98,6 +102,11 @@ export interface SceneEntity {
   prefabId?: number | null;
   /** UI: collapsed in the hierarchy panel. */
   collapsed?: boolean;
+  /** Unity-style physics layer. Drives Rapier `collisionGroups` plus the
+   *  global `Environment.collisionMatrix`. Defaults to `"Default"` when
+   *  unset; the editor's loader runs an inference pass to upgrade Map /
+   *  player / enemy / spawnpoint entities to more specific layers. */
+  layer?: LayerName;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";
@@ -133,6 +142,13 @@ export interface Environment {
     /** World-space distance where fog reaches full density (default ~320). */
     far?: number;
   };
+  /** Layer-vs-layer collision matrix. Sparse — missing entries fall back
+   *  to {@link DEFAULT_COLLISION_MATRIX}. Pair keys are alphabetically
+   *  sorted ("Player|Trigger", never "Trigger|Player"). */
+  collisionMatrix?: Partial<Record<`${LayerName}|${LayerName}`, boolean>>;
+  /** Layers spawned as Rapier sensors (no contact response, intersection
+   *  events only). Defaults to {@link DEFAULT_SENSOR_LAYERS}. */
+  sensorLayers?: LayerName[];
 }
 
 export interface SceneData {
@@ -150,7 +166,27 @@ export const DEFAULT_ENV: Environment = {
   cameraTargetEntityId: null,
   playerMoveSpeed: 6,
   mouseSensitivity: 0.0025,
+  sensorLayers: [...DEFAULT_SENSOR_LAYERS],
 };
+
+/** Infer a default {@link LayerName} for an entity that has no `layer`
+ *  field set. Mirrors the rules the editor applies on load:
+ *    - planes & entities literally named "Map"/"Terrain"   → "Terrain"
+ *    - controllerKind !== "none"                           → "Player"
+ *    - behavior starts with "enemy-"                        → "NPC"
+ *    - behavior === "spawnpoint"                            → "Trigger"
+ *    - everything else                                      → "Default"
+ */
+export function inferDefaultLayer(e: Pick<SceneEntity,
+  "type" | "name" | "controllerKind" | "behavior"
+>): LayerName {
+  const lower = (e.name ?? "").toLowerCase();
+  if (e.type === "plane" || lower === "map" || lower === "terrain") return "Terrain";
+  if (e.controllerKind && e.controllerKind !== "none") return "Player";
+  if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
+  if (e.behavior === "spawnpoint") return "Trigger";
+  return "Default";
+}
 
 export const DEFAULT_TRANSFORM = (): Transform => ({
   position: [0, 0, 0],
