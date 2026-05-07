@@ -310,19 +310,24 @@ const defaultsByType = (type: EntityType, name: string): SceneEntity => {
     case "cloth":
       return {
         ...base,
+        transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: [1.5, 1.5, 1.5] },
         material: { kind: "Cloth", color: "#a87a5a" },
-        // No collider by default — cloth is a soft entity.
+        // No collider by default — cloth is a soft entity simulated
+        // verlet-side; per-entity tuning lives on `softBody`.
+        softBody: { pin: "topCorners", segmentsX: 10, segmentsY: 10 },
       };
     case "flag":
       return {
         ...base,
         transform: { position: [0, 1.5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
         material: { kind: "Flag", color: "#cc3333" },
+        softBody: { segmentsX: 12, segmentsY: 8 },
       };
     case "particles":
       return {
         ...base,
         material: { kind: "Particle", color: "#cccccc" },
+        softBody: { emitRate: 20, lifetime: 2, emitVelocity: 1.5 },
       };
     default:
       return base;

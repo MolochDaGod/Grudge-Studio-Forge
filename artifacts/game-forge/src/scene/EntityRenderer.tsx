@@ -29,6 +29,7 @@ import {
 } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
+import { ClothEntity, FlagEntity, ParticlesEntity } from "./SoftBodies";
 
 /** Resolve a model URL. Order:
  *   1. `builtin:<key>` → bundled Vite asset URL (works in dev + prod)
@@ -125,18 +126,29 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
     );
   }
 
+  // Soft / particle entity types route to dedicated simulators that
+  // run in both edit and play mode so the user can preview the motion
+  // as they tune the wind / damping / emit-rate sliders.
+  if (entity.type === "flag") {
+    return <FlagEntity entity={entity} selected={selected} onPick={onPick} effectiveMaterial={effectiveMaterial} />;
+  }
+  if (entity.type === "cloth") {
+    return <ClothEntity entity={entity} selected={selected} onPick={onPick} effectiveMaterial={effectiveMaterial} />;
+  }
+  if (entity.type === "particles") {
+    return <ParticlesEntity entity={entity} selected={selected} onPick={onPick} effectiveMaterial={effectiveMaterial} />;
+  }
+
   // Selection overlay is a SIBLING (not a child) and slightly inflated so it
   // is never coplanar with the underlying mesh — coplanar surfaces z-fight as
   // the camera moves and looks like flicker. depthTest=false also means the
   // wireframe renders cleanly on top regardless of view angle.
-  // Soft entity types want translucency + double-sided rendering so the
-  // back of a flag / cloth panel is visible. Particles use additive-ish
-  // blending so individual sprites don't punch a black square out of
-  // each other.
-  const isSoft = entity.type === "cloth" || entity.type === "flag" || entity.type === "particles";
+  // Cloth / flag / particles already returned above (delegated to
+  // dedicated soft-body simulators) — only the static primitives reach
+  // this branch, so we don't need the legacy `isSoft` flag here.
   const matKind = mat.kind;
   const resolved = matKind ? resolveMaterialDefaults(mat) : null;
-  const transparent = isSoft || (resolved && resolved.opacity < 1);
+  const transparent = resolved && resolved.opacity < 1;
   const opacity = mat.opacity ?? resolved?.opacity ?? 1;
   return (
     <>
@@ -148,7 +160,7 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
           roughness={mat.roughness ?? 0.6}
           emissive={emissive}
           emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
-          side={entity.type === "plane" || isSoft ? THREE.DoubleSide : THREE.FrontSide}
+          side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
           transparent={!!transparent}
           opacity={opacity}
         />

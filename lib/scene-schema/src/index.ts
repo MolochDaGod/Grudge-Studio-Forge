@@ -291,6 +291,52 @@ export interface SceneEntity {
    *  mode, the agent runtime instantiates one XState machine to drive
    *  it (idle/patrol/chase/climb/swim/stuck/dead). */
   navAgent?: NavAgentComponent;
+  /** Per-entity soft-body / particle tuning consumed by the verlet
+   *  simulation in `EntityRenderer` for `cloth` / `flag` / `particles`
+   *  types. All fields optional — sensible per-type defaults are
+   *  applied when unset. See {@link SoftBodyComponent}. */
+  softBody?: SoftBodyComponent;
+}
+
+/** Tuning knobs for the lightweight verlet / particle simulation that
+ *  drives `cloth` / `flag` / `particles` entities. The simulation is
+ *  CPU-side (not Rapier soft-body) and runs both in edit and play mode
+ *  so the user can preview the motion as they place the entity. */
+export interface SoftBodyComponent {
+  /** Per-step velocity damping (0…1, applied each tick). Higher =
+   *  drag-heavier, lazier motion. Falls back to `material.drag`
+   *  resolved from the kind defaults (Cloth 0.6, Flag 0.4, Particle
+   *  0.2) when unset. */
+  damping?: number;
+  /** Particles only — emit rate in particles/second. Default 20. */
+  emitRate?: number;
+  /** Particles only — per-particle lifetime in seconds. Default 2. */
+  lifetime?: number;
+  /** Particles only — initial vertical velocity (m/s, +Y is up).
+   *  Positive values produce a smoke-plume; negative looks like
+   *  falling debris. Default 1.5. */
+  emitVelocity?: number;
+  /** Cloth/Flag — verlet grid resolution in the X direction
+   *  (segments along width). Default 10 for cloth, 12 for flag. */
+  segmentsX?: number;
+  /** Cloth/Flag — verlet grid resolution in the Y direction
+   *  (segments along height). Default 10 for cloth, 8 for flag. */
+  segmentsY?: number;
+  /** Cloth pinning. `topCorners` (default) hangs the cloth from its
+   *  two top corners (drape over a box / hammock look); `topEdge`
+   *  pins the entire top edge (curtain / banner); `none` lets the
+   *  cloth fall freely. */
+  pin?: "topCorners" | "topEdge" | "none";
+  /** Particles emit mode. `continuous` (default) uses {@link emitRate}
+   *  to spawn a steady stream. `burst` releases {@link burstCount}
+   *  particles every {@link burstInterval} seconds — handy for puff
+   *  effects, magic spell flashes, or one-shot impact sparks. */
+  mode?: "continuous" | "burst";
+  /** Particles burst-mode — particles released per burst. Default 30. */
+  burstCount?: number;
+  /** Particles burst-mode — seconds between bursts. Default 1. Set
+   *  high (e.g. 9999) for an effective one-shot emitter. */
+  burstInterval?: number;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";
@@ -352,7 +398,18 @@ export interface Environment {
    *  cost. Sparse; missing entries fall back to per-{@link SurfaceKind}
    *  defaults. */
   navmeshAreas?: Partial<Record<SurfaceKind, { color?: string; cost?: number; label?: string }>>;
+  /** Global wind vector applied to soft / particle entities (cloth,
+   *  flag, particles) by their verlet/particle simulation. The vector
+   *  is the wind force in world space (m/s² acceleration applied to
+   *  cloth/flag verts; m/s velocity bias added to spawned particles).
+   *  Defaults to {@link DEFAULT_WIND} when unset. */
+  wind?: Vec3;
 }
+
+/** Gentle default wind — a light breeze blowing in +X. Picked so a
+ *  freshly-spawned flag actually ripples in the editor without the
+ *  user having to discover the Wind slider first. */
+export const DEFAULT_WIND: Vec3 = [1.5, 0, 0];
 
 export interface SceneData {
   entities: SceneEntity[];

@@ -17,6 +17,7 @@ import {
   type LayerName,
   type MaterialKind,
   DEFAULT_GRAVITY,
+  DEFAULT_WIND,
   SURFACES,
   DEFAULT_NAV_AGENT,
   type SurfaceKind,
@@ -36,6 +37,7 @@ import {
   Layers as LayersIcon,
   Map as MapIcon,
   Bot,
+  Wind as WindIcon,
 } from "lucide-react";
 
 /** Inspector row for a tri-axis tag (Layer / Surface / Material kind)
@@ -567,6 +569,22 @@ export function Inspector() {
               step={0.1}
             />
 
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block flex items-center gap-1">
+                <WindIcon className="size-3" /> Wind
+              </Label>
+              <Vec3Field
+                label="Direction (m/s²)"
+                value={(env.wind ?? DEFAULT_WIND) as Vec3}
+                onChange={(v) => setEnv({ wind: v })}
+                step={0.25}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+                Drives the cloth / flag verlet sim and biases newly
+                spawned particles. Try +X for a flag rippling east.
+              </p>
+            </div>
+
             <Separator />
 
             <div>
@@ -830,6 +848,200 @@ export function Inspector() {
             </div>
           </>)}
         </Section>
+
+        {(entity.type === "cloth" || entity.type === "flag" || entity.type === "particles") && (
+          <Section title="Soft Body" Icon={WindIcon}>
+            {entity.type === "particles" ? (
+              <>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Mode</Label>
+                  <Select
+                    value={entity.softBody?.mode ?? "continuous"}
+                    onValueChange={(v) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.mode = v as "continuous" | "burst";
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs" data-testid="select-particles-mode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="continuous">Continuous (stream)</SelectItem>
+                      <SelectItem value="burst">Burst (puff)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(entity.softBody?.mode ?? "continuous") === "burst" ? (
+                  <>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Burst Count: {(entity.softBody?.burstCount ?? 30).toFixed(0)}
+                      </Label>
+                      <Slider
+                        value={[entity.softBody?.burstCount ?? 30]}
+                        min={1}
+                        max={200}
+                        step={1}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.burstCount = Math.round(v);
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Burst Interval: {(entity.softBody?.burstInterval ?? 1).toFixed(2)} s
+                      </Label>
+                      <Slider
+                        value={[entity.softBody?.burstInterval ?? 1]}
+                        min={0.05}
+                        max={10}
+                        step={0.05}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.burstInterval = v;
+                          })
+                        }
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">
+                      Emit Rate: {(entity.softBody?.emitRate ?? 20).toFixed(0)} /s
+                    </Label>
+                    <Slider
+                      value={[entity.softBody?.emitRate ?? 20]}
+                      min={0}
+                      max={120}
+                      step={1}
+                      onValueChange={([v]) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.emitRate = v;
+                        })
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">
+                    Lifetime: {(entity.softBody?.lifetime ?? 2).toFixed(2)} s
+                  </Label>
+                  <Slider
+                    value={[entity.softBody?.lifetime ?? 2]}
+                    min={0.1}
+                    max={10}
+                    step={0.1}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.lifetime = v;
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">
+                    Emit Velocity: {(entity.softBody?.emitVelocity ?? 1.5).toFixed(2)} m/s
+                  </Label>
+                  <Slider
+                    value={[entity.softBody?.emitVelocity ?? 1.5]}
+                    min={-5}
+                    max={10}
+                    step={0.1}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.emitVelocity = v;
+                      })
+                    }
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                {entity.type === "cloth" && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Pin</Label>
+                    <Select
+                      value={entity.softBody?.pin ?? "topCorners"}
+                      onValueChange={(v) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.pin = v as "topCorners" | "topEdge" | "none";
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs" data-testid="select-cloth-pin">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="topCorners">Top Corners</SelectItem>
+                        <SelectItem value="topEdge">Top Edge</SelectItem>
+                        <SelectItem value="none">None (free fall)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Segments X</Label>
+                    <NumberInput
+                      value={entity.softBody?.segmentsX ?? (entity.type === "flag" ? 12 : 10)}
+                      step={1}
+                      onChange={(n) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.segmentsX = Math.max(3, Math.round(n));
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Segments Y</Label>
+                    <NumberInput
+                      value={entity.softBody?.segmentsY ?? (entity.type === "flag" ? 8 : 10)}
+                      step={1}
+                      onChange={(n) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.segmentsY = Math.max(2, Math.round(n));
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Damping: {(entity.softBody?.damping ?? (entity.type === "flag" ? 0.4 : entity.type === "cloth" ? 0.6 : 0.2)).toFixed(2)}
+              </Label>
+              <Slider
+                value={[entity.softBody?.damping ?? (entity.type === "flag" ? 0.4 : entity.type === "cloth" ? 0.6 : 0.2)]}
+                min={0}
+                max={5}
+                step={0.05}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.softBody) d.softBody = {};
+                    d.softBody.damping = v;
+                  })
+                }
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Wind direction lives on the Environment (deselect to edit).
+              Damping defaults come from the Material kind's drag.
+            </p>
+          </Section>
+        )}
 
         {entity.light && (
           <Section title="Light" Icon={Lightbulb}>
