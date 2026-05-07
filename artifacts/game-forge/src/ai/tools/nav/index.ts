@@ -515,12 +515,37 @@ const bakeConvexHullsHandler: ToolHandler = async (input) => {
     collidersAssetId: number;
     hulls: number;
     totalVerts: number;
+    warnings?: { message: string; detail?: string }[];
   }> = [];
-  const errors: Array<{ entityId: string; error: string }> = [];
+  const errors: Array<{
+    entityId: string;
+    error: string;
+    warnings?: { message: string; detail?: string }[];
+  }> = [];
+  // Stream worker warnings into the editor activity log in-flight, so
+  // they appear during long bakes alongside the running bake-progress
+  // toast — not only in the final tool-result chip payload.
+  const pushLog = useEditor.getState().pushLog;
   for (const id of ids) {
-    const r = await bakeEntityConvexHulls(id, bakeOpts);
+    const entity = useEditor
+      .getState()
+      .sceneData.entities.find((e) => e.id === id);
+    const label = entity?.name || id;
+    const r = await bakeEntityConvexHulls(id, {
+      ...bakeOpts,
+      onWarn: (message, detail) =>
+        pushLog(
+          "warn",
+          `AI · bake_convex_hulls · ${label}: ${message}${detail ? ` (${detail})` : ""}`,
+          { entityId: id },
+        ),
+    });
     if (!r.ok) {
-      errors.push({ entityId: id, error: r.error });
+      errors.push({
+        entityId: id,
+        error: r.error,
+        warnings: r.warnings.length > 0 ? r.warnings : undefined,
+      });
       continue;
     }
     results.push({
@@ -528,6 +553,7 @@ const bakeConvexHullsHandler: ToolHandler = async (input) => {
       collidersAssetId: r.collidersAssetId,
       hulls: r.hulls,
       totalVerts: r.totalVerts,
+      warnings: r.warnings.length > 0 ? r.warnings : undefined,
     });
   }
   return { ok: errors.length === 0, data: { results, errors } };

@@ -263,9 +263,13 @@ function BakeConvexDecompPanel({
     try {
       const r = await bakeEntityConvexHulls(entityId, opts);
       if (r.ok) {
+        const warn =
+          r.warnings.length > 0
+            ? ` (${r.warnings.length} warning${r.warnings.length === 1 ? "" : "s"})`
+            : "";
         setStatus({
           kind: "ok",
-          text: `Baked ${r.hulls} hull${r.hulls === 1 ? "" : "s"} (${r.totalVerts} verts).`,
+          text: `Baked ${r.hulls} hull${r.hulls === 1 ? "" : "s"} (${r.totalVerts} verts)${warn}.`,
         });
       } else {
         setStatus({ kind: "error", text: r.error });
