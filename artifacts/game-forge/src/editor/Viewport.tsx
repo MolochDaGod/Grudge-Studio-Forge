@@ -8,8 +8,8 @@ import { useEditor } from "@/store/editor";
 import { useListScripts, getListScriptsQueryKey, type Script } from "@workspace/api-client-react";
 import { EntityRenderer } from "@/scene/EntityRenderer";
 import { NavmeshDebugOverlay } from "@/scene/NavmeshDebugOverlay";
-import { getCompiledBehavior, getCompiledScript, groundProbe, makeContext, raycastEntities, type Compiled } from "@/scene/PlayRuntime";
-import { spawnAgent, type AgentActor } from "@/scene/agentRuntime";
+import { getCompiledBehavior, getCompiledScript, groundProbe, makeContext, raycastEntities, reconcileAgents, tickAgentSurfaces, type Compiled } from "@/scene/PlayRuntime";
+import { type AgentActor } from "@/scene/agentRuntime";
 import { loadNavmesh, findPath as navFindPath, sampleNavmesh as navSampleNavmesh } from "@/lib/navmesh";
 import { getCachedBlob, hydrateNavmeshFromServer } from "@/lib/navmeshBake";
 import type { AgentHandle } from "@/scene/csTranspile";
@@ -432,66 +432,28 @@ function ScriptedEntities({
     // ── Reconcile the agent map against the current scene ────────────
     // Spawn an actor for any entity that gained a `navAgent` since
     // last frame; dispose the actor for any entity that lost it (or
-    // was despawned). Cheap: the loop is O(entities) but each pass
-    // bails fast on the common "nothing changed" case.
-    const liveAgentIds = new Set<string>();
-    for (const ent of sceneData.entities) {
-      if (!ent.navAgent) continue;
-      liveAgentIds.add(ent.id);
-      if (!agentsRef.current.has(ent.id)) {
-        agentsRef.current.set(ent.id, spawnAgent(ent.navAgent));
-      }
-    }
-    for (const id of [...agentsRef.current.keys()]) {
-      if (!liveAgentIds.has(id)) {
-        try {
-          agentsRef.current.get(id)?.stop();
-        } catch {
-          /* ignore */
-        }
-        agentsRef.current.delete(id);
-      }
-    }
+    // was despawned). Helper lives in PlayRuntime so the same logic
+    // is reusable from headless tests.
+    reconcileAgents(sceneData.entities, agentsRef.current);
 
     // Surface-driven FSM ticks: drop a short ground probe under each
     // agent and feed the resulting surface tag into its actor as a
     // `{type:"surface", surface}` event. The XState v5 child-state
     // guards read `event.surface` (NOT `context.currentSurface`) so
     // the Climb/Swim transitions land on the same frame as the probe.
-    for (const [id, actor] of agentsRef.current) {
+    tickAgentSurfaces(threeScene, agentsRef.current, (id) => {
       const ent = sceneData.entities.find((e) => e.id === id);
-      if (!ent) continue;
+      if (!ent) return null;
       const bg = bodyRefs.current.get(id);
-      let pos: [number, number, number] | null = null;
       if (bg) {
         if ("translation" in bg) {
           const t = bg.translation();
-          pos = [t.x, t.y, t.z];
-        } else {
-          pos = [bg.position.x, bg.position.y, bg.position.z];
+          return [t.x, t.y, t.z];
         }
-      } else {
-        pos = [...ent.transform.position];
+        return [bg.position.x, bg.position.y, bg.position.z];
       }
-      const probe = groundProbe(threeScene, pos, { layerMask: [] });
-      const tag = (probe?.surface ?? "Walk").toLowerCase();
-      // userData.surface tags are stored lowercased ("walk"/"climb"/…),
-      // SurfaceKind values are PascalCase. Map back so the actor's
-      // guards line up.
-      const mapped: SurfaceKind =
-        tag === "climb"
-          ? "Climb"
-          : tag === "swim"
-            ? "Swim"
-            : tag === "jump"
-              ? "Jump"
-              : tag === "dig"
-                ? "Dig"
-                : tag === "none"
-                  ? "None"
-                  : "Walk";
-      actor.send({ type: "surface", surface: mapped });
-    }
+      return [...ent.transform.position] as [number, number, number];
+    });
 
     // Lazily prepare the loaded navmesh whenever the scene's
     // `navmeshAssetId` changes. We never block the script tick on the

@@ -1,10 +1,11 @@
 import * as YUKA from "yuka";
 import * as THREE from "three";
-import type { LayerName, SurfaceKind } from "@workspace/scene-schema";
+import type { LayerName, NavAgentComponent, SurfaceKind } from "@workspace/scene-schema";
 import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle } from "./csTranspile";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
 import type { EntityInboxes, EntityStates, GameBus, TriggerInbox } from "./GameBus";
+import { spawnAgent, type AgentActor } from "./agentRuntime";
 
 export type Compiled = CompiledScript & { error?: string };
 
@@ -248,6 +249,74 @@ export function raycastEntities(
     };
   }
   return null;
+}
+
+/**
+ * Reconcile the live `agents` map against the current scene's entities.
+ *
+ * Spawns an {@link AgentActor} for any entity that newly carries a
+ * `navAgent` component, and disposes (and drops) the actor for any
+ * entity that lost it or was despawned. Cheap on the steady-state
+ * "nothing changed" path — call once per frame from the play-mode tick.
+ */
+export function reconcileAgents(
+  entities: ReadonlyArray<{ id: string; navAgent?: NavAgentComponent }>,
+  agents: Map<string, AgentActor>,
+): void {
+  const live = new Set<string>();
+  for (const ent of entities) {
+    if (!ent.navAgent) continue;
+    live.add(ent.id);
+    if (!agents.has(ent.id)) {
+      agents.set(ent.id, spawnAgent(ent.navAgent));
+    }
+  }
+  for (const id of [...agents.keys()]) {
+    if (!live.has(id)) {
+      try {
+        agents.get(id)?.stop();
+      } catch {
+        /* ignore */
+      }
+      agents.delete(id);
+    }
+  }
+}
+
+/**
+ * Drop a short downward foot probe under each agent and feed the
+ * resulting surface tag into its FSM as a `{ type: "surface" }` event.
+ *
+ * `userData.surface` tags are stored lowercased on the renderer side
+ * (`"walk"` / `"climb"` / …) while `SurfaceKind` is PascalCase — this
+ * helper handles the round-trip so the agent's XState guards (which
+ * read the *event* payload, not context, per XState v5 child-state
+ * resolution order) line up with the probe.
+ */
+export function tickAgentSurfaces(
+  threeScene: THREE.Object3D,
+  agents: Map<string, AgentActor>,
+  positionOf: (entityId: string) => [number, number, number] | null,
+): void {
+  for (const [id, actor] of agents) {
+    const pos = positionOf(id);
+    if (!pos) continue;
+    const probe = groundProbe(threeScene, pos, { layerMask: [] });
+    const tag = (probe?.surface ?? "Walk").toLowerCase();
+    const mapped: SurfaceKind =
+      tag === "climb"
+        ? "Climb"
+        : tag === "swim"
+          ? "Swim"
+          : tag === "jump"
+            ? "Jump"
+            : tag === "dig"
+              ? "Dig"
+              : tag === "none"
+                ? "None"
+                : "Walk";
+    actor.send({ type: "surface", surface: mapped });
+  }
 }
 
 /** Result of a {@link groundProbe} hit. `surface` is the parent-chain
