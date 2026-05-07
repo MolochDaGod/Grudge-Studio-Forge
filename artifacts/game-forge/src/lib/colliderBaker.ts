@@ -9,11 +9,18 @@
  * EntityRenderer, AI tool) already speak: each entry becomes one
  * Rapier `convexHull` collider at runtime.
  *
- * The wasm module is ~6 MB and slow to load, so we import it lazily
- * and cache the decomposer instance across calls. If V-HACD fails to
- * load or throws on a degenerate mesh we fall back to a single
- * `quickhull3d` hull for that mesh so the bake still produces
- * usable colliders.
+ * The wasm module is ~6 MB and a single bake on a busy GLB can take
+ * several seconds, so the heavy work runs **off the main thread** in
+ * a small pool of dedicated Web Workers (`colliderBaker.worker.ts`).
+ * Each worker loads the wasm exactly once and is reused across calls,
+ * which keeps the editor — viewport, undo, AI chat — interactive
+ * while a bake is in flight and lets independent bakes run in
+ * parallel up to {@link MAX_WORKERS}.
+ *
+ * The pure decomposition logic (V-HACD + quickhull3d fallback) lives
+ * in `./colliderBakerCore` and is shared between the worker entry
+ * point and the inline fallback used in environments without a
+ * `Worker` constructor (Node-based unit tests, SSR).
  *
  * Output shape:
  *
@@ -30,6 +37,12 @@
  * `convexHull` collider per entry.
  */
 import * as THREE from "three";
+import {
+  bakeSoups,
+  type CoreBakeOptions,
+  type CoreHull,
+  type MeshSoup,
+} from "./colliderBakerCore";
 
 export interface ConvexHull {
   /** Flat xyz vertex buffer (3 floats per vertex). */
@@ -65,82 +78,19 @@ export interface BuildHullsOptions {
    *  but assumes a watertight mesh; `raycast` is robust for open meshes;
    *  `surface` treats the mesh as hollow and only decomposes its skin. */
   fillMode?: HullFillMode;
-}
-
-/** vhacd-js typings (kept local so this file doesn't leak the dep into
- *  consumers' types). The real package shape is documented in
- *  `vhacd-js/lib/vhacd.d.ts`. */
-interface VhacdMesh {
-  positions: Float64Array;
-  indices: Uint32Array;
-}
-interface VhacdOptions {
-  maxHulls?: number;
-  maxVerticesPerHull?: number;
-  voxelResolution?: number;
-  fillMode?: HullFillMode;
-}
-interface VhacdDecomposer {
-  computeConvexHulls(mesh: VhacdMesh, options?: VhacdOptions): VhacdMesh[];
-}
-
-let decomposerPromise: Promise<VhacdDecomposer | null> | null = null;
-async function getDecomposer(): Promise<VhacdDecomposer | null> {
-  if (!decomposerPromise) {
-    decomposerPromise = (async () => {
-      try {
-        // vhacd-js@0.0.1 declares only `"module"` (no `"main"` or
-        // `"exports"`), so most resolvers can't find its entry by the
-        // bare specifier. Reach into the published lib path directly.
-        const mod = (await import("vhacd-js/lib/vhacd.js")) as unknown as {
-          ConvexMeshDecomposition: { create(): Promise<VhacdDecomposer> };
-        };
-        return await mod.ConvexMeshDecomposition.create();
-      } catch (err) {
-        console.warn(
-          "[colliderBaker] vhacd-js failed to load, falling back to quickhull",
-          err,
-        );
-        return null;
-      }
-    })();
-  }
-  return decomposerPromise;
-}
-
-/** Compute the volume of a closed indexed triangle mesh via the
- *  divergence theorem. Used to drop tiny `minHullVolume` slivers
- *  V-HACD sometimes emits on busy geometry. */
-function meshVolume(
-  positions: Float32Array | Float64Array,
-  indices: Uint32Array,
-): number {
-  let v = 0;
-  for (let t = 0; t + 2 < indices.length; t += 3) {
-    const ia = indices[t] * 3;
-    const ib = indices[t + 1] * 3;
-    const ic = indices[t + 2] * 3;
-    const ax = positions[ia],
-      ay = positions[ia + 1],
-      az = positions[ia + 2];
-    const bx = positions[ib],
-      by = positions[ib + 1],
-      bz = positions[ib + 2];
-    const cx = positions[ic],
-      cy = positions[ic + 1],
-      cz = positions[ic + 2];
-    v +=
-      (ax * (by * cz - bz * cy) +
-        ay * (bz * cx - bx * cz) +
-        az * (bx * cy - by * cx)) /
-      6;
-  }
-  return Math.abs(v);
+  /** Optional sink for non-fatal warnings (load failures, V-HACD
+   *  rejections that fell back to quickhull). Routed verbatim from
+   *  the worker. Defaults to `console.warn`. */
+  onWarn?: (message: string, detail?: string) => void;
 }
 
 /** Build convex hulls for a collection of meshes (typically every
  *  rendered mesh of a GLB after `THREE.SkeletonUtils` flatten). The
- *  result is JSON-serializable through `serializeHullSet`. */
+ *  result is JSON-serializable through `serializeHullSet`.
+ *
+ *  Mesh extraction (world-space vertex baking + index extraction) is
+ *  cheap and runs on the caller's thread; the actual V-HACD compute
+ *  is dispatched to a worker so the editor stays interactive. */
 export async function buildHulls(
   meshes: THREE.Mesh[],
   options: BuildHullsOptions = {},
@@ -149,38 +99,42 @@ export async function buildHulls(
     return { hulls: [], totalVerts: 0 };
   }
 
-  const decomposer = await getDecomposer();
-  const hulls: ConvexHull[] = [];
-  let totalVerts = 0;
-
+  const soups: MeshSoup[] = [];
   for (const mesh of meshes) {
-    const meshHulls = await buildHullsForMesh(mesh, decomposer, options);
-    for (const h of meshHulls) {
-      hulls.push(h);
-      totalVerts += h.vertices.length / 3;
-    }
+    const soup = extractSoup(mesh);
+    if (soup) soups.push(soup);
   }
+  if (soups.length === 0) return { hulls: [], totalVerts: 0 };
 
-  return { hulls, totalVerts };
+  const coreOptions: CoreBakeOptions = {
+    maxHulls: options.maxHulls,
+    minHullVolume: options.minHullVolume,
+    voxelResolution: options.voxelResolution,
+    maxVerticesPerHull: options.maxVerticesPerHull,
+    fillMode: options.fillMode,
+  };
+  const { hulls, totalVerts } = await dispatchBake(
+    soups,
+    coreOptions,
+    options.onWarn,
+  );
+  return {
+    hulls: hulls as ConvexHull[],
+    totalVerts,
+  };
 }
 
-/** Bake the world-space triangle soup of `mesh` into convex hulls,
- *  preferring V-HACD and falling back to a single quickhull when the
- *  decomposer is unavailable or rejects the input. */
-async function buildHullsForMesh(
-  mesh: THREE.Mesh,
-  decomposer: VhacdDecomposer | null,
-  options: BuildHullsOptions,
-): Promise<ConvexHull[]> {
+/** Bake `mesh` into a world-space triangle soup the worker can eat.
+ *  Done on the caller's thread because we need live `THREE.Mesh`
+ *  references — but it's just buffer copies, not heavy compute. */
+function extractSoup(mesh: THREE.Mesh): MeshSoup | null {
   const geom = mesh.geometry;
-  if (!geom || !geom.attributes.position) return [];
+  if (!geom || !geom.attributes.position) return null;
   mesh.updateWorldMatrix(true, false);
   const m = mesh.matrixWorld;
   const pos = geom.attributes.position;
-  if (pos.count < 4) return [];
+  if (pos.count < 4) return null;
 
-  // Bake world-space positions once. V-HACD wants Float64 + Uint32
-  // index buffers; the quickhull fallback wants number[][].
   const positions = new Float64Array(pos.count * 3);
   const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -190,48 +144,7 @@ async function buildHullsForMesh(
     positions[i * 3 + 2] = v.z;
   }
   const indices = extractIndices(geom, pos.count);
-
-  if (decomposer && indices.length >= 3) {
-    let out: VhacdMesh[] | null = null;
-    try {
-      // Pass through `maxHulls` only when set so V-HACD's documented
-      // default (64) applies — overriding it here would silently
-      // contradict the Inspector / AI tool descriptions.
-      const vhacdOpts: VhacdOptions = {};
-      if (options.maxHulls !== undefined) vhacdOpts.maxHulls = options.maxHulls;
-      if (options.maxVerticesPerHull !== undefined)
-        vhacdOpts.maxVerticesPerHull = options.maxVerticesPerHull;
-      if (options.voxelResolution !== undefined)
-        vhacdOpts.voxelResolution = options.voxelResolution;
-      if (options.fillMode !== undefined) vhacdOpts.fillMode = options.fillMode;
-      out = decomposer.computeConvexHulls({ positions, indices }, vhacdOpts);
-    } catch (err) {
-      console.warn(
-        "[colliderBaker] V-HACD decomposition failed, falling back to quickhull",
-        err,
-      );
-    }
-    if (out) {
-      // V-HACD ran successfully — honor `minHullVolume` strictly,
-      // even when filtering removes everything (callers asked for
-      // hulls above that threshold; falling back to one giant hull
-      // would be the wrong shape).
-      const minVol = options.minHullVolume ?? 0;
-      const result: ConvexHull[] = [];
-      for (const h of out) {
-        if (minVol > 0 && meshVolume(h.positions, h.indices) < minVol) {
-          continue;
-        }
-        result.push({
-          vertices: new Float32Array(h.positions),
-          indices: new Uint32Array(h.indices),
-        });
-      }
-      return result;
-    }
-  }
-
-  return quickhullFallback(positions);
+  return { positions, indices };
 }
 
 function extractIndices(
@@ -251,51 +164,238 @@ function extractIndices(
   return out;
 }
 
-/** Single-hull quickhull3d fallback used when V-HACD is unavailable. */
-async function quickhullFallback(
-  positions: Float64Array,
-): Promise<ConvexHull[]> {
-  const qhMod = (await import("quickhull3d")) as unknown as {
-    default?: (pts: number[][]) => number[][];
-  } & ((pts: number[][]) => number[][]);
-  const qh = (qhMod.default ?? qhMod) as (pts: number[][]) => number[][];
+// ---------------------------------------------------------------------------
+// Worker pool
+// ---------------------------------------------------------------------------
 
-  const points: number[][] = [];
-  for (let i = 0; i < positions.length; i += 3) {
-    points.push([positions[i], positions[i + 1], positions[i + 2]]);
+const MAX_WORKERS = (() => {
+  if (typeof navigator !== "undefined" && navigator.hardwareConcurrency) {
+    return Math.max(1, Math.min(3, navigator.hardwareConcurrency - 1));
   }
-  if (points.length < 4) return [];
+  return 1;
+})();
 
-  let faces: number[][];
+interface PendingJob {
+  resolve: (value: { hulls: CoreHull[]; totalVerts: number }) => void;
+  reject: (err: Error) => void;
+  onWarn?: (message: string, detail?: string) => void;
+}
+
+interface PoolWorker {
+  worker: Worker;
+  busy: boolean;
+}
+
+let pool: PoolWorker[] | null = null;
+const pending = new Map<number, PendingJob>();
+const queue: Array<{
+  soups: MeshSoup[];
+  options: CoreBakeOptions;
+  job: PendingJob;
+}> = [];
+let nextJobId = 1;
+
+function workersAvailable(): boolean {
+  return typeof Worker !== "undefined";
+}
+
+function ensurePool(): PoolWorker[] {
+  if (!pool) pool = [];
+  return pool;
+}
+
+/** Set after a `new Worker(...)` throws — prevents thrashing the
+ *  spawn path on every subsequent bake when (e.g.) the browser
+ *  blocks worker creation. Once set, all dispatch goes inline. */
+let workerSpawnDisabled = false;
+
+function spawnWorker(): PoolWorker | null {
+  if (workerSpawnDisabled) return null;
   try {
-    faces = qh(points);
-  } catch {
-    return [];
+    const w = new Worker(
+      new URL("./colliderBaker.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    const entry: PoolWorker = { worker: w, busy: false };
+    w.onmessage = (ev: MessageEvent) => {
+      const data = ev.data as
+        | {
+            id: number;
+            type: "result";
+            hulls: CoreHull[];
+            totalVerts: number;
+          }
+        | { id: number; type: "error"; error: string }
+        | {
+            id: number;
+            type: "warn";
+            message: string;
+            detail?: string;
+          };
+      const job = pending.get(data.id);
+      if (!job) return;
+      if (data.type === "warn") {
+        if (job.onWarn) job.onWarn(data.message, data.detail);
+        else if (data.detail !== undefined) {
+          console.warn(`[colliderBaker] ${data.message}`, data.detail);
+        } else {
+          console.warn(`[colliderBaker] ${data.message}`);
+        }
+        return;
+      }
+      pending.delete(data.id);
+      entry.busy = false;
+      if (data.type === "result") {
+        job.resolve({ hulls: data.hulls, totalVerts: data.totalVerts });
+      } else {
+        job.reject(new Error(data.error));
+      }
+      drainQueue();
+    };
+    w.onerror = (ev) => {
+      // Fail all jobs assigned to this worker. The pool removes the
+      // dead worker; subsequent jobs will spawn a fresh one — and
+      // any queued jobs that can't get a worker after this will
+      // fall back to the inline path via drainQueue().
+      entry.busy = false;
+      const err = new Error(ev.message || "collider baker worker crashed");
+      for (const [id, job] of pending) {
+        // We don't track per-worker job ownership, so fail all
+        // outstanding jobs to be safe — a crashed wasm runtime taints
+        // everything in flight.
+        pending.delete(id);
+        job.reject(err);
+      }
+      const idx = (pool ?? []).indexOf(entry);
+      if (idx >= 0) (pool ?? []).splice(idx, 1);
+      try {
+        w.terminate();
+      } catch {
+        // ignore
+      }
+      // Make sure no queued job is stranded by the crash — either
+      // re-spawn a worker for it or run it inline.
+      drainQueue();
+    };
+    return entry;
+  } catch (err) {
+    console.warn(
+      "[colliderBaker] failed to spawn worker, falling back to main thread",
+      err,
+    );
+    workerSpawnDisabled = true;
+    return null;
   }
-  if (!faces || faces.length === 0) return [];
+}
 
-  const used = new Set<number>();
-  for (const f of faces) for (const idx of f) used.add(idx);
-  const remap = new Map<number, number>();
-  const verts: number[] = [];
-  for (const oldIdx of used) {
-    const newIdx = remap.size;
-    remap.set(oldIdx, newIdx);
-    const p = points[oldIdx];
-    verts.push(p[0], p[1], p[2]);
+function pickIdleWorker(): PoolWorker | null {
+  const p = ensurePool();
+  for (const entry of p) {
+    if (!entry.busy) return entry;
   }
-  const tris: number[] = [];
-  for (const f of faces) {
-    for (let j = 1; j < f.length - 1; j++) {
-      tris.push(remap.get(f[0])!, remap.get(f[j])!, remap.get(f[j + 1])!);
+  if (p.length < MAX_WORKERS) {
+    const fresh = spawnWorker();
+    if (fresh) {
+      p.push(fresh);
+      return fresh;
     }
   }
-  return [
-    {
-      vertices: new Float32Array(verts),
-      indices: new Uint32Array(tris),
-    },
-  ];
+  return null;
+}
+
+function dispatchToWorker(
+  entry: PoolWorker,
+  soups: MeshSoup[],
+  options: CoreBakeOptions,
+  job: PendingJob,
+): void {
+  entry.busy = true;
+  const id = nextJobId++;
+  pending.set(id, job);
+  const transfers: ArrayBuffer[] = [];
+  for (const s of soups) {
+    transfers.push(
+      s.positions.buffer as ArrayBuffer,
+      s.indices.buffer as ArrayBuffer,
+    );
+  }
+  try {
+    entry.worker.postMessage({ id, soups, options }, transfers);
+  } catch (err) {
+    pending.delete(id);
+    entry.busy = false;
+    job.reject(err instanceof Error ? err : new Error(String(err)));
+  }
+}
+
+/** Run a job inline on the calling thread. Used when no worker is
+ *  available (Node/SSR), spawning failed permanently, or a worker
+ *  crash left a queued job with nowhere to go. */
+function runInline(
+  soups: MeshSoup[],
+  options: CoreBakeOptions,
+  job: PendingJob,
+): void {
+  bakeSoups(soups, options, (msg, detail) => {
+    if (job.onWarn) {
+      job.onWarn(msg, detail === undefined ? undefined : String(detail));
+    } else if (detail !== undefined) {
+      console.warn(`[colliderBaker] ${msg}`, detail);
+    } else {
+      console.warn(`[colliderBaker] ${msg}`);
+    }
+  }).then(job.resolve, job.reject);
+}
+
+function drainQueue(): void {
+  while (queue.length > 0) {
+    const entry = pickIdleWorker();
+    if (entry) {
+      const next = queue.shift()!;
+      dispatchToWorker(entry, next.soups, next.options, next.job);
+      continue;
+    }
+    // No idle worker. If the pool is empty (spawn failed/disabled),
+    // fall back inline for every queued job so they don't strand.
+    if (ensurePool().length === 0) {
+      while (queue.length > 0) {
+        const next = queue.shift()!;
+        runInline(next.soups, next.options, next.job);
+      }
+      return;
+    }
+    // Otherwise live workers are just busy — wait for completions
+    // to call drainQueue() again.
+    return;
+  }
+}
+
+async function dispatchBake(
+  soups: MeshSoup[],
+  options: CoreBakeOptions,
+  onWarn?: (message: string, detail?: string) => void,
+): Promise<{ hulls: CoreHull[]; totalVerts: number }> {
+  return new Promise((resolve, reject) => {
+    const job: PendingJob = { resolve, reject, onWarn };
+    if (!workersAvailable()) {
+      runInline(soups, options, job);
+      return;
+    }
+    const entry = pickIdleWorker();
+    if (entry) {
+      dispatchToWorker(entry, soups, options, job);
+      return;
+    }
+    // No idle worker. If the pool has live workers (all busy at
+    // cap), queue and wait for one to free. If the pool is empty
+    // (spawn failed/disabled), run inline now — queueing would
+    // hang forever with nothing to drain it.
+    if (ensurePool().length === 0) {
+      runInline(soups, options, job);
+    } else {
+      queue.push({ soups, options, job });
+    }
+  });
 }
 
 /** Pack a hull set into a JSON-friendly shape (Float32Array → number[]
