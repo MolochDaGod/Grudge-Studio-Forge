@@ -90,18 +90,91 @@ describe("navmesh bake → load → query roundtrip", () => {
   );
 });
 
-describe("collider baker (quickhull stub)", () => {
-  it("builds at least one hull for a solid mesh and roundtrips JSON", async () => {
-    const cube = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshBasicMaterial(),
-    );
-    cube.updateWorldMatrix(true, false);
-    const set = await buildHulls([cube]);
-    expect(set.hulls.length).toBe(1);
-    expect(set.hulls[0].vertices.length).toBeGreaterThan(0);
-    const json = serializeHullSet(set);
-    const back = deserializeHullSet(json);
-    expect(back.hulls[0].vertices.length).toBe(set.hulls[0].vertices.length);
-  });
+describe("collider baker (V-HACD)", () => {
+  it(
+    "builds at least one hull for a solid mesh and roundtrips JSON",
+    async () => {
+      const cube = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshBasicMaterial(),
+      );
+      cube.updateWorldMatrix(true, false);
+      const set = await buildHulls([cube]);
+      expect(set.hulls.length).toBeGreaterThanOrEqual(1);
+      expect(set.hulls[0].vertices.length).toBeGreaterThan(0);
+      const json = serializeHullSet(set);
+      const back = deserializeHullSet(json);
+      expect(back.hulls[0].vertices.length).toBe(
+        set.hulls[0].vertices.length,
+      );
+    },
+    30_000,
+  );
+
+  it(
+    "decomposes a non-convex mesh into multiple hulls",
+    async () => {
+      // Two disjoint boxes baked into a single BufferGeometry. The
+      // convex hull of the union is a giant box that bridges the gap;
+      // a real V-HACD bake should produce ~2 hulls instead.
+      const a = new THREE.BoxGeometry(1, 1, 1).translate(-2, 0, 0);
+      const b = new THREE.BoxGeometry(1, 1, 1).translate(2, 0, 0);
+      const merged = mergeBoxes(a, b);
+      const mesh = new THREE.Mesh(merged, new THREE.MeshBasicMaterial());
+      mesh.updateWorldMatrix(true, false);
+
+      const set = await buildHulls([mesh], { maxHulls: 8 });
+      expect(set.hulls.length).toBeGreaterThan(1);
+      expect(set.totalVerts).toBeGreaterThan(0);
+    },
+    60_000,
+  );
+
+  it(
+    "honors minHullVolume strictly without falling back to a single quickhull",
+    async () => {
+      const a = new THREE.BoxGeometry(1, 1, 1).translate(-2, 0, 0);
+      const b = new THREE.BoxGeometry(1, 1, 1).translate(2, 0, 0);
+      const merged = mergeBoxes(a, b);
+      const mesh = new THREE.Mesh(merged, new THREE.MeshBasicMaterial());
+      mesh.updateWorldMatrix(true, false);
+
+      // Each unit-cube hull is ~1 m³. A 100 m³ threshold removes them
+      // all; the result must be empty rather than the full ~5×1×1 = 5 m³
+      // quickhull bridge that the fallback would produce.
+      const filtered = await buildHulls([mesh], {
+        maxHulls: 8,
+        minHullVolume: 100,
+      });
+      expect(filtered.hulls.length).toBe(0);
+      expect(filtered.totalVerts).toBe(0);
+
+      // A tiny threshold should keep V-HACD's hulls intact.
+      const kept = await buildHulls([mesh], {
+        maxHulls: 8,
+        minHullVolume: 0.001,
+      });
+      expect(kept.hulls.length).toBeGreaterThan(1);
+    },
+    60_000,
+  );
 });
+
+/** Bake two BoxGeometries into a single non-indexed BufferGeometry by
+ *  concatenating their position buffers. Avoids pulling in
+ *  BufferGeometryUtils. */
+function mergeBoxes(
+  a: THREE.BufferGeometry,
+  b: THREE.BufferGeometry,
+): THREE.BufferGeometry {
+  const aPos = a.toNonIndexed().attributes.position
+    .array as Float32Array;
+  const bPos = b.toNonIndexed().attributes.position
+    .array as Float32Array;
+  const merged = new Float32Array(aPos.length + bPos.length);
+  merged.set(aPos, 0);
+  merged.set(bPos, aPos.length);
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute("position", new THREE.BufferAttribute(merged, 3));
+  return geom;
+}
