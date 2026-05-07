@@ -29,7 +29,7 @@ import {
   type NavAgentComponent,
 } from "@workspace/scene-schema";
 import { loadNavmesh, findPath, sampleNavmesh } from "@/lib/navmesh";
-import { bakeSceneNavmesh } from "@/lib/navmeshBake";
+import { bakeSceneNavmesh, ensureNavmeshBlob, getCachedBlob } from "@/lib/navmeshBake";
 import { buildHulls, serializeHullSet } from "@/lib/colliderBaker";
 import * as THREE from "three";
 
@@ -342,20 +342,19 @@ const findPathHandler: ToolHandler = async (input) => {
   const end = asVec3(input.end);
   if (!start || !end)
     return { ok: false, error: "start and end must be [x,y,z] number triples" };
-  const env = useEditor.getState().sceneData.environment;
+  const state = useEditor.getState();
+  const env = state.sceneData.environment;
   const id = env.navmeshAssetId;
   if (!id)
     return {
       ok: false,
       error: "no baked navmesh — call bake_navmesh first",
     };
-  const blob = (
-    window as unknown as { __navmeshBlobs?: Map<number, Uint8Array> }
-  ).__navmeshBlobs?.get(id);
+  const blob = await ensureNavmeshBlob(id, env.navmeshBlobKey, state.projectId);
   if (!blob)
     return {
       ok: false,
-      error: "navmesh asset id is set but the blob is missing in this session — re-bake",
+      error: "navmesh asset id is set but the blob could not be loaded — re-bake",
     };
   const areaFilter: SurfaceKind[] | undefined = Array.isArray(input.areaFilter)
     ? (input.areaFilter.filter(isSurface) as SurfaceKind[])
@@ -392,9 +391,9 @@ const listNavmeshStatsHandler: ToolHandler = async () => {
   const id = env.navmeshAssetId;
   let bytes: number | null = null;
   if (id !== undefined) {
-    const blob = (
-      window as unknown as { __navmeshBlobs?: Map<number, Uint8Array> }
-    ).__navmeshBlobs?.get(id);
+    const blob =
+      getCachedBlob(id) ??
+      (await ensureNavmeshBlob(id, env.navmeshBlobKey, state.projectId));
     bytes = blob ? blob.byteLength : null;
   }
   return {
@@ -428,14 +427,14 @@ const sampleNavmeshHandler: ToolHandler = async (input) => {
   const pos = asVec3(input.position);
   if (!pos)
     return { ok: false, error: "position must be a [x,y,z] number triple" };
-  const id = useEditor.getState().sceneData.environment.navmeshAssetId;
+  const state = useEditor.getState();
+  const env = state.sceneData.environment;
+  const id = env.navmeshAssetId;
   if (!id)
     return { ok: false, error: "no baked navmesh — call bake_navmesh first" };
-  const blob = (
-    window as unknown as { __navmeshBlobs?: Map<number, Uint8Array> }
-  ).__navmeshBlobs?.get(id);
+  const blob = await ensureNavmeshBlob(id, env.navmeshBlobKey, state.projectId);
   if (!blob)
-    return { ok: false, error: "navmesh blob missing in this session — re-bake" };
+    return { ok: false, error: "navmesh blob could not be loaded — re-bake" };
   const loaded = await loadNavmesh(blob, id);
   return { ok: true, data: sampleNavmesh(loaded, pos) };
 };

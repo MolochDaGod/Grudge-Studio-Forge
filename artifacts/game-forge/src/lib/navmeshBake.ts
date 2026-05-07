@@ -225,3 +225,23 @@ export function getCachedBlob(assetId: number): Uint8Array | null {
   };
   return w.__navmeshBlobs?.get(assetId) ?? null;
 }
+
+/** Resolve the navmesh blob for a given asset id, lazily fetching it
+ *  from the server when the in-memory cache is empty. Returns null
+ *  when no `blobKey` is available (legacy session-only id) or the
+ *  fetch fails — callers should surface a "re-bake" error in that
+ *  case. Used by the AI nav tools + debug overlay so a hard reload
+ *  doesn't silently break path queries. */
+export async function ensureNavmeshBlob(
+  assetId: number,
+  blobKey?: string | null,
+  projectId?: string | number | null,
+  baseUrl: string = "/api",
+): Promise<Uint8Array | null> {
+  const cached = getCachedBlob(assetId);
+  if (cached) return cached;
+  if (!blobKey) return null;
+  const hydrated = await hydrateNavmeshFromServer(blobKey, projectId, baseUrl);
+  if (hydrated == null) return null;
+  return getCachedBlob(hydrated);
+}

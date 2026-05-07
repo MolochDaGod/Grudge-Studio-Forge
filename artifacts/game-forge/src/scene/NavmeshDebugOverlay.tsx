@@ -15,6 +15,7 @@ import * as THREE from "three";
 import { create } from "zustand";
 import { useEditor } from "@/store/editor";
 import { loadNavmesh, extractDebugTriangles } from "@/lib/navmesh";
+import { ensureNavmeshBlob } from "@/lib/navmeshBake";
 
 type LoadedNavmesh = Awaited<ReturnType<typeof loadNavmesh>>;
 
@@ -41,6 +42,8 @@ const AREA_COLORS: Record<number, string> = {
 export function NavmeshDebugOverlay() {
   const show = useNavmeshDebug((s) => s.show);
   const assetId = useEditor((s) => s.sceneData.environment.navmeshAssetId);
+  const blobKey = useEditor((s) => s.sceneData.environment.navmeshBlobKey);
+  const projectId = useEditor((s) => s.projectId);
   const [loaded, setLoaded] = useState<LoadedNavmesh | null>(null);
 
   useEffect(() => {
@@ -48,14 +51,17 @@ export function NavmeshDebugOverlay() {
       setLoaded(null);
       return;
     }
-    const blob = (
-      window as unknown as { __navmeshBlobs?: Map<number, Uint8Array> }
-    ).__navmeshBlobs?.get(assetId);
-    if (!blob) return;
     let cancelled = false;
-    loadNavmesh(blob, assetId)
+    // Lazy-hydrate from the server when the in-memory cache is empty
+    // (typical post-reload state) — same code path the AI nav tools
+    // use, so the overlay comes back online without a re-bake.
+    ensureNavmeshBlob(assetId, blobKey, projectId)
+      .then((blob) => {
+        if (cancelled || !blob) return null;
+        return loadNavmesh(blob, assetId);
+      })
       .then((l) => {
-        if (!cancelled) setLoaded(l);
+        if (!cancelled && l) setLoaded(l);
       })
       .catch(() => {
         // Swallow: overlay is best-effort, we don't want to crash the
@@ -64,7 +70,7 @@ export function NavmeshDebugOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [show, assetId]);
+  }, [show, assetId, blobKey, projectId]);
 
   const geom = useMemo(() => {
     if (!loaded) return null;
