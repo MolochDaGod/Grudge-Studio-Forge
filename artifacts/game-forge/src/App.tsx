@@ -19,6 +19,7 @@ import { BottomPanel } from "@/editor/BottomPanel";
 import { ProjectPicker } from "@/editor/ProjectPicker";
 import { AssetDropZone } from "@/editor/AssetDropZone";
 import { AIWorkerPanel } from "@/editor/AIWorkerPanel";
+import { WelcomeModal } from "@/editor/WelcomeModal";
 import { ViewportTabBar } from "@/editor/ViewportTabBar";
 import { ViewportHost } from "@/editor/ViewportHost";
 import { useViewportLaunchQueue } from "@/lib/launchQueue";
@@ -235,6 +236,8 @@ function EditorShell() {
       </div>
 
       <ProjectPicker open={pickerOpen} onOpenChange={setPickerOpen} />
+
+      <WelcomeModal />
 
       <AIWorkerPanel open={aiOpen} onClose={() => setAiOpen(false)} />
 

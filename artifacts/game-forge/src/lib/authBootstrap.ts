@@ -1,44 +1,52 @@
-import { useAuth, type LocalUser } from "@/store/auth";
-
 /**
- * Local-only auth. No SDK, no popup, no server. The previous Puter Auth
- * flow opened a popup that the Replit canvas iframe sandbox routinely
- * blocked, leaving sign-in permanently broken. Identity for this editor
- * is single-player anyway — we just need a friendly name on saved work.
+ * Real Puter Auth.
  *
- * Storage: a single localStorage key holding `{ id, name }` JSON.
+ * Boot path (no popup):
+ *   - `bootstrapAuth()` lazy-loads the SDK and calls `isSignedIn()` +
+ *     `getUser()`. If a session exists, hydrate the store with the real
+ *     Puter identity (uuid, username, optional email, isTemp). If not,
+ *     leave the user in `anon` so the Welcome modal can render.
+ *   - Falls back to the local guest record (if any) on SDK load failure
+ *     so users who clicked "Continue without signing in" stay signed in
+ *     across reloads even when the Puter CDN is blocked.
+ *
+ * Active flows (require a real user click — popups are blocked otherwise):
+ *   - `signInWithPuter()` calls `puter.auth.signIn({attempt_temp_user_creation:true})`.
+ *   - `continueAsGuest()` opts out — store goes to `guest`, persisted locally.
+ *   - `signOut()` calls `puter.auth.signOut()` then resets the store.
  */
-const STORAGE_KEY = "grudge.auth.localUser";
+import { useAuth, type AuthUser, type PuterIdentity } from "@/store/auth";
+import { loadPuterSdk, getPuter, type PuterSdk } from "@/lib/puterSdk";
 
-function readStored(): LocalUser | null {
+const GUEST_KEY = "grudge.auth.guestUser";
+
+interface StoredGuest {
+  id: string;
+  name: string;
+}
+
+function readStoredGuest(): StoredGuest | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(GUEST_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<LocalUser>;
-    if (typeof parsed.id !== "string" || typeof parsed.name !== "string") {
-      return null;
-    }
-    return { id: parsed.id, name: parsed.name };
+    const p = JSON.parse(raw) as Partial<StoredGuest>;
+    if (typeof p.id !== "string" || typeof p.name !== "string") return null;
+    return { id: p.id, name: p.name };
   } catch {
     return null;
   }
 }
 
-function writeStored(user: LocalUser | null): void {
+function writeStoredGuest(g: StoredGuest | null): void {
   try {
-    if (user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
+    if (g) localStorage.setItem(GUEST_KEY, JSON.stringify(g));
+    else localStorage.removeItem(GUEST_KEY);
   } catch {
-    /* private mode / quota exceeded — non-fatal, in-memory only */
+    /* private mode / quota — non-fatal */
   }
 }
 
 function makeGuestId(): string {
-  // crypto.randomUUID is universal in modern browsers; fall back to a
-  // timestamp-based id for the rare exception (very old WebViews).
   try {
     return crypto.randomUUID();
   } catch {
@@ -46,52 +54,142 @@ function makeGuestId(): string {
   }
 }
 
-/**
- * Boot the auth store. Called once from App.tsx on mount.
- *
- * Synchronously reads localStorage and sets the store. If a user was
- * persisted, they're back in `signedIn` immediately; otherwise `anon`.
- * No async work, no network — boot path stays instant.
- */
-export function bootstrapAuth(): void {
-  const stored = readStored();
-  useAuth.getState().setUser(stored);
+function toAuthUser(raw: {
+  uuid?: string;
+  username?: string;
+  email?: string;
+  is_temp?: boolean;
+  email_confirmed?: boolean;
+}): AuthUser | null {
+  if (!raw.uuid || !raw.username) return null;
+  const puter: PuterIdentity = {
+    uuid: raw.uuid,
+    username: raw.username,
+    email: typeof raw.email === "string" && raw.email.length > 0 ? raw.email : null,
+    // Some SDK builds report `is_temp`, some leave it undefined when claimed.
+    // Treat missing as "not temp" so we don't show a stale claim chip.
+    isTemp: raw.is_temp === true,
+  };
+  return { id: puter.uuid, name: puter.username, puter };
+}
+
+async function readPuterSession(sdk: PuterSdk): Promise<AuthUser | null> {
+  let signedIn = false;
+  try {
+    signedIn = await Promise.resolve(sdk.auth.isSignedIn());
+  } catch {
+    return null;
+  }
+  if (!signedIn) return null;
+  try {
+    const u = await sdk.auth.getUser();
+    return toAuthUser((u ?? {}) as Parameters<typeof toAuthUser>[0]);
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Sign in with a display name. If no name is provided, generates a
- * "Player-XXXX" guest name. Persists immediately.
+ * Boot the auth store. Called once from App.tsx on mount.
+ *
+ * Pure read path — never opens a popup. If the user already has a Puter
+ * session it's restored; otherwise we check for a persisted guest choice,
+ * and otherwise leave the store at `anon` so the Welcome modal renders.
  */
-export function signIn(name?: string): LocalUser {
+export async function bootstrapAuth(): Promise<void> {
+  // Try the SDK first. We tolerate CDN load failures (corp networks
+  // that block puter.com) by falling through to the guest path.
+  let sdk: PuterSdk | null = null;
+  try {
+    sdk = await loadPuterSdk();
+  } catch {
+    sdk = null;
+  }
+
+  if (sdk) {
+    const user = await readPuterSession(sdk);
+    if (user) {
+      useAuth.getState().setSignedIn(user);
+      return;
+    }
+  }
+
+  const guest = readStoredGuest();
+  if (guest) {
+    useAuth.getState().setGuest({ id: guest.id, name: guest.name });
+    return;
+  }
+
+  useAuth.getState().reset();
+}
+
+/**
+ * Sign in with Puter. MUST be called from a user-initiated click — Puter's
+ * popup is blocked otherwise. Returns the resolved user, or throws on
+ * failure / cancel.
+ */
+export async function signInWithPuter(): Promise<AuthUser> {
+  const sdk = await loadPuterSdk();
+  // attempt_temp_user_creation lets first-time visitors sign in without
+  // leaving the page. They get an `is_temp` Puter account they can claim
+  // later via the "Claim your account" chip.
+  await (sdk.auth.signIn as (opts?: { attempt_temp_user_creation?: boolean }) => Promise<unknown>)(
+    { attempt_temp_user_creation: true },
+  );
+  const user = await readPuterSession(sdk);
+  if (!user) {
+    throw new Error("Puter sign-in completed but no user was returned");
+  }
+  // Guest record (if any) is no longer the source of truth — clear it so
+  // a future sign-out doesn't unexpectedly revive a stale guest name.
+  writeStoredGuest(null);
+  useAuth.getState().setSignedIn(user);
+  return user;
+}
+
+/**
+ * Continue without signing in. Stores a local guest identity so the user
+ * keeps the same display name across reloads, but does NOT touch Puter.
+ */
+export function continueAsGuest(name?: string): AuthUser {
   const trimmed = (name ?? "").trim();
   const finalName =
     trimmed.length > 0
       ? trimmed.slice(0, 32)
       : `Player-${Math.floor(Math.random() * 9000 + 1000)}`;
-  const user: LocalUser = { id: makeGuestId(), name: finalName };
-  writeStored(user);
-  useAuth.getState().setUser(user);
+  const stored = readStoredGuest();
+  const id = stored?.id ?? makeGuestId();
+  const user: AuthUser = { id, name: finalName };
+  writeStoredGuest({ id, name: finalName });
+  useAuth.getState().setGuest(user);
   return user;
 }
 
-/**
- * Update the display name of the currently signed-in user. No-op if
- * no one is signed in.
- */
-export function renameUser(name: string): void {
-  const current = useAuth.getState().user;
-  if (!current) return;
+/** Update the display name of the current guest. No-op when signed in
+ *  via Puter — that name comes from `puter.auth.getUser()`. */
+export function renameGuest(name: string): void {
+  const cur = useAuth.getState().user;
+  if (!cur || cur.puter) return;
   const trimmed = name.trim().slice(0, 32);
   if (!trimmed) return;
-  const updated: LocalUser = { ...current, name: trimmed };
-  writeStored(updated);
-  useAuth.getState().setUser(updated);
+  const updated: AuthUser = { ...cur, name: trimmed };
+  writeStoredGuest({ id: updated.id, name: updated.name });
+  useAuth.getState().setGuest(updated);
 }
 
 /**
- * Sign out: drop the persisted user and reset the store to anon.
+ * Sign out. Tries to sign out of Puter (no-op when not loaded), clears
+ * the local guest record, and resets the store to `anon`.
  */
-export function signOut(): void {
-  writeStored(null);
-  useAuth.getState().setUser(null);
+export async function signOut(): Promise<void> {
+  const sdk = getPuter();
+  if (sdk) {
+    try {
+      await Promise.resolve(sdk.auth.signOut());
+    } catch {
+      /* SDK error during sign-out shouldn't block the local reset */
+    }
+  }
+  writeStoredGuest(null);
+  useAuth.getState().reset();
 }

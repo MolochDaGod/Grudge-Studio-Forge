@@ -18,6 +18,11 @@
  */
 import { runTool, DESTRUCTIVE_TOOLS, type ToolDef } from "@/lib/aiTools";
 import { recordAiToolCall } from "@/ai/aiAuditLog";
+import {
+  getProvider,
+  findModel,
+  type ModelOption,
+} from "@/lib/ai/providers";
 
 export type TextBlock = { type: "text"; text: string };
 export type ToolUseBlock = {
@@ -45,8 +50,6 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: ContentBlock[];
 }
-
-const apiUrl = (path: string) => `/api/${path.replace(/^\/+/, "")}`;
 
 /** Browser-native confirmation. We keep this separate so it can be swapped
  *  for a richer in-panel modal later. The summary is intentionally short —
@@ -83,6 +86,10 @@ export interface RunHandlers {
    *  tool dispatches abort cleanly. The panel uses this to power the
    *  Interrupt button. */
   signal?: AbortSignal;
+  /** Optional model selection. When omitted, the first entry of `MODELS`
+   *  (Claude Sonnet 4.6 via the server proxy) is used — preserves the
+   *  pre-provider-abstraction default. */
+  model?: ModelOption;
 }
 
 const MAX_TURNS = 8;
@@ -106,42 +113,44 @@ export async function runConversation(
   const transcript: ChatMessage[] = [...messages];
   const signal = handlers.signal;
 
+  const model = handlers.model ?? findModel(null);
+  const provider = getProvider(model.provider);
+
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     if (signal?.aborted) return transcript;
-    let stream: ReadableStream<Uint8Array> | null;
-    try {
-      stream = await fetchChatStream(transcript, tools, system, signal);
-    } catch (err) {
-      if (signal?.aborted) return transcript;
-      handlers.onError(err instanceof Error ? err.message : String(err));
-      return transcript;
-    }
-    if (!stream) return transcript;
 
     const assistantBlocks: ContentBlock[] = [];
     let stopReason: string | null = null;
     let aborted = false;
 
     try {
-      await readSSE(stream, signal, (event) => {
+      const events = provider.streamTurn({
+        messages: transcript,
+        tools,
+        system,
+        model: model.modelId,
+        signal,
+      });
+      for await (const event of events) {
+        if (signal?.aborted) break;
         if (event.type === "text_delta") {
-          handlers.onTextDelta(event.text as string);
+          handlers.onTextDelta(event.text);
         } else if (event.type === "text_block") {
-          assistantBlocks.push({ type: "text", text: event.text as string });
+          assistantBlocks.push({ type: "text", text: event.text });
         } else if (event.type === "tool_use") {
           assistantBlocks.push({
             type: "tool_use",
-            id: event.id as string,
-            name: event.name as string,
-            input: (event.input as Record<string, unknown>) ?? {},
+            id: event.id,
+            name: event.name,
+            input: event.input ?? {},
           });
         } else if (event.type === "stop") {
-          stopReason = (event.stop_reason as string) ?? "end_turn";
+          stopReason = event.stop_reason ?? "end_turn";
         } else if (event.type === "error") {
-          handlers.onError(String(event.error));
+          handlers.onError(event.error);
           aborted = true;
         }
-      });
+      }
     } catch (err) {
       if (err instanceof UserAbortError || signal?.aborted) return transcript;
       handlers.onError(err instanceof Error ? err.message : String(err));
@@ -265,70 +274,6 @@ function extractToolImage(
   return { mediaType: img.mediaType, base64: img.base64, scrubbed };
 }
 
-async function fetchChatStream(
-  messages: ChatMessage[],
-  tools: ToolDef[],
-  system: string,
-  signal?: AbortSignal,
-): Promise<ReadableStream<Uint8Array> | null> {
-  const res = await fetch(apiUrl("ai/chat"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, tools, system }),
-    signal,
-  });
-  if (!res.ok || !res.body) {
-    throw new Error(`AI chat HTTP ${res.status}: ${await res.text().catch(() => "")}`);
-  }
-  return res.body;
-}
-
-/** Minimal SSE parser — yields one parsed JSON event per `data: ...` line.
- *  When `signal` is aborted mid-stream we cancel the underlying reader and
- *  throw `UserAbortError`, which `runConversation` swallows so the panel
- *  doesn't surface the user's own cancel as a fatal error. */
-async function readSSE(
-  body: ReadableStream<Uint8Array>,
-  signal: AbortSignal | undefined,
-  onEvent: (event: Record<string, unknown>) => void,
-): Promise<void> {
-  const reader = body.getReader();
-  const onAbort = () => {
-    try { reader.cancel().catch(() => undefined); } catch { /* already closed */ }
-  };
-  if (signal) {
-    if (signal.aborted) {
-      onAbort();
-      throw new UserAbortError();
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  }
-  const decoder = new TextDecoder();
-  let buf = "";
-  try {
-  while (true) {
-    if (signal?.aborted) throw new UserAbortError();
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let idx;
-    // Each event ends with \n\n
-    while ((idx = buf.indexOf("\n\n")) >= 0) {
-      const chunk = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      for (const line of chunk.split("\n")) {
-        if (!line.startsWith("data:")) continue;
-        const json = line.slice(5).trim();
-        if (!json) continue;
-        try {
-          onEvent(JSON.parse(json));
-        } catch {
-          // skip malformed event
-        }
-      }
-    }
-  }
-  } finally {
-    if (signal) signal.removeEventListener("abort", onAbort);
-  }
-}
+// SSE parsing + transport now live in `lib/ai/providers/sse.ts` so each
+// provider can adapt the same wire format. UserAbortError is retained for
+// internal cancel signalling above.

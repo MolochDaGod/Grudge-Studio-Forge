@@ -1,0 +1,123 @@
+/**
+ * First-load Welcome modal.
+ *
+ * Appears whenever the auth store finishes bootstrap with no user
+ * (`status === "anon"`). Two paths:
+ *   - "Sign in with Puter"  → calls signInWithPuter(); requires user click.
+ *   - "Continue without signing in" → continueAsGuest(); editor works
+ *     locally, cloud / publish / Puter AI models stay disabled.
+ *
+ * Closing the dialog without choosing also drops to guest so the editor
+ * doesn't deadlock behind a modal the user dismissed.
+ */
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Sparkles, LogIn, ArrowRight, Loader2 } from "lucide-react";
+import { useAuth } from "@/store/auth";
+import { signInWithPuter, continueAsGuest } from "@/lib/authBootstrap";
+
+export function WelcomeModal() {
+  const status = useAuth((s) => s.status);
+  const [busy, setBusy] = useState<"signin" | "guest" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const open = status === "anon";
+
+  async function onSignIn() {
+    setBusy("signin");
+    setError(null);
+    try {
+      await signInWithPuter();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function onGuest() {
+    setBusy("guest");
+    try {
+      continueAsGuest();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && status === "anon") onGuest();
+      }}
+    >
+      <DialogContent className="max-w-md" data-testid="dialog-welcome">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="size-5 text-[#d4af37]" />
+            Welcome to Grudge GameForge
+          </DialogTitle>
+          <DialogDescription>
+            Build interactive 3D scenes in your browser. Sign in with Puter
+            to enable cloud saves, free Puter AI models, and one-click
+            publishing — or continue without signing in to try it out.
+          </DialogDescription>
+        </DialogHeader>
+
+        <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-5 py-1">
+          <li>
+            Cloud saves &amp; cross-device project sync via your Puter drive.
+          </li>
+          <li>
+            Free access to Puter-hosted Claude / GPT-4o / Gemini / Llama in
+            the AI Worker panel.
+          </li>
+          <li>One-click publish to a shareable <code>*.puter.site</code> URL.</li>
+        </ul>
+
+        {error && (
+          <p
+            className="text-xs text-destructive"
+            data-testid="text-welcome-error"
+          >
+            {error}
+          </p>
+        )}
+
+        <DialogFooter className="gap-2 sm:flex-row-reverse">
+          <Button
+            onClick={onSignIn}
+            disabled={busy !== null}
+            className="gap-1.5"
+            data-testid="button-welcome-signin"
+          >
+            {busy === "signin" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <LogIn className="size-4" />
+            )}
+            Sign in with Puter
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onGuest}
+            disabled={busy !== null}
+            className="gap-1.5"
+            data-testid="button-welcome-guest"
+          >
+            Continue without signing in
+            <ArrowRight className="size-4" />
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -1,35 +1,68 @@
 import { create } from "zustand";
 
 /**
- * Editor-side auth store — local-only.
+ * Editor-side auth store — Puter-backed.
  *
- * Sign-in is intentionally trivial: the user picks a display name (or
- * accepts the auto-generated guest name) and we persist it to
- * localStorage. There is no popup, no SDK, no server round-trip, and no
- * shared `users` table. This is a single-player editor; identity exists
- * only so saved projects/screenshots can be tagged with a friendly name.
+ * Three terminal statuses (after the bootstrap completes):
+ *   - "anon"     — bootstrap finished, no user, Welcome modal should be shown.
+ *   - "guest"    — user explicitly chose "Continue without signing in".
+ *                  Editor works locally; cloud / publish disabled with tooltip.
+ *   - "signedIn" — `puter.auth.isSignedIn()` returned true. `user.puter` is
+ *                  the authoritative identity (uuid + username, optionally
+ *                  email + isTemp). The Toolbar's existing
+ *                  `status === "signedIn"` publish gate naturally lights up
+ *                  only for the real Puter session.
  *
- * The store keeps the same `AuthStatus` enum the rest of the editor was
- * already reading (Toolbar: `status === "signedIn"`), so consumers don't
- * have to change.
+ * The `user.id` / `user.name` aliases are preserved so existing consumers
+ * (UserMenu, screenshot tagging) keep working without per-call shape checks.
  */
-export type AuthStatus = "idle" | "anon" | "signedIn";
+export type AuthStatus = "idle" | "anon" | "guest" | "signedIn";
 
-export interface LocalUser {
-  /** Stable id generated on first sign-in; persisted forever. */
+export interface PuterIdentity {
+  uuid: string;
+  username: string;
+  email: string | null;
+  /** True when Puter created a temporary account (the user clicked
+   *  "Sign in with Puter" but never claimed the identity). The UI
+   *  surfaces a "Claim your account" chip in this state. */
+  isTemp: boolean;
+}
+
+export interface AuthUser {
+  /** Stable id — Puter UUID for signed-in users, locally generated UUID
+   *  for guests. Persisted across reloads. */
   id: string;
-  /** Display name shown in the toolbar. User-editable. */
+  /** Display name shown in the toolbar. */
   name: string;
+  /** Present iff signed in via Puter. */
+  puter?: PuterIdentity;
 }
 
 interface AuthState {
   status: AuthStatus;
-  user: LocalUser | null;
-  setUser(user: LocalUser | null): void;
+  user: AuthUser | null;
+  /** Convenience flag: real Puter session available — Cloud Save / Publish
+   *  / Puter AI provider may be used. Guests get `false` here. */
+  isPuterSignedIn: boolean;
+  setUser(user: AuthUser | null): void;
+  setSignedIn(user: AuthUser): void;
+  setGuest(user: AuthUser): void;
+  reset(): void;
 }
 
 export const useAuth = create<AuthState>((set) => ({
   status: "idle",
   user: null,
-  setUser: (user) => set({ status: user ? "signedIn" : "anon", user }),
+  isPuterSignedIn: false,
+  setUser: (user) =>
+    set({
+      status: user ? (user.puter ? "signedIn" : "guest") : "anon",
+      user,
+      isPuterSignedIn: !!user?.puter,
+    }),
+  setSignedIn: (user) =>
+    set({ status: "signedIn", user, isPuterSignedIn: true }),
+  setGuest: (user) =>
+    set({ status: "guest", user, isPuterSignedIn: false }),
+  reset: () => set({ status: "anon", user: null, isPuterSignedIn: false }),
 }));

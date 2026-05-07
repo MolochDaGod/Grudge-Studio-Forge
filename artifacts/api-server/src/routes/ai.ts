@@ -19,6 +19,7 @@
 import { Router, type IRouter } from "express";
 import { anthropic } from "../lib/anthropicClient";
 import { logger } from "../lib/logger";
+import { puterChat } from "../lib/puterServerClient";
 
 const router: IRouter = Router();
 
@@ -112,6 +113,60 @@ router.post("/ai/chat", async (req, res) => {
   const send = (event: Record<string, unknown>) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`);
   };
+
+  // Provider switch: `?provider=puter` proxies through the user's Puter
+  // session instead of the server's Anthropic key. Tools / messages /
+  // system prompt stay identical — `puterServerClient` translates as
+  // needed and re-emits the same SSE event shape.
+  const provider =
+    typeof req.query.provider === "string" ? req.query.provider : "anthropic";
+  if (provider === "puter") {
+    const token = req.header("x-puter-token");
+    if (!token) {
+      send({ type: "error", error: "Missing X-Puter-Token header." });
+      send({ type: "stop", stop_reason: "error" });
+      res.end();
+      return;
+    }
+    try {
+      const result = await puterChat(token, {
+        messages: body.messages,
+        system: body.system,
+        model: typeof body.model === "string" ? body.model : undefined,
+        tools: body.tools,
+        maxTokens,
+      });
+      for (const block of result.blocks) {
+        if (block.type === "text" && block.text) {
+          // Puter REST returns whole-message; surface as one delta + a final
+          // text_block so the UI both renders text and the transcript can
+          // reconstruct the assistant message.
+          send({ type: "text_delta", text: block.text });
+          send({ type: "text_block", text: block.text });
+        } else if (block.type === "tool_use") {
+          send({
+            type: "tool_use",
+            id: block.id,
+            name: block.name,
+            input: block.input ?? {},
+          });
+        }
+      }
+      send({ type: "stop", stop_reason: result.stopReason });
+      res.end();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err, provider: "puter" }, "ai/chat puter forward failed");
+      try {
+        send({ type: "error", error: message });
+        send({ type: "stop", stop_reason: "error" });
+        res.end();
+      } catch {
+        /* socket already closed */
+      }
+    }
+    return;
+  }
 
   try {
     const stream = anthropic.messages.stream({

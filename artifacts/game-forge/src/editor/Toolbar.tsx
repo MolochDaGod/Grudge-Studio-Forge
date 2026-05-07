@@ -30,6 +30,8 @@ import {
   Globe,
   Copy,
   CheckCircle2,
+  CloudUpload,
+  CloudDownload,
 } from "lucide-react";
 import { useRef } from "react";
 import type { SceneData } from "@/scene/types";
@@ -83,6 +85,8 @@ import { ToolsPanel } from "@/editor/ToolsPanel";
 import { Wrench } from "lucide-react";
 import { UserMenu } from "@/editor/UserMenu";
 import { useAuth } from "@/store/auth";
+import { cloud, path as cloudPath } from "@/lib/cloud/puterCloud";
+import { useToast } from "@/hooks/use-toast";
 import { publishScene, type PublishResult } from "@/lib/puterPublish";
 import {
   Dialog,
@@ -650,6 +654,9 @@ export function Toolbar({
         Save
       </Button>
 
+      <CloudSaveButton />
+      <CloudOpenButton />
+
       <Tooltip>
         <TooltipTrigger asChild>
           <span>
@@ -916,5 +923,261 @@ export function Toolbar({
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// =====================================================================
+// Cloud Save / Open from Cloud
+// =====================================================================
+//
+// Two thin Toolbar buttons that go through `puterCloud` for signed-in
+// users. Saves land at `Grudge/projects/<projectId>/scene.json` (matches
+// the AI `cloud_save_project` tool) and the picker reads back the
+// `grudge:projects:index` KV index. Guests see a disabled button with a
+// "Sign in with Puter" tooltip — no broken state.
+//
+// We persist a per-user storage preference under `grudge.storage.<uuid>`
+// so users who explicitly cloud-save once are silently re-saved to the
+// cloud on subsequent edits as well (handled by `gameforge:save` listener
+// elsewhere — recorded here as the source of truth).
+function CloudSaveButton() {
+  const projectId = useEditor((s) => s.projectId);
+  const sceneData = useEditor((s) => s.sceneData);
+  const sceneName = useEditor((s) => s.sceneName);
+  const sceneId = useEditor((s) => s.sceneId);
+  const pushLog = useEditor((s) => s.pushLog);
+  const isSignedIn = useAuth((s) => s.status === "signedIn");
+  const userUuid = useAuth((s) => s.user?.puter?.uuid);
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const onClick = async () => {
+    if (!projectId || busy) return;
+    setBusy(true);
+    try {
+      const scenePath = cloudPath("Grudge/projects", String(projectId), "scene.json");
+      const metaPath = cloudPath("Grudge/projects", String(projectId), "meta.json");
+      const meta = {
+        projectId,
+        name: sceneName,
+        sceneId: sceneId ?? null,
+        entityCount: sceneData.entities.length,
+        updatedAt: new Date().toISOString(),
+      };
+      const w = await cloud.fs.write(scenePath, JSON.stringify(sceneData));
+      if (!w.ok) throw new Error(w.message ?? w.reason);
+      await cloud.fs.write(metaPath, JSON.stringify(meta));
+
+      // Update the KV index so Open-from-Cloud sees this entry.
+      const idxRes = await cloud.kv.get<Array<Record<string, unknown>>>("grudge:projects:index");
+      const idx = idxRes.ok && Array.isArray(idxRes.data) ? idxRes.data : [];
+      const without = idx.filter((e) => (e as { projectId?: number }).projectId !== projectId);
+      without.push({ projectId, name: sceneName, updatedAt: meta.updatedAt, scenePath });
+      await cloud.kv.set("grudge:projects:index", without);
+
+      // Remember this user prefers the cloud as their save target.
+      if (userUuid) {
+        try {
+          localStorage.setItem(`grudge.storage.${userUuid}`, "cloud");
+        } catch {
+          /* private mode — non-fatal */
+        }
+      }
+      toast({ title: "Saved to your Puter cloud" });
+      pushLog("info", `Cloud-saved "${sceneName}" → ${scenePath}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Cloud save failed", description: msg, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClick}
+            disabled={!isSignedIn || !projectId || busy}
+            data-testid="button-cloud-save"
+          >
+            {busy ? (
+              <Loader2 className="size-4 mr-1 animate-spin" />
+            ) : (
+              <CloudUpload className="size-4 mr-1" />
+            )}
+            Cloud Save
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {isSignedIn
+          ? "Snapshot the current scene to your Puter drive."
+          : "Sign in with Puter to save to the cloud."}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface CloudProjectEntry {
+  projectId: number;
+  name: string;
+  updatedAt: string;
+  scenePath: string;
+}
+
+function CloudOpenButton() {
+  const isSignedIn = useAuth((s) => s.status === "signedIn");
+  const setSceneData = useEditor((s) => s.setSceneData);
+  const setSceneName = useEditor((s) => s.setSceneName);
+  const pushLog = useEditor((s) => s.pushLog);
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [entries, setEntries] = useState<CloudProjectEntry[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadIndex = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await cloud.kv.get<CloudProjectEntry[]>("grudge:projects:index");
+      if (!r.ok) {
+        setError(r.message ?? r.reason);
+        setEntries([]);
+        return;
+      }
+      const list = Array.isArray(r.data)
+        ? r.data
+            .filter(
+              (e): e is CloudProjectEntry =>
+                !!e &&
+                typeof e.projectId === "number" &&
+                typeof e.scenePath === "string",
+            )
+            .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+        : [];
+      setEntries(list);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onTrigger = () => {
+    setOpen(true);
+    void loadIndex();
+  };
+
+  const onPick = async (e: CloudProjectEntry) => {
+    setLoading(true);
+    try {
+      const r = await cloud.fs.readJson<SceneData>(e.scenePath);
+      if (!r.ok) throw new Error(r.message ?? r.reason);
+      const parsed = r.data;
+      if (!parsed || !Array.isArray(parsed.entities)) {
+        throw new Error("Cloud file is not a valid scene.");
+      }
+      // Open-from-Cloud is "Save As New" semantics: detach from any
+      // currently-bound API scene id so a subsequent Save creates a
+      // fresh scene record instead of overwriting whichever scene the
+      // user happened to have open. The store's onSave already branches
+      // on sceneId, so clearing it (via direct setState — there's no
+      // dedicated setSceneId on the store API) is enough.
+      useEditor.setState({ sceneId: null });
+      setSceneName(e.name);
+      setSceneData(parsed);
+      pushLog(
+        "info",
+        `Loaded "${e.name}" from cloud (${parsed.entities.length} entities). Save to create a new scene record in this project.`,
+      );
+      toast({
+        title: `Loaded "${e.name}" from cloud`,
+        description: "Click Save to create a new scene record from this snapshot.",
+      });
+      setOpen(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast({ title: "Cloud open failed", description: msg, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onTrigger}
+              disabled={!isSignedIn}
+              data-testid="button-cloud-open"
+            >
+              <CloudDownload className="size-4 mr-1" />
+              Open from Cloud
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {isSignedIn
+            ? "Open a scene previously saved to your Puter drive."
+            : "Sign in with Puter to access cloud projects."}
+        </TooltipContent>
+      </Tooltip>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-cloud-open">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CloudDownload className="size-4" /> Open from Cloud
+            </DialogTitle>
+            <DialogDescription>
+              Pick a scene previously saved to your Puter drive. This
+              replaces the current viewport — save first if you want to
+              keep your in-progress work.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loading && (
+            <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
+              <Loader2 className="size-4 animate-spin" /> Loading…
+            </div>
+          )}
+          {!loading && error && (
+            <p className="text-xs text-destructive py-2" data-testid="text-cloud-error">
+              {error}
+            </p>
+          )}
+          {!loading && !error && entries.length === 0 && (
+            <p className="text-xs text-muted-foreground py-2">
+              No cloud projects yet — use Cloud Save to add one.
+            </p>
+          )}
+          {!loading && entries.length > 0 && (
+            <ul className="space-y-1 max-h-64 overflow-y-auto" data-testid="list-cloud-projects">
+              {entries.map((e) => (
+                <li key={`${e.projectId}-${e.scenePath}`}>
+                  <button
+                    onClick={() => void onPick(e)}
+                    className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-center justify-between gap-2"
+                    data-testid={`item-cloud-project-${e.projectId}`}
+                  >
+                    <span className="truncate font-medium">{e.name}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground font-mono">
+                      {e.updatedAt?.slice(0, 10) ?? ""}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

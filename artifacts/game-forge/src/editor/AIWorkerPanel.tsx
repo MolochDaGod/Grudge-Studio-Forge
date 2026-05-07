@@ -35,6 +35,20 @@ import { useEditor } from "@/store/editor";
 import { useToast } from "@/hooks/use-toast";
 import { runConversation, type ChatMessage } from "@/lib/aiClient";
 import { TOOL_DEFS, buildSystemPrompt } from "@/lib/aiTools";
+import {
+  MODELS,
+  DEFAULT_MODEL_ID,
+  findModel,
+  type ModelOption,
+} from "@/lib/ai/providers";
+import { useAuth } from "@/store/auth";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MUTATING_TOOLS } from "@/ai/aiAuditLog";
 import {
   countCompletedSteps,
@@ -140,9 +154,49 @@ export function AIWorkerPanel({
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
   const { toast } = useToast();
+  const isPuterSignedIn = useAuth((s) => s.isPuterSignedIn);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  // Per-project model selection: each project remembers which model it
+  // was last using. Falls back to the global default when the project
+  // hasn't picked one yet (or in pre-project state).
+  const modelStorageKey = projectId
+    ? `grudge.ai.model:${projectId}`
+    : "grudge.ai.model";
+  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
+    try {
+      return (
+        localStorage.getItem(modelStorageKey) ||
+        localStorage.getItem("grudge.ai.model") ||
+        DEFAULT_MODEL_ID
+      );
+    } catch {
+      return DEFAULT_MODEL_ID;
+    }
+  });
+  // When the open project changes, re-hydrate the picker from that
+  // project's stored preference.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(modelStorageKey);
+      if (stored) setSelectedModelId(stored);
+    } catch {
+      /* ignore */
+    }
+  }, [modelStorageKey]);
+  const selectedModel = useMemo(() => findModel(selectedModelId), [selectedModelId]);
+  // Stable ref so the in-flight `runConversation` can read the latest pick
+  // without resubscribing — model is captured at turn-start, not mid-stream.
+  const selectedModelRef = useRef<ModelOption>(selectedModel);
+  useEffect(() => {
+    selectedModelRef.current = selectedModel;
+    try {
+      localStorage.setItem(modelStorageKey, selectedModelId);
+    } catch {
+      /* private mode — non-fatal */
+    }
+  }, [selectedModel, selectedModelId, modelStorageKey]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -265,6 +319,7 @@ export function AIWorkerPanel({
 
     try {
       await runConversation(apiMessages, TOOL_DEFS, system, {
+        model: selectedModelRef.current,
         onTextDelta: (t) => {
           liveTextRef.current += t;
           // Lock the plan in as soon as the closing tag streams in. Once
@@ -633,10 +688,48 @@ export function AIWorkerPanel({
           className="text-xs resize-none"
           data-testid="input-ai-message"
         />
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-muted-foreground font-mono">
-            claude-sonnet-4-6
-          </span>
+        <div className="flex items-center justify-between gap-2">
+          <Select
+            value={selectedModelId}
+            onValueChange={setSelectedModelId}
+            disabled={streaming}
+          >
+            <SelectTrigger
+              className="h-7 text-[11px] flex-1 max-w-[230px]"
+              data-testid="select-ai-model"
+            >
+              <SelectValue placeholder="Pick a model" />
+            </SelectTrigger>
+            <SelectContent>
+              {MODELS.map((m) => {
+                const locked = m.requiresPuterAuth && !isPuterSignedIn;
+                return (
+                  <SelectItem
+                    key={m.id}
+                    value={m.id}
+                    disabled={locked}
+                    data-testid={`option-model-${m.id}`}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs">
+                        {m.label}
+                        {locked && (
+                          <span className="text-[10px] text-muted-foreground ml-1">
+                            (sign in)
+                          </span>
+                        )}
+                      </span>
+                      {m.hint && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {m.hint}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
           {streaming ? (
             <Button
               size="sm"
