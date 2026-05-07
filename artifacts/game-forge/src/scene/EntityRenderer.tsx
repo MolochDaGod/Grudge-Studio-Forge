@@ -52,6 +52,11 @@ interface RenderProps {
    *  The viewport snapshots the entity id into a ref so the surrounding
    *  Radix `<ContextMenu>` can render entity-aware actions. */
   onContext?: () => void;
+  /** Pointer hovering this entity's group. Fired with `true` on enter and
+   *  `false` on leave. Enter events forward the pointer's client coords so
+   *  the viewport's hover chip can appear immediately without waiting for
+   *  the next pointer-move tick. Only wired in edit mode. */
+  onHover?: (hovering: boolean, clientX?: number, clientY?: number) => void;
   playMode: boolean;
   /** Child entities rendered inside this entity's group so they inherit
    *  its transform (Unity-style hierarchy). */
@@ -658,7 +663,23 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   props,
   ref,
 ) {
-  const { entity, playMode, children, onContext } = props;
+  const { entity, playMode, children, onContext, onHover } = props;
+  // Pointer enter/leave on the entity's group. We stopPropagation on
+  // enter so the most-specific (deepest) entity wins — without that a
+  // hover on a child mesh inside a parent GLB would also fire on the
+  // parent's wrapper and the chip would jitter between them.
+  const handlePointerOver = onHover
+    ? (e: { stopPropagation?: () => void; clientX?: number; clientY?: number }) => {
+        e.stopPropagation?.();
+        onHover(true, e.clientX, e.clientY);
+      }
+    : undefined;
+  const handlePointerOut = onHover
+    ? (e: { stopPropagation?: () => void }) => {
+        e.stopPropagation?.();
+        onHover(false);
+      }
+    : undefined;
   // Bubble-phase R3F synthetic event. We DO call stopPropagation so the
   // innermost mesh wins — without it a parent EntityRenderer for a GLB
   // root would also fire and overwrite `lastContextEntityIdRef` with the
@@ -891,7 +912,12 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
             RigidBody itself — @react-three/rapier's RigidBody doesn't
             forward DOM-style pointer events. The group catches the same
             r3f synthetic event for the entity's visible geometry. */}
-        <group scale={tr.scale} onContextMenu={handleContext}>
+        <group
+          scale={tr.scale}
+          onContextMenu={handleContext}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
           <MeshBody {...props} effectiveMaterial={effectiveMaterial} />
           {children}
         </group>
@@ -917,6 +943,8 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         materialBlocksAudio: matResolved.blocksAudio,
       }}
       onContextMenu={handleContext}
+      onPointerOver={handlePointerOver}
+      onPointerOut={handlePointerOut}
     >
       <MeshBody {...props} effectiveMaterial={effectiveMaterial} />
       {children}

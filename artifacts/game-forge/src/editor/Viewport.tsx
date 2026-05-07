@@ -13,7 +13,12 @@ import { type AgentActor } from "@/scene/agentRuntime";
 import { loadNavmesh, findPath as navFindPath, sampleNavmesh as navSampleNavmesh } from "@/lib/navmesh";
 import { getCachedBlob, hydrateNavmeshFromServer } from "@/lib/navmeshBake";
 import type { AgentHandle } from "@/scene/csTranspile";
-import type { SurfaceKind } from "@workspace/scene-schema";
+import {
+  resolveInheritedFields,
+  indexEntitiesById,
+  resolveMaterialDefaults,
+  type SurfaceKind,
+} from "@workspace/scene-schema";
 import { computeFramingPose } from "@/lib/framing";
 import {
   applyGroundSnap,
@@ -66,6 +71,10 @@ interface RenderNodeProps {
   /** Right-click hit on a specific entity. Optional so play-mode trees
    *  (where the context menu is unused) don't have to forward anything. */
   onContext?: (id: string) => void;
+  /** Pointer hover. Fires with `(id, true, clientX, clientY)` on enter
+   *  and `(id, false)` on leave. Only forwarded in edit mode (the play
+   *  tree leaves it undefined so no overlay logic kicks in during play). */
+  onHover?: (id: string, hovering: boolean, clientX?: number, clientY?: number) => void;
   groupRefs?: React.MutableRefObject<Map<string, THREE.Group>>;
   bodyRefs?: React.MutableRefObject<Map<string, RapierRigidBody | THREE.Group>>;
   playMode: boolean;
@@ -85,6 +94,7 @@ function RenderNode({
   selectedId,
   onPick,
   onContext,
+  onHover,
   groupRefs,
   bodyRefs,
   playMode,
@@ -98,6 +108,7 @@ function RenderNode({
       selectedId={selectedId}
       onPick={onPick}
       onContext={onContext}
+      onHover={onHover}
       groupRefs={groupRefs}
       bodyRefs={bodyRefs}
       playMode={playMode}
@@ -110,6 +121,11 @@ function RenderNode({
       selected={selectedId === entity.id}
       onPick={() => onPick(entity.id)}
       onContext={onContext ? () => onContext(entity.id) : undefined}
+      onHover={
+        onHover
+          ? (h: boolean, x?: number, y?: number) => onHover(entity.id, h, x, y)
+          : undefined
+      }
       playMode={playMode}
       ref={(el) => {
         if (groupRefs) {
@@ -148,11 +164,17 @@ function RenderNode({
 function SceneEditMode({
   data,
   onContextEntity,
+  onHoverEntity,
 }: {
   data?: { entities: SceneEntity[] };
   /** Records the entity hit by the most recent right-click so the
    *  surrounding Radix `<ContextMenu>` can render entity-aware items. */
   onContextEntity?: (id: string) => void;
+  /** Records the entity currently under the pointer for the floating
+   *  Material info chip. Fires `(id, true, clientX, clientY)` on enter /
+   *  `(id, false)` on leave. The pointer coords let the chip appear
+   *  immediately on first hover instead of waiting for the next move. */
+  onHoverEntity?: (id: string, hovering: boolean, clientX?: number, clientY?: number) => void;
 }) {
   const liveData = useEditor((s) => s.sceneData);
   const sceneData = data ?? liveData;
@@ -234,6 +256,7 @@ function SceneEditMode({
             selectEntity(id);
           }}
           onContext={onContextEntity}
+          onHover={onHoverEntity}
           groupRefs={groupRefs}
           playMode={false}
         />
@@ -1458,6 +1481,63 @@ export function Viewport() {
       : null,
   );
 
+  // Hover bookkeeping for the floating Material info chip. We track the
+  // hovered entity id in state (the chip re-renders on change) and the
+  // pointer's screen position in a ref + state so the chip follows the
+  // cursor without re-rendering 60×/sec when nothing is hovered.
+  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const allEntitiesForHover = useEditor((s) => s.sceneData.entities);
+  const hoverInfo = useMemo(() => {
+    if (!hoveredEntityId) return null;
+    const entitiesById = indexEntitiesById(allEntitiesForHover);
+    const entity = entitiesById.get(hoveredEntityId);
+    if (!entity) return null;
+    const inherited = resolveInheritedFields(entity, entitiesById);
+    // Type-inferred kind mirrors EntityRenderer's logic: cloth/flag/
+    // particles auto-default into their natural Material slot when no
+    // explicit override is set.
+    const typeKind =
+      entity.type === "cloth"
+        ? "Cloth"
+        : entity.type === "flag"
+          ? "Flag"
+          : entity.type === "particles"
+            ? "Particle"
+            : undefined;
+    const ownKind = entity.material?.kind;
+    const effectiveKind = ownKind ?? typeKind ?? inherited.materialKind ?? "Solid";
+    const resolved = resolveMaterialDefaults({
+      ...(inherited.material ?? {}),
+      kind: effectiveKind,
+    });
+    // Walk up the parent chain to find which ancestor the kind came
+    // from when neither an own nor a type-inferred kind is set. Mirrors
+    // resolveInheritedFields' walk so the source label stays in sync.
+    let inheritedFrom: { id: string; name: string } | null = null;
+    if (!ownKind && !typeKind) {
+      let cur = entity.parentId ? entitiesById.get(entity.parentId) ?? null : null;
+      for (let depth = 0; cur && depth < 64; depth++) {
+        if (cur.material?.kind) {
+          inheritedFrom = { id: cur.id, name: cur.name };
+          break;
+        }
+        cur = cur.parentId ? entitiesById.get(cur.parentId) ?? null : null;
+      }
+    }
+    return {
+      entityName: entity.name,
+      kind: resolved.kind,
+      blocksLineOfSight: resolved.blocksLineOfSight,
+      blocksProjectiles: resolved.blocksProjectiles,
+      blocksAudio: resolved.blocksAudio,
+      isOwn: !!ownKind,
+      isTypeDefault: !ownKind && !!typeKind,
+      inheritedFrom,
+    };
+  }, [hoveredEntityId, allEntitiesForHover]);
+
   // Bumping `viewportEpoch` after a crash forces React to discard the old
   // <Canvas> tree (with its broken WebGL context, dangling refs, half-mounted
   // post-processing passes, etc.) and rebuild it from scratch.
@@ -1568,6 +1648,7 @@ export function Viewport() {
     >
       <ContextMenuTrigger asChild>
         <div
+          ref={wrapperRef}
           className="relative w-full h-full bg-background grid-pattern overflow-hidden"
           // Capture phase: runs BEFORE r3f's bubble-phase raycast on the
           // <canvas>. Resets the hover snapshot so a right-click on empty
@@ -1575,6 +1656,16 @@ export function Viewport() {
           // the empty-space menu instead of acting on the previous hit.
           onContextMenuCapture={() => {
             lastContextEntityIdRef.current = null;
+          }}
+          onPointerMove={(e) => {
+            // Track the pointer in container-local coords so the hover
+            // chip can render at an offset from the cursor without
+            // straying outside the viewport. Only updated while
+            // hovering an entity to avoid pointless 60Hz re-renders.
+            if (!hoveredEntityId) return;
+            const rect = wrapperRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            setHoverPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
           }}
         >
           <ViewportErrorBoundary
@@ -1636,6 +1727,29 @@ export function Viewport() {
                     onContextEntity={(id) => {
                       lastContextEntityIdRef.current = id;
                     }}
+                    onHoverEntity={(id, hovering, clientX, clientY) => {
+                      // Use a functional update so a stale leave from a
+                      // previous entity (which can fire AFTER the next
+                      // entity's enter when the pointer slides between
+                      // adjacent meshes) doesn't clobber the active id.
+                      if (hovering) {
+                        setHoveredEntityId(id);
+                        // Seed the chip position from the enter event so
+                        // it renders on the first frame instead of
+                        // waiting for the next pointer-move tick.
+                        if (clientX !== undefined && clientY !== undefined) {
+                          const rect = wrapperRef.current?.getBoundingClientRect();
+                          if (rect) {
+                            setHoverPos({
+                              x: clientX - rect.left,
+                              y: clientY - rect.top,
+                            });
+                          }
+                        }
+                      } else {
+                        setHoveredEntityId((prev) => (prev === id ? null : prev));
+                      }
+                    }}
                   />
                 )}
               </Suspense>
@@ -1668,6 +1782,48 @@ export function Viewport() {
           <div className="absolute top-3 left-3 px-3 py-1.5 rounded-md bg-card/80 backdrop-blur border border-card-border text-xs font-mono text-muted-foreground pointer-events-none">
             <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
           </div>
+
+          {/* Floating Material info chip — appears in edit mode while
+              hovering an entity. Shows the resolved Material kind, the
+              three occlusion flags (sight / projectiles / audio), and
+              the inheritance source when the kind came from an ancestor.
+              pointer-events-none so it never steals clicks from the
+              <canvas> underneath. */}
+          {!isPlaying && hoverInfo && hoverPos && (
+            <div
+              className="pointer-events-none absolute z-30 rounded-md border border-card-border bg-card/90 backdrop-blur px-2.5 py-1.5 text-[11px] font-mono text-foreground shadow-lg max-w-[260px]"
+              style={{
+                left: Math.min(hoverPos.x + 14, (wrapperRef.current?.clientWidth ?? 0) - 270),
+                top: Math.min(hoverPos.y + 14, (wrapperRef.current?.clientHeight ?? 0) - 80),
+              }}
+              data-testid="material-hover-chip"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-accent font-semibold">{hoverInfo.kind}</span>
+                <span className="text-muted-foreground truncate">
+                  {hoverInfo.entityName}
+                </span>
+              </div>
+              <div className="text-muted-foreground">
+                {[
+                  hoverInfo.blocksLineOfSight ? "blocks sight" : "lets sight through",
+                  hoverInfo.blocksProjectiles
+                    ? "blocks bullets"
+                    : "lets bullets through",
+                  hoverInfo.blocksAudio ? "blocks audio" : "lets audio through",
+                ].join(" · ")}
+              </div>
+              <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+                {hoverInfo.isOwn
+                  ? "Own material"
+                  : hoverInfo.isTypeDefault
+                    ? "From entity type default"
+                    : hoverInfo.inheritedFrom
+                      ? `Inherited from ${hoverInfo.inheritedFrom.name}`
+                      : "Default (Solid)"}
+              </div>
+            </div>
+          )}
 
           {isPlaying && <PlayHUD bus={getPlaySession().bus} />}
 
