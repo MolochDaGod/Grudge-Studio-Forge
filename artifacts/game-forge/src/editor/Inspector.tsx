@@ -6,6 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { useEditor } from "@/store/editor";
+import { bakeEntityConvexHulls } from "@/lib/bakeEntityColliders";
+import type { BuildHullsOptions, HullFillMode } from "@/lib/colliderBaker";
+import { useState } from "react";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
 import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
 import {
@@ -204,6 +207,206 @@ function NavAgentEditor({
       >
         Remove nav-agent
       </Button>
+    </div>
+  );
+}
+
+/** Inspector control for the V-HACD convex-decomp baker. Mirrors the
+ *  options accepted by the AI `bake_convex_hulls` tool and persists
+ *  them on `physics.colliderBakeOptions` for reproducible re-bakes. */
+function BakeConvexDecompPanel({
+  entityId,
+  saved,
+}: {
+  entityId: string;
+  saved?: BuildHullsOptions;
+}) {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [maxHulls, setMaxHulls] = useState<string>(
+    saved?.maxHulls != null ? String(saved.maxHulls) : "",
+  );
+  const [minHullVolume, setMinHullVolume] = useState<string>(
+    saved?.minHullVolume != null ? String(saved.minHullVolume) : "",
+  );
+  const [voxelResolution, setVoxelResolution] = useState<string>(
+    saved?.voxelResolution != null ? String(saved.voxelResolution) : "",
+  );
+  const [maxVerticesPerHull, setMaxVerticesPerHull] = useState<string>(
+    saved?.maxVerticesPerHull != null ? String(saved.maxVerticesPerHull) : "",
+  );
+  const [fillMode, setFillMode] = useState<HullFillMode | "default">(
+    saved?.fillMode ?? "default",
+  );
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{
+    kind: "info" | "ok" | "error";
+    text: string;
+  } | null>(null);
+
+  const onBake = async () => {
+    const opts: BuildHullsOptions = {};
+    const num = (s: string) => {
+      const n = parseFloat(s);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const mh = num(maxHulls);
+    if (mh !== undefined) opts.maxHulls = mh;
+    const mv = num(minHullVolume);
+    if (mv !== undefined) opts.minHullVolume = mv;
+    const vr = num(voxelResolution);
+    if (vr !== undefined) opts.voxelResolution = vr;
+    const mvph = num(maxVerticesPerHull);
+    if (mvph !== undefined) opts.maxVerticesPerHull = mvph;
+    if (fillMode !== "default") opts.fillMode = fillMode;
+    setBusy(true);
+    setStatus({ kind: "info", text: "Baking convex hulls…" });
+    try {
+      const r = await bakeEntityConvexHulls(entityId, opts);
+      if (r.ok) {
+        setStatus({
+          kind: "ok",
+          text: `Baked ${r.hulls} hull${r.hulls === 1 ? "" : "s"} (${r.totalVerts} verts).`,
+        });
+      } else {
+        setStatus({ kind: "error", text: r.error });
+      }
+    } catch (err) {
+      setStatus({
+        kind: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5 border-t border-border/50 pt-3">
+      <Label className="text-xs text-muted-foreground block">
+        Convex Decomposition
+      </Label>
+      <div className="flex gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs flex-1"
+          disabled={busy}
+          onClick={() => void onBake()}
+          data-testid="btn-bake-convex-decomp"
+        >
+          {busy
+            ? "Baking…"
+            : saved
+              ? "Re-bake convex decomp"
+              : "Bake convex decomp"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={() => setShowAdvanced((v) => !v)}
+          data-testid="btn-bake-advanced-toggle"
+        >
+          {showAdvanced ? "Hide" : "Advanced"}
+        </Button>
+      </div>
+      {showAdvanced && (
+        <div className="space-y-1.5 pt-1.5" data-testid="bake-advanced-panel">
+          <div>
+            <Label className="text-[11px] text-muted-foreground mb-1 block">
+              Max hulls (V-HACD default 64)
+            </Label>
+            <Input
+              type="number"
+              value={maxHulls}
+              placeholder="e.g. 32"
+              onChange={(e) => setMaxHulls(e.target.value)}
+              className="h-7 text-xs font-mono"
+              data-testid="input-bake-max-hulls"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px] text-muted-foreground mb-1 block">
+              Voxel resolution (default 400000)
+            </Label>
+            <Input
+              type="number"
+              value={voxelResolution}
+              placeholder="e.g. 100000"
+              onChange={(e) => setVoxelResolution(e.target.value)}
+              className="h-7 text-xs font-mono"
+              data-testid="input-bake-voxel-resolution"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px] text-muted-foreground mb-1 block">
+              Max verts / hull (default 64)
+            </Label>
+            <Input
+              type="number"
+              value={maxVerticesPerHull}
+              placeholder="e.g. 64"
+              onChange={(e) => setMaxVerticesPerHull(e.target.value)}
+              className="h-7 text-xs font-mono"
+              data-testid="input-bake-max-verts-per-hull"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px] text-muted-foreground mb-1 block">
+              Min hull volume (m³, drops slivers)
+            </Label>
+            <Input
+              type="number"
+              value={minHullVolume}
+              placeholder="e.g. 0.001"
+              onChange={(e) => setMinHullVolume(e.target.value)}
+              className="h-7 text-xs font-mono"
+              data-testid="input-bake-min-hull-volume"
+            />
+          </div>
+          <div>
+            <Label className="text-[11px] text-muted-foreground mb-1 block">
+              Fill mode
+            </Label>
+            <Select
+              value={fillMode}
+              onValueChange={(v) => setFillMode(v as HullFillMode | "default")}
+            >
+              <SelectTrigger
+                className="h-7 text-xs"
+                data-testid="select-bake-fill-mode"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default (flood)</SelectItem>
+                <SelectItem value="flood">Flood — watertight meshes</SelectItem>
+                <SelectItem value="raycast">Raycast — open meshes</SelectItem>
+                <SelectItem value="surface">Surface — hollow / skin only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+      {status && (
+        <p
+          className={`text-[11px] ${
+            status.kind === "error"
+              ? "text-destructive"
+              : status.kind === "ok"
+                ? "text-foreground"
+                : "text-muted-foreground"
+          }`}
+          data-testid="bake-convex-decomp-status"
+        >
+          {status.text}
+        </p>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        V-HACD splits the entity's mesh into convex hulls so concave shapes
+        (rooms, characters, U-shapes) collide accurately. Settings are saved
+        on the entity for reproducible re-bakes.
+      </p>
     </div>
   );
 }
@@ -654,6 +857,11 @@ export function Inspector() {
                 }
               />
             </div>
+            <BakeConvexDecompPanel
+              key={entity.id}
+              entityId={entity.id}
+              saved={entity.physics.colliderBakeOptions}
+            />
           </Section>
         )}
 

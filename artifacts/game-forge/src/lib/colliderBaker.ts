@@ -46,11 +46,25 @@ export interface ConvexHullSet {
   totalVerts: number;
 }
 
+/** Fill modes V-HACD supports for voxel interior reconstruction. Mirrors
+ *  `vhacd-js`'s `HullFillMode` so consumers don't need to import the dep. */
+export type HullFillMode = "flood" | "raycast" | "surface";
+
 export interface BuildHullsOptions {
-  /** Hard cap on hull count per mesh. Forwarded straight to V-HACD. */
+  /** Hard cap on hull count per mesh. Forwarded straight to V-HACD.
+   *  V-HACD default: 64. */
   maxHulls?: number;
   /** Drop hulls below this volume (m³). */
   minHullVolume?: number;
+  /** Voxel grid resolution V-HACD uses to approximate the source mesh.
+   *  Higher = finer detail and slower bake. V-HACD default: 400000. */
+  voxelResolution?: number;
+  /** Cap on vertices in any single output hull. V-HACD default: 64. */
+  maxVerticesPerHull?: number;
+  /** How V-HACD fills the voxel interior. `flood` (default) is fastest
+   *  but assumes a watertight mesh; `raycast` is robust for open meshes;
+   *  `surface` treats the mesh as hollow and only decomposes its skin. */
+  fillMode?: HullFillMode;
 }
 
 /** vhacd-js typings (kept local so this file doesn't leak the dep into
@@ -60,11 +74,14 @@ interface VhacdMesh {
   positions: Float64Array;
   indices: Uint32Array;
 }
+interface VhacdOptions {
+  maxHulls?: number;
+  maxVerticesPerHull?: number;
+  voxelResolution?: number;
+  fillMode?: HullFillMode;
+}
 interface VhacdDecomposer {
-  computeConvexHulls(
-    mesh: VhacdMesh,
-    options?: { maxHulls?: number; maxVerticesPerHull?: number },
-  ): VhacdMesh[];
+  computeConvexHulls(mesh: VhacdMesh, options?: VhacdOptions): VhacdMesh[];
 }
 
 let decomposerPromise: Promise<VhacdDecomposer | null> | null = null;
@@ -177,10 +194,17 @@ async function buildHullsForMesh(
   if (decomposer && indices.length >= 3) {
     let out: VhacdMesh[] | null = null;
     try {
-      out = decomposer.computeConvexHulls(
-        { positions, indices },
-        { maxHulls: options.maxHulls ?? 32 },
-      );
+      // Pass through `maxHulls` only when set so V-HACD's documented
+      // default (64) applies — overriding it here would silently
+      // contradict the Inspector / AI tool descriptions.
+      const vhacdOpts: VhacdOptions = {};
+      if (options.maxHulls !== undefined) vhacdOpts.maxHulls = options.maxHulls;
+      if (options.maxVerticesPerHull !== undefined)
+        vhacdOpts.maxVerticesPerHull = options.maxVerticesPerHull;
+      if (options.voxelResolution !== undefined)
+        vhacdOpts.voxelResolution = options.voxelResolution;
+      if (options.fillMode !== undefined) vhacdOpts.fillMode = options.fillMode;
+      out = decomposer.computeConvexHulls({ positions, indices }, vhacdOpts);
     } catch (err) {
       console.warn(
         "[colliderBaker] V-HACD decomposition failed, falling back to quickhull",

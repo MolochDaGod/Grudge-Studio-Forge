@@ -36,6 +36,32 @@ export interface PhysicsComponent {
   /** When `colliderType === "convex-decomp"`, points to the asset id
    *  holding the precomputed hull set (array of Vec3 vertex arrays). */
   collidersAssetId?: number;
+  /** Persisted V-HACD knobs used the last time this entity's hulls were
+   *  baked. Saved so the Inspector "Re-bake" button and the AI
+   *  `bake_convex_hulls` tool can reproduce the same decomposition. See
+   *  `lib/colliderBaker.ts → BuildHullsOptions`. */
+  colliderBakeOptions?: ColliderBakeOptions;
+}
+
+/** V-HACD tuning knobs surfaced in the Inspector's advanced bake panel
+ *  and accepted by the AI `bake_convex_hulls` tool. All fields are
+ *  optional — unset means "use the V-HACD default". */
+export interface ColliderBakeOptions {
+  /** Hard cap on hull count per mesh. V-HACD default: 64. */
+  maxHulls?: number;
+  /** Drop hulls below this volume (m³) after decomposition. */
+  minHullVolume?: number;
+  /** Voxel grid resolution V-HACD uses to approximate the source mesh.
+   *  Higher = finer detail and slower bake. V-HACD default: 400000. */
+  voxelResolution?: number;
+  /** Maximum vertices in any single output hull. V-HACD default: 64. */
+  maxVerticesPerHull?: number;
+  /** How V-HACD fills the voxel interior:
+   *   - `flood`   — fastest, assumes a watertight closed mesh (default).
+   *   - `raycast` — slower, robust for non-watertight meshes.
+   *   - `surface` — treat the mesh as hollow; only the skin is decomposed.
+   */
+  fillMode?: "flood" | "raycast" | "surface";
 }
 
 export interface MaterialComponent {

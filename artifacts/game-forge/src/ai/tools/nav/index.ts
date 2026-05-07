@@ -30,8 +30,8 @@ import {
 } from "@workspace/scene-schema";
 import { loadNavmesh, findPath, sampleNavmesh } from "@/lib/navmesh";
 import { bakeSceneNavmesh, ensureNavmeshBlob, getCachedBlob } from "@/lib/navmeshBake";
-import { buildHulls, serializeHullSet } from "@/lib/colliderBaker";
-import * as THREE from "three";
+import { type BuildHullsOptions, type HullFillMode } from "@/lib/colliderBaker";
+import { bakeEntityConvexHulls } from "@/lib/bakeEntityColliders";
 
 interface ToolDef {
   name: string;
@@ -440,18 +440,18 @@ const sampleNavmeshHandler: ToolHandler = async (input) => {
 };
 
 // ── bake_convex_hulls ────────────────────────────────────────────────
-// V-HACD GLB import path: walks the live editor scene for each
-// requested entity, harvests every `THREE.Mesh` under it, runs the
-// quickhull3d-based `buildHulls` baker, persists the serialized hull
-// set on `window.__colliderHullSets` keyed by a numeric id, and
-// patches the entity's `PhysicsComponent` to
-// `{ colliderType: "convex-decomp", collidersAssetId }` via the
-// CommandStack so the EntityRenderer rebuilds with the new colliders
-// on the next frame.
+// Delegates to the shared `bakeEntityConvexHulls` helper (also used by
+// the Inspector's "Bake convex decomp" button). For each entity it
+// walks the live editor scene, runs V-HACD via `buildHulls` (falling
+// back to quickhull3d), registers the serialized hull set on
+// `window.__colliderHullSets`, and patches the entity's
+// `PhysicsComponent` to `{ colliderType: "convex-decomp",
+// collidersAssetId, colliderBakeOptions }` via the CommandStack so
+// the change is undoable and re-bakes are reproducible.
 const BAKE_CONVEX_HULLS: ToolDef = {
   name: "bake_convex_hulls",
   description:
-    "Bake one or more convex hulls (quickhull3d, V-HACD substitute) from the live mesh of each entity in `entityIds`, then patch the entity's PhysicsComponent to `colliderType: convex-decomp` + collidersAssetId. Routes through the CommandStack so the change is undoable.",
+    "Bake convex hulls (V-HACD, falling back to quickhull3d) from the live mesh of each entity in `entityIds`, then patch the entity's PhysicsComponent to `colliderType: convex-decomp` + collidersAssetId. Optional V-HACD knobs (`maxHulls`, `minHullVolume`, `voxelResolution`, `maxVerticesPerHull`, `fillMode`) are persisted on the entity's `physics.colliderBakeOptions` so re-bakes are reproducible. Routes through the CommandStack so the change is undoable.",
   input_schema: {
     type: "object",
     properties: {
@@ -463,34 +463,53 @@ const BAKE_CONVEX_HULLS: ToolDef = {
       },
       maxHulls: {
         type: "number",
+        description: "Hard cap on hulls per mesh. V-HACD default: 64.",
+      },
+      minHullVolume: {
+        type: "number",
+        description: "Drop hulls below this volume (m³) after decomposition.",
+      },
+      voxelResolution: {
+        type: "number",
         description:
-          "Hint cap on hulls per entity (current quickhull-only path always returns 1; reserved for the future V-HACD swap).",
+          "V-HACD voxel grid resolution. Higher = finer detail and slower bake. V-HACD default: 400000.",
+      },
+      maxVerticesPerHull: {
+        type: "number",
+        description: "Cap on vertices in any single output hull. V-HACD default: 64.",
+      },
+      fillMode: {
+        type: "string",
+        enum: ["flood", "raycast", "surface"],
+        description:
+          "How V-HACD fills the voxel interior. `flood` (default) is fastest but assumes a watertight mesh; `raycast` is robust for open meshes; `surface` treats the mesh as hollow.",
       },
     },
     required: ["entityIds"],
     additionalProperties: false,
   },
 };
+const FILL_MODES: readonly HullFillMode[] = ["flood", "raycast", "surface"];
 const bakeConvexHullsHandler: ToolHandler = async (input) => {
   const ids = Array.isArray(input.entityIds)
     ? input.entityIds.filter((s): s is string => typeof s === "string")
     : [];
   if (ids.length === 0)
     return { ok: false, error: "entityIds must be a non-empty string[]" };
-  const maxHulls = typeof input.maxHulls === "number" ? input.maxHulls : undefined;
-  const w = window as unknown as {
-    __editorScene?: THREE.Object3D;
-    __colliderHullSets?: Map<number, ReturnType<typeof serializeHullSet>>;
-    __colliderAssetCounter?: number;
-  };
-  const scene = w.__editorScene;
-  if (!scene)
-    return {
-      ok: false,
-      error: "no editor scene mounted — open the 3D viewport first",
-    };
-  w.__colliderHullSets ??= new Map();
-  const state = useEditor.getState();
+  const bakeOpts: BuildHullsOptions = {};
+  if (typeof input.maxHulls === "number") bakeOpts.maxHulls = input.maxHulls;
+  if (typeof input.minHullVolume === "number")
+    bakeOpts.minHullVolume = input.minHullVolume;
+  if (typeof input.voxelResolution === "number")
+    bakeOpts.voxelResolution = input.voxelResolution;
+  if (typeof input.maxVerticesPerHull === "number")
+    bakeOpts.maxVerticesPerHull = input.maxVerticesPerHull;
+  if (
+    typeof input.fillMode === "string" &&
+    (FILL_MODES as readonly string[]).includes(input.fillMode)
+  ) {
+    bakeOpts.fillMode = input.fillMode as HullFillMode;
+  }
   const results: Array<{
     entityId: string;
     collidersAssetId: number;
@@ -499,52 +518,16 @@ const bakeConvexHullsHandler: ToolHandler = async (input) => {
   }> = [];
   const errors: Array<{ entityId: string; error: string }> = [];
   for (const id of ids) {
-    if (!state.sceneData.entities.some((e) => e.id === id)) {
-      errors.push({ entityId: id, error: "entity not found" });
+    const r = await bakeEntityConvexHulls(id, bakeOpts);
+    if (!r.ok) {
+      errors.push({ entityId: id, error: r.error });
       continue;
     }
-    // EntityRenderer tags its root group via `userData.entityId`, so
-    // `getObjectByProperty("entityId", id)` returns nothing — walk
-    // explicitly instead.
-    let root: THREE.Object3D | undefined;
-    scene.traverse((o) => {
-      if (root) return;
-      const ud = o.userData as { entityId?: string } | undefined;
-      if (ud?.entityId === id) root = o;
-    });
-    if (!root) {
-      errors.push({ entityId: id, error: "entity has no rendered geometry yet" });
-      continue;
-    }
-    const meshes: THREE.Mesh[] = [];
-    root.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
-    });
-    if (meshes.length === 0) {
-      errors.push({ entityId: id, error: "no meshes under entity" });
-      continue;
-    }
-    const set = await buildHulls(meshes, { maxHulls });
-    if (set.hulls.length === 0) {
-      errors.push({ entityId: id, error: "hull builder returned 0 hulls" });
-      continue;
-    }
-    const serialized = serializeHullSet(set);
-    w.__colliderAssetCounter = (w.__colliderAssetCounter ?? 0) + 1;
-    const assetId = w.__colliderAssetCounter;
-    w.__colliderHullSets.set(assetId, serialized);
-    state.cmdUpdateEntity(id, (draft) => {
-      draft.physics = {
-        ...(draft.physics ?? { bodyType: "fixed", mass: 0 }),
-        colliderType: "convex-decomp",
-        collidersAssetId: assetId,
-      };
-    });
     results.push({
       entityId: id,
-      collidersAssetId: assetId,
-      hulls: set.hulls.length,
-      totalVerts: set.totalVerts,
+      collidersAssetId: r.collidersAssetId,
+      hulls: r.hulls,
+      totalVerts: r.totalVerts,
     });
   }
   return { ok: errors.length === 0, data: { results, errors } };
