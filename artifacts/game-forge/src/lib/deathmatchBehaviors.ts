@@ -128,7 +128,7 @@ exports.update = function(entity, ctx) {
     ctx.state.lastShot = ctx.time.elapsed;
     const origin = ctx.scene.cameraPosition();
     const dir = ctx.scene.cameraDirection();
-    const hit = ctx.scene.castRay(origin, dir, SHOT_RANGE, [entity.id]);
+    const hit = ctx.scene.castRay(origin, dir, SHOT_RANGE, [entity.id], undefined, { requireBlocksProjectiles: true });
     ctx.events.emit("playerShot", { origin: origin, dir: dir, hit: hit });
     if (hit && hit.entityId) {
       // Headshot: hit point Y is meaningfully above the target's center.
@@ -317,7 +317,7 @@ function canSeePlayer(entity, ctx, player) {
   ];
   const len = Math.max(0.001, dist);
   const dir = [dx / len, dy / len, dz / len];
-  const hit = ctx.scene.castRay(origin, dir, dist + 0.5, [entity.id]);
+  const hit = ctx.scene.castRay(origin, dir, dist + 0.5, [entity.id], undefined, { requireBlocksLineOfSight: true });
   // No hit = clear line; if we did hit, it must be the player itself.
   return !hit || hit.entityId === player.id;
 }
