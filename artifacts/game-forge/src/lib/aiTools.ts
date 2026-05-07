@@ -62,6 +62,11 @@ import {
   handlers as navToolHandlers,
   destructiveToolNames as navDestructiveTools,
 } from "@/ai/tools/nav";
+import {
+  defs as materialsToolDefs,
+  handlers as materialsToolHandlers,
+  destructiveToolNames as materialsDestructiveTools,
+} from "@/ai/tools/materials";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -79,6 +84,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...designDestructiveTools,
   ...layersDestructiveTools,
   ...navDestructiveTools,
+  ...materialsDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1081,6 +1087,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: navToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ── Material tools ────────────────────────────────────────────────
+  // Sourced from src/ai/tools/materials/. One-import-one-spread shape.
+  ...materialsToolDefs.map((def) => ({
+    def,
+    exec: materialsToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1150,6 +1163,7 @@ export function buildSystemPrompt(): string {
     `- To checkpoint the user's work or hand them a sharable scene, use save_scene_snapshot — it returns a public URL.`,
     `- Navigation, surfaces & nav-agents: every entity also carries a Surface tag (Walk/Jump/Climb/Swim/Dig/None) that lockstep-pins its physics layer (Walk/Jump/Climb/Dig→Terrain, Swim→Water). Use list_surfaces to see the registry, set_surface to tag a floor/ladder/water mesh, then bake_navmesh to produce a Recast navmesh stored on Environment.navmeshAssetId. Once baked, find_path / sample_navmesh let you query corridors and snap points; list_navmesh_stats summarizes what would re-bake. Drop a nav-agent on an NPC with set_nav_agent (filter chooses which areas the agent traverses) — at play-time it runs an XState idle/patrol/chase/climb/swim/stuck/dead machine and crossfades its animation clips automatically. set_surface, set_nav_agent and bake_navmesh are all DESTRUCTIVE (undoable in one step).`,
     `- Physics layers (Unity-style): every entity has a fixed-registry layer (Default/Terrain/Player/NPC/Item/Projectile/Trigger/Water/IgnoreRaycast/UI3D). Use list_layers + get_layer_matrix to inspect, set_layer to retag one entity (find_entities_by_layer for bulk lookup), set_layer_matrix to toggle which pairs collide. Trigger / Water default to Rapier sensors (intersection events fire, no contact). Setting a sensible layer (NPC for enemies, Item for pickups, Projectile for bullets) is usually enough — only edit the matrix when the user wants pass-through behaviour.`,
+    `- Materials (first-class, orthogonal to Layer/Surface): every entity also carries a Material kind from a fixed registry (Solid/Metal/Glass/Wood/Stone/Cloth/Flag/Foliage/Liquid/Particle/Smoke). Per-kind defaults drive friction/restitution/drag/opacity AND three gameplay-critical occlusion flags — blocksLineOfSight, blocksProjectiles, blocksAudio. Glass lets bullets through but blocks sight; foliage blocks neither; smoke blocks none. Material/Layer/Surface inherit down the parent chain so a windowpane child of a 'walls' group inherits Terrain/Walk while keeping its own Glass material. Use list_materials to read the registry + defaults, set_material to retag entities (DESTRUCTIVE, undoable), find_entities_by_material for bulk lookup. The cloth/flag/particles entity types auto-default to matching material kinds. Castray accepts a materialFilter so projectile / line-of-sight / audio scripts get correct pass-through behaviour for free.`,
     `- Design & spatial-sense tools: when the user says the scene "looks bad / busy / empty / dark / boring", first call diagnose_scene then polish_scene (one-shot palette + lighting + framing + screenshot). When arranging more than 5 entities into a pattern, prefer arrange_entities (grid/ring/line/scatter/cluster) over moving them one at a time. Use apply_palette (id or string[] hex) with assignment 'random' | 'by-index' | 'by-distance-from-origin'; use apply_lighting_preset (studio-3pt | golden-hour | night-neon | overcast | interior-warm) — lights it spawns are tagged 'auto:lighting' so re-applying replaces cleanly. Always call frame_camera (and capture_viewport) before declaring a creative task done — you literally see the screenshot on the next turn. Use list_palettes / list_lighting_presets / list_camera_bookmarks / recall_camera_bookmark to inspect or restore.`,
     `- After changes, briefly summarize what you did in plain language (1-2 sentences).`,
     `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,

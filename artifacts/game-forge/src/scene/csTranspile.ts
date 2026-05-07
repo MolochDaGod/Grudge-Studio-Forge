@@ -103,6 +103,28 @@ export interface RaycastHit {
   distance: number;
   /** World-space surface normal at the hit point. */
   normal: [number, number, number];
+  /** Resolved {@link MaterialKind} of the entity hit (read from the
+   *  parent chain via `userData.material`). `null` for decorative
+   *  non-entity meshes that have no stamp. */
+  material?: string | null;
+  /** Resolved Material density (kg/m³) read alongside `material`. */
+  density?: number | null;
+  /** Per-kind occlusion flags read alongside `material`. `null` when
+   *  the hit object's chain has no material stamp; consumers may
+   *  treat null as "blocking" for safety (matches how decorative
+   *  static world is rendered). */
+  blocksLineOfSight?: boolean | null;
+  blocksProjectiles?: boolean | null;
+  blocksAudio?: boolean | null;
+}
+
+/** Optional per-cast Material filter forwarded to
+ *  {@link raycastEntities}. See PlayRuntime for full semantics. */
+export interface MaterialRayFilter {
+  requireBlocksLineOfSight?: boolean;
+  requireBlocksProjectiles?: boolean;
+  requireBlocksAudio?: boolean;
+  kinds?: string[];
 }
 
 export interface ScriptContext {
@@ -129,6 +151,11 @@ export interface ScriptContext {
       maxDistance?: number,
       excludeIds?: string[],
       layerMask?: string[],
+      /** Material-aware filter. e.g. a bullet check passes
+       *  `{ requireBlocksProjectiles: true }` so glass / foliage /
+       *  smoke don't stop the ray; an audio occlusion check passes
+       *  `{ requireBlocksAudio: true }`. */
+      materialFilter?: MaterialRayFilter,
     ) => RaycastHit | null;
     /** Return every entity whose `layer` matches `name`. Cheap pre-filter
      *  for AI perception loops ("nearest NPC", "any Trigger overlapping

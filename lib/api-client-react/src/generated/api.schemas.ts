@@ -92,6 +92,9 @@ export const EntityType = {
   camera: "camera",
   model: "model",
   empty: "empty",
+  cloth: "cloth",
+  flag: "flag",
+  particles: "particles",
 } as const;
 
 export interface Transform {
@@ -131,11 +134,39 @@ export interface PhysicsComponent {
   friction?: number;
 }
 
+export type MaterialComponentKind =
+  (typeof MaterialComponentKind)[keyof typeof MaterialComponentKind];
+
+export const MaterialComponentKind = {
+  Solid: "Solid",
+  Metal: "Metal",
+  Glass: "Glass",
+  Wood: "Wood",
+  Stone: "Stone",
+  Cloth: "Cloth",
+  Flag: "Flag",
+  Foliage: "Foliage",
+  Liquid: "Liquid",
+  Particle: "Particle",
+  Smoke: "Smoke",
+  Emissive: "Emissive",
+  Custom: "Custom",
+} as const;
+
 export interface MaterialComponent {
+  kind?: MaterialComponentKind;
   color?: string;
   metalness?: number;
   roughness?: number;
   emissive?: string;
+  opacity?: number;
+  density?: number;
+  friction?: number;
+  restitution?: number;
+  drag?: number;
+  blocksLineOfSight?: boolean;
+  blocksProjectiles?: boolean;
+  blocksAudio?: boolean;
 }
 
 export type LightComponentKind =

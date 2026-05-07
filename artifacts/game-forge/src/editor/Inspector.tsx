@@ -13,12 +13,16 @@ import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-re
 import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
 import {
   LAYERS,
+  MATERIAL_KINDS,
   type LayerName,
+  type MaterialKind,
   DEFAULT_GRAVITY,
   SURFACES,
   DEFAULT_NAV_AGENT,
   type SurfaceKind,
   type NavAgentComponent,
+  resolveInheritedFields,
+  indexEntitiesById,
 } from "@workspace/scene-schema";
 import {
   Box,
@@ -33,6 +37,82 @@ import {
   Map as MapIcon,
   Bot,
 } from "lucide-react";
+
+/** Inspector row for a tri-axis tag (Layer / Surface / Material kind)
+ *  that supports parent-chain inheritance. Renders a Select bound to the
+ *  effective value, an Inherited / Override / Default badge so the user
+ *  can see WHERE the current value came from, and a "Clear override"
+ *  button when the entity has its own explicit value. Selecting a value
+ *  in the Select sets an explicit own-value via `onChange`; the badge
+ *  switches to "Override" until cleared. */
+function InheritedAxisRow({
+  ownValue,
+  inheritedValue,
+  defaultValue,
+  options,
+  testId,
+  onChange,
+  onClear,
+}: {
+  ownValue: string | undefined;
+  inheritedValue: string | undefined;
+  defaultValue: string;
+  options: readonly string[];
+  testId: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+}) {
+  const effective = ownValue ?? inheritedValue ?? defaultValue;
+  const source: "own" | "inherited" | "default" = ownValue
+    ? "own"
+    : inheritedValue
+      ? "inherited"
+      : "default";
+  return (
+    <div className="space-y-1">
+      <Select value={effective} onValueChange={onChange}>
+        <SelectTrigger className="h-7 text-xs" data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o} value={o} className="text-xs">
+              {o}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center justify-between text-[10px]">
+        <span
+          className={
+            source === "own"
+              ? "text-amber-400 font-medium"
+              : source === "inherited"
+                ? "text-sky-400"
+                : "text-muted-foreground"
+          }
+          data-testid={`${testId}-source`}
+        >
+          {source === "own"
+            ? "Override"
+            : source === "inherited"
+              ? `Inherited (${inheritedValue})`
+              : "Default"}
+        </span>
+        {source === "own" && (
+          <button
+            type="button"
+            className="underline text-muted-foreground hover:text-foreground"
+            data-testid={`${testId}-clear`}
+            onClick={onClear}
+          >
+            Clear override
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function NumberInput({
   value,
@@ -553,6 +633,11 @@ export function Inspector() {
     );
   }
 
+  // Effective layer/surface/materialKind via the persisted parentId chain.
+  // `entities` is already a Zustand subscription, so this recomputes when
+  // any ancestor's tagging changes — keeping the inheritance UI live.
+  const inheritedAxes = resolveInheritedFields(entity, indexEntitiesById(entities));
+
   return (
     <div className="h-full flex flex-col bg-sidebar">
       <div className="px-3 py-2 border-b border-sidebar-border flex items-center gap-2">
@@ -569,52 +654,40 @@ export function Inspector() {
 
       <ScrollArea className="flex-1">
         <Section title="Layer" Icon={LayersIcon}>
-          <Select
-            value={(entity.layer as LayerName | undefined) ?? "Default"}
-            onValueChange={(v) =>
+          <InheritedAxisRow
+            ownValue={entity.layer as string | undefined}
+            inheritedValue={inheritedAxes.layer}
+            defaultValue="Default"
+            options={LAYERS as readonly string[]}
+            testId="select-entity-layer"
+            onChange={(v) =>
               useEditor.getState().cmdSetEntityLayer([entity.id], v as LayerName)
             }
-          >
-            <SelectTrigger className="h-7 text-xs" data-testid="select-entity-layer">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LAYERS.map((l) => (
-                <SelectItem key={l} value={l}>
-                  {l}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onClear={() =>
+              useEditor.getState().cmdSetEntityLayer([entity.id], undefined)
+            }
+          />
           <p className="text-[11px] text-muted-foreground">
             Drives Rapier collision groups via the scene's collision matrix
-            (Layers panel). Trigger / Water default to sensors.
+            (Layers panel). Trigger / Water default to sensors. Children with
+            no explicit layer inherit from the nearest ancestor.
           </p>
         </Section>
 
         <Section title="Surface" Icon={MapIcon}>
-          <Select
-            value={(entity.surface as SurfaceKind | undefined) ?? "None"}
-            onValueChange={(v) =>
-              useEditor
-                .getState()
-                .cmdSetEntitySurface([entity.id], v as SurfaceKind)
+          <InheritedAxisRow
+            ownValue={entity.surface as string | undefined}
+            inheritedValue={inheritedAxes.surface}
+            defaultValue="None"
+            options={SURFACES as readonly string[]}
+            testId="select-entity-surface"
+            onChange={(v) =>
+              useEditor.getState().cmdSetEntitySurface([entity.id], v as SurfaceKind)
             }
-          >
-            <SelectTrigger
-              className="h-7 text-xs"
-              data-testid="select-entity-surface"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SURFACES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onClear={() =>
+              useEditor.getState().cmdSetEntitySurface([entity.id], undefined)
+            }
+          />
           <p className="text-[11px] text-muted-foreground">
             Recast area + lockstep layer (Walk/Jump/Climb/Dig→Terrain,
             Swim→Water). Re-bake the navmesh after retagging.
@@ -661,8 +734,37 @@ export function Inspector() {
           />
         </Section>
 
-        {entity.material && (
-          <Section title="Material" Icon={Palette}>
+        <Section title="Material" Icon={Palette}>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Kind</Label>
+              <InheritedAxisRow
+                ownValue={entity.material?.kind as string | undefined}
+                inheritedValue={inheritedAxes.materialKind}
+                defaultValue="Solid"
+                options={MATERIAL_KINDS as readonly string[]}
+                testId="select-material-kind"
+                onChange={(v) =>
+                  useEditor
+                    .getState()
+                    .cmdSetEntityMaterial([entity.id], v as MaterialKind)
+                }
+                onClear={() =>
+                  updateEntity(entity.id, (d) => {
+                    if (d.material) delete (d.material as { kind?: MaterialKind }).kind;
+                  })
+                }
+              />
+              <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                Drives default density, friction, restitution, drag, opacity
+                and the line-of-sight / projectile / audio occlusion flags
+                read by raycasts. Children inherit unless overridden.
+              </p>
+            </div>
+          {/* Visual-only fields below are kept gated on entity.material so
+              the existing color / metalness / roughness / emissive
+              sub-controls only appear once the entity has its own
+              MaterialComponent. */}
+          {entity.material && (<>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">Color</Label>
               <Input
@@ -726,8 +828,8 @@ export function Inspector() {
                 className="h-8 cursor-pointer"
               />
             </div>
-          </Section>
-        )}
+          </>)}
+        </Section>
 
         {entity.light && (
           <Section title="Light" Icon={Lightbulb}>

@@ -352,7 +352,7 @@ export function setParentCommand(
  */
 export function setLayersCommand(
   store: StoreLike,
-  changes: { id: string; from: string | undefined; to: string }[],
+  changes: { id: string; from: string | undefined; to: string | undefined }[],
   label = changes.length === 1 ? `Set layer to ${changes[0].to}` : `Set layer (${changes.length})`,
 ): Command {
   const byId = new Map(changes.map((c) => [c.id, c] as const));
@@ -465,8 +465,9 @@ export interface SurfaceChange {
   fromSurface?: SurfaceKind;
   /** Snapshot of the prior layer (undefined when unset). */
   fromLayer?: SceneEntity["layer"];
-  /** New surface to apply. */
-  toSurface: SurfaceKind;
+  /** New surface to apply (undefined clears the override so the
+   *  entity falls back to inheritance / default). */
+  toSurface: SurfaceKind | undefined;
 }
 
 export function setSurfacesCommand(
@@ -483,7 +484,7 @@ export function setSurfacesCommand(
         store.getEntities().map((e) => {
           const ch = map.get(e.id);
           if (!ch) return e;
-          const lockstepLayer = surfaceToLayer(ch.toSurface);
+          const lockstepLayer = ch.toSurface ? surfaceToLayer(ch.toSurface) : undefined;
           return {
             ...e,
             surface: ch.toSurface,
@@ -502,6 +503,67 @@ export function setSurfacesCommand(
           const ch = map.get(e.id);
           if (!ch) return e;
           return { ...e, surface: ch.fromSurface, layer: ch.fromLayer };
+        }),
+      );
+    },
+  };
+}
+
+/** Atomic Material kind tagger. Mirrors {@link setLayersCommand} so
+ *  Inspector, AI tools, and bulk operations all land on the undo
+ *  stack as a single step. Only the `material.kind` slot is updated;
+ *  any per-entity visual / physical overrides on the same
+ *  MaterialComponent are preserved. */
+export interface MaterialKindChange {
+  id: string;
+  /** Snapshot of the prior material (undefined if entity had no
+   *  material at all — undo restores the absence). */
+  fromMaterial?: SceneEntity["material"];
+  /** New `material.kind` slot. */
+  toKind: NonNullable<SceneEntity["material"]>["kind"];
+  /** Optional per-entity overrides applied atomically with the kind
+   *  change. Stored as a partial MaterialComponent and merged on top
+   *  of the existing material. Undo restores `fromMaterial` exactly. */
+  overrides?: Partial<NonNullable<SceneEntity["material"]>>;
+}
+
+export function setMaterialsCommand(
+  store: StoreLike,
+  changes: MaterialKindChange[],
+  label = changes.length === 1
+    ? `Set material to ${changes[0].toKind}`
+    : `Set material (${changes.length})`,
+): Command {
+  const map = new Map(changes.map((c) => [c.id, c] as const));
+  return {
+    kind: "setMaterials",
+    label,
+    do: () => {
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const c = map.get(e.id);
+          if (!c) return e;
+          return {
+            ...e,
+            material: { ...(e.material ?? {}), kind: c.toKind, ...(c.overrides ?? {}) },
+          };
+        }),
+      );
+    },
+    undo: () => {
+      store.setEntities(
+        store.getEntities().map((e) => {
+          const c = map.get(e.id);
+          if (!c) return e;
+          // Restore the entire prior MaterialComponent snapshot — undo
+          // fully removes a material that was added by this command.
+          const next = { ...e } as SceneEntity;
+          if (c.fromMaterial === undefined) {
+            delete (next as { material?: SceneEntity["material"] }).material;
+          } else {
+            next.material = c.fromMaterial;
+          }
+          return next;
         }),
       );
     },

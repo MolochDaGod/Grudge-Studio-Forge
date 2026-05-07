@@ -781,7 +781,17 @@ function ScriptedEntities({
       maxDistance: number,
       excludeIds: string[] | undefined,
       layerMask: string[] | undefined,
-    ) => raycastEntities(threeScene, origin, direction, maxDistance, excludeIds, layerMask);
+      materialFilter?: import("@/scene/PlayRuntime").MaterialRayFilter,
+    ) =>
+      raycastEntities(
+        threeScene,
+        origin,
+        direction,
+        maxDistance,
+        excludeIds,
+        layerMask,
+        materialFilter,
+      );
     const findEntitiesByLayer = (name: string): ScriptEntity[] => {
       const out: ScriptEntity[] = [];
       for (const e of sceneData.entities) {

@@ -10,6 +10,7 @@
 import { nanoid } from "nanoid";
 
 import { useEditor } from "@/store/editor";
+import { isPaletteFriendly } from "@workspace/scene-schema";
 import type { SceneEntity, Vec3 } from "@/scene/types";
 import type { Command } from "@/lib/commands";
 import { getViewportBridge } from "@/scene/viewportBridge";
@@ -290,6 +291,11 @@ const APPLY_PALETTE: ToolDef = {
         description:
           "When true (default), the first palette color is reserved for background and not assigned to entities.",
       },
+      force: {
+        type: "boolean",
+        description:
+          "When true, recolor every matched entity regardless of MaterialKind. Default false skips kinds whose material implies its own colour (Glass / Liquid / Particle / Smoke / Foliage / Cloth / Flag).",
+      },
     },
   },
 };
@@ -312,9 +318,20 @@ const applyPaletteHandler: ToolHandler = async (input) => {
   const store = useEditor.getState();
   const all = store.sceneData.entities;
   const ids = Array.isArray(input.entityIds) ? new Set(input.entityIds as string[]) : null;
+  // Material guard: skip entities whose Material kind implies its own
+  // colour (Glass / Liquid / Particle / Smoke / Foliage). A bulk
+  // palette swap on those would make water orange or smoke gold,
+  // which is never what the user means by "make it look good". The
+  // model can override with `force: true` for explicit recolours.
+  const force = input.force === true;
+  const skippedByMaterial: { id: string; name: string; kind: string }[] = [];
   const targets = all.filter((e) => {
     if (e.type === "light" || e.type === "camera" || e.type === "empty") return false;
     if (ids && !ids.has(e.id)) return false;
+    if (!force && e.material?.kind && !isPaletteFriendly(e.material.kind)) {
+      skippedByMaterial.push({ id: e.id, name: e.name, kind: e.material.kind });
+      return false;
+    }
     return true;
   });
   if (targets.length === 0) {
@@ -330,13 +347,18 @@ const applyPaletteHandler: ToolHandler = async (input) => {
     const t = targets[i];
     const c = assigned[i];
     store.cmdUpdateEntity(t.id, (e) => {
-      // Preserve emissive / metalness / roughness — only swap base color.
-      const prev = e.material;
+      // Patch ONLY color-related fields. Preserve `kind`, density,
+      // friction, restitution, drag, opacity, blocks*, emissive,
+      // and any other MaterialComponent overrides the entity carried
+      // before the palette pass. Only `color` is overwritten;
+      // metalness/roughness fall back to sensible defaults if
+      // unset but otherwise keep the entity's own values.
+      const prev = e.material ?? {};
       e.material = {
+        ...prev,
         color: c,
-        metalness: prev?.metalness ?? 0.1,
-        roughness: prev?.roughness ?? 0.6,
-        emissive: prev?.emissive,
+        metalness: prev.metalness ?? 0.1,
+        roughness: prev.roughness ?? 0.6,
       };
     });
     recolored.push({ id: t.id, color: c });
@@ -357,6 +379,7 @@ const applyPaletteHandler: ToolHandler = async (input) => {
       recoloredCount: recolored.length,
       recolored,
       environmentPatched,
+      skippedByMaterial: skippedByMaterial.length ? skippedByMaterial : undefined,
     },
   };
 };

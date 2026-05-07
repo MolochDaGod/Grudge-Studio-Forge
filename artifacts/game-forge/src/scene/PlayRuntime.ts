@@ -90,6 +90,7 @@ export function makeContext(opts: {
     maxDistance: number,
     excludeIds: string[] | undefined,
     layerMask: string[] | undefined,
+    materialFilter?: MaterialRayFilter,
   ) => RaycastHit | null;
   findEntitiesByLayer: (name: string) => ScriptEntity[];
   cameraPosition: () => [number, number, number];
@@ -139,8 +140,8 @@ export function makeContext(opts: {
       findAll: opts.findEntities,
       findById: opts.findEntityById,
       setPosition: opts.setEntityPosition,
-      castRay: (origin, direction, maxDistance, excludeIds, layerMask) =>
-        opts.castRay(origin, direction, maxDistance ?? 200, excludeIds, layerMask),
+      castRay: (origin, direction, maxDistance, excludeIds, layerMask, materialFilter) =>
+        opts.castRay(origin, direction, maxDistance ?? 200, excludeIds, layerMask, materialFilter),
       findEntitiesByLayer: opts.findEntitiesByLayer,
       send: (targetId, event, payload) =>
         opts.inboxes.send(targetId, event, payload, fromId),
@@ -199,6 +200,27 @@ function stringify(v: unknown): string {
  * `distance` for placement / muzzle-flash positioning.
  */
 const SHARED_RAYCASTER = new THREE.Raycaster();
+/** Optional per-cast Material filter. Mirrors the per-kind defaults
+ *  registry: an arrow that respects `blocksProjectiles` will pass
+ *  through Glass / Foliage / Smoke automatically; an AI line-of-sight
+ *  cast that respects `blocksLineOfSight` will see through Foliage but
+ *  stop at Glass. Pass `kinds` to narrow further (`["Metal","Stone"]`). */
+export interface MaterialRayFilter {
+  /** When true, hits whose resolved material has
+   *  `blocksLineOfSight: false` are skipped (the ray passes through). */
+  requireBlocksLineOfSight?: boolean;
+  /** When true, hits whose resolved material has
+   *  `blocksProjectiles: false` are skipped (think glass / foliage). */
+  requireBlocksProjectiles?: boolean;
+  /** When true, hits whose resolved material has
+   *  `blocksAudio: false` are skipped — for audio-occlusion checks. */
+  requireBlocksAudio?: boolean;
+  /** Restrict to entity hits whose resolved Material kind is in this
+   *  list. Decorative non-entity meshes are still returned so the
+   *  static world keeps blocking sight regardless of the kinds list. */
+  kinds?: string[];
+}
+
 export function raycastEntities(
   scene: THREE.Object3D,
   origin: [number, number, number],
@@ -206,6 +228,7 @@ export function raycastEntities(
   maxDistance: number,
   excludeIds: string[] | undefined,
   layerMask?: string[],
+  materialFilter?: MaterialRayFilter,
 ): RaycastHit | null {
   SHARED_RAYCASTER.set(
     new THREE.Vector3(origin[0], origin[1], origin[2]),
@@ -216,16 +239,57 @@ export function raycastEntities(
   if (hits.length === 0) return null;
   const exclude = new Set(excludeIds ?? []);
   const mask = layerMask && layerMask.length > 0 ? new Set(layerMask) : null;
+  const kindMask =
+    materialFilter?.kinds && materialFilter.kinds.length > 0
+      ? new Set(materialFilter.kinds)
+      : null;
   for (const hit of hits) {
-    // Walk up to find an entity-bearing ancestor (and its layer, if any).
+    // Walk up to find an entity-bearing ancestor and read all three
+    // axes (layer, surface — for completeness — and material). Material
+    // is resolved by reading the first ancestor that stamped any of
+    // the four `material*` fields.
     let entityId: string | null = null;
     let layer: string | null = null;
+    let material: string | null = null;
+    let density: number | null = null;
+    let blocksLineOfSight: boolean | null = null;
+    let blocksProjectiles: boolean | null = null;
+    let blocksAudio: boolean | null = null;
     let cur: THREE.Object3D | null = hit.object;
     while (cur) {
-      const ud = cur.userData as { entityId?: string; layer?: string } | undefined;
+      const ud = cur.userData as
+        | {
+            entityId?: string;
+            layer?: string;
+            material?: string;
+            materialDensity?: number;
+            materialBlocksLineOfSight?: boolean;
+            materialBlocksProjectiles?: boolean;
+            materialBlocksAudio?: boolean;
+          }
+        | undefined;
       if (!entityId && ud?.entityId) entityId = ud.entityId;
       if (!layer && ud?.layer) layer = ud.layer;
-      if (entityId && layer) break;
+      if (!material && ud?.material) material = ud.material;
+      if (density === null && typeof ud?.materialDensity === "number")
+        density = ud.materialDensity;
+      if (blocksLineOfSight === null && typeof ud?.materialBlocksLineOfSight === "boolean")
+        blocksLineOfSight = ud.materialBlocksLineOfSight;
+      if (blocksProjectiles === null && typeof ud?.materialBlocksProjectiles === "boolean")
+        blocksProjectiles = ud.materialBlocksProjectiles;
+      if (blocksAudio === null && typeof ud?.materialBlocksAudio === "boolean")
+        blocksAudio = ud.materialBlocksAudio;
+      if (
+        entityId &&
+        layer &&
+        material &&
+        density !== null &&
+        blocksLineOfSight !== null &&
+        blocksProjectiles !== null &&
+        blocksAudio !== null
+      ) {
+        break;
+      }
       cur = cur.parent;
     }
     if (entityId && exclude.has(entityId)) continue;
@@ -235,6 +299,14 @@ export function raycastEntities(
     // even when the mask is `["NPC"]`.
     if (mask && entityId && layer && !mask.has(layer)) continue;
     if (mask && entityId && !layer && !mask.has("Default")) continue;
+    // Material filter: same "decorative meshes always return" rule —
+    // unmarked geometry is treated as opaque/blocking so static world
+    // never falls out of sight checks. When the entity DID stamp a
+    // material flag and the cast wants to ignore non-blockers, skip.
+    if (materialFilter?.requireBlocksLineOfSight && blocksLineOfSight === false) continue;
+    if (materialFilter?.requireBlocksProjectiles && blocksProjectiles === false) continue;
+    if (materialFilter?.requireBlocksAudio && blocksAudio === false) continue;
+    if (kindMask && entityId && material && !kindMask.has(material)) continue;
     return {
       entityId,
       point: [hit.point.x, hit.point.y, hit.point.z],
@@ -246,6 +318,11 @@ export function raycastEntities(
               return [n.x, n.y, n.z] as [number, number, number];
             })()
           : [0, 1, 0],
+      material,
+      density,
+      blocksLineOfSight,
+      blocksProjectiles,
+      blocksAudio,
     };
   }
   return null;

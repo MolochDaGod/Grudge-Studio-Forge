@@ -1,6 +1,9 @@
 export * from "./layers";
+export * from "./materials";
+export * from "./inheritance";
 import type { LayerName } from "./layers";
 import { DEFAULT_SENSOR_LAYERS } from "./layers";
+import type { MaterialComponent } from "./materials";
 
 export type Vec3 = [number, number, number];
 
@@ -12,7 +15,16 @@ export type EntityType =
   | "light"
   | "camera"
   | "model"
-  | "empty";
+  | "empty"
+  /** Soft / dynamic material entity types — first-class citizens of the
+   *  Material system. Renderer stamps a Cloth / Flag / Particles
+   *  material kind by default and the dynamics scene chooses a
+   *  matching primitive (a draped plane, a flagpole-mounted plane, a
+   *  small sprite cloud) so the entity is visible even before a GLB
+   *  is wired up. */
+  | "cloth"
+  | "flag"
+  | "particles";
 
 export type BodyType = "fixed" | "dynamic" | "kinematicPosition" | "kinematicVelocity";
 
@@ -64,12 +76,10 @@ export interface ColliderBakeOptions {
   fillMode?: "flood" | "raycast" | "surface";
 }
 
-export interface MaterialComponent {
-  color?: string;
-  metalness?: number;
-  roughness?: number;
-  emissive?: string;
-}
+// `MaterialComponent` is defined in ./materials and re-exported above —
+// it carries `kind` (registry slot) plus per-entity visual + physical
+// overrides. The legacy color/metalness/roughness/emissive fields stay
+// optional so older scenes load unchanged.
 
 export interface LightComponent {
   kind?: "point" | "directional" | "spot";

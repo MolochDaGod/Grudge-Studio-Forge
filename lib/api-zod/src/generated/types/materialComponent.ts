@@ -5,10 +5,20 @@
  * Grudge GameForge API — projects, scenes, scripts, assets, and Grudge Studio data proxy
  * OpenAPI spec version: 0.1.0
  */
+import type { MaterialComponentKind } from "./materialComponentKind";
 
 export interface MaterialComponent {
+  kind?: MaterialComponentKind;
   color?: string;
   metalness?: number;
   roughness?: number;
   emissive?: string;
+  opacity?: number;
+  density?: number;
+  friction?: number;
+  restitution?: number;
+  drag?: number;
+  blocksLineOfSight?: boolean;
+  blocksProjectiles?: boolean;
+  blocksAudio?: boolean;
 }

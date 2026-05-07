@@ -410,4 +410,51 @@ export const STARTER_VFX: VfxPrefabDef[] = [
       },
     ],
   },
+  // ── First-class Material prefabs ────────────────────────────────────
+  // These are the canonical examples of the new soft Material entity
+  // types. They spawn pre-tagged so AI tools and gameplay scripts can
+  // immediately reason about cloth-vs-metal, smoke-vs-wall, etc. via
+  // `material.kind` without an extra set_material call.
+  {
+    name: "Banner Flag",
+    description:
+      "Vertical flag panel pre-tagged with the Flag material — passes projectiles, blocks line-of-sight but not audio.",
+    entities: () => {
+      const poleId = id();
+      return [
+        {
+          id: poleId,
+          name: "Flag Pole",
+          type: "cylinder",
+          parentId: null,
+          transform: { position: [0, 1.2, 0], rotation: [0, 0, 0], scale: [0.06, 2.4, 0.06] },
+          material: { kind: "Wood", color: "#5e3220" },
+          physics: { bodyType: "fixed", colliderType: "cylinder", mass: 0, restitution: 0.1, friction: 0.7 },
+        },
+        {
+          id: id(),
+          name: "Banner",
+          type: "flag",
+          parentId: poleId,
+          transform: { position: [0.55, 0.55, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          material: { kind: "Flag", color: "#cc3333" },
+        },
+      ];
+    },
+  },
+  {
+    name: "Smoke Plume",
+    description:
+      "Drifting smoke column pre-tagged with the Smoke material — never blocks sight, projectiles, or audio.",
+    entities: () => [
+      {
+        id: id(),
+        name: "Smoke Plume",
+        type: "particles",
+        parentId: null,
+        transform: { position: [0, 0.8, 0], rotation: [0, 0, 0], scale: [1.2, 2, 1.2] },
+        material: { kind: "Smoke", color: "#cccccc", opacity: 0.4 },
+      },
+    ],
+  },
 ];

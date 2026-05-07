@@ -17,4 +17,7 @@ export const EntityType = {
   camera: "camera",
   model: "model",
   empty: "empty",
+  cloth: "cloth",
+  flag: "flag",
+  particles: "particles",
 } as const;

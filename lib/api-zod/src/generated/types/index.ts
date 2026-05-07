@@ -36,6 +36,7 @@ export * from "./healthStatus";
 export * from "./lightComponent";
 export * from "./lightComponentKind";
 export * from "./materialComponent";
+export * from "./materialComponentKind";
 export * from "./modelComponent";
 export * from "./physicsComponent";
 export * from "./physicsComponentBodyType";

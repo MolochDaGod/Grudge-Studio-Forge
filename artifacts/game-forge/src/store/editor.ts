@@ -23,17 +23,20 @@ import {
   setEnvironmentCommand,
   patchEntityCommand,
   setSurfacesCommand,
+  setMaterialsCommand,
   setNavAgentCommand,
   setNavAgentsBatchCommand,
   bakeNavmeshCommand,
   type Command,
   type StoreLike,
   type SurfaceChange,
+  type MaterialKindChange,
 } from "@/lib/commands";
 import {
   inferDefaultLayer,
   type LayerName,
   type SurfaceKind,
+  type MaterialKind,
   type NavAgentComponent,
 } from "@workspace/scene-schema";
 
@@ -213,9 +216,13 @@ interface EditorState {
   /** Undoable: add an empty entity as a child of `parentId`. */
   cmdAddEmptyChild: (parentId: string | null) => SceneEntity;
   /** Undoable: assign `layer` to one or more entities in a single step. */
-  cmdSetEntityLayer: (ids: string[], layer: LayerName) => void;
+  cmdSetEntityLayer: (ids: string[], layer: LayerName | undefined) => void;
   /** Lockstep surface tagger (also writes the matching physics layer). */
-  cmdSetEntitySurface: (ids: string[], surface: SurfaceKind) => void;
+  cmdSetEntitySurface: (ids: string[], surface: SurfaceKind | undefined) => void;
+  /** Stamp a {@link MaterialKind} on one or more entities in a single
+   *  undoable step. Existing visual / physical override fields on the
+   *  entity's MaterialComponent are preserved. */
+  cmdSetEntityMaterial: (ids: string[], kind: MaterialKind) => void;
   /** Set / clear the per-entity nav-agent component. Pass `null` to remove. */
   cmdSetEntityNavAgent: (id: string, agent: NavAgentComponent | null) => void;
   /** Batched: set/clear the same nav-agent component on many entities
@@ -300,6 +307,23 @@ const defaultsByType = (type: EntityType, name: string): SceneEntity => {
       };
     case "model":
       return { ...base, model: { url: "" } };
+    case "cloth":
+      return {
+        ...base,
+        material: { kind: "Cloth", color: "#a87a5a" },
+        // No collider by default — cloth is a soft entity.
+      };
+    case "flag":
+      return {
+        ...base,
+        transform: { position: [0, 1.5, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        material: { kind: "Flag", color: "#cc3333" },
+      };
+    case "particles":
+      return {
+        ...base,
+        material: { kind: "Particle", color: "#cccccc" },
+      };
     default:
       return base;
   }
@@ -1023,6 +1047,23 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (changes.length === 0) return;
     const store = makeStoreLike(get);
     get().commandStack.push(setSurfacesCommand(store, changes));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityMaterial: (ids, kind) => {
+    const entities = get().sceneData.entities;
+    const changes: MaterialKindChange[] = ids
+      .map((id) => entities.find((e) => e.id === id))
+      .filter((e): e is SceneEntity => Boolean(e))
+      .filter((e) => (e.material?.kind ?? undefined) !== kind)
+      .map((e) => ({
+        id: e.id,
+        fromMaterial: e.material,
+        toKind: kind,
+      }));
+    if (changes.length === 0) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setMaterialsCommand(store, changes));
     set({ isDirty: true });
   },
 

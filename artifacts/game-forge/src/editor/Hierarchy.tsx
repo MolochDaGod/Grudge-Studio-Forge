@@ -54,6 +54,12 @@ const ICONS: Record<EntityType, typeof Box> = {
   camera: Square,
   model: PackageOpen,
   empty: Square,
+  // Soft / dynamic Material entity types — visualised in the
+  // hierarchy with thematic stand-ins so users can scan a tree of
+  // mixed-Material entities at a glance.
+  cloth: Square,
+  flag: Square,
+  particles: Circle,
 };
 
 interface RowProps {

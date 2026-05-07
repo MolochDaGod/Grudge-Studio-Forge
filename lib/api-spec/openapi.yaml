@@ -848,7 +848,7 @@ components:
           type: string
         type:
           type: string
-          enum: [box, sphere, cylinder, plane, light, camera, model, empty]
+          enum: [box, sphere, cylinder, plane, light, camera, model, empty, cloth, flag, particles]
         transform:
           $ref: "#/components/schemas/Transform"
         physics:
@@ -950,6 +950,9 @@ components:
     MaterialComponent:
       type: object
       properties:
+        kind:
+          type: string
+          enum: [Solid, Metal, Glass, Wood, Stone, Cloth, Flag, Foliage, Liquid, Particle, Smoke, Emissive, Custom]
         color:
           type: string
         metalness:
@@ -958,6 +961,22 @@ components:
           type: number
         emissive:
           type: string
+        opacity:
+          type: number
+        density:
+          type: number
+        friction:
+          type: number
+        restitution:
+          type: number
+        drag:
+          type: number
+        blocksLineOfSight:
+          type: boolean
+        blocksProjectiles:
+          type: boolean
+        blocksAudio:
+          type: boolean
 
     LightComponent:
       type: object

@@ -248,6 +248,9 @@ export const ListScenesResponseItem = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -280,10 +283,35 @@ export const ListScenesResponseItem = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -432,6 +460,9 @@ export const CreateSceneBody = zod.object({
             "camera",
             "model",
             "empty",
+            "cloth",
+            "flag",
+            "particles",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -470,10 +501,35 @@ export const CreateSceneBody = zod.object({
             .optional(),
           material: zod
             .object({
+              kind: zod
+                .enum([
+                  "Solid",
+                  "Metal",
+                  "Glass",
+                  "Wood",
+                  "Stone",
+                  "Cloth",
+                  "Flag",
+                  "Foliage",
+                  "Liquid",
+                  "Particle",
+                  "Smoke",
+                  "Emissive",
+                  "Custom",
+                ])
+                .optional(),
               color: zod.string().optional(),
               metalness: zod.number().optional(),
               roughness: zod.number().optional(),
               emissive: zod.string().optional(),
+              opacity: zod.number().optional(),
+              density: zod.number().optional(),
+              friction: zod.number().optional(),
+              restitution: zod.number().optional(),
+              drag: zod.number().optional(),
+              blocksLineOfSight: zod.boolean().optional(),
+              blocksProjectiles: zod.boolean().optional(),
+              blocksAudio: zod.boolean().optional(),
             })
             .optional(),
           light: zod
@@ -626,6 +682,9 @@ export const GetSceneResponse = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -658,10 +717,35 @@ export const GetSceneResponse = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -812,6 +896,9 @@ export const UpdateSceneBody = zod.object({
             "camera",
             "model",
             "empty",
+            "cloth",
+            "flag",
+            "particles",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -850,10 +937,35 @@ export const UpdateSceneBody = zod.object({
             .optional(),
           material: zod
             .object({
+              kind: zod
+                .enum([
+                  "Solid",
+                  "Metal",
+                  "Glass",
+                  "Wood",
+                  "Stone",
+                  "Cloth",
+                  "Flag",
+                  "Foliage",
+                  "Liquid",
+                  "Particle",
+                  "Smoke",
+                  "Emissive",
+                  "Custom",
+                ])
+                .optional(),
               color: zod.string().optional(),
               metalness: zod.number().optional(),
               roughness: zod.number().optional(),
               emissive: zod.string().optional(),
+              opacity: zod.number().optional(),
+              density: zod.number().optional(),
+              friction: zod.number().optional(),
+              restitution: zod.number().optional(),
+              drag: zod.number().optional(),
+              blocksLineOfSight: zod.boolean().optional(),
+              blocksProjectiles: zod.boolean().optional(),
+              blocksAudio: zod.boolean().optional(),
             })
             .optional(),
           light: zod
@@ -1002,6 +1114,9 @@ export const UpdateSceneResponse = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1034,10 +1149,35 @@ export const UpdateSceneResponse = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -1279,6 +1419,9 @@ export const ListPrefabsResponseItem = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1311,10 +1454,35 @@ export const ListPrefabsResponseItem = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -1426,6 +1594,9 @@ export const CreatePrefabBody = zod.object({
             "camera",
             "model",
             "empty",
+            "cloth",
+            "flag",
+            "particles",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -1464,10 +1635,35 @@ export const CreatePrefabBody = zod.object({
             .optional(),
           material: zod
             .object({
+              kind: zod
+                .enum([
+                  "Solid",
+                  "Metal",
+                  "Glass",
+                  "Wood",
+                  "Stone",
+                  "Cloth",
+                  "Flag",
+                  "Foliage",
+                  "Liquid",
+                  "Particle",
+                  "Smoke",
+                  "Emissive",
+                  "Custom",
+                ])
+                .optional(),
               color: zod.string().optional(),
               metalness: zod.number().optional(),
               roughness: zod.number().optional(),
               emissive: zod.string().optional(),
+              opacity: zod.number().optional(),
+              density: zod.number().optional(),
+              friction: zod.number().optional(),
+              restitution: zod.number().optional(),
+              drag: zod.number().optional(),
+              blocksLineOfSight: zod.boolean().optional(),
+              blocksProjectiles: zod.boolean().optional(),
+              blocksAudio: zod.boolean().optional(),
             })
             .optional(),
           light: zod
@@ -1583,6 +1779,9 @@ export const GetPrefabResponse = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1615,10 +1814,35 @@ export const GetPrefabResponse = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -1732,6 +1956,9 @@ export const UpdatePrefabBody = zod.object({
             "camera",
             "model",
             "empty",
+            "cloth",
+            "flag",
+            "particles",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -1770,10 +1997,35 @@ export const UpdatePrefabBody = zod.object({
             .optional(),
           material: zod
             .object({
+              kind: zod
+                .enum([
+                  "Solid",
+                  "Metal",
+                  "Glass",
+                  "Wood",
+                  "Stone",
+                  "Cloth",
+                  "Flag",
+                  "Foliage",
+                  "Liquid",
+                  "Particle",
+                  "Smoke",
+                  "Emissive",
+                  "Custom",
+                ])
+                .optional(),
               color: zod.string().optional(),
               metalness: zod.number().optional(),
               roughness: zod.number().optional(),
               emissive: zod.string().optional(),
+              opacity: zod.number().optional(),
+              density: zod.number().optional(),
+              friction: zod.number().optional(),
+              restitution: zod.number().optional(),
+              drag: zod.number().optional(),
+              blocksLineOfSight: zod.boolean().optional(),
+              blocksProjectiles: zod.boolean().optional(),
+              blocksAudio: zod.boolean().optional(),
             })
             .optional(),
           light: zod
@@ -1885,6 +2137,9 @@ export const UpdatePrefabResponse = zod.object({
           "camera",
           "model",
           "empty",
+          "cloth",
+          "flag",
+          "particles",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1917,10 +2172,35 @@ export const UpdatePrefabResponse = zod.object({
           .optional(),
         material: zod
           .object({
+            kind: zod
+              .enum([
+                "Solid",
+                "Metal",
+                "Glass",
+                "Wood",
+                "Stone",
+                "Cloth",
+                "Flag",
+                "Foliage",
+                "Liquid",
+                "Particle",
+                "Smoke",
+                "Emissive",
+                "Custom",
+              ])
+              .optional(),
             color: zod.string().optional(),
             metalness: zod.number().optional(),
             roughness: zod.number().optional(),
             emissive: zod.string().optional(),
+            opacity: zod.number().optional(),
+            density: zod.number().optional(),
+            friction: zod.number().optional(),
+            restitution: zod.number().optional(),
+            drag: zod.number().optional(),
+            blocksLineOfSight: zod.boolean().optional(),
+            blocksProjectiles: zod.boolean().optional(),
+            blocksAudio: zod.boolean().optional(),
           })
           .optional(),
         light: zod
@@ -2110,6 +2390,9 @@ export const GetTemplateResponse = zod.object({
         "camera",
         "model",
         "empty",
+        "cloth",
+        "flag",
+        "particles",
       ]),
       transform: zod.object({
         position: zod.array(zod.number()),
@@ -2142,10 +2425,35 @@ export const GetTemplateResponse = zod.object({
         .optional(),
       material: zod
         .object({
+          kind: zod
+            .enum([
+              "Solid",
+              "Metal",
+              "Glass",
+              "Wood",
+              "Stone",
+              "Cloth",
+              "Flag",
+              "Foliage",
+              "Liquid",
+              "Particle",
+              "Smoke",
+              "Emissive",
+              "Custom",
+            ])
+            .optional(),
           color: zod.string().optional(),
           metalness: zod.number().optional(),
           roughness: zod.number().optional(),
           emissive: zod.string().optional(),
+          opacity: zod.number().optional(),
+          density: zod.number().optional(),
+          friction: zod.number().optional(),
+          restitution: zod.number().optional(),
+          drag: zod.number().optional(),
+          blocksLineOfSight: zod.boolean().optional(),
+          blocksProjectiles: zod.boolean().optional(),
+          blocksAudio: zod.boolean().optional(),
         })
         .optional(),
       light: zod

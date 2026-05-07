@@ -20,7 +20,12 @@ import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
   DEFAULT_SENSOR_LAYERS,
   rapierCollisionGroups,
+  resolveMaterialDefaults,
+  resolveInheritedFields,
+  indexEntitiesById,
   type LayerName,
+  type MaterialKind,
+  type MaterialComponent,
 } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
@@ -41,6 +46,8 @@ interface RenderProps {
   entity: SceneEntity;
   selected?: boolean;
   onPick?: () => void;
+  /** Effective MaterialComponent after parent-chain inheritance. */
+  effectiveMaterial?: MaterialComponent;
   /** Right-click hit. Fires from the same outer wrapper that owns onPick.
    *  The viewport snapshots the entity id into a ref so the surrounding
    *  Radix `<ContextMenu>` can render entity-aware actions. */
@@ -56,13 +63,23 @@ const TYPE_GEOMETRY: Record<string, ReactElement> = {
   sphere: <sphereGeometry args={[0.5, 32, 32]} />,
   cylinder: <cylinderGeometry args={[0.5, 0.5, 1, 32]} />,
   plane: <planeGeometry args={[1, 1, 1, 1]} />,
+  // Soft / dynamic Material entity types render as simple gizmo
+  // primitives — visual stand-ins until a custom GLB is wired up.
+  // Cloth = a draped 1×1 plane, Flag = a vertical plane on a thin
+  // pole, Particles = a small instanced sprite cloud (sphere proxy
+  // here for cheapness).
+  cloth: <planeGeometry args={[1, 1, 4, 4]} />,
+  flag: <planeGeometry args={[1, 0.6, 4, 2]} />,
+  particles: <sphereGeometry args={[0.3, 8, 8]} />,
 };
 
 // Brand selection / wireframe color (Grudge Studio gold #d4af37)
 const SELECTION_COLOR = "#d4af37";
 
-function MeshBody({ entity, selected, onPick }: RenderProps) {
-  const mat = entity.material ?? {};
+function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) {
+  // Inherited material > local material. Lets a child without local
+  // material pick up its parent's color/metalness/roughness/etc.
+  const mat = effectiveMaterial ?? entity.material ?? {};
   const color = mat.color ?? SELECTION_COLOR;
   const emissive = mat.emissive ?? "#000000";
 
@@ -89,7 +106,7 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
         </mesh>
       );
     }
-    return <ModelEntity entity={entity} selected={selected} onPick={onPick} playMode={false} />;
+    return <ModelEntity entity={entity} selected={selected} onPick={onPick} playMode={false} effectiveMaterial={effectiveMaterial} />;
   }
   if (entity.type === "light") {
     return <LightEntity entity={entity} selected={selected} onPick={onPick} playMode={false} />;
@@ -107,6 +124,15 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
   // is never coplanar with the underlying mesh — coplanar surfaces z-fight as
   // the camera moves and looks like flicker. depthTest=false also means the
   // wireframe renders cleanly on top regardless of view angle.
+  // Soft entity types want translucency + double-sided rendering so the
+  // back of a flag / cloth panel is visible. Particles use additive-ish
+  // blending so individual sprites don't punch a black square out of
+  // each other.
+  const isSoft = entity.type === "cloth" || entity.type === "flag" || entity.type === "particles";
+  const matKind = mat.kind;
+  const resolved = matKind ? resolveMaterialDefaults(mat) : null;
+  const transparent = isSoft || (resolved && resolved.opacity < 1);
+  const opacity = mat.opacity ?? resolved?.opacity ?? 1;
   return (
     <>
       <mesh {...meshProps}>
@@ -117,7 +143,9 @@ function MeshBody({ entity, selected, onPick }: RenderProps) {
           roughness={mat.roughness ?? 0.6}
           emissive={emissive}
           emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
-          side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
+          side={entity.type === "plane" || isSoft ? THREE.DoubleSide : THREE.FrontSide}
+          transparent={!!transparent}
+          opacity={opacity}
         />
       </mesh>
       {selected && (
@@ -177,7 +205,7 @@ function LightEntity({ entity, selected, onPick }: RenderProps) {
   );
 }
 
-function ModelEntity({ entity, selected, onPick }: RenderProps) {
+function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProps) {
   const url = entity.model?.url;
   if (!url) {
     return (
@@ -212,6 +240,7 @@ function ModelEntity({ entity, selected, onPick }: RenderProps) {
         entityId={entity.id}
         clip={entity.model?.clip}
         tint={entity.model?.tint}
+        material={effectiveMaterial ?? entity.material}
         label={entity.model?.label}
         selected={selected}
         onPick={onPick}
@@ -315,6 +344,10 @@ interface LoadedModelProps {
   url: string;
   clip?: string;
   tint?: string;
+  /** Effective MaterialComponent applied to GLB submesh materials
+   *  (color/metalness/roughness/emissive/opacity). `tint` wins over
+   *  `material.color` for legacy team-color flows. */
+  material?: MaterialComponent;
   label?: string;
   selected?: boolean;
   onPick?: () => void;
@@ -333,7 +366,7 @@ interface LoadedModelProps {
   surfaceTag?: string;
 }
 
-function LoadedModel({ entityId, url, clip, tint, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
+function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
   // `false, false` so drei does NOT install its own DRACO/Meshopt
@@ -502,27 +535,52 @@ function LoadedModel({ entityId, url, clip, tint, label, selected, onPick, dropT
     };
   }, []);
 
-  // ── Tint: clone materials so coloring one entity doesn't bleed across
-  // every spawned copy that shares the cached GLB material instances.
-  // Inspired by PlayerImporter._applyTint (team color / variant differentiation).
+  // Material + Tint: clone GLB materials per-instance so coloring
+  // one entity doesn't bleed across cached siblings. Applies both
+  // legacy `tint` (team color) and the effective MaterialComponent
+  // (color / metalness / roughness / emissive / opacity). `tint`
+  // wins over material.color for legacy flows.
+  const matColor = material?.color;
+  const matMetalness = material?.metalness;
+  const matRoughness = material?.roughness;
+  const matEmissive = material?.emissive;
+  const matOpacity = material?.opacity;
   useEffect(() => {
-    if (!tint) return;
-    const tintColor = new THREE.Color(tint);
+    const hasMaterial =
+      matColor !== undefined ||
+      matMetalness !== undefined ||
+      matRoughness !== undefined ||
+      matEmissive !== undefined ||
+      matOpacity !== undefined;
+    if (!tint && !hasMaterial) return;
+    const colorOverride = tint ?? matColor;
+    const colorObj = colorOverride ? new THREE.Color(colorOverride) : null;
+    const emissiveObj = matEmissive ? new THREE.Color(matEmissive) : null;
     const restorers: Array<() => void> = [];
     cloned.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       const apply = (m: THREE.Material): THREE.Material => {
-        if (
+        const isStd =
           m instanceof THREE.MeshStandardMaterial ||
           m instanceof THREE.MeshPhongMaterial ||
-          m instanceof THREE.MeshBasicMaterial
-        ) {
-          const cm = m.clone();
-          cm.color.copy(tintColor);
-          cm.needsUpdate = true;
-          return cm;
+          m instanceof THREE.MeshBasicMaterial;
+        if (!isStd) return m;
+        const cm = m.clone();
+        if (colorObj && "color" in cm) (cm as THREE.MeshStandardMaterial).color.copy(colorObj);
+        if (cm instanceof THREE.MeshStandardMaterial) {
+          if (matMetalness !== undefined) cm.metalness = matMetalness;
+          if (matRoughness !== undefined) cm.roughness = matRoughness;
+          if (emissiveObj) {
+            cm.emissive.copy(emissiveObj);
+            cm.emissiveIntensity = 0.6;
+          }
         }
-        return m;
+        if (matOpacity !== undefined && matOpacity < 1) {
+          cm.transparent = true;
+          cm.opacity = matOpacity;
+        }
+        cm.needsUpdate = true;
+        return cm;
       };
       const orig = child.material;
       child.material = Array.isArray(orig) ? orig.map(apply) : apply(orig);
@@ -533,7 +591,7 @@ function LoadedModel({ entityId, url, clip, tint, label, selected, onPick, dropT
     return () => {
       for (const r of restorers) r();
     };
-  }, [cloned, tint]);
+  }, [cloned, tint, matColor, matMetalness, matRoughness, matEmissive, matOpacity]);
 
   // ── Label: floating sprite above the model. Repositioned each frame would
   // be ideal but a static "above bbox" placement covers 95% of cases.
@@ -620,9 +678,44 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   // Layer-driven collision filtering. Subscribe to env so toggling the
   // collision matrix in the Layers panel re-renders bodies live during Play.
   const env = useEditor((s) => s.sceneData.environment);
-  const layer: LayerName = (entity.layer as LayerName | undefined) ?? "Default";
+  // Subscribe to the entity list once and resolve all three inherited
+  // axes (layer / surface / materialKind) by walking the persisted
+  // parentId chain. Re-tagging a parent rerenders children.
+  const allEntities = useEditor((s) => s.sceneData.entities);
+  const inherited = useMemo(
+    () => resolveInheritedFields(entity, indexEntitiesById(allEntities)),
+    [entity, allEntities],
+  );
+  const layer: LayerName = ((entity.layer as LayerName | undefined) ??
+    (inherited.layer as LayerName | undefined) ??
+    "Default") as LayerName;
   const sensorLayers = env.sensorLayers ?? DEFAULT_SENSOR_LAYERS;
   const isSensor = sensorLayers.includes(layer);
+  // Default the soft / dynamic entity types into their natural Material
+  // slot so a freshly-spawned cloth/flag/particles entity already has
+  // sensible physics + occlusion flags without a separate set_material
+  // call. Explicit `material.kind` always wins.
+  const localKind: MaterialKind | undefined =
+    entity.material?.kind ??
+    (entity.type === "cloth"
+      ? "Cloth"
+      : entity.type === "flag"
+        ? "Flag"
+        : entity.type === "particles"
+          ? "Particle"
+          : undefined);
+  // Effective MaterialKind: explicit > type-inferred > parent-inherited > Solid.
+  const inferredKind: MaterialKind = (localKind ?? inherited.materialKind ?? "Solid") as MaterialKind;
+  // Per-field-merged effective material (own > ancestor > kind
+  // defaults). Used by visuals, physics defaults, and userData stamping.
+  const effectiveMaterial = useMemo(
+    () => ({ ...(inherited.material ?? {}), kind: inferredKind }),
+    [inherited.material, inferredKind],
+  );
+  const matResolved = useMemo(
+    () => resolveMaterialDefaults(effectiveMaterial),
+    [effectiveMaterial],
+  );
   const collisionGroups = useMemo(
     () => rapierCollisionGroups(layer, env.collisionMatrix),
     [layer, env.collisionMatrix],
@@ -756,10 +849,25 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
                   ? "trimesh"
                   : "cuboid"
         }
-        restitution={ph.restitution ?? 0.4}
-        friction={ph.friction ?? 0.6}
-        mass={ph.mass ?? 1}
-        userData={{ entityId: entity.id, name: entity.name, layer, surface: entity.surface }}
+        restitution={ph.restitution ?? matResolved.restitution}
+        friction={ph.friction ?? matResolved.friction}
+        mass={ph.mass ?? matResolved.density / 1000}
+        linearDamping={matResolved.drag}
+        userData={{
+          entityId: entity.id,
+          name: entity.name,
+          // Tri-axis tagging stamped from effective values
+          // (own > inherited > default). Always present so
+          // raycast/ground-probe payloads are coherent without
+          // walking the chain again at query time.
+          layer,
+          surface: entity.surface ?? inherited.surface,
+          material: matResolved.kind,
+          materialDensity: matResolved.density,
+          materialBlocksLineOfSight: matResolved.blocksLineOfSight,
+          materialBlocksProjectiles: matResolved.blocksProjectiles,
+          materialBlocksAudio: matResolved.blocksAudio,
+        }}
       >
         {/* Capsule for character-shaped models, sphere for round ones.
             Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
@@ -784,7 +892,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
             forward DOM-style pointer events. The group catches the same
             r3f synthetic event for the entity's visible geometry. */}
         <group scale={tr.scale} onContextMenu={handleContext}>
-          <MeshBody {...props} />
+          <MeshBody {...props} effectiveMaterial={effectiveMaterial} />
           {children}
         </group>
       </RigidBody>
@@ -797,10 +905,20 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       position={tr.position}
       rotation={tr.rotation}
       scale={tr.scale}
-      userData={{ entityId: entity.id, name: entity.name, layer, surface: entity.surface }}
+      userData={{
+        entityId: entity.id,
+        name: entity.name,
+        layer,
+        surface: entity.surface ?? inherited.surface,
+        material: matResolved.kind,
+        materialDensity: matResolved.density,
+        materialBlocksLineOfSight: matResolved.blocksLineOfSight,
+        materialBlocksProjectiles: matResolved.blocksProjectiles,
+        materialBlocksAudio: matResolved.blocksAudio,
+      }}
       onContextMenu={handleContext}
     >
-      <MeshBody {...props} />
+      <MeshBody {...props} effectiveMaterial={effectiveMaterial} />
       {children}
     </group>
   );
