@@ -7,6 +7,7 @@ import { PlayCameraController } from "@/scene/CameraControllers";
 import { EffectsRig } from "@/scene/EffectsRig";
 import { PlayScriptRuntime } from "@/scene/PlayScriptRuntime";
 import { useEditor } from "./playerStore";
+import { PlayerHUD } from "./PlayerHUD";
 import { DEFAULT_GRAVITY, DEFAULT_FOG } from "@workspace/scene-schema";
 
 /**
@@ -98,6 +99,7 @@ export function PlayerScene(): React.ReactElement {
         </Suspense>
         <EffectsRig highQuality={false} />
       </Canvas>
+      <PlayerHUD />
     </div>
   );
 }
