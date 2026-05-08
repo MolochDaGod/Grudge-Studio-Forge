@@ -555,6 +555,170 @@ export function characterShowcaseScene(): SceneData {
   };
 }
 
+/** RPG starter — a small desert-town village populated with one of each
+ *  race (warrior / dwarf / frost-dwarf / elf / orc / skeleton). The
+ *  Player is the Warrior at center plaza with a held rifle (same auto-
+ *  attached weapon the deathmatch templates use, so shooting + the
+ *  camera-yaw-facing fix both apply). Friendlies (dwarf / frost-dwarf /
+ *  elf) stand idle nearby with cylinder colliders; enemies (orc /
+ *  skeleton) wander the plaza under `enemy-deathmatch` so the player
+ *  can fight them out of the box.
+ *
+ *  This template references each race via its durable
+ *  `builtin:race:<id>` model key — `EntityRenderer.resolveBuiltinModel`
+ *  resolves that to the per-race CDN URL at render time, so saved
+ *  scenes stay portable across asset-pack versions. */
+export function rpgVillageScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // Visible village map (no physics — handled by the invisible Ground
+  // plane below, same pattern as the deathmatch templates).
+  entities.push({
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: "builtin:map-deserttown" },
+    transform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [0.6, 0.6, 0.6],
+    },
+    parentId: null,
+  });
+
+  // Invisible collision ground.
+  entities.push(
+    ent({
+      name: "Ground",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [200, 200, 1],
+      color: "#b08754",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+    }),
+  );
+
+  // Player — Warrior at center plaza, held rifle parented underneath.
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: "builtin:race:warrior" },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: {
+      position: [0.32, 1.25, 0.25],
+      rotation: [0, Math.PI / 2, 0],
+      scale: [1, 1, 1],
+    },
+    parentId: playerId,
+  });
+
+  // Friendlies — placed around the plaza as idle NPCs (no behavior
+  // script for v1, just visible characters with cylinder colliders).
+  // Each carries its proper per-race builtin key so EntityRenderer
+  // resolves the matching CDN GLB.
+  const FRIENDLIES: { race: "dwarf" | "frost-dwarf" | "elf"; name: string; pos: [number, number, number] }[] = [
+    { race: "dwarf", name: "Dwarf", pos: [-3.5, 0, -2.5] },
+    { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5] },
+    { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5] },
+  ];
+  for (const f of FRIENDLIES) {
+    entities.push({
+      id: id(),
+      name: f.name,
+      type: "model",
+      model: { url: `builtin:race:${f.race}` },
+      transform: {
+        position: f.pos,
+        rotation: [0, Math.atan2(-f.pos[0], -f.pos[2]), 0], // face plaza center
+        scale: [1, 1, 1],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0.2,
+        friction: 0.8,
+      },
+      parentId: null,
+    });
+  }
+
+  // Enemies — orc + skeleton across the plaza, running the existing
+  // enemy-deathmatch behavior (Yuka wander + chase + shoot when they
+  // see you). Same physics shape as deathmatch enemies.
+  const ENEMIES: { race: "orc" | "skeleton"; name: string; pos: [number, number, number] }[] = [
+    { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
+    { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
+  ];
+  for (const e of ENEMIES) {
+    entities.push({
+      id: id(),
+      name: e.name,
+      type: "model",
+      model: { url: `builtin:race:${e.race}` },
+      transform: {
+        position: e.pos,
+        rotation: [0, Math.atan2(-e.pos[0], -e.pos[2]), 0],
+        scale: [1, 1, 1],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0.2,
+        friction: 0.8,
+      },
+      behavior: "enemy-deathmatch",
+      parentId: null,
+    });
+  }
+
+  // Lighting — warm directional sun + soft hemisphere ambient (matches
+  // the deserttown tone). The sun is encoded as a directional light
+  // entity; ambient/hemisphere is driven by the environment fields.
+  entities.push(
+    ent({
+      name: "Sun",
+      type: "light",
+      position: [12, 18, 8],
+      light: { kind: "directional", color: "#ffe6b8", intensity: 4 },
+    }),
+  );
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#e6c489",
+      groundColor: "#b08754",
+      ambientIntensity: 0.55,
+      sunIntensity: 1.4,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+    },
+  };
+}
+
 // ─── Deathmatch starter scenes ───────────────────────────────────────────────
 // Three first-to-10-kills deathmatch maps, each built from one of the bundled
 // large-format GLB maps. Players spawn at random Spawn_* points, AI enemies

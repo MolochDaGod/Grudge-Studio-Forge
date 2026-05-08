@@ -15,12 +15,17 @@
  * versioned copy on next boot — old versions stay in object storage for
  * already-published scenes that may have linked the older URL.
  *
- * The shipped set is intentionally curated to THREE deathmatch maps —
- * one per visual biome (neon city / medieval fort / wooded forest) —
- * each modeled after the Mugen87/dive sample game: full parent/child
- * hierarchy, Yuka-driven AI prefabs, player + enemy behavior scripts,
- * and a hidden GameManager entity running the gamemode-deathmatch
- * script (score tracking + win/lose).
+ * The shipped set is intentionally curated:
+ *   • Three deathmatch maps — one per visual biome (neon city /
+ *     medieval fort / wooded forest) — each modeled after the
+ *     Mugen87/dive sample game: full parent/child hierarchy, Yuka-driven
+ *     AI prefabs, player + enemy behavior scripts, and a hidden
+ *     GameManager entity running the gamemode-deathmatch script
+ *     (score tracking + win/lose).
+ *   • One RPG starter — a small desert-town village populated with one
+ *     of each race (warrior / dwarf / frost-dwarf / elf / orc /
+ *     skeleton). Player is the warrior; enemies use the existing
+ *     enemy-deathmatch behavior so combat works out of the box.
  */
 import type { SceneData } from "@workspace/scene-schema";
 
@@ -28,13 +33,14 @@ import {
   cyberpunkDeathmatchScene,
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
+  rpgVillageScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260504.2";
+export const TEMPLATES_VERSION = "20260508.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -70,6 +76,13 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "First-to-10 deathmatch in the wooded encampment. 7 AI enemies, warm firelight, full HUD.",
     build: encampmentDeathmatchScene,
   },
+  {
+    key: "rpg-village",
+    label: "RPG — Village (All Races)",
+    description:
+      "Small desert-town village with one of each race (warrior, dwarf, frost-dwarf, elf, orc, skeleton). Great starting point for an RPG-style game.",
+    build: rpgVillageScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -94,5 +107,6 @@ export {
   cyberpunkDeathmatchScene,
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
+  rpgVillageScene,
   withIdScope,
 } from "./builders.js";
