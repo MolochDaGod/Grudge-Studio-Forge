@@ -337,6 +337,11 @@ export interface SoftBodyComponent {
   /** Particles burst-mode — seconds between bursts. Default 1. Set
    *  high (e.g. 9999) for an effective one-shot emitter. */
   burstInterval?: number;
+  /** Particles only — when true, particles collide with nearby static
+   *  scene colliders (boxes / spheres / planes) and slide along the
+   *  contact surface. Cheap AABB/sphere approximation, off by default
+   *  so existing puff/spark emitters don't change behavior. */
+  collideGround?: boolean;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";

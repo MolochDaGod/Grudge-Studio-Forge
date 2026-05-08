@@ -4,13 +4,32 @@ import {
   makeParticlePool,
   projectOutOfColliders,
   resolveEmitter,
+  gatherSoftColliders,
   snapshotColliders,
+  snapshotRapierColliders,
   stepVerlet,
   tickEmitter,
   tickParticles,
   type EmitState,
+  type RapierLikeCollider,
+  type RapierLikeWorld,
 } from "../softBodySim";
 import type { SceneEntity } from "../types";
+
+function mkRapierWorld(colliders: RapierLikeCollider[]): RapierLikeWorld {
+  return { forEachCollider: (fn) => colliders.forEach(fn) };
+}
+function mkRapierCollider(over: Partial<RapierLikeCollider> & {
+  translation: { x: number; y: number; z: number };
+  shape: RapierLikeCollider["shape"];
+}): RapierLikeCollider {
+  return {
+    isSensor: () => false,
+    parent: () => null,
+    ...over,
+    translation: () => over.translation,
+  };
+}
 
 function mkEntity(over: Partial<SceneEntity>): SceneEntity {
   return {
@@ -74,6 +93,111 @@ describe("collider projection", () => {
     expect(pt.y).toBeCloseTo(0.5, 5);
   });
 
+  it("snapshotRapierColliders converts cuboid + ball + capsule shapes", () => {
+    const world = mkRapierWorld([
+      mkRapierCollider({
+        translation: { x: 1, y: 2, z: 3 },
+        shape: { halfExtents: { x: 0.5, y: 0.25, z: 1 } },
+      }),
+      mkRapierCollider({
+        translation: { x: 0, y: 0, z: 0 },
+        shape: { radius: 0.7 },
+      }),
+      mkRapierCollider({
+        translation: { x: -1, y: 0, z: 0 },
+        shape: { radius: 0.3, halfHeight: 0.85 },
+      }),
+    ]);
+    const out = snapshotRapierColliders(world, "self");
+    expect(out).toHaveLength(3);
+    expect(out[0]).toMatchObject({ kind: "box", cx: 1, cy: 2, cz: 3, rx: 0.5, ry: 0.25, rz: 1 });
+    expect(out[1]).toMatchObject({ kind: "sphere", rx: 0.7 });
+    expect(out[2]).toMatchObject({ kind: "box", ry: 0.3 + 0.85, rx: 0.3, rz: 0.3 });
+  });
+
+  it("snapshotRapierColliders skips sensors and the self entity", () => {
+    const world = mkRapierWorld([
+      mkRapierCollider({
+        translation: { x: 0, y: 0, z: 0 },
+        shape: { halfExtents: { x: 1, y: 1, z: 1 } },
+        isSensor: () => true,
+      }),
+      mkRapierCollider({
+        translation: { x: 5, y: 0, z: 0 },
+        shape: { halfExtents: { x: 1, y: 1, z: 1 } },
+        parent: () => ({ userData: { entityId: "self" } }),
+      }),
+      mkRapierCollider({
+        translation: { x: 9, y: 0, z: 0 },
+        shape: { halfExtents: { x: 1, y: 1, z: 1 } },
+        parent: () => ({ userData: { entityId: "other" } }),
+      }),
+    ]);
+    const out = snapshotRapierColliders(world, "self");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.cx).toBe(9);
+  });
+
+  it("snapshotRapierColliders tracks dynamic body positions across ticks", () => {
+    // Mimic a dynamic body sliding along +X over time. Each call to
+    // forEachCollider returns the latest translation, proving that
+    // the snapshot reflects live physics state — not the scene-tree
+    // author-time transform.
+    const dynamic = { x: 0, y: 0, z: 0 };
+    const world: RapierLikeWorld = {
+      forEachCollider: (fn) =>
+        fn(
+          mkRapierCollider({
+            translation: { ...dynamic },
+            shape: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+          }),
+        ),
+    };
+    expect(snapshotRapierColliders(world, "x")[0]?.cx).toBe(0);
+    dynamic.x = 4;
+    expect(snapshotRapierColliders(world, "x")[0]?.cx).toBe(4);
+    dynamic.x = -2;
+    expect(snapshotRapierColliders(world, "x")[0]?.cx).toBe(-2);
+  });
+
+  it("snapshotRapierColliders returns an empty list when world is null (edit mode)", () => {
+    expect(snapshotRapierColliders(null, "x")).toEqual([]);
+    expect(snapshotRapierColliders(undefined, "x")).toEqual([]);
+  });
+
+  it("gatherSoftColliders falls back to the scene tree when the world is null (edit mode)", () => {
+    const ents: SceneEntity[] = [
+      mkEntity({ id: "crate", type: "box", transform: { position: [3, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } }),
+    ];
+    const out = gatherSoftColliders(null, ents, "self");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.cx).toBe(3);
+  });
+
+  it("gatherSoftColliders dedups scene-tree entries that already have a Rapier body", () => {
+    // The "crate" entity exists at (0,0,0) in the scene tree but has
+    // drifted to (5,0,0) at runtime under Rapier control. The dedup
+    // pass must drop the stale scene-tree entry so cloth doesn't
+    // collide with a ghost crate at the origin.
+    const ents: SceneEntity[] = [
+      mkEntity({ id: "crate", type: "box", transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } }),
+      mkEntity({ id: "rock", type: "sphere", transform: { position: [-2, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } }),
+    ];
+    const world = mkRapierWorld([
+      mkRapierCollider({
+        translation: { x: 5, y: 0, z: 0 },
+        shape: { halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        parent: () => ({ userData: { entityId: "crate" } }),
+      }),
+    ]);
+    const out = gatherSoftColliders(world, ents, "self");
+    // Live Rapier crate at x=5 + scene-tree rock at x=-2; stale crate
+    // at the origin must be excluded.
+    expect(out).toHaveLength(2);
+    const xs = out.map((c) => c.cx).sort((a, b) => a - b);
+    expect(xs).toEqual([-2, 5]);
+  });
+
   it("snapshotColliders skips soft entities and self", () => {
     const ents: SceneEntity[] = [
       mkEntity({ id: "self", type: "cloth" }),
@@ -134,6 +258,54 @@ describe("particle emitter", () => {
       );
     }
     expect(later).toBe(12);
+  });
+
+  it("particles slide along a ground box when collideGround is set", () => {
+    const cfg = resolveEmitter(
+      { mode: "continuous", emitRate: 0, lifetime: 5, collideGround: true },
+      0,
+    );
+    const pool = makeParticlePool(4);
+    // Drop a single particle from above onto a flat box at y=0 with
+    // some lateral velocity so we can assert it slides.
+    pool.alive[0] = 1;
+    pool.positions[0] = 0;
+    pool.positions[1] = 0.5;
+    pool.positions[2] = 0;
+    pool.velocities[0] = 1;
+    pool.velocities[1] = -2;
+    pool.velocities[2] = 0;
+    const colliders = [
+      { kind: "box" as const, cx: 0, cy: -0.5, cz: 0, rx: 5, ry: 0.5, rz: 5 },
+    ];
+    for (let i = 0; i < 60; i++) {
+      tickParticles(pool, cfg, 0, 0, 0, 1 / 60, colliders);
+    }
+    // Particle should rest on top of the box (y >= 0) instead of
+    // tunnelling through, and have continued sliding along +X.
+    expect(pool.positions[1]).toBeGreaterThanOrEqual(-1e-3);
+    expect(pool.positions[0]).toBeGreaterThan(0.1);
+  });
+
+  it("particles ignore colliders when collideGround is false", () => {
+    const cfg = resolveEmitter(
+      { mode: "continuous", emitRate: 0, lifetime: 5 },
+      0,
+    );
+    const pool = makeParticlePool(4);
+    pool.alive[0] = 1;
+    pool.positions[0] = 0;
+    pool.positions[1] = 0.5;
+    pool.positions[2] = 0;
+    pool.velocities[1] = -5;
+    const colliders = [
+      { kind: "box" as const, cx: 0, cy: -0.5, cz: 0, rx: 5, ry: 0.5, rz: 5 },
+    ];
+    for (let i = 0; i < 60; i++) {
+      tickParticles(pool, cfg, 0, 0, 0, 1 / 60, colliders);
+    }
+    // Without the flag, the particle falls straight through the box.
+    expect(pool.positions[1]).toBeLessThan(-1);
   });
 
   it("particles age out and free their pool slots for recycling", () => {

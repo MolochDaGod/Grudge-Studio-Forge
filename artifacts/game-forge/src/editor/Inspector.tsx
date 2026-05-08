@@ -963,6 +963,20 @@ export function Inspector() {
                     }
                   />
                 </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    data-testid="checkbox-particle-collide-ground"
+                    checked={entity.softBody?.collideGround ?? false}
+                    onChange={(e) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.collideGround = e.target.checked;
+                      })
+                    }
+                  />
+                  Collide with ground / scene
+                </label>
               </>
             ) : (
               <>

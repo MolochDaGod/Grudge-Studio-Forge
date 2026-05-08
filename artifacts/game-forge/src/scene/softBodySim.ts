@@ -149,6 +149,12 @@ export interface SoftCollider {
   cx: number; cy: number; cz: number;
   /** World-space radius (sphere) or half-extents (box). */
   rx: number; ry: number; rz: number;
+  /** Source entity id (when the collider was attached to a Rapier
+   *  rigid body whose `userData.entityId` was stamped by EntityRenderer).
+   *  Used by the soft-body gather pass to dedup the scene-tree fallback
+   *  so a single dynamic entity doesn't appear at both its current
+   *  Rapier position AND its stale author-time transform. */
+  entityId?: string;
 }
 
 /** Build a flat collider list from the scene snapshot. We treat each
@@ -173,7 +179,7 @@ export function snapshotColliders(
     if (e.type === "sphere") {
       // Default sphereGeometry radius = 0.5, scale = uniform
       const r = 0.5 * Math.max(sx, sy, sz);
-      out.push({ kind: "sphere", cx: px, cy: py, cz: pz, rx: r, ry: r, rz: r });
+      out.push({ kind: "sphere", cx: px, cy: py, cz: pz, rx: r, ry: r, rz: r, entityId: e.id });
     } else if (e.type === "plane") {
       // Plane = a thin slab. Use a small Y half-extent so cloth can
       // rest on top of it without disappearing through.
@@ -185,6 +191,7 @@ export function snapshotColliders(
         rx: 0.5 * Math.abs(sx),
         ry: 0.05,
         rz: 0.5 * Math.abs(sz),
+        entityId: e.id,
       });
     } else {
       // box / cylinder / model — coarse AABB sized off the entity's
@@ -197,10 +204,125 @@ export function snapshotColliders(
         rx: 0.5 * Math.abs(sx),
         ry: 0.5 * Math.abs(sy),
         rz: 0.5 * Math.abs(sz),
+        entityId: e.id,
       });
     }
   }
   return out;
+}
+
+/** Minimal structural shape of the live Rapier world we read from
+ *  during play mode. We deliberately type this loosely so the helper
+ *  stays unit-testable with a hand-rolled stub (no rapier wasm boot
+ *  required in vitest). */
+export interface RapierLikeWorld {
+  forEachCollider(fn: (c: RapierLikeCollider) => void): void;
+}
+export interface RapierLikeCollider {
+  isSensor(): boolean;
+  translation(): { x: number; y: number; z: number };
+  parent(): { userData?: unknown } | null;
+  shape: {
+    type?: number;
+    halfExtents?: { x: number; y: number; z: number };
+    radius?: number;
+    halfHeight?: number;
+  };
+}
+
+/** Snapshot Rapier's live collider list into the same {@link SoftCollider}
+ *  shape used by the verlet collision pass. Pulls **dynamic** body
+ *  positions from the running physics step (so a cloth tossed onto a
+ *  moving crate stays on top of it), not the scene-tree author-time
+ *  transform. Static colliders are included too — when both this and
+ *  {@link snapshotColliders} fire, the caller can just concatenate;
+ *  duplicate AABBs are no-ops in {@link projectOutOfColliders}.
+ *
+ *  The entity-bearing rigid body's `userData.entityId` is checked so
+ *  the cloth/flag/particle entity itself can be excluded if it ever
+ *  acquires a Rapier body. Decorative colliders without an entity ID
+ *  are kept (they still block cloth — same rule the raycast uses). */
+export function snapshotRapierColliders(
+  world: RapierLikeWorld | null | undefined,
+  selfId: string,
+): SoftCollider[] {
+  const out: SoftCollider[] = [];
+  if (!world) return out;
+  world.forEachCollider((c) => {
+    if (c.isSensor()) return;
+    const ud = c.parent()?.userData as { entityId?: string } | undefined;
+    const entityId = ud?.entityId;
+    if (entityId && entityId === selfId) return;
+    const t = c.translation();
+    const sh = c.shape;
+    // Cuboid (rapier shape type 1) → straight half-extents.
+    if (sh.halfExtents) {
+      out.push({
+        kind: "box",
+        cx: t.x,
+        cy: t.y,
+        cz: t.z,
+        rx: Math.abs(sh.halfExtents.x),
+        ry: Math.abs(sh.halfExtents.y),
+        rz: Math.abs(sh.halfExtents.z),
+        entityId,
+      });
+      return;
+    }
+    // Capsule / Cylinder / RoundCylinder → tight box around the shaft.
+    if (typeof sh.halfHeight === "number" && typeof sh.radius === "number") {
+      const r = Math.abs(sh.radius);
+      out.push({
+        kind: "box",
+        cx: t.x,
+        cy: t.y,
+        cz: t.z,
+        rx: r,
+        ry: Math.abs(sh.halfHeight) + r,
+        rz: r,
+        entityId,
+      });
+      return;
+    }
+    // Ball → sphere.
+    if (typeof sh.radius === "number") {
+      const r = Math.abs(sh.radius);
+      out.push({ kind: "sphere", cx: t.x, cy: t.y, cz: t.z, rx: r, ry: r, rz: r, entityId });
+      return;
+    }
+    // Unknown shape (trimesh / convex hull / heightfield) — fall back
+    // to a unit AABB at the collider origin. Authors with custom hulls
+    // can still rely on the scene-tree snapshot path for accuracy.
+    out.push({ kind: "box", cx: t.x, cy: t.y, cz: t.z, rx: 0.5, ry: 0.5, rz: 0.5, entityId });
+  });
+  return out;
+}
+
+/** Build the per-frame collider list. Pulls live AABBs from the Rapier
+ *  world (so dynamic bodies that have moved since the scene snapshot
+ *  are included) and overlays the scene-tree fallback for entities
+ *  that don't have a Rapier body yet (static decoration not stamped
+ *  with a PhysicsComponent, or edit mode where `world` is null).
+ *
+ *  Dedup: any entity already present in the Rapier snapshot (via
+ *  `userData.entityId`) is excluded from the scene-tree fallback so a
+ *  dynamic crate that has drifted at runtime doesn't appear at BOTH
+ *  its current and stale author-time positions.
+ *
+ *  Pure / no React deps so it can be unit-tested without booting R3F. */
+export function gatherSoftColliders(
+  world: RapierLikeWorld | null | undefined,
+  entities: ReadonlyArray<SceneEntity>,
+  selfId: string,
+): SoftCollider[] {
+  const live = snapshotRapierColliders(world, selfId);
+  if (live.length === 0) return snapshotColliders(entities, selfId);
+  const seen = new Set<string>();
+  for (const c of live) if (c.entityId) seen.add(c.entityId);
+  const fallback = snapshotColliders(entities, selfId).filter(
+    (c) => !c.entityId || !seen.has(c.entityId),
+  );
+  return [...live, ...fallback];
 }
 
 /** Project a single world-space point out of any collider it has
@@ -320,6 +442,7 @@ export interface ResolvedEmitter {
   burstCount: number;
   burstInterval: number;
   capacity: number;
+  collideGround: boolean;
 }
 
 export function resolveEmitter(
@@ -342,6 +465,7 @@ export function resolveEmitter(
     burstCount,
     burstInterval,
     capacity: Math.max(8, steadyState + 16),
+    collideGround: sb?.collideGround ?? false,
   };
 }
 
@@ -394,9 +518,59 @@ export function tickEmitter(
   return spawned;
 }
 
+/** Project a single live particle out of any collider it has
+ *  penetrated. When `out` reports a hit, also damp the velocity along
+ *  the contact normal so the particle slides along the surface
+ *  instead of pinging back. Pure helper exported for unit testing. */
+export function collideParticle(
+  pool: ParticlePool,
+  i: number,
+  colliders: ReadonlyArray<SoftCollider>,
+  friction = 0.7,
+): boolean {
+  if (colliders.length === 0) return false;
+  const ix = i * 3;
+  const px = pool.positions[ix];
+  const py = pool.positions[ix + 1];
+  const pz = pool.positions[ix + 2];
+  const scratch = { x: px, y: py, z: pz };
+  if (!projectOutOfColliders(scratch, colliders)) return false;
+  pool.positions[ix] = scratch.x;
+  pool.positions[ix + 1] = scratch.y;
+  pool.positions[ix + 2] = scratch.z;
+  const dx = scratch.x - px;
+  const dy = scratch.y - py;
+  const dz = scratch.z - pz;
+  const len = Math.hypot(dx, dy, dz);
+  if (len > 1e-6) {
+    const nx = dx / len;
+    const ny = dy / len;
+    const nz = dz / len;
+    const vx = pool.velocities[ix];
+    const vy = pool.velocities[ix + 1];
+    const vz = pool.velocities[ix + 2];
+    const vn = vx * nx + vy * ny + vz * nz;
+    if (vn < 0) {
+      // Remove the inward component, leaving the tangential slide. A
+      // small friction factor (<1) bleeds the slide so particles don't
+      // skate forever along a flat surface.
+      const tx = (vx - vn * nx) * friction;
+      const ty = (vy - vn * ny) * friction;
+      const tz = (vz - vn * nz) * friction;
+      pool.velocities[ix] = tx;
+      pool.velocities[ix + 1] = ty;
+      pool.velocities[ix + 2] = tz;
+    }
+  }
+  return true;
+}
+
 /** Per-particle integration step: ages, drag, gravity, wind. Returns
  *  the upper bound of the live index range so the renderer can limit
- *  the buffer drawRange. */
+ *  the buffer drawRange. When `colliders` is provided and the emitter
+ *  has `collideGround:true`, each live particle is projected out of
+ *  intersecting colliders after its position update so it slides along
+ *  the contact surface. */
 export function tickParticles(
   pool: ParticlePool,
   cfg: ResolvedEmitter,
@@ -404,6 +578,7 @@ export function tickParticles(
   windY: number,
   windZ: number,
   dt: number,
+  colliders?: ReadonlyArray<SoftCollider>,
 ): { live: number; maxIdx: number } {
   const h = Math.min(dt, 1 / 20);
   const dragFactor = Math.max(0, 1 - cfg.damping * h);
@@ -429,6 +604,9 @@ export function tickParticles(
     pool.positions[ix] += pool.velocities[ix] * h;
     pool.positions[ix + 1] += pool.velocities[ix + 1] * h;
     pool.positions[ix + 2] += pool.velocities[ix + 2] * h;
+    if (cfg.collideGround && colliders && colliders.length > 0) {
+      collideParticle(pool, i, colliders);
+    }
     live++;
     if (i + 1 > maxIdx) maxIdx = i + 1;
   }

@@ -1,5 +1,6 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useRapier } from "@react-three/rapier";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import * as THREE from "three";
 import {
   resolveMaterialDefaults,
@@ -9,6 +10,7 @@ import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 import {
   buildGrid,
+  gatherSoftColliders,
   makeParticlePool,
   projectOutOfColliders,
   readWindVec,
@@ -18,7 +20,34 @@ import {
   tickEmitter,
   tickParticles,
   type EmitState,
+  type RapierLikeWorld,
+  type SoftCollider,
 } from "./softBodySim";
+
+/** Probe the Rapier context and publish the live world into a ref.
+ *
+ *  IMPORTANT: This component must only be mounted inside a `<Physics>`
+ *  provider. `useRapier()` throws when no provider is present, which
+ *  happens in **edit mode** (the editor's `SceneEditMode` does not
+ *  wrap the scene in `<Physics>` — only `ScenePlayMode` does). The
+ *  parent components conditionally mount this probe based on
+ *  `isPlaying` so the editor never tries to read Rapier when there's
+ *  no physics world. */
+function RapierWorldProbe({
+  worldRef,
+}: {
+  worldRef: MutableRefObject<RapierLikeWorld | null>;
+}) {
+  const { world } = useRapier();
+  worldRef.current = world as unknown as RapierLikeWorld;
+  useEffect(() => {
+    return () => {
+      worldRef.current = null;
+    };
+  }, [worldRef]);
+  return null;
+}
+
 
 const SELECTION_COLOR = "#d4af37";
 
@@ -106,6 +135,8 @@ function applyClothCollision(
 export function FlagEntity({ entity, selected, onPick, effectiveMaterial }: VerletEntityProps) {
   const env = useEditor((s) => s.sceneData.environment);
   const allEntities = useEditor((s) => s.sceneData.entities);
+  const isPlaying = useEditor((s) => s.isPlaying);
+  const worldRef = useRef<RapierLikeWorld | null>(null);
   const sb = entity.softBody ?? {};
   const cols = Math.max(3, Math.min(24, sb.segmentsX ?? 12));
   const rows = Math.max(2, Math.min(20, sb.segmentsY ?? 8));
@@ -150,7 +181,7 @@ export function FlagEntity({ entity, selected, onPick, effectiveMaterial }: Verl
       grid.previous,
       grid.pinned,
       groupRef.current,
-      snapshotColliders(allEntities, entity.id),
+      gatherSoftColliders(worldRef.current, allEntities, entity.id),
     );
     const attr = geo.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
@@ -165,6 +196,7 @@ export function FlagEntity({ entity, selected, onPick, effectiveMaterial }: Verl
         onPick?.();
       }}
     >
+      {isPlaying && <RapierWorldProbe worldRef={worldRef} />}
       <mesh position={[-width / 2 - 0.02, 0, 0]}>
         <cylinderGeometry args={[0.025, 0.025, height + 0.4, 12]} />
         <meshStandardMaterial color="#b08d2e" metalness={0.6} roughness={0.4} />
@@ -199,6 +231,8 @@ export function FlagEntity({ entity, selected, onPick, effectiveMaterial }: Verl
 export function ClothEntity({ entity, selected, onPick, effectiveMaterial }: VerletEntityProps) {
   const env = useEditor((s) => s.sceneData.environment);
   const allEntities = useEditor((s) => s.sceneData.entities);
+  const isPlaying = useEditor((s) => s.isPlaying);
+  const worldRef = useRef<RapierLikeWorld | null>(null);
   const sb = entity.softBody ?? {};
   const cols = Math.max(3, Math.min(24, sb.segmentsX ?? 10));
   const rows = Math.max(3, Math.min(24, sb.segmentsY ?? 10));
@@ -246,7 +280,7 @@ export function ClothEntity({ entity, selected, onPick, effectiveMaterial }: Ver
       grid.previous,
       grid.pinned,
       groupRef.current,
-      snapshotColliders(allEntities, entity.id),
+      gatherSoftColliders(worldRef.current, allEntities, entity.id),
     );
     const attr = geo.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
@@ -261,6 +295,7 @@ export function ClothEntity({ entity, selected, onPick, effectiveMaterial }: Ver
         onPick?.();
       }}
     >
+      {isPlaying && <RapierWorldProbe worldRef={worldRef} />}
       <mesh geometry={geo} castShadow receiveShadow>
         <meshStandardMaterial
           color={color}
@@ -290,6 +325,9 @@ export function ClothEntity({ entity, selected, onPick, effectiveMaterial }: Ver
  *  burst modes (puff / impact spark). */
 export function ParticlesEntity({ entity, selected, onPick, effectiveMaterial }: VerletEntityProps) {
   const env = useEditor((s) => s.sceneData.environment);
+  const allEntities = useEditor((s) => s.sceneData.entities);
+  const isPlaying = useEditor((s) => s.isPlaying);
+  const worldRef = useRef<RapierLikeWorld | null>(null);
   const matResolved = useMemo(
     () => resolveMaterialDefaults(effectiveMaterial ?? entity.material),
     [effectiveMaterial, entity.material],
@@ -308,6 +346,7 @@ export function ParticlesEntity({ entity, selected, onPick, effectiveMaterial }:
     return g;
   }, [pool]);
   const stateRef = useRef<EmitState>({ accum: 0, fired: false });
+  const groupRef = useRef<THREE.Group>(null);
   // Reset emitter state when mode flips so a continuous-→-burst toggle
   // immediately fires the opening burst (and vice-versa doesn't carry
   // a stale accumulator).
@@ -324,7 +363,33 @@ export function ParticlesEntity({ entity, selected, onPick, effectiveMaterial }:
       windZ: wind[2],
       emitVelocity: cfg.emitVelocity,
     }, h);
-    const { live, maxIdx } = tickParticles(pool, cfg, wind[0], wind[1], wind[2], h);
+    // Build the per-frame collider list and translate it into the
+    // particle group's local frame. We only translate (not rotate /
+    // scale) — the particle emitter's group is identity-orientation in
+    // practice, so a coarse AABB approximation is sufficient.
+    let localColliders: SoftCollider[] | undefined;
+    if (cfg.collideGround && groupRef.current) {
+      const worldColliders = gatherSoftColliders(worldRef.current, allEntities, entity.id);
+      if (worldColliders.length > 0) {
+        groupRef.current.updateWorldMatrix(true, false);
+        const gp = groupRef.current.getWorldPosition(new THREE.Vector3());
+        localColliders = worldColliders.map((c) => ({
+          ...c,
+          cx: c.cx - gp.x,
+          cy: c.cy - gp.y,
+          cz: c.cz - gp.z,
+        }));
+      }
+    }
+    const { live, maxIdx } = tickParticles(
+      pool,
+      cfg,
+      wind[0],
+      wind[1],
+      wind[2],
+      h,
+      localColliders,
+    );
     const attr = geo.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
     geo.setDrawRange(0, live === 0 ? 0 : maxIdx);
@@ -332,11 +397,13 @@ export function ParticlesEntity({ entity, selected, onPick, effectiveMaterial }:
 
   return (
     <group
+      ref={groupRef}
       onClick={(e) => {
         e.stopPropagation();
         onPick?.();
       }}
     >
+      {isPlaying && <RapierWorldProbe worldRef={worldRef} />}
       <mesh visible={selected}>
         <sphereGeometry args={[0.12, 12, 12]} />
         <meshBasicMaterial color={SELECTION_COLOR} wireframe />
