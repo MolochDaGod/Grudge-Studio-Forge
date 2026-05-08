@@ -348,16 +348,14 @@ export function ThirdPersonCameraController({
     // follows the body either way.
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
       moveBody(body, { x: vx, z: vz }, delta);
-      // Lock the character's facing to the camera yaw — same convention
-      // as Mugen87/dive and YAZH. This is what makes a TPS feel like a
-      // TPS: pressing W walks the character "away from camera", strafing
-      // moves sideways without spinning the body, and the rifle/aim line
-      // always points where you're looking. The previous code rotated
-      // toward the *movement* direction (atan2(vx, vz) + π), which made
-      // the character pirouette mid-strafe and meant the body never
-      // matched the look direction when standing still — exactly the
-      // "wrong perspective" the user complained about.
-      rotateBody(body, yawRef.current + Math.PI);
+      // Lock the character's facing to the camera yaw. The character GLB
+      // points down -Z at rest (matching three.js' "forward = -Z"
+      // convention) and our forward vector at yaw=0 is (sin0, cos0) =
+      // (0, +1). So feeding `yaw` directly aligns the model with the
+      // direction the camera is looking; an extra +π flips them around
+      // so we'd be staring at the back of their head — which is exactly
+      // the bug the user reported.
+      rotateBody(body, yawRef.current);
     }
 
     // Fortnite-style over-the-shoulder camera.
@@ -485,7 +483,9 @@ export function FirstPersonCameraController({
     }
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
       moveBody(body, { x: vx, z: vz }, delta);
-      rotateBody(body, yawRef.current + Math.PI);
+      // FPS: same convention as the TPS path above — yaw alone aligns the
+      // body's forward axis with the camera's look direction.
+      rotateBody(body, yawRef.current);
     }
 
     // Camera at "head" height
