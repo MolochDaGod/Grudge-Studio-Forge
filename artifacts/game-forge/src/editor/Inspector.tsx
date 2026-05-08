@@ -14,6 +14,7 @@ import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
 import {
   LAYERS,
   MATERIAL_KINDS,
+  resolveMaterialDefaults,
   type LayerName,
   type MaterialKind,
   DEFAULT_GRAVITY,
@@ -977,6 +978,50 @@ export function Inspector() {
                   />
                   Collide with ground / scene
                 </label>
+                {(() => {
+                  const matRest = resolveMaterialDefaults(entity.material).restitution;
+                  const own = entity.softBody?.bounciness;
+                  const effective = own ?? matRest;
+                  return (
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Bounciness: {effective.toFixed(2)}
+                        {own === undefined && (
+                          <span className="ml-1 text-[10px] text-sky-400">
+                            (from {entity.material?.kind ?? "Solid"} material)
+                          </span>
+                        )}
+                      </Label>
+                      <Slider
+                        data-testid="slider-particle-bounciness"
+                        value={[effective]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.bounciness = v;
+                          })
+                        }
+                      />
+                      {own !== undefined && (
+                        <button
+                          type="button"
+                          className="mt-1 text-[10px] underline text-muted-foreground hover:text-foreground"
+                          data-testid="btn-particle-bounciness-clear"
+                          onClick={() =>
+                            updateEntity(entity.id, (d) => {
+                              if (d.softBody) delete d.softBody.bounciness;
+                            })
+                          }
+                        >
+                          Reset to material default
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             ) : (
               <>

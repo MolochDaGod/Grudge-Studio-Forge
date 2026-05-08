@@ -342,6 +342,12 @@ export interface SoftBodyComponent {
    *  contact surface. Cheap AABB/sphere approximation, off by default
    *  so existing puff/spark emitters don't change behavior. */
   collideGround?: boolean;
+  /** Particles only — bounciness on contact (0…1). 0 zeroes the inward
+   *  velocity component (slide along the surface). > 0 reflects the
+   *  inward component scaled by this factor (sparks bouncing, rubber
+   *  debris). Falls back to the entity's Material kind restitution
+   *  when unset (Stone hard, Cloth soft, Particle ~0.2). */
+  bounciness?: number;
 }
 
 export type CameraMode = "editor" | "rts" | "thirdPerson" | "firstPerson";

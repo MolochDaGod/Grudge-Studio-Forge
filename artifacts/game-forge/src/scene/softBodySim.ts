@@ -443,11 +443,15 @@ export interface ResolvedEmitter {
   burstInterval: number;
   capacity: number;
   collideGround: boolean;
+  /** Bounciness on contact, 0…1. 0 = slide (inward velocity zeroed),
+   *  > 0 = reflect inward component scaled by this factor. */
+  bounciness: number;
 }
 
 export function resolveEmitter(
   sb: SoftBodyComponent | undefined,
   matDrag: number,
+  matRestitution = 0,
 ): ResolvedEmitter {
   const mode = sb?.mode ?? "continuous";
   const emitRate = Math.max(0, sb?.emitRate ?? 20);
@@ -466,6 +470,7 @@ export function resolveEmitter(
     burstInterval,
     capacity: Math.max(8, steadyState + 16),
     collideGround: sb?.collideGround ?? false,
+    bounciness: Math.max(0, Math.min(1, sb?.bounciness ?? matRestitution)),
   };
 }
 
@@ -519,14 +524,17 @@ export function tickEmitter(
 }
 
 /** Project a single live particle out of any collider it has
- *  penetrated. When `out` reports a hit, also damp the velocity along
- *  the contact normal so the particle slides along the surface
- *  instead of pinging back. Pure helper exported for unit testing. */
+ *  penetrated. When `out` reports a hit, the inward (normal-aligned)
+ *  velocity component is reflected back out scaled by `bounciness`
+ *  (0 = pure slide / kill the inward component, 1 = elastic bounce),
+ *  while the tangential component is preserved and bled by `friction`.
+ *  Pure helper exported for unit testing. */
 export function collideParticle(
   pool: ParticlePool,
   i: number,
   colliders: ReadonlyArray<SoftCollider>,
   friction = 0.7,
+  bounciness = 0,
 ): boolean {
   if (colliders.length === 0) return false;
   const ix = i * 3;
@@ -551,15 +559,17 @@ export function collideParticle(
     const vz = pool.velocities[ix + 2];
     const vn = vx * nx + vy * ny + vz * nz;
     if (vn < 0) {
-      // Remove the inward component, leaving the tangential slide. A
-      // small friction factor (<1) bleeds the slide so particles don't
-      // skate forever along a flat surface.
+      // Split velocity into tangential (slide) + normal (inward)
+      // components. The tangent is bled by friction so particles don't
+      // skate forever; the normal is reflected back out scaled by
+      // bounciness — 0 zeroes it (pure slide), 1 is fully elastic.
+      const b = Math.max(0, Math.min(1, bounciness));
       const tx = (vx - vn * nx) * friction;
       const ty = (vy - vn * ny) * friction;
       const tz = (vz - vn * nz) * friction;
-      pool.velocities[ix] = tx;
-      pool.velocities[ix + 1] = ty;
-      pool.velocities[ix + 2] = tz;
+      pool.velocities[ix] = tx - vn * nx * b;
+      pool.velocities[ix + 1] = ty - vn * ny * b;
+      pool.velocities[ix + 2] = tz - vn * nz * b;
     }
   }
   return true;
@@ -605,7 +615,7 @@ export function tickParticles(
     pool.positions[ix + 1] += pool.velocities[ix + 1] * h;
     pool.positions[ix + 2] += pool.velocities[ix + 2] * h;
     if (cfg.collideGround && colliders && colliders.length > 0) {
-      collideParticle(pool, i, colliders);
+      collideParticle(pool, i, colliders, 0.7, cfg.bounciness);
     }
     live++;
     if (i + 1 > maxIdx) maxIdx = i + 1;

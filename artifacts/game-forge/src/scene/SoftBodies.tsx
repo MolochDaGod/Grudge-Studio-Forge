@@ -333,8 +333,8 @@ export function ParticlesEntity({ entity, selected, onPick, effectiveMaterial }:
     [effectiveMaterial, entity.material],
   );
   const cfg = useMemo(
-    () => resolveEmitter(entity.softBody, matResolved.drag),
-    [entity.softBody, matResolved.drag],
+    () => resolveEmitter(entity.softBody, matResolved.drag, matResolved.restitution),
+    [entity.softBody, matResolved.drag, matResolved.restitution],
   );
   const color = pickColor(effectiveMaterial ?? entity.material, "#cccccc");
 

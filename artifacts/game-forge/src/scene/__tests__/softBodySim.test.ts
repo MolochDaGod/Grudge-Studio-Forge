@@ -287,6 +287,52 @@ describe("particle emitter", () => {
     expect(pool.positions[0]).toBeGreaterThan(0.1);
   });
 
+  it("particles bounce off the ground when bounciness > 0", () => {
+    const cfg = resolveEmitter(
+      { mode: "continuous", emitRate: 0, lifetime: 5, collideGround: true, bounciness: 0.8 },
+      0,
+    );
+    expect(cfg.bounciness).toBeCloseTo(0.8);
+    const pool = makeParticlePool(4);
+    pool.alive[0] = 1;
+    pool.positions[0] = 0;
+    pool.positions[1] = 0.5;
+    pool.positions[2] = 0;
+    pool.velocities[0] = 0;
+    pool.velocities[1] = -3;
+    pool.velocities[2] = 0;
+    const colliders = [
+      { kind: "box" as const, cx: 0, cy: -0.5, cz: 0, rx: 5, ry: 0.5, rz: 5 },
+    ];
+    // Step a few frames after the first contact and confirm the
+    // particle's vertical velocity becomes positive (rebound) at some
+    // point — sliding (bounciness 0) would never produce upward motion.
+    let sawUpward = false;
+    for (let i = 0; i < 30; i++) {
+      tickParticles(pool, cfg, 0, 0, 0, 1 / 60, colliders);
+      if (pool.velocities[1] > 0.1) sawUpward = true;
+    }
+    expect(sawUpward).toBe(true);
+  });
+
+  it("falls back to material restitution when bounciness is unset", () => {
+    const cfg = resolveEmitter(
+      { mode: "continuous", emitRate: 0, lifetime: 5, collideGround: true },
+      0,
+      0.5,
+    );
+    expect(cfg.bounciness).toBeCloseTo(0.5);
+  });
+
+  it("explicit bounciness on the emitter overrides the material default", () => {
+    const cfg = resolveEmitter(
+      { collideGround: true, bounciness: 0 },
+      0,
+      0.9,
+    );
+    expect(cfg.bounciness).toBe(0);
+  });
+
   it("particles ignore colliders when collideGround is false", () => {
     const cfg = resolveEmitter(
       { mode: "continuous", emitRate: 0, lifetime: 5 },
