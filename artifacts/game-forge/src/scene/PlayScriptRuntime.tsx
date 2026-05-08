@@ -144,6 +144,7 @@ export function PlayScriptRuntime({
       rotation: [...entity.transform.rotation] as [number, number, number],
       scale: [...entity.transform.scale] as [number, number, number],
       layer: entity.layer ?? "Default",
+      npcLine: entity.npcLine,
     };
     const bodyOrGroup = bodyRefs.current.get(entity.id);
     if (bodyOrGroup) {

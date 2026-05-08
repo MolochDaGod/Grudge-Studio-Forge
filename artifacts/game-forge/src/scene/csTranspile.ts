@@ -47,6 +47,8 @@ export interface ScriptEntity {
    *  scripts can compare against it to filter peers without re-querying
    *  the scene graph. */
   layer?: string;
+  /** Per-entity dialog line shown by the `npc-dialog` behavior. */
+  npcLine?: string;
 }
 
 export interface MouseState {

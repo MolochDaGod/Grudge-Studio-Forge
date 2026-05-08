@@ -51,6 +51,13 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     Array<{ id: number; label: string; ts: number }>
   >([]);
 
+  // Friendly NPC speech bubble — shown for NPC_DIALOG_TTL_MS after the
+  // npc-dialog behavior emits `npcDialog`. Only the latest line is shown
+  // so back-to-back interactions replace cleanly.
+  const [npcDialog, setNpcDialog] = useState<
+    { id: number; name: string; line: string; ts: number } | null
+  >(null);
+
   useEffect(() => {
     const offs: Array<() => void> = [];
 
@@ -128,6 +135,18 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     offs.push(bus.on("win", () => setOutcome("win")));
     offs.push(bus.on("lose", () => setOutcome("lose")));
     offs.push(
+      bus.on("npcDialog", (p) => {
+        const obj = p as { name?: string; line?: string } | undefined;
+        if (!obj || typeof obj.line !== "string") return;
+        setNpcDialog({
+          id: Date.now() + Math.random(),
+          name: typeof obj.name === "string" ? obj.name : "",
+          line: obj.line,
+          ts: Date.now(),
+        });
+      }),
+    );
+    offs.push(
       bus.on("pickup", (p) => {
         const obj = p as { id?: string; name?: string } | undefined;
         const label = (obj?.name && String(obj.name)) || "Pickup";
@@ -174,6 +193,16 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     }, 500);
     return () => window.clearInterval(id);
   }, [killFeed.length]);
+
+  // NPC dialog bubble auto-clears after NPC_DIALOG_TTL_MS.
+  const NPC_DIALOG_TTL_MS = 4000;
+  useEffect(() => {
+    if (!npcDialog) return;
+    const id = window.setTimeout(() => {
+      setNpcDialog((d) => (d && Date.now() - d.ts >= NPC_DIALOG_TTL_MS ? null : d));
+    }, NPC_DIALOG_TTL_MS + 50);
+    return () => window.clearTimeout(id);
+  }, [npcDialog]);
 
   // Pickup toasts auto-prune after PICKUP_TTL_MS.
   const PICKUP_TTL_MS = 2000;
@@ -278,6 +307,40 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           );
         })}
       </div>
+
+      {/* NPC dialog bubble — bottom center, fades out over NPC_DIALOG_TTL_MS.
+          Hidden during respawn / win / lose so it doesn't fight the overlay. */}
+      {npcDialog && !respawning && !outcome && (() => {
+        const age = Math.min(1, (Date.now() - npcDialog.ts) / NPC_DIALOG_TTL_MS);
+        const opacity = Math.max(0, 1 - Math.pow(age, 3));
+        return (
+          <div
+            key={npcDialog.id}
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 max-w-md"
+            style={{ opacity }}
+          >
+            <div className="relative rounded-lg border border-amber-300/60 bg-black/75 px-4 py-3 text-white shadow-lg">
+              {npcDialog.name && (
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                  {npcDialog.name}
+                </div>
+              )}
+              <div className="text-sm leading-snug">{npcDialog.line}</div>
+              {/* Tail pointing down toward the speaker. */}
+              <div
+                className="absolute left-1/2 -bottom-2 -translate-x-1/2"
+                style={{
+                  width: 0,
+                  height: 0,
+                  borderLeft: "8px solid transparent",
+                  borderRight: "8px solid transparent",
+                  borderTop: "8px solid rgba(0,0,0,0.75)",
+                }}
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Headshot call-out — center, gold flash */}
       {headshotFlash > 0 && (

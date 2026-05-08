@@ -820,6 +820,35 @@ exports.update = function(entity, ctx) {
 `;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// NPC dialog — friendly conversation popup driven by the player-rpg E key
+//
+//   • Subscribes to the scene-level `interact` event emitted by player-rpg.
+//     When `payload.targetId === entity.id` we fire a `npcDialog` HUD event
+//     with the configured line; PlayHUD renders a small speech bubble for
+//     a few seconds.
+//   • The line of text comes from `entity.npcLine` (set in the scene); a
+//     generic "..." fallback keeps the bubble useful even on untagged NPCs.
+//   • No movement, health, or other side effects — purely an interaction
+//     handler suitable for the rpg-village starter friendlies.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const NPC_DIALOG = String.raw`
+exports.start = function(entity, ctx) {
+  ctx.events.on("interact", function(payload) {
+    if (!payload || payload.targetId !== entity.id) return;
+    var line = (typeof entity.npcLine === "string" && entity.npcLine.length > 0)
+      ? entity.npcLine
+      : "...";
+    ctx.events.emit("npcDialog", {
+      fromId: entity.id,
+      name: entity.name,
+      line: line,
+    });
+  });
+};
+`;
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Registry
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -831,6 +860,7 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "pickup-trigger": PICKUP_TRIGGER,
   "player-rpg": PLAYER_RPG,
   "enemy-rpg": ENEMY_RPG,
+  "npc-dialog": NPC_DIALOG,
 };
 
 /** Default physics layer per built-in behavior. Lets prefab definitions and
@@ -847,4 +877,5 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   "pickup-trigger": "Trigger",
   "player-rpg": "Player",
   "enemy-rpg": "NPC",
+  "npc-dialog": "NPC",
 };

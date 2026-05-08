@@ -657,10 +657,15 @@ export function rpgVillageScene(): SceneData {
   // Each carries its proper per-race builtin key so EntityRenderer
   // resolves the matching CDN GLB, with the matching weapon parented
   // underneath (axe / mace / bow).
-  const FRIENDLIES: { race: "dwarf" | "frost-dwarf" | "elf"; name: string; pos: [number, number, number] }[] = [
-    { race: "dwarf", name: "Dwarf", pos: [-3.5, 0, -2.5] },
-    { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5] },
-    { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5] },
+  const FRIENDLIES: {
+    race: "dwarf" | "frost-dwarf" | "elf";
+    name: string;
+    pos: [number, number, number];
+    line: string;
+  }[] = [
+    { race: "dwarf", name: "Dwarf", pos: [-3.5, 0, -2.5], line: "Welcome to the village, traveler. Mind the orcs across the plaza." },
+    { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5], line: "Cold steel and colder ale — that's the dwarven way." },
+    { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5], line: "Tread softly. Even the desert stones remember." },
   ];
   for (const f of FRIENDLIES) {
     const npcId = id();
@@ -681,6 +686,10 @@ export function rpgVillageScene(): SceneData {
         restitution: 0.2,
         friction: 0.8,
       },
+      // Press E nearby to pop a one-line speech bubble (handled by
+      // PlayHUD's npcDialog subscriber).
+      behavior: "npc-dialog",
+      npcLine: f.line,
       parentId: null,
     });
     entities.push({

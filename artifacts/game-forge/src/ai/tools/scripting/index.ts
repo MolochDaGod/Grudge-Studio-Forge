@@ -615,6 +615,11 @@ const BEHAVIOR_DOCS: Record<
       "RPG-flavored enemy: peaceful Yuka wander until provoked by damage or proximity, then chases + melee attacks. Permanent death (no respawn) and emits no kill events so the deathmatch scoreboard stays silent.",
     recommendedLayer: "NPC",
   },
+  "npc-dialog": {
+    description:
+      "Friendly NPC: listens for the player-rpg E-key 'interact' event and pops a one-line speech bubble in the HUD. Configure the line via SceneEntity.npcLine; falls back to '...' if unset.",
+    recommendedLayer: "NPC",
+  },
 };
 const listBuiltinBehaviorsHandler: ToolHandler = async () => {
   return {

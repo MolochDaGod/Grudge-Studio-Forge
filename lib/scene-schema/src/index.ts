@@ -260,7 +260,13 @@ export type BehaviorKind =
    *  taking damage or when the player gets very close. Chases + melee
    *  attacks on aggro, drops dead permanently (no respawn). Does not emit
    *  `kill` events so the deathmatch scoreboard stays silent. */
-  | "enemy-rpg";
+  | "enemy-rpg"
+  /** Friendly NPC dialog. Listens for the scene-level `interact` event
+   *  emitted by `player-rpg` (E key); when the targeted entity id matches
+   *  this entity, emits a `npcDialog` HUD event with the per-entity
+   *  {@link SceneEntity.npcLine} (or a generic fallback). The HUD speech
+   *  bubble in `PlayHUD` shows the line for a few seconds. */
+  | "npc-dialog";
 
 export interface SceneEntity {
   id: string;
@@ -274,6 +280,9 @@ export interface SceneEntity {
   scriptId?: number | null;
   /** Built-in behavior — see {@link BehaviorKind}. */
   behavior?: BehaviorKind;
+  /** Per-entity dialog line shown by the `npc-dialog` behavior when the
+   *  player presses E nearby. Ignored by other behaviors. */
+  npcLine?: string;
   /** Mark this entity as the player. The active camera controller will move it
    *  in play mode (WASD + mouselook for FPS / orbit for TPS). */
   controllerKind?: ControllerKind;
@@ -479,6 +488,7 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   if (e.type === "plane" || lower === "map" || lower === "terrain") return "Terrain";
   if (e.controllerKind && e.controllerKind !== "none") return "Player";
   if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
+  if (e.behavior === "npc-dialog") return "NPC";
   if (e.behavior === "spawnpoint") return "Trigger";
   return "Default";
 }
