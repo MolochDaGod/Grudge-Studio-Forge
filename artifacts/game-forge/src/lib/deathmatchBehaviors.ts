@@ -628,7 +628,10 @@ exports.start = function(entity, ctx) {
       // Freeze so the camera controller stops driving the body. We never
       // unfreeze in this behavior — death is permanent for the run.
       ctx.scene.freeze(entity.id);
-      ctx.events.emit("playerDied", { killerId: fromId });
+      // noRespawn flags this as a permanent (RPG-style) death so the HUD
+      // can show a "You died" overlay with a Restart button instead of the
+      // deathmatch respawn countdown.
+      ctx.events.emit("playerDied", { killerId: fromId, noRespawn: true });
     }
   });
   ctx.events.emit("playerHealth", { health: ctx.state.health, max: MAX_HEALTH });

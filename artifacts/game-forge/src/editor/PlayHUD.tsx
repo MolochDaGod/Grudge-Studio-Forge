@@ -18,6 +18,7 @@ import type { GameBus } from "@/scene/GameBus";
  */
 export function PlayHUD({ bus }: { bus: GameBus }) {
   const env = useEditor((s) => s.sceneData.environment);
+  const setPlaying = useEditor((s) => s.setPlaying);
   const scoreLimit = env.scoreLimit ?? 10;
 
   const [playerHealth, setPlayerHealth] = useState(100);
@@ -39,6 +40,10 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
 
   const [respawning, setRespawning] = useState<number | null>(null);
   const [outcome, setOutcome] = useState<"win" | "lose" | null>(null);
+  // RPG-style permanent death — set when a behavior emits playerDied with
+  // noRespawn:true (the deathmatch player flow leaves this null and uses
+  // the respawn countdown instead).
+  const [permaDead, setPermaDead] = useState(false);
 
   // Pickup counter + short-lived toasts (auto-prune after PICKUP_TTL_MS).
   const [pickupCount, setPickupCount] = useState(0);
@@ -112,6 +117,12 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     offs.push(
       bus.on("playerRespawn", () => {
         setRespawning(null);
+      }),
+    );
+    offs.push(
+      bus.on("playerDied", (p) => {
+        const obj = p as { noRespawn?: boolean } | undefined;
+        if (obj?.noRespawn) setPermaDead(true);
       }),
     );
     offs.push(bus.on("win", () => setOutcome("win")));
@@ -297,6 +308,42 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           </div>
         </div>
       </div>
+
+      {/* RPG-style permanent-death overlay — quiet panel + Restart Scene
+          button. Shown when a behavior emitted playerDied with
+          noRespawn:true (the deathmatch flow uses the respawn countdown
+          below instead). Restart cycles play off then on, which sweeps
+          play-only entities and re-runs the spawn / start path. */}
+      {permaDead && !outcome && (
+        <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-black/60">
+          <div className="rounded-md border border-white/15 bg-black/70 px-8 py-6 text-center shadow-xl backdrop-blur">
+            <div className="text-3xl font-bold uppercase tracking-widest text-red-400">
+              You died
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                // Defensive HUD reset so a stuck overlay doesn't outlive
+                // the click even if the remount path misbehaves.
+                setPermaDead(false);
+                // Two-phase transition: stop play, then restart on the
+                // next macrotask. Doing both synchronously can be batched
+                // by React into a single render where isPlaying stays
+                // true, which would skip the unmount/remount of the play
+                // runtime and HUD (and leave the frozen body + state in
+                // place). The setTimeout guarantees the false render
+                // commits first.
+                setPlaying(false);
+                window.setTimeout(() => setPlaying(true), 0);
+              }}
+              className="mt-5 rounded border border-white/25 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white hover:bg-white/20"
+              data-testid="rpg-death-restart"
+            >
+              Restart scene
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Respawn overlay */}
       {respawning !== null && !outcome && (
