@@ -43,6 +43,10 @@ interface PlayerState {
   sceneId: number | null;
   sceneName: string;
   isPaused: boolean;
+  /** Always true in the player — there is no edit mode. SoftBodies.tsx
+   *  reads this to decide whether to mount the Rapier world probe.
+   *  The player only renders inside `<Physics>` so this is safe. */
+  isPlaying: boolean;
   /** Set true exactly once after `setScene()` runs in `main.tsx`'s
    *  bootstrap. The boot UI gates on this rather than
    *  `entities.length` so an intentionally-empty published scene
@@ -78,6 +82,7 @@ export const useEditor = create<PlayerState>((set) => ({
   sceneId: null,
   sceneName: "Published Scene",
   isPaused: false,
+  isPlaying: true,
   scripts: [],
   loaded: false,
   setScene: (data) => set({ sceneData: data, loaded: true }),
