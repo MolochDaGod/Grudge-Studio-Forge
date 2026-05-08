@@ -145,6 +145,58 @@ The Toolbar checks `useAuth(s => s.status === "signedIn")` before
 allowing publish. Guests see the gold "Sign in with Puter to publish"
 tooltip on hover.
 
+### What ships in the published bucket
+
+For each publish, `publishScene()` writes two files to
+`Grudge/published/<slug>/`:
+
+| File           | Contents                                                              |
+| -------------- | --------------------------------------------------------------------- |
+| `scene.json`   | Serialized `SceneData` — the same blob the editor stores.             |
+| `scripts.json` | `Script[]` snapshot from `listScripts(projectId)`. Empty `[]` when    |
+|                | the project has no scripts; always present so the player's fetch     |
+|                | doesn't 404 and stale scripts from a prior publish get overwritten.  |
+| `index.html`   | The standalone player bundle (see below) or the legacy redirect HTML. |
+
+The standalone player lives at `artifacts/player/` (the
+`@workspace/player` workspace package). It is a tiny Vite app that
+imports `PlayScriptRuntime`, `PlayCameraController`, and `EffectsRig`
+straight from `artifacts/game-forge/src/...` via a vite alias, stubs
+out `@/store/editor` with a minimal `useEditor`-shaped zustand store
+(`src/playerStore.ts` — exposes `sceneData`/`scripts`/`pushLog` and a
+`cmdBakeNavmesh` no-op so cross-imported runtime files compile against
+it), and bundles to a single self-contained `dist/index.html` (JS +
+CSS inlined) using `vite-plugin-singlefile`. The bundle fetches
+sibling `./scene.json` + `./scripts.json` in parallel on load so it
+doesn't need to know which subdomain it ends up on.
+
+The shared `PlayScriptRuntime` (in `artifacts/game-forge/src/scene/`)
+was extracted from `Viewport.tsx`'s `ScriptedEntities` so the editor's
+play mode and the standalone player run the *exact same* gameplay tick
+— script `start`/`update`, XState nav-agent FSMs (Idle/Patrol/Chase/
+Climb/Swim/Stuck/Dead/Attack), surface ticks, navmesh hydration,
+agent reconciliation, mouse delta, teleport queue. The component takes
+`scripts` as a prop instead of calling `useListScripts`: editor passes
+the react-query result, player passes the JSON it fetched at boot.
+
+The build is wired into the editor as a `prebuild` script — running
+`pnpm --filter @workspace/game-forge run build` automatically builds
+the player first and copies the result into
+`artifacts/game-forge/public/player.html`, so the deployed editor
+serves it at `${editorOrigin}player.html`.
+
+At publish time, the *callers* of `publishScene()` (the editor's
+Toolbar Publish button and the AI `publish_to_puter` tool) snapshot
+the project's scripts via `listScripts(projectId)` and pass them into
+the new `scripts` option. Both call sites are best-effort — failure
+logs a warning and proceeds with an empty array rather than blocking
+the publish. `publishScene()` then writes scene.json + scripts.json +
+the player HTML to `Grudge/published/<slug>/`. If the player HTML fetch fails (older
+deploy that doesn't serve `/player.html` yet), it falls back to the
+legacy redirect HTML that bounces the visitor back to the editor with
+`?scene=…`. The result includes a `bootstrapper: "player" | "redirect"`
+field so the publish dialog can surface which experience visitors get.
+
 ## 5. Puter AI tools
 
 Three tools live at `src/ai/tools/puter/index.ts` and all gate on

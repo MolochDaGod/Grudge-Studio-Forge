@@ -88,6 +88,7 @@ import { useAuth } from "@/store/auth";
 import { cloud, path as cloudPath } from "@/lib/cloud/puterCloud";
 import { useToast } from "@/hooks/use-toast";
 import { publishScene, type PublishResult } from "@/lib/puterPublish";
+import { listScripts } from "@workspace/api-client-react";
 import {
   Dialog,
   DialogContent,
@@ -328,6 +329,18 @@ export function Toolbar({
       // path. import.meta.env.BASE_URL is provided by Vite and already
       // ends with a trailing slash.
       const editorOrigin = `${window.location.origin}${import.meta.env.BASE_URL}`;
+      // Snapshot scripts at publish time so the player bundle ships with
+      // the same gameplay tick the editor's play mode runs. Best-effort:
+      // if the projectId is missing (unsaved scratch scene) or the fetch
+      // fails, we publish without scripts rather than blocking the user.
+      let scripts: Awaited<ReturnType<typeof listScripts>> = [];
+      if (projectId) {
+        try {
+          scripts = await listScripts(projectId);
+        } catch (err) {
+          pushLog("warn", `Could not load scripts for publish: ${(err as Error).message}`);
+        }
+      }
       const res = await publishScene({
         sceneData,
         // sceneId keeps the published subdomain stable across republishes.
@@ -335,6 +348,7 @@ export function Toolbar({
         // content hash so the slug is still deterministic per content.
         sceneId: sceneId ?? null,
         editorOrigin,
+        scripts,
       });
       setPublishResult(res);
       pushLog("info", `Published to ${res.shareUrl}`);
@@ -889,6 +903,11 @@ export function Toolbar({
                 {publishResult.reused
                   ? " — updated in place (existing share link still works)."
                   : " — newly created."}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {publishResult.bootstrapper === "player"
+                  ? "Visitors get the chrome-free standalone player."
+                  : "Visitors are redirected back to the editor in play mode (legacy fallback)."}
               </div>
             </div>
           )}

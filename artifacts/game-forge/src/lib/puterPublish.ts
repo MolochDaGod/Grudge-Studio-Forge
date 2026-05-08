@@ -1,5 +1,6 @@
 import { loadPuterSdk } from "@/lib/puterSdk";
 import type { SceneData } from "@/scene/types";
+import type { Script } from "@workspace/api-client-react";
 
 /**
  * Publish a scene as a free, sharable static site on Puter.
@@ -35,6 +36,13 @@ export interface PublishResult {
   /** True when this publish reused a previously created subdomain
    *  rather than creating a fresh one. Useful for the dialog copy. */
   reused: boolean;
+  /** Which bootstrapper was uploaded:
+   *   - `"player"`: the standalone player bundle (the new path).
+   *   - `"redirect"`: the legacy redirect-to-editor HTML (fallback when
+   *     the deployed editor doesn't yet serve `/player.html`).
+   *  Useful for the publish dialog so the user knows which experience
+   *  end-visitors will get. */
+  bootstrapper: "player" | "redirect";
 }
 
 /** Cheap, stable, browser-only string hash (FNV-1a 32-bit, hex). Same
@@ -77,15 +85,43 @@ function stableSlug(opts: {
 }
 
 /**
- * Boot HTML for the published site. Redirects the visitor back to the
- * editor with the scene URL as a query param. The editor reads `?scene=`
- * at boot, fetches the JSON, and starts in play mode.
+ * Fetch the standalone player's bundled HTML from the editor origin.
  *
- * We use a redirect (rather than embedding the editor in an iframe) so
- * the user gets the full editor URL in their address bar — easier to
- * bookmark and share, and avoids cross-origin headaches.
+ * The `@workspace/player` build (see `artifacts/player/`) emits a single
+ * self-contained `index.html` (JS + CSS inlined) that fetches `./scene.json`
+ * on load and renders the scene with no editor chrome. The build's
+ * post-step copies it into `artifacts/game-forge/public/player.html`,
+ * so the deployed editor serves it at `${editorOrigin}player.html`.
+ *
+ * We download those bytes at publish time and re-upload them next to the
+ * user's `scene.json`. End users opening `<sub>.puter.site/` get the
+ * lightweight player — no editor bundle, no inspector chrome — instead
+ * of being redirected back to the editor.
+ *
+ * If the fetch fails (e.g. the editor was deployed before the player
+ * bundle existed) we fall back to a redirect to the editor with
+ * `?scene=…`, which is what previous publishes shipped.
  */
-function buildIndexHtml(editorOrigin: string, sceneUrl: string): string {
+async function fetchPlayerHtml(editorOrigin: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${editorOrigin}player.html`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    // Sanity-check: must be HTML, not the SPA fallback's index.html (which
+    // wouldn't fetch ./scene.json at all). Look for a unique marker the
+    // player's bundle always contains.
+    if (!text.includes("./scene.json") || !text.includes("./scripts.json")) {
+      return null;
+    }
+    return text;
+  } catch {
+    return null;
+  }
+}
+
+/** Legacy redirect HTML — used when the player bundle isn't reachable
+ *  (older deploys). Kept so older editors don't fail publish. */
+function buildLegacyRedirectHtml(editorOrigin: string, sceneUrl: string): string {
   const target = `${editorOrigin}?scene=${encodeURIComponent(sceneUrl)}`;
   return `<!DOCTYPE html>
 <html lang="en">
@@ -114,6 +150,12 @@ export async function publishScene(opts: {
   /** Origin (with trailing slash, including BASE_URL) the bootstrapper
    *  HTML should redirect back to. e.g. `${location.origin}${BASE_URL}`. */
   editorOrigin: string;
+  /** Scripts referenced by `sceneData` entities. Uploaded next to
+   *  `scene.json` as `scripts.json` so the standalone player can run the
+   *  same gameplay tick (script `start`/`update`, nav-agent FSMs) the
+   *  editor's play mode runs. Omit/empty array → no scripts in the
+   *  bundle (the player still renders, just without scripted behavior). */
+  scripts?: Script[];
 }): Promise<PublishResult> {
   const sdk = await loadPuterSdk();
   const signedIn = await sdk.auth.isSignedIn();
@@ -144,18 +186,34 @@ export async function publishScene(opts: {
   const sceneJson = JSON.stringify(opts.sceneData);
   await sdk.fs.write(`${dirPath}/scene.json`, sceneJson, { overwrite: true });
 
-  // We need the eventual public URL of scene.json before uploading the
-  // index.html that references it. We *think* it'll be served at the
-  // requested subdomain; if Puter renames it during `hosting.create`
-  // we re-upload index.html with the corrected URL below. (Puter has
-  // historically respected the requested slug verbatim, so the rewrite
-  // path is a defensive fallback rather than the common case.)
-  const provisionalSceneUrl = `https://${sub}.puter.site/scene.json`;
-  await sdk.fs.write(
-    `${dirPath}/index.html`,
-    buildIndexHtml(opts.editorOrigin, provisionalSceneUrl),
-    { overwrite: true },
-  );
+  // Always upload scripts.json (even when empty) so the player's fetch
+  // gets a 200 instead of a 404 — simpler error handling on the player
+  // side, and it overwrites a stale scripts.json from a prior publish
+  // where the user has since deleted scripts.
+  const scriptsJson = JSON.stringify(opts.scripts ?? []);
+  await sdk.fs.write(`${dirPath}/scripts.json`, scriptsJson, { overwrite: true });
+
+  // Try to fetch the standalone player's bundled HTML. If it's available
+  // we ship that — end-users get a chrome-free 3D player instead of the
+  // full editor. Falls back to the legacy redirect if the deployed
+  // editor doesn't yet serve `/player.html`.
+  const playerHtml = await fetchPlayerHtml(opts.editorOrigin);
+  let bootstrapper: "player" | "redirect";
+  let indexHtml: string;
+  // The player bundle fetches a relative `./scene.json`, so it's slug-
+  // independent and we don't need to know the eventual subdomain at
+  // upload time. The legacy redirect needs the absolute URL — for that
+  // path we use the requested slug (Puter has historically respected
+  // it; we re-upload below if it ever doesn't).
+  if (playerHtml) {
+    bootstrapper = "player";
+    indexHtml = playerHtml;
+  } else {
+    bootstrapper = "redirect";
+    const provisionalSceneUrl = `https://${sub}.puter.site/scene.json`;
+    indexHtml = buildLegacyRedirectHtml(opts.editorOrigin, provisionalSceneUrl);
+  }
+  await sdk.fs.write(`${dirPath}/index.html`, indexHtml, { overwrite: true });
 
   // hosting.create may legitimately reject with "subdomain already in
   // use" when we re-publish — that's our own previous publish, so
@@ -177,19 +235,20 @@ export async function publishScene(opts: {
     reused = true;
   }
 
-  // If the actual subdomain differs from what we requested, re-upload
-  // index.html with the corrected sceneUrl so the redirect doesn't
-  // 404. The cheap path (Puter respected the slug) is a no-op.
-  if (createdSub !== sub) {
+  // If Puter renamed our slug AND we shipped the legacy redirect (which
+  // hard-codes the scene URL), re-upload with the corrected URL so the
+  // redirect doesn't 404. The player bundle fetches `./scene.json`
+  // relative to the page so it doesn't care which subdomain it lives on.
+  if (createdSub !== sub && bootstrapper === "redirect") {
     const correctSceneUrl = `https://${createdSub}.puter.site/scene.json`;
     await sdk.fs.write(
       `${dirPath}/index.html`,
-      buildIndexHtml(opts.editorOrigin, correctSceneUrl),
+      buildLegacyRedirectHtml(opts.editorOrigin, correctSceneUrl),
       { overwrite: true },
     );
   }
 
   const sceneUrl = `https://${createdSub}.puter.site/scene.json`;
   const shareUrl = `https://${createdSub}.puter.site/`;
-  return { shareUrl, sceneUrl, subdomain: createdSub, reused };
+  return { shareUrl, sceneUrl, subdomain: createdSub, reused, bootstrapper };
 }

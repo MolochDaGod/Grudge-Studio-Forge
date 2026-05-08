@@ -17,6 +17,7 @@
 import { useEditor } from "@/store/editor";
 import { cloud, path as cloudPath } from "@/lib/cloud/puterCloud";
 import { publishScene } from "@/lib/puterPublish";
+import { listScripts } from "@workspace/api-client-react";
 
 interface ToolDef {
   name: string;
@@ -135,10 +136,22 @@ const publishToPuterHandler: ToolHandler = async () => {
   }
   try {
     const editorOrigin = `${window.location.origin}${import.meta.env.BASE_URL || "/"}`;
+    // Pull the project's scripts so the published player bundle runs
+    // the same start/update tick + nav-agent FSMs as editor play mode.
+    // Best-effort — failure here shouldn't block publish.
+    let scripts: Awaited<ReturnType<typeof listScripts>> = [];
+    if (s.projectId) {
+      try {
+        scripts = await listScripts(s.projectId);
+      } catch {
+        scripts = [];
+      }
+    }
     const result = await publishScene({
       sceneData: s.sceneData,
       sceneId: s.sceneId ?? null,
       editorOrigin,
+      scripts,
     });
     return { ok: true, data: result };
   } catch (err) {

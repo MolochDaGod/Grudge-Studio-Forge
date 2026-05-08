@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>Grudge — Play</title>
+    <meta name="theme-color" content="#0a0a0f" />
+    <style>
+      html, body, #root { margin: 0; height: 100%; background: #0a0a14; color: #e8dfc8; font-family: system-ui, sans-serif; overflow: hidden; }
+      .player-status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 0.75rem; }
+      .player-status .spinner { width: 32px; height: 32px; border: 3px solid rgba(212,175,55,0.25); border-top-color: #d4af37; border-radius: 50%; animation: spin 0.9s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="player-status">
+        <div class="spinner"></div>
+        <div>Loading scene…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
