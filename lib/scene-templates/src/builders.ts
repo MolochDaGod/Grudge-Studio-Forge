@@ -557,17 +557,21 @@ export function characterShowcaseScene(): SceneData {
 
 /** RPG starter — a small desert-town village populated with one of each
  *  race (warrior / dwarf / frost-dwarf / elf / orc / skeleton). The
- *  Player is the Warrior at center plaza running the RPG-flavored
- *  `player-rpg` behavior (LMB melee swing, E to interact, no respawn).
- *  Friendlies (dwarf / frost-dwarf / elf) stand idle nearby with
- *  cylinder colliders; enemies (orc / skeleton) wander peacefully under
- *  `enemy-rpg` and only become hostile if the player attacks them or
- *  gets too close — no kill-feed, no respawn, just an adventure plaza.
+ *  Player is the Warrior at center plaza holding a sword and running
+ *  the RPG-flavored `player-rpg` behavior (LMB melee swing, E to
+ *  interact, no respawn). Friendlies (dwarf / frost-dwarf / elf) stand
+ *  idle nearby with cylinder colliders, each carrying their per-race
+ *  weapon (axe / mace / bow). Enemies (orc / skeleton) wander peacefully
+ *  under `enemy-rpg` carrying their per-race melee weapon (club / sword)
+ *  and only become hostile if the player attacks them or gets too close
+ *  — no kill-feed, no respawn, just an adventure plaza.
  *
  *  This template references each race via its durable
  *  `builtin:race:<id>` model key — `EntityRenderer.resolveBuiltinModel`
  *  resolves that to the per-race CDN URL at render time, so saved
- *  scenes stay portable across asset-pack versions. */
+ *  scenes stay portable across asset-pack versions. The matching weapon
+ *  is parented under each character via the `builtin:race-weapon:<id>`
+ *  key (resolved against the same toon-rts-characters CDN pack). */
 export function rpgVillageScene(): SceneData {
   const entities: SceneEntity[] = [];
 
@@ -600,7 +604,27 @@ export function rpgVillageScene(): SceneData {
     }),
   );
 
-  // Player — Warrior at center plaza, held rifle parented underneath.
+  // Per-race weapon names mirror RACE_WEAPON in
+  // artifacts/game-forge/src/lib/objectStoreApi.ts (kept inline here so
+  // the scene-templates package stays free of game-forge imports).
+  const WEAPON_NAME = {
+    warrior: "Sword",
+    elf: "Bow",
+    dwarf: "Axe",
+    "frost-dwarf": "Mace",
+    orc: "Club",
+    skeleton: "Sword",
+  } as const;
+  // Local-space transform for the held weapon, parented under each
+  // character. Same offset/rotation the deathmatch templates use for the
+  // rifle so the weapon sits in the right hand for every race.
+  const WEAPON_HELD: SceneEntity["transform"] = {
+    position: [0.32, 1.25, 0.25],
+    rotation: [0, Math.PI / 2, 0],
+    scale: [1, 1, 1],
+  };
+
+  // Player — Warrior at center plaza, holding the warrior's sword.
   const playerId = id();
   entities.push({
     id: playerId,
@@ -619,22 +643,29 @@ export function rpgVillageScene(): SceneData {
     behavior: "player-rpg",
     parentId: null,
   });
-  // Note: no held weapon model — player-rpg is a melee/interact behavior,
-  // so a rifle prop would be visually misleading. Drop a sword/staff GLB
-  // here once the asset pack ships one.
+  entities.push({
+    id: id(),
+    name: WEAPON_NAME.warrior,
+    type: "model",
+    model: { url: "builtin:race-weapon:warrior" },
+    transform: WEAPON_HELD,
+    parentId: playerId,
+  });
 
   // Friendlies — placed around the plaza as idle NPCs (no behavior
   // script for v1, just visible characters with cylinder colliders).
   // Each carries its proper per-race builtin key so EntityRenderer
-  // resolves the matching CDN GLB.
+  // resolves the matching CDN GLB, with the matching weapon parented
+  // underneath (axe / mace / bow).
   const FRIENDLIES: { race: "dwarf" | "frost-dwarf" | "elf"; name: string; pos: [number, number, number] }[] = [
     { race: "dwarf", name: "Dwarf", pos: [-3.5, 0, -2.5] },
     { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5] },
     { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5] },
   ];
   for (const f of FRIENDLIES) {
+    const npcId = id();
     entities.push({
-      id: id(),
+      id: npcId,
       name: f.name,
       type: "model",
       model: { url: `builtin:race:${f.race}` },
@@ -652,18 +683,28 @@ export function rpgVillageScene(): SceneData {
       },
       parentId: null,
     });
+    entities.push({
+      id: id(),
+      name: WEAPON_NAME[f.race],
+      type: "model",
+      model: { url: `builtin:race-weapon:${f.race}` },
+      transform: WEAPON_HELD,
+      parentId: npcId,
+    });
   }
 
   // Enemies — orc + skeleton across the plaza, running the RPG-flavored
   // enemy-rpg behavior (peaceful Yuka wander → only hostile when the
-  // player attacks them or gets close → melee chase, no respawn).
+  // player attacks them or gets close → melee chase, no respawn). Each
+  // holds their per-race melee weapon (club / sword).
   const ENEMIES: { race: "orc" | "skeleton"; name: string; pos: [number, number, number] }[] = [
     { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
     { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
   ];
   for (const e of ENEMIES) {
+    const enemyId = id();
     entities.push({
-      id: id(),
+      id: enemyId,
       name: e.name,
       type: "model",
       model: { url: `builtin:race:${e.race}` },
@@ -681,6 +722,14 @@ export function rpgVillageScene(): SceneData {
       },
       behavior: "enemy-rpg",
       parentId: null,
+    });
+    entities.push({
+      id: id(),
+      name: WEAPON_NAME[e.race],
+      type: "model",
+      model: { url: `builtin:race-weapon:${e.race}` },
+      transform: WEAPON_HELD,
+      parentId: enemyId,
     });
   }
 

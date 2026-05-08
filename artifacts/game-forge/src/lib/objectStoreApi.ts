@@ -47,3 +47,64 @@ const RACE_TO_PACK_FILENAME: Readonly<Record<RaceId, string>> = {
 export function getRaceCharacterUrl(race: RaceId): string {
   return `${RACE_CHARACTER_PACK_BASE}/${RACE_TO_PACK_FILENAME[race]}.glb`;
 }
+
+/**
+ * Base URL for the matching weapon GLBs that ship in the same
+ * toon-rts-characters asset pack. Each weapon is an individual `<weapon>.glb`
+ * sized to fit the rigged characters above, so it can be parented under a
+ * character entity (same pattern as the bundled rifle in the deathmatch
+ * templates) without re-scaling.
+ *
+ * Example:
+ *   `${RACE_WEAPON_PACK_BASE}/sword.glb`
+ *   → https://assets.grudge-studio.com/asset-packs/toon-rts-characters/glb/weapons/sword.glb
+ */
+export const RACE_WEAPON_PACK_BASE =
+  "https://assets.grudge-studio.com/asset-packs/toon-rts-characters/glb/weapons";
+
+/**
+ * The fantasy weapon kinds shipped in the toon-rts-characters asset pack
+ * that we wire up to per-race defaults. Constrained as a string-literal
+ * union so callers (race→weapon registries, the AI tool catalog, etc.)
+ * fail at compile time on a typo rather than 404 at render time.
+ */
+export type RaceWeaponKind =
+  | "sword"
+  | "bow"
+  | "axe"
+  | "mace"
+  | "club"
+  | "staff";
+
+/**
+ * Per-race default weapon, mirroring the fantasy roles in `races.ts`:
+ *   warrior     → sword (sword-and-shield infantry)
+ *   elf         → bow   (swift archer caste)
+ *   dwarf       → axe   (stout mountain folk)
+ *   frost-dwarf → mace  (heavy northern raider)
+ *   orc         → club  (brutal melee)
+ *   skeleton    → sword (undead minion)
+ *
+ * Used by the rpg-village template to parent the right weapon under each
+ * character, and exposed via {@link getRaceWeaponUrl} for any other call
+ * site that needs the matching weapon GLB for a given race.
+ */
+export const RACE_WEAPON: Readonly<Record<RaceId, RaceWeaponKind>> = {
+  warrior: "sword",
+  elf: "bow",
+  dwarf: "axe",
+  "frost-dwarf": "mace",
+  orc: "club",
+  skeleton: "sword",
+};
+
+/**
+ * Resolve a {@link RaceId} to the public CDN GLB URL of its matching
+ * fantasy weapon. Returns an absolute https:// URL — `builtinModels.ensureBaseUrl`
+ * leaves it untouched, so it flows through `BUILTIN_MODELS["race-weapon:<id>"]`
+ * → `EntityRenderer.resolveModelUrl` cleanly, the same way the per-race
+ * character helper does.
+ */
+export function getRaceWeaponUrl(race: RaceId): string {
+  return `${RACE_WEAPON_PACK_BASE}/${RACE_WEAPON[race]}.glb`;
+}

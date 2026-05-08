@@ -1,6 +1,6 @@
 import characterUrl from "@/assets/models/character.glb?url";
 import rifleUrl from "@/assets/models/rifle.glb?url";
-import { getRaceCharacterUrl } from "./objectStoreApi";
+import { getRaceCharacterUrl, getRaceWeaponUrl } from "./objectStoreApi";
 import type { RaceId } from "./races";
 
 /** Vite quirk: in dev mode `?url` returns a source path like
@@ -51,6 +51,17 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race:elf": ensureBaseUrl(getRaceCharacterUrl("elf")),
   "race:orc": ensureBaseUrl(getRaceCharacterUrl("orc")),
   "race:skeleton": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
+  // Per-race default weapon GLBs from the same toon-rts-characters asset
+  // pack (sword/bow/axe/mace/club — see RACE_WEAPON in objectStoreApi.ts).
+  // Saved scenes reference these via the durable `builtin:race-weapon:<id>`
+  // key so the rpg-village template stays portable when new weapon variants
+  // ship in the asset pack.
+  "race-weapon:warrior": ensureBaseUrl(getRaceWeaponUrl("warrior")),
+  "race-weapon:dwarf": ensureBaseUrl(getRaceWeaponUrl("dwarf")),
+  "race-weapon:frost-dwarf": ensureBaseUrl(getRaceWeaponUrl("frost-dwarf")),
+  "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
+  "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
+  "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
 };
 
 export const BUILTIN_MODEL_KEY = (key: keyof typeof BUILTIN_MODELS | string) =>
