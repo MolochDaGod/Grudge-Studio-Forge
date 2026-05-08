@@ -145,6 +145,7 @@ export function PlayScriptRuntime({
       scale: [...entity.transform.scale] as [number, number, number],
       layer: entity.layer ?? "Default",
       npcLine: entity.npcLine,
+      raceId: entity.raceId,
     };
     const bodyOrGroup = bodyRefs.current.get(entity.id);
     if (bodyOrGroup) {

@@ -45,14 +45,30 @@ import type { BehaviorKind } from "@/scene/types";
 // ──────────────────────────────────────────────────────────────────────────────
 
 const PLAYER_DEATHMATCH = String.raw`
-const FIRE_COOLDOWN     = 0.18;  // seconds between shots
-const SHOT_RANGE        = 80;
-const SHOT_DAMAGE       = 25;
-const HEADSHOT_MULT     = 1.6;   // bonus damage on upper-body hits
-const HEADSHOT_OFFSET_Y = 0.55;  // hit point Y above target center → headshot
-const MAX_HEALTH        = 100;
+const FIRE_COOLDOWN      = 0.18;  // seconds between shots
+const SHOT_RANGE         = 80;
+const DEFAULT_SHOT_DAMAGE = 25;
+const HEADSHOT_MULT      = 1.6;   // bonus damage on upper-body hits
+const HEADSHOT_OFFSET_Y  = 0.55;  // hit point Y above target center → headshot
+const DEFAULT_MAX_HEALTH = 100;
+
+// Resolve per-race tuning against ctx.races (populated from the
+// game-forge RACES catalog). Falls back to the deathmatch defaults
+// when the entity has no raceId or the catalog is unavailable
+// (e.g. in unit tests with a stubbed ctx).
+function raceStats(entity, ctx) {
+  const r = entity.raceId && ctx.races ? ctx.races[entity.raceId] : null;
+  return {
+    health: (r && typeof r.health === "number") ? r.health : DEFAULT_MAX_HEALTH,
+    damage: (r && typeof r.damage === "number") ? r.damage : DEFAULT_SHOT_DAMAGE,
+  };
+}
 
 exports.start = function(entity, ctx) {
+  const stats = raceStats(entity, ctx);
+  ctx.state.maxHealth = stats.health;
+  ctx.state.shotDamage = stats.damage;
+  const MAX_HEALTH = stats.health;
   ctx.state.health = MAX_HEALTH;
   ctx.state.lastShot = -999;
   ctx.state.dead = false;
@@ -91,6 +107,8 @@ exports.start = function(entity, ctx) {
 };
 
 exports.update = function(entity, ctx) {
+  const MAX_HEALTH = ctx.state.maxHealth || DEFAULT_MAX_HEALTH;
+  const SHOT_DAMAGE = ctx.state.shotDamage || DEFAULT_SHOT_DAMAGE;
   // Respawn handling.
   if (ctx.state.dead) {
     if (ctx.time.elapsed >= ctx.state.deadUntil) {
@@ -150,16 +168,21 @@ exports.update = function(entity, ctx) {
 
 const ENEMY_DEATHMATCH = String.raw`
 // ── Tunables ─────────────────────────────────────────────────────────────────
-const MAX_HEALTH      = 60;
-const SEEK_MAX_SPEED  = 4.0;   // m/s when chasing
-const PATROL_SPEED    = 1.6;   // m/s when wandering
-const FLEE_SPEED      = 5.5;   // m/s when running for safety
+// Per-race overrides arrive via ctx.races[entity.raceId] at start():
+//   baseStats.health → MAX_HEALTH
+//   baseStats.speed  → SEEK_MAX_SPEED (chase) — wander/flee scale with it
+//   baseStats.damage → ATTACK_DAMAGE
+// Defaults below are used when the entity has no raceId.
+const DEFAULT_MAX_HEALTH    = 60;
+const DEFAULT_SEEK_SPEED    = 4.0;
+const DEFAULT_ATTACK_DAMAGE = 10;
+const PATROL_SPEED_RATIO    = 0.4;   // wander speed = chase * this
+const FLEE_SPEED_RATIO      = 1.375; // flee speed  = chase * this (matches old 5.5/4.0)
 const VIEW_RANGE      = 28;    // we only "see" the player within this radius
 const VIEW_FOV_DOT    = -0.2;  // dot(forward, toPlayer) > this → in front-ish cone (~aware ~110°)
 const HEAR_RADIUS     = 14;    // always notice player if this close, regardless of facing
 const ATTACK_RANGE    = 18;    // shoot when within
 const ATTACK_COOLDOWN = 1.4;   // seconds between shots
-const ATTACK_DAMAGE   = 10;
 const STOP_DISTANCE   = 2.5;   // don't push into the player
 const ALERT_RADIUS    = 22;    // when we spot the player, alert allies in this radius
 const SEPARATION_R    = 2.5;   // start pushing siblings away within this distance
@@ -176,7 +199,24 @@ const SHOT_VARIANCE   = 0.15;  // base hit-position jitter when player is statio
 // Spread enemies' first attack tick over time so they don't all fire on frame 0.
 function rand(min, max) { return min + Math.random() * (max - min); }
 
+// Resolve per-race tuning against ctx.races (populated from the
+// game-forge RACES catalog). Falls back to the deathmatch defaults
+// when the entity has no raceId.
+function raceStats(entity, ctx) {
+  const r = entity.raceId && ctx.races ? ctx.races[entity.raceId] : null;
+  return {
+    health: (r && typeof r.health === "number") ? r.health : DEFAULT_MAX_HEALTH,
+    speed:  (r && typeof r.speed  === "number") ? r.speed  : DEFAULT_SEEK_SPEED,
+    damage: (r && typeof r.damage === "number") ? r.damage : DEFAULT_ATTACK_DAMAGE,
+  };
+}
+
 exports.start = function(entity, ctx) {
+  const stats = raceStats(entity, ctx);
+  ctx.state.maxHealth     = stats.health;
+  ctx.state.seekMaxSpeed  = stats.speed;
+  ctx.state.attackDamage  = stats.damage;
+  const MAX_HEALTH = stats.health;
   ctx.state.health = MAX_HEALTH;
   ctx.state.dead = false;
   ctx.state.deadUntil = 0;
@@ -207,7 +247,7 @@ exports.start = function(entity, ctx) {
   const yk = ctx.yuka;
   const v = new yk.Vehicle();
   v.position.set(entity.position[0], entity.position[1], entity.position[2]);
-  v.maxSpeed = SEEK_MAX_SPEED;
+  v.maxSpeed = stats.speed;
 
   ctx.state.seek = new yk.SeekBehavior(new yk.Vector3(0, 0, 0));
   ctx.state.seek.active = false;
@@ -363,6 +403,11 @@ function applySeparation(entity, ctx) {
 }
 
 exports.update = function(entity, ctx) {
+  const MAX_HEALTH    = ctx.state.maxHealth     || DEFAULT_MAX_HEALTH;
+  const SEEK_MAX_SPEED = ctx.state.seekMaxSpeed || DEFAULT_SEEK_SPEED;
+  const PATROL_SPEED   = SEEK_MAX_SPEED * PATROL_SPEED_RATIO;
+  const FLEE_SPEED     = SEEK_MAX_SPEED * FLEE_SPEED_RATIO;
+  const ATTACK_DAMAGE  = ctx.state.attackDamage || DEFAULT_ATTACK_DAMAGE;
   if (ctx.state.dead) {
     if (ctx.time.elapsed >= ctx.state.deadUntil) {
       ctx.state.dead = false;

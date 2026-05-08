@@ -1,7 +1,8 @@
 import * as YUKA from "yuka";
 import * as THREE from "three";
 import type { LayerName, NavAgentComponent, SurfaceKind } from "@workspace/scene-schema";
-import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle } from "./csTranspile";
+import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle, type RaceStats } from "./csTranspile";
+import { RACES } from "@/lib/races";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
 import type { EntityInboxes, EntityStates, GameBus, TriggerInbox } from "./GameBus";
@@ -10,6 +11,21 @@ import { spawnAgent, type AgentActor } from "./agentRuntime";
 export type Compiled = CompiledScript & { error?: string };
 
 const cache = new Map<string, Compiled>();
+
+/** Frozen catalog of per-race base stats keyed by race id. Mirrors
+ *  `RACES[*].baseStats` so the script ctx can hand it straight to
+ *  the deathmatch behaviors without re-deriving each frame. */
+const RACE_STATS: Record<string, RaceStats> = Object.freeze(
+  Object.fromEntries(RACES.map((r) => [r.id, { ...r.baseStats }])),
+);
+
+/** Public accessor — also reused by `CameraControllers` to size the
+ *  player's WASD speed off the active race when the player entity
+ *  carries a `raceId`. Returns `undefined` for unknown ids. */
+export function getRaceStats(raceId: string | null | undefined): RaceStats | undefined {
+  if (!raceId) return undefined;
+  return RACE_STATS[raceId];
+}
 
 let blazorWarmed = false;
 export function warmBlazorRuntime(): void {
@@ -171,6 +187,7 @@ export function makeContext(opts: {
         opts.bus.on(event, handler);
       },
     },
+    races: RACE_STATS,
     state: opts.states.get(fromId),
     yuka: YUKA,
     log: (...args: unknown[]) => opts.log("log", args.map((a) => stringify(a)).join(" ")),

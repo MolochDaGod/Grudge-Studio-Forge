@@ -1247,6 +1247,12 @@ function RacesGrid() {
         position: [0, 1, 0],
         scale: [0.7, 1.6, 0.7],
       };
+      // Stamp the race id so the built-in deathmatch behaviors and
+      // the play-mode camera controller pick up the per-race base
+      // stats (max health, speed, damage) at play start. Designers
+      // can still attach a behavior from the inspector — the stats
+      // flow either way as long as raceId is set.
+      d.raceId = r.id;
     });
     pushLog(
       "info",

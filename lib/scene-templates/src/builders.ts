@@ -625,12 +625,15 @@ export function rpgVillageScene(): SceneData {
   };
 
   // Player — Warrior at center plaza, holding the warrior's sword.
+  // raceId stamps the warrior's baseStats (HP 100, speed 5.0, damage 12)
+  // onto the player so player-rpg + the camera controller use them.
   const playerId = id();
   entities.push({
     id: playerId,
     name: "Player",
     type: "model",
     model: { url: "builtin:race:warrior" },
+    raceId: "warrior",
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: {
       bodyType: "kinematicPosition",
@@ -674,6 +677,7 @@ export function rpgVillageScene(): SceneData {
       name: f.name,
       type: "model",
       model: { url: `builtin:race:${f.race}` },
+      raceId: f.race,
       transform: {
         position: f.pos,
         rotation: [0, Math.atan2(-f.pos[0], -f.pos[2]), 0], // face plaza center
@@ -717,6 +721,7 @@ export function rpgVillageScene(): SceneData {
       name: e.name,
       type: "model",
       model: { url: `builtin:race:${e.race}` },
+      raceId: e.race,
       transform: {
         position: e.pos,
         rotation: [0, Math.atan2(-e.pos[0], -e.pos[2]), 0],

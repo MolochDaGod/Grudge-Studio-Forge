@@ -7,6 +7,7 @@ import { useEditor } from "@/store/editor";
 import { useKeyboardState } from "@/lib/keyboard";
 import type { CameraMode, SceneEntity } from "@/scene/types";
 import { getPlaySession } from "@/scene/playSession";
+import { getRaceStats } from "@/scene/PlayRuntime";
 
 /**
  * Returns true when an external system (the deathmatch script runtime) has
@@ -328,7 +329,12 @@ export function ThirdPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
-    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    // Per-race speed override: when the player entity carries a raceId,
+    // pull baseStats.speed from the RACES catalog so picking the elf
+    // actually feels swift and the dwarf actually feels stout. Falls
+    // back to the env-level slider when no race is set.
+    const raceSpeed = getRaceStats(player.raceId)?.speed;
+    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
     let vx = 0;
     let vz = 0;
     if (mx !== 0 || mz !== 0) {
@@ -469,7 +475,9 @@ export function FirstPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
-    const speed = (env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    // Per-race speed override (see TPS controller above).
+    const raceSpeed = getRaceStats(player.raceId)?.speed;
+    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
     let vx = 0;
     let vz = 0;
     if (mx !== 0 || mz !== 0) {

@@ -283,6 +283,14 @@ export interface SceneEntity {
   /** Per-entity dialog line shown by the `npc-dialog` behavior when the
    *  player presses E nearby. Ignored by other behaviors. */
   npcLine?: string;
+  /** Optional race id (one of the entries from the game-forge `RACES`
+   *  catalog — e.g. `"warrior"`, `"orc"`, `"skeleton"`). When set, the
+   *  built-in deathmatch behaviors and the play-mode camera controller
+   *  read the matching `baseStats` (max health, movement speed, per-hit
+   *  damage) so race choice actually affects gameplay instead of being
+   *  cosmetic. Stored as a free-form string here to keep `scene-schema`
+   *  decoupled from the game-forge artifact's race catalog. */
+  raceId?: string;
   /** Mark this entity as the player. The active camera controller will move it
    *  in play mode (WASD + mouselook for FPS / orbit for TPS). */
   controllerKind?: ControllerKind;

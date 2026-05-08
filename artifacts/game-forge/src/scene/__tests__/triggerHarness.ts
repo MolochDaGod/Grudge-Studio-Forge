@@ -64,6 +64,7 @@ export function makePickupContext(): {
     },
     events: { emit, on: noop },
     state: {},
+    races: {},
     // yuka is unused by the pickup behavior; cast to satisfy the interface.
     yuka: {} as ScriptContext["yuka"],
     log: noop,

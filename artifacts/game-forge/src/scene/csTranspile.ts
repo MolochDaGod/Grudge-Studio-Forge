@@ -49,6 +49,21 @@ export interface ScriptEntity {
   layer?: string;
   /** Per-entity dialog line shown by the `npc-dialog` behavior. */
   npcLine?: string;
+  /** Optional race id (one of the entries from the game-forge `RACES`
+   *  catalog). The built-in deathmatch behaviors look this up against
+   *  `ctx.races` to size max health, movement speed, and per-hit damage
+   *  from the race's `baseStats`. Undefined for non-character entities. */
+  raceId?: string;
+}
+
+/** Per-race tuning surfaced to scripts via {@link ScriptContext.races}.
+ *  Mirrors the `baseStats` shape on the game-forge `Race` interface,
+ *  decoupled here so `csTranspile` doesn't import the `lib/races`
+ *  module. */
+export interface RaceStats {
+  health: number;
+  speed: number;
+  damage: number;
 }
 
 export interface MouseState {
@@ -260,6 +275,13 @@ export interface ScriptContext {
     emit: (event: string, payload?: unknown) => void;
     on: (event: string, handler: (payload: unknown) => void) => void;
   };
+  /** Per-race tuning catalog keyed by race id (e.g. `"warrior"` →
+   *  `{health:100, speed:5, damage:12}`). Built-in deathmatch behaviors
+   *  read `ctx.races[entity.raceId]` at start to size max health and
+   *  per-hit damage, and at update for movement speed. Empty when no
+   *  catalog has been wired (older test harnesses) — behaviors fall
+   *  back to their hardcoded constants in that case. */
+  races: Record<string, RaceStats>;
   /** Per-entity persistent state bag. Survives across update calls (start to
    *  stop of play mode). */
   state: Record<string, unknown>;

@@ -6,9 +6,17 @@ export default defineConfig({
     jsx: "automatic",
   },
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      // Map binary asset imports (@assets/foo.png) to a tiny string stub so
+      // that modules importing them (e.g. lib/races.ts which imports race
+      // portrait PNGs) can be loaded under vitest's node environment, where
+      // Vite's image-asset loader isn't active.
+      {
+        find: /^@assets\/.+\.(png|jpe?g|gif|webp|svg|avif)$/,
+        replacement: path.resolve(__dirname, "./src/__tests__/__mocks__/assetStub.ts"),
+      },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
   },
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
