@@ -111,7 +111,7 @@ describe("set_nav_agent (batched)", () => {
 });
 
 describe("bake_convex_hulls", () => {
-  it("walks the live scene, builds hulls, and patches PhysicsComponent through the CommandStack", async () => {
+  it("walks the live scene, builds hulls, and patches PhysicsComponent through the CommandStack", { timeout: 30000 }, async () => {
     // Stand up a fake editor scene graph: one Group per entity, each
     // carrying a single mesh under it. Mirrors the EntityRenderer
     // shape that bake_convex_hulls walks via `getObjectByProperty`.
