@@ -72,6 +72,11 @@ import {
   handlers as materialsToolHandlers,
   destructiveToolNames as materialsDestructiveTools,
 } from "@/ai/tools/materials";
+import {
+  defs as effectsToolDefs,
+  handlers as effectsToolHandlers,
+  destructiveToolNames as effectsDestructiveTools,
+} from "@/ai/tools/effects";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -91,6 +96,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...navDestructiveTools,
   ...materialsDestructiveTools,
   ...puterDestructiveTools,
+  ...effectsDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1108,6 +1114,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
   ...puterToolDefs.map((def) => ({
     def,
     exec: puterToolHandlers[def.name] as ToolExecutor,
+  })),
+
+  // ── Effects tools (wind / soft-body) ──────────────────────────────
+  // Sourced from src/ai/tools/effects/. One-import-one-spread shape.
+  ...effectsToolDefs.map((def) => ({
+    def,
+    exec: effectsToolHandlers[def.name] as ToolExecutor,
   })),
 ];
 
