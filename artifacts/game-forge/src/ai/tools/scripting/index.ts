@@ -605,6 +605,16 @@ const BEHAVIOR_DOCS: Record<
       "Despawns this entity when a Player-named or Player-layer body overlaps. Demonstrates the onEnterTrigger / despawn ScriptContext API.",
     recommendedLayer: "Trigger",
   },
+  "player-rpg": {
+    description:
+      "RPG-flavored player: LMB melee swing, E-key 'interact' event, health + damage HUD wiring. No respawn (death is permanent) and no kill-feed scoring — pair with enemy-rpg for adventure-style scenes.",
+    recommendedLayer: "Player",
+  },
+  "enemy-rpg": {
+    description:
+      "RPG-flavored enemy: peaceful Yuka wander until provoked by damage or proximity, then chases + melee attacks. Permanent death (no respawn) and emits no kill events so the deathmatch scoreboard stays silent.",
+    recommendedLayer: "NPC",
+  },
 };
 const listBuiltinBehaviorsHandler: ToolHandler = async () => {
   return {

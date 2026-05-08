@@ -591,6 +591,232 @@ exports.start = function(entity, ctx) {
 `;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// RPG Player — quieter, melee-flavored sibling of player-deathmatch.
+//
+//   • LMB swings a short-range melee cone (raycast from camera, capped to
+//     MELEE_RANGE), deals MELEE_DAMAGE per hit. No projectile range, no
+//     ammo, no headshot multiplier.
+//   • E key emits a scene-level `interact` event that nearby NPCs / pickup
+//     scripts can subscribe to (passes the closest interactable id within
+//     INTERACT_RANGE in front of the camera).
+//   • Standard health / damage HUD wiring (`playerHealth`, `damage`).
+//   • On death we freeze the body, emit `playerDied`, but do NOT respawn
+//     and do NOT emit `kill` (so the deathmatch scoreboard stays silent).
+// ──────────────────────────────────────────────────────────────────────────────
+
+const PLAYER_RPG = String.raw`
+const SWING_COOLDOWN  = 0.45;  // seconds between melee swings
+const MELEE_RANGE     = 2.4;   // metres reach of the swing
+const MELEE_DAMAGE    = 22;
+const INTERACT_RANGE  = 3.0;   // metres for the E-key interact pick
+const MAX_HEALTH      = 100;
+
+exports.start = function(entity, ctx) {
+  ctx.state.health = MAX_HEALTH;
+  ctx.state.lastSwing = -999;
+  // Edge-trigger latch for E so holding the key fires interact exactly once.
+  ctx.state.interactLatched = false;
+  ctx.state.dead = false;
+  // Inbox: receive damage from enemies. RPG variant has no respawn.
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (ctx.state.dead) return;
+    const dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, ctx.state.health - dmg);
+    ctx.events.emit("damage", { amount: dmg, health: ctx.state.health, max: MAX_HEALTH });
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      // Freeze so the camera controller stops driving the body. We never
+      // unfreeze in this behavior — death is permanent for the run.
+      ctx.scene.freeze(entity.id);
+      ctx.events.emit("playerDied", { killerId: fromId });
+    }
+  });
+  ctx.events.emit("playerHealth", { health: ctx.state.health, max: MAX_HEALTH });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+
+  // E key → emit a scene-level interact event with the closest entity in
+  // a short cone in front of the camera. Edge-triggered: emits exactly
+  // once per press (must release E before it fires again). NPC / pickup
+  // scripts can listen on the bus via ctx.events.on("interact", ...).
+  const interactDown = !!(ctx.input.keys && (ctx.input.keys.e || ctx.input.keys.E));
+  if (interactDown && !ctx.state.interactLatched) {
+    ctx.state.interactLatched = true;
+    const origin = ctx.scene.cameraPosition();
+    const dir = ctx.scene.cameraDirection();
+    const hit = ctx.scene.castRay(origin, dir, INTERACT_RANGE, [entity.id]);
+    ctx.events.emit("interact", {
+      fromId: entity.id,
+      targetId: hit && hit.entityId ? hit.entityId : null,
+      point: hit ? hit.point : null,
+    });
+  } else if (!interactDown && ctx.state.interactLatched) {
+    ctx.state.interactLatched = false;
+  }
+
+  // LMB melee swing with cooldown — short-range raycast from the camera.
+  if (ctx.input.mouse.left && ctx.time.elapsed - ctx.state.lastSwing >= SWING_COOLDOWN) {
+    ctx.state.lastSwing = ctx.time.elapsed;
+    const origin = ctx.scene.cameraPosition();
+    const dir = ctx.scene.cameraDirection();
+    const hit = ctx.scene.castRay(origin, dir, MELEE_RANGE, [entity.id], undefined, { requireBlocksProjectiles: true });
+    ctx.events.emit("playerSwing", { origin: origin, dir: dir, hit: hit });
+    if (hit && hit.entityId) {
+      ctx.scene.send(hit.entityId, "damage", { amount: MELEE_DAMAGE, fromId: entity.id });
+      ctx.events.emit("hit", { entityId: hit.entityId, point: hit.point, headshot: false, amount: MELEE_DAMAGE });
+    }
+  }
+};
+`;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RPG Enemy — peaceful wanderer that becomes hostile only when provoked.
+//
+//   • Yuka WanderBehavior at PATROL_SPEED until provoked (taking damage
+//     OR the player crosses AGGRO_RADIUS — no facing / line-of-sight test;
+//     RPG enemies are intentionally simpler than enemy-deathmatch).
+//   • Once hostile we chase the player at SEEK_MAX_SPEED and melee-attack
+//     at MELEE_RANGE on a cooldown. There is no flee state.
+//   • Death is permanent — we hide the corpse and never respawn. No `kill`
+//     event is emitted (the deathmatch gamemode would otherwise score it).
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ENEMY_RPG = String.raw`
+// ── Tunables ─────────────────────────────────────────────────────────────────
+const MAX_HEALTH      = 50;
+const SEEK_MAX_SPEED  = 3.2;   // m/s when chasing
+const PATROL_SPEED    = 1.2;   // m/s when wandering peacefully
+const AGGRO_RADIUS    = 8;     // become hostile if player gets this close
+const DEAGGRO_RADIUS  = 22;    // give up chase if player escapes this far
+const MELEE_RANGE     = 2.0;   // attack reach
+const MELEE_COOLDOWN  = 1.6;   // seconds between swings
+const MELEE_DAMAGE    = 8;
+const STOP_DISTANCE   = 1.6;   // don't push into the player while attacking
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+
+exports.start = function(entity, ctx) {
+  ctx.state.health = MAX_HEALTH;
+  ctx.state.dead = false;
+  ctx.state.hostile = false;          // becomes true on first provocation
+  ctx.state.lastAttack = ctx.time.elapsed - rand(0, MELEE_COOLDOWN);
+  ctx.state.spawnPos = entity.position.slice();
+
+  // Yuka entity manager + vehicle: wander while peaceful, seek when hostile.
+  const yk = ctx.yuka;
+  const v = new yk.Vehicle();
+  v.position.set(entity.position[0], entity.position[1], entity.position[2]);
+  v.maxSpeed = PATROL_SPEED;
+
+  ctx.state.seek = new yk.SeekBehavior(new yk.Vector3(0, 0, 0));
+  ctx.state.seek.active = false;
+  v.steering.add(ctx.state.seek);
+
+  if (typeof yk.WanderBehavior === "function") {
+    ctx.state.wander = new yk.WanderBehavior();
+    if (typeof ctx.state.wander.weight === "number") ctx.state.wander.weight = 0.5;
+    v.steering.add(ctx.state.wander);
+    ctx.state.wander.active = true;   // start peacefully wandering
+  } else {
+    ctx.state.wander = null;
+  }
+
+  ctx.state.vehicle = v;
+  ctx.state.entityManager = new yk.EntityManager();
+  ctx.state.entityManager.add(v);
+
+  // Take damage — instantly become hostile toward the attacker.
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (ctx.state.dead) return;
+    const dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, ctx.state.health - dmg);
+    ctx.events.emit("enemyHit", { entityId: entity.id, health: ctx.state.health, max: MAX_HEALTH });
+    ctx.state.hostile = true;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      // Hide the corpse permanently (no respawn) and emit a quiet death
+      // event. Intentionally NO "kill" emit — that would feed the
+      // deathmatch scoreboard.
+      ctx.scene.setPosition(entity.id, [entity.position[0], -200, entity.position[2]]);
+      ctx.events.emit("enemyDied", { entityId: entity.id, killerId: fromId });
+    }
+  });
+};
+
+function setSteeringMode(ctx, mode, targetX, targetY, targetZ, speed) {
+  ctx.state.vehicle.maxSpeed = speed;
+  ctx.state.seek.active = (mode === "seek");
+  if (ctx.state.wander) ctx.state.wander.active = (mode === "wander");
+  if (mode === "seek") {
+    ctx.state.seek.target.set(targetX, targetY, targetZ);
+  } else if (mode === "stop") {
+    ctx.state.vehicle.velocity.set(0, 0, 0);
+  }
+}
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+
+  const player = ctx.scene.find("Player");
+  if (!player) return;
+
+  const dx = player.position[0] - entity.position[0];
+  const dz = player.position[2] - entity.position[2];
+  const dist = Math.sqrt(dx * dx + dz * dz);
+
+  // Provocation: proximity is enough to trigger hostility (no LoS check).
+  if (!ctx.state.hostile && dist < AGGRO_RADIUS) {
+    ctx.state.hostile = true;
+  }
+  // Escape: if the player runs far enough away, calm down again.
+  if (ctx.state.hostile && dist > DEAGGRO_RADIUS) {
+    ctx.state.hostile = false;
+  }
+
+  if (!ctx.state.hostile) {
+    // Peaceful wander.
+    if (ctx.state.wander) {
+      setSteeringMode(ctx, "wander", 0, 0, 0, PATROL_SPEED);
+    } else {
+      const sp = ctx.state.spawnPos;
+      setSteeringMode(ctx, "seek", sp[0], entity.position[1], sp[2], PATROL_SPEED);
+    }
+  } else if (dist > MELEE_RANGE) {
+    // Chase.
+    setSteeringMode(ctx, "seek", player.position[0], entity.position[1], player.position[2], SEEK_MAX_SPEED);
+  } else {
+    // In melee range — stop and swing on cooldown.
+    if (dist > STOP_DISTANCE) {
+      setSteeringMode(ctx, "seek", player.position[0], entity.position[1], player.position[2], SEEK_MAX_SPEED * 0.4);
+    } else {
+      setSteeringMode(ctx, "stop", 0, 0, 0, 0);
+    }
+    if ((ctx.time.elapsed - ctx.state.lastAttack) >= MELEE_COOLDOWN) {
+      ctx.state.lastAttack = ctx.time.elapsed;
+      ctx.scene.send(player.id, "damage", { amount: MELEE_DAMAGE, fromId: entity.id });
+      ctx.events.emit("enemyAttack", { fromId: entity.id, targetId: player.id, hit: true });
+      // Face the player for the swing.
+      if (dist > 0.001) entity.rotation[1] = Math.atan2(dx, dz);
+    }
+  }
+
+  // Step Yuka, write back position + facing.
+  ctx.state.vehicle.position.set(entity.position[0], entity.position[1], entity.position[2]);
+  ctx.state.entityManager.update(ctx.time.delta);
+  entity.position[0] = ctx.state.vehicle.position.x;
+  entity.position[2] = ctx.state.vehicle.position.z;
+
+  const vxf = ctx.state.vehicle.velocity.x;
+  const vzf = ctx.state.vehicle.velocity.z;
+  if (Math.abs(vxf) + Math.abs(vzf) > 0.05) {
+    entity.rotation[1] = Math.atan2(vxf, vzf);
+  }
+};
+`;
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Registry
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -600,6 +826,8 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "gamemode-deathmatch": GAMEMODE_DEATHMATCH,
   spawnpoint: "// marker — no behavior",
   "pickup-trigger": PICKUP_TRIGGER,
+  "player-rpg": PLAYER_RPG,
+  "enemy-rpg": ENEMY_RPG,
 };
 
 /** Default physics layer per built-in behavior. Lets prefab definitions and
@@ -614,4 +842,6 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   "gamemode-deathmatch": null,
   spawnpoint: "Trigger",
   "pickup-trigger": "Trigger",
+  "player-rpg": "Player",
+  "enemy-rpg": "NPC",
 };

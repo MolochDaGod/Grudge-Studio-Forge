@@ -557,12 +557,12 @@ export function characterShowcaseScene(): SceneData {
 
 /** RPG starter — a small desert-town village populated with one of each
  *  race (warrior / dwarf / frost-dwarf / elf / orc / skeleton). The
- *  Player is the Warrior at center plaza with a held rifle (same auto-
- *  attached weapon the deathmatch templates use, so shooting + the
- *  camera-yaw-facing fix both apply). Friendlies (dwarf / frost-dwarf /
- *  elf) stand idle nearby with cylinder colliders; enemies (orc /
- *  skeleton) wander the plaza under `enemy-deathmatch` so the player
- *  can fight them out of the box.
+ *  Player is the Warrior at center plaza running the RPG-flavored
+ *  `player-rpg` behavior (LMB melee swing, E to interact, no respawn).
+ *  Friendlies (dwarf / frost-dwarf / elf) stand idle nearby with
+ *  cylinder colliders; enemies (orc / skeleton) wander peacefully under
+ *  `enemy-rpg` and only become hostile if the player attacks them or
+ *  gets too close — no kill-feed, no respawn, just an adventure plaza.
  *
  *  This template references each race via its durable
  *  `builtin:race:<id>` model key — `EntityRenderer.resolveBuiltinModel`
@@ -616,21 +616,12 @@ export function rpgVillageScene(): SceneData {
       friction: 0.6,
     },
     controllerKind: "thirdPerson",
-    behavior: "player-deathmatch",
+    behavior: "player-rpg",
     parentId: null,
   });
-  entities.push({
-    id: id(),
-    name: "Rifle",
-    type: "model",
-    model: { url: ASSETS.rifle },
-    transform: {
-      position: [0.32, 1.25, 0.25],
-      rotation: [0, Math.PI / 2, 0],
-      scale: [1, 1, 1],
-    },
-    parentId: playerId,
-  });
+  // Note: no held weapon model — player-rpg is a melee/interact behavior,
+  // so a rifle prop would be visually misleading. Drop a sword/staff GLB
+  // here once the asset pack ships one.
 
   // Friendlies — placed around the plaza as idle NPCs (no behavior
   // script for v1, just visible characters with cylinder colliders).
@@ -663,9 +654,9 @@ export function rpgVillageScene(): SceneData {
     });
   }
 
-  // Enemies — orc + skeleton across the plaza, running the existing
-  // enemy-deathmatch behavior (Yuka wander + chase + shoot when they
-  // see you). Same physics shape as deathmatch enemies.
+  // Enemies — orc + skeleton across the plaza, running the RPG-flavored
+  // enemy-rpg behavior (peaceful Yuka wander → only hostile when the
+  // player attacks them or gets close → melee chase, no respawn).
   const ENEMIES: { race: "orc" | "skeleton"; name: string; pos: [number, number, number] }[] = [
     { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
     { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
@@ -688,7 +679,7 @@ export function rpgVillageScene(): SceneData {
         restitution: 0.2,
         friction: 0.8,
       },
-      behavior: "enemy-deathmatch",
+      behavior: "enemy-rpg",
       parentId: null,
     });
   }

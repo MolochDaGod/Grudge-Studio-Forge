@@ -250,7 +250,17 @@ export type BehaviorKind =
    *  enters its sensor volume. Demonstrates the trigger-event API
    *  (`ctx.scene.onEnterTrigger`) and is suitable as a starter behavior on
    *  pickups, score zones, and consumables placed on the `Trigger` layer. */
-  | "pickup-trigger";
+  | "pickup-trigger"
+  /** RPG-flavored player: short-range melee swing on LMB, "interact" event
+   *  on E (for NPC dialog / pickups), health + damage HUD wiring, but NO
+   *  respawn (death is permanent for the run) and NO kill-feed scoring.
+   *  Companion to `enemy-rpg` for quieter adventure-style starter scenes. */
+  | "player-rpg"
+  /** RPG-flavored enemy: wanders peacefully, only becomes hostile after
+   *  taking damage or when the player gets very close. Chases + melee
+   *  attacks on aggro, drops dead permanently (no respawn). Does not emit
+   *  `kill` events so the deathmatch scoreboard stays silent. */
+  | "enemy-rpg";
 
 export interface SceneEntity {
   id: string;

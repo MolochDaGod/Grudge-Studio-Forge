@@ -20,8 +20,9 @@ describe("rpgVillageScene", () => {
     const scene = build();
     expect(scene).toBeTruthy();
     expect(Array.isArray(scene.entities)).toBe(true);
-    // map + ground + player + rifle + 3 friendlies + 2 enemies + sun = 10
-    expect(scene.entities.length).toBeGreaterThanOrEqual(10);
+    // map + ground + player + 3 friendlies + 2 enemies + sun = 9
+    // (player-rpg is melee/interact — no rifle prop attached)
+    expect(scene.entities.length).toBeGreaterThanOrEqual(9);
     // Every entity has the required scene-schema fields.
     for (const e of scene.entities) {
       expect(typeof e.id).toBe("string");
