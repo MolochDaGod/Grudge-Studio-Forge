@@ -198,6 +198,88 @@ describe("collider projection", () => {
     expect(xs).toEqual([-2, 5]);
   });
 
+  it("oriented box pushes a point straight out along its tilted top face", () => {
+    // 45° rotated crate (tilt around Z): a point sitting on the box's
+    // local +Y face at world ≈ (-0.354, 0.354, 0) should resolve along
+    // the rotated normal — i.e. land *on* the tilted top, not the flat
+    // axis-aligned top.
+    const half = Math.SQRT1_2; // sin(45°) = cos(45°)
+    const colliders = [
+      {
+        kind: "box" as const,
+        cx: 0, cy: 0, cz: 0,
+        rx: 0.5, ry: 0.5, rz: 0.5,
+        rot: [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)] as [
+          number, number, number, number,
+        ],
+      },
+    ];
+    // Drop a point inside the tilted box near its rotated top.
+    const pt = { x: -0.2, y: 0.2, z: 0 };
+    expect(projectOutOfColliders(pt, colliders)).toBe(true);
+    // Resolved point should lie on the tilted top face, whose plane in
+    // world coords is { p · (-sin45, cos45, 0) = 0.5 }.
+    const planeDist = -pt.x * half + pt.y * half;
+    expect(planeDist).toBeCloseTo(0.5, 4);
+  });
+
+  it("oriented box leaves a vertex outside its rotated extent untouched", () => {
+    // The unrotated half-0.5 cube would treat (0.4, 0.4, 0) as inside
+    // its top corner. Once rotated 45° around Z, that same world point
+    // maps to local ≈ (0.566, 0, 0) — outside the OBB along local +X
+    // — so the resolver must leave it alone.
+    const colliders = [
+      {
+        kind: "box" as const,
+        cx: 0, cy: 0, cz: 0,
+        rx: 0.5, ry: 0.5, rz: 0.5,
+        rot: [0, 0, Math.sin(Math.PI / 8), Math.cos(Math.PI / 8)] as [
+          number, number, number, number,
+        ],
+      },
+    ];
+    const pt = { x: 0.4, y: 0.4, z: 0 };
+    expect(projectOutOfColliders(pt, colliders)).toBe(false);
+    expect(pt.x).toBe(0.4);
+    expect(pt.y).toBe(0.4);
+  });
+
+  it("snapshotColliders honors transform.rotation as an oriented box", () => {
+    const ents: SceneEntity[] = [
+      mkEntity({
+        id: "ramp",
+        type: "box",
+        transform: {
+          position: [0, 0, 0],
+          rotation: [0, 0, Math.PI / 4],
+          scale: [1, 1, 1],
+        },
+      }),
+    ];
+    const out = snapshotColliders(ents, "self");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.rot).toBeDefined();
+    // Verlet vertex landing on top of the rotated crate must rest on
+    // the tilted plane (p · n = 0.5), not at y = 0.5.
+    const half = Math.SQRT1_2;
+    const pt = { x: -0.1, y: 0.1, z: 0 };
+    expect(projectOutOfColliders(pt, out)).toBe(true);
+    const planeDist = -pt.x * half + pt.y * half;
+    expect(planeDist).toBeCloseTo(0.5, 4);
+  });
+
+  it("snapshotColliders omits rot when transform.rotation is identity", () => {
+    const ents: SceneEntity[] = [
+      mkEntity({
+        id: "crate",
+        type: "box",
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      }),
+    ];
+    const out = snapshotColliders(ents, "self");
+    expect(out[0]?.rot).toBeUndefined();
+  });
+
   it("snapshotColliders skips soft entities and self", () => {
     const ents: SceneEntity[] = [
       mkEntity({ id: "self", type: "cloth" }),

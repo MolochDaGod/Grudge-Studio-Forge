@@ -143,18 +143,52 @@ export function stepVerlet(
  *  pass. We deliberately don't read Rapier directly — the scene tree
  *  already exposes everything we need (transform + entity type). */
 export interface SoftCollider {
-  /** Sphere if `kind === "sphere"`, otherwise an axis-aligned box. */
+  /** Sphere if `kind === "sphere"`, otherwise a box (axis-aligned when
+   *  `rot` is omitted, oriented when `rot` carries a non-identity
+   *  quaternion). */
   kind: "sphere" | "box";
   /** World-space center. */
   cx: number; cy: number; cz: number;
-  /** World-space radius (sphere) or half-extents (box). */
+  /** Sphere: world-space radius (rx === ry === rz).
+   *  Box: half-extents along the collider's *local* axes (when oriented
+   *  via `rot`) or world axes (when `rot` is absent). */
   rx: number; ry: number; rz: number;
+  /** Optional unit quaternion `[x,y,z,w]` rotating *local→world* for
+   *  oriented boxes. Spheres ignore rotation. When omitted, the box is
+   *  treated as axis-aligned (cheap fast path used by tests + legacy
+   *  callers). */
+  rot?: [number, number, number, number];
   /** Source entity id (when the collider was attached to a Rapier
    *  rigid body whose `userData.entityId` was stamped by EntityRenderer).
    *  Used by the soft-body gather pass to dedup the scene-tree fallback
    *  so a single dynamic entity doesn't appear at both its current
    *  Rapier position AND its stale author-time transform. */
   entityId?: string;
+}
+
+/** Convert a three.js-style XYZ Euler (radians) to a unit quaternion
+ *  `[x,y,z,w]`. Matches `THREE.Quaternion.setFromEuler(_, "XYZ")` so
+ *  oriented boxes derived from `transform.rotation` line up with the
+ *  rendered mesh. Returns `undefined` when the Euler is the identity
+ *  so callers can short-circuit to the AABB fast path. */
+export function quatFromEulerXYZ(
+  ex: number,
+  ey: number,
+  ez: number,
+): [number, number, number, number] | undefined {
+  if (ex === 0 && ey === 0 && ez === 0) return undefined;
+  const c1 = Math.cos(ex / 2);
+  const c2 = Math.cos(ey / 2);
+  const c3 = Math.cos(ez / 2);
+  const s1 = Math.sin(ex / 2);
+  const s2 = Math.sin(ey / 2);
+  const s3 = Math.sin(ez / 2);
+  return [
+    s1 * c2 * c3 + c1 * s2 * s3,
+    c1 * s2 * c3 - s1 * c2 * s3,
+    c1 * c2 * s3 + s1 * s2 * c3,
+    c1 * c2 * c3 - s1 * s2 * s3,
+  ];
 }
 
 /** Build a flat collider list from the scene snapshot. We treat each
@@ -176,8 +210,11 @@ export function snapshotColliders(
     if (e.type === "light" || e.type === "camera" || e.type === "empty") continue;
     const [px, py, pz] = e.transform.position;
     const [sx, sy, sz] = e.transform.scale;
+    const [rxe, rye, rze] = e.transform.rotation;
+    const rot = quatFromEulerXYZ(rxe, rye, rze);
     if (e.type === "sphere") {
-      // Default sphereGeometry radius = 0.5, scale = uniform
+      // Default sphereGeometry radius = 0.5, scale = uniform.
+      // Spheres are rotation-invariant so `rot` is intentionally unset.
       const r = 0.5 * Math.max(sx, sy, sz);
       out.push({ kind: "sphere", cx: px, cy: py, cz: pz, rx: r, ry: r, rz: r, entityId: e.id });
     } else if (e.type === "plane") {
@@ -191,11 +228,13 @@ export function snapshotColliders(
         rx: 0.5 * Math.abs(sx),
         ry: 0.05,
         rz: 0.5 * Math.abs(sz),
+        rot,
         entityId: e.id,
       });
     } else {
-      // box / cylinder / model — coarse AABB sized off the entity's
-      // local-1 default extents (1×1×1) times its scale.
+      // box / cylinder / model — coarse OBB sized off the entity's
+      // local-1 default extents (1×1×1) times its scale, oriented by
+      // its transform.rotation so cloth drapes over tilted props.
       out.push({
         kind: "box",
         cx: px,
@@ -204,6 +243,7 @@ export function snapshotColliders(
         rx: 0.5 * Math.abs(sx),
         ry: 0.5 * Math.abs(sy),
         rz: 0.5 * Math.abs(sz),
+        rot,
         entityId: e.id,
       });
     }
@@ -221,6 +261,10 @@ export interface RapierLikeWorld {
 export interface RapierLikeCollider {
   isSensor(): boolean;
   translation(): { x: number; y: number; z: number };
+  /** Optional — real Rapier colliders return the world-space rotation
+   *  as a quaternion. We treat it as identity when missing so existing
+   *  hand-rolled stubs (and tests) keep working. */
+  rotation?(): { x: number; y: number; z: number; w: number };
   parent(): { userData?: unknown } | null;
   shape: {
     type?: number;
@@ -228,6 +272,21 @@ export interface RapierLikeCollider {
     radius?: number;
     halfHeight?: number;
   };
+}
+
+/** Read a Rapier collider's rotation as a `[x,y,z,w]` quaternion, or
+ *  `undefined` when it's the identity (so the AABB fast path applies).
+ *  Tolerates collider stubs without a `rotation()` method. */
+function readRapierRot(
+  c: RapierLikeCollider,
+): [number, number, number, number] | undefined {
+  if (typeof c.rotation !== "function") return undefined;
+  const q = c.rotation();
+  if (!q) return undefined;
+  if (q.x === 0 && q.y === 0 && q.z === 0 && (q.w === 1 || q.w === -1)) {
+    return undefined;
+  }
+  return [q.x, q.y, q.z, q.w];
 }
 
 /** Snapshot Rapier's live collider list into the same {@link SoftCollider}
@@ -255,6 +314,7 @@ export function snapshotRapierColliders(
     if (entityId && entityId === selfId) return;
     const t = c.translation();
     const sh = c.shape;
+    const rot = readRapierRot(c);
     // Cuboid (rapier shape type 1) → straight half-extents.
     if (sh.halfExtents) {
       out.push({
@@ -265,6 +325,7 @@ export function snapshotRapierColliders(
         rx: Math.abs(sh.halfExtents.x),
         ry: Math.abs(sh.halfExtents.y),
         rz: Math.abs(sh.halfExtents.z),
+        rot,
         entityId,
       });
       return;
@@ -280,11 +341,12 @@ export function snapshotRapierColliders(
         rx: r,
         ry: Math.abs(sh.halfHeight) + r,
         rz: r,
+        rot,
         entityId,
       });
       return;
     }
-    // Ball → sphere.
+    // Ball → sphere (rotation-invariant).
     if (typeof sh.radius === "number") {
       const r = Math.abs(sh.radius);
       out.push({ kind: "sphere", cx: t.x, cy: t.y, cz: t.z, rx: r, ry: r, rz: r, entityId });
@@ -293,7 +355,7 @@ export function snapshotRapierColliders(
     // Unknown shape (trimesh / convex hull / heightfield) — fall back
     // to a unit AABB at the collider origin. Authors with custom hulls
     // can still rely on the scene-tree snapshot path for accuracy.
-    out.push({ kind: "box", cx: t.x, cy: t.y, cz: t.z, rx: 0.5, ry: 0.5, rz: 0.5, entityId });
+    out.push({ kind: "box", cx: t.x, cy: t.y, cz: t.z, rx: 0.5, ry: 0.5, rz: 0.5, rot, entityId });
   });
   return out;
 }
@@ -351,7 +413,8 @@ export function projectOutOfColliders(
         pt.y = c.cy + c.ry;
         hit = true;
       }
-    } else {
+    } else if (!c.rot) {
+      // Axis-aligned fast path.
       const dx = pt.x - c.cx;
       const dy = pt.y - c.cy;
       const dz = pt.z - c.cz;
@@ -367,6 +430,46 @@ export function projectOutOfColliders(
         } else {
           pt.z = c.cz + (dz >= 0 ? c.rz : -c.rz);
         }
+        hit = true;
+      }
+    } else {
+      // Oriented box. Rotate the world-space offset into the box's
+      // local frame (via q⁻¹), do the same axis-of-least-penetration
+      // push there, then rotate the resolved local point back to
+      // world space (via q).
+      //
+      // We use the standard "rotate vector by unit quaternion" formula
+      //   v' = 2·(u·v)·u + (2w² − 1)·v + 2w·(u × v)
+      // with u = (qx,qy,qz), w = qw. For the inverse (q⁻¹), the cross
+      // term flips sign (u → −u; the dot-product term is even in u).
+      const wx = pt.x - c.cx;
+      const wy = pt.y - c.cy;
+      const wz = pt.z - c.cz;
+      const [qx, qy, qz, qw] = c.rot;
+      const dot = qx * wx + qy * wy + qz * wz;
+      const k = 2 * qw * qw - 1;
+      // local = q⁻¹ * v * q  (cross sign flipped vs forward rotation)
+      const lx = 2 * dot * qx + k * wx - 2 * qw * (qy * wz - qz * wy);
+      const ly = 2 * dot * qy + k * wy - 2 * qw * (qz * wx - qx * wz);
+      const lz = 2 * dot * qz + k * wz - 2 * qw * (qx * wy - qy * wx);
+      const ox = c.rx - Math.abs(lx);
+      const oy = c.ry - Math.abs(ly);
+      const oz = c.rz - Math.abs(lz);
+      if (ox > 0 && oy > 0 && oz > 0) {
+        let rlx = lx;
+        let rly = ly;
+        let rlz = lz;
+        if (ox <= oy && ox <= oz) rlx = lx >= 0 ? c.rx : -c.rx;
+        else if (oy <= ox && oy <= oz) rly = ly >= 0 ? c.ry : -c.ry;
+        else rlz = lz >= 0 ? c.rz : -c.rz;
+        // world = q * local * q⁻¹  (forward rotation)
+        const dot2 = qx * rlx + qy * rly + qz * rlz;
+        const wxr = 2 * dot2 * qx + k * rlx + 2 * qw * (qy * rlz - qz * rly);
+        const wyr = 2 * dot2 * qy + k * rly + 2 * qw * (qz * rlx - qx * rlz);
+        const wzr = 2 * dot2 * qz + k * rlz + 2 * qw * (qx * rly - qy * rlx);
+        pt.x = c.cx + wxr;
+        pt.y = c.cy + wyr;
+        pt.z = c.cz + wzr;
         hit = true;
       }
     }
