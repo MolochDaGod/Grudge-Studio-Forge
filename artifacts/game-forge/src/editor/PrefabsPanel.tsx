@@ -1,5 +1,6 @@
 import { Loader2, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import {
   useListPrefabs,
   useDeletePrefab,
@@ -11,8 +12,16 @@ import {
 } from "@workspace/api-client-react";
 import type { Prefab } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/store/auth";
 import { useEditor } from "@/store/editor";
 import { useViewportTabs } from "@/store/viewportTabs";
+import {
+  pushPrefabToCloud,
+  deletePrefabFromCloud,
+  planPrefabSync,
+  recordSync,
+  retryPendingDeletes,
+} from "@/lib/cloud/prefabSync";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -46,6 +55,34 @@ export function PrefabsPanel() {
   const setHotbarSlot = useEditor((s) => s.setHotbarSlot);
 
   const qc = useQueryClient();
+  const isPuterSignedIn = useAuth((s) => s.isPuterSignedIn);
+  // Fire-and-forget cloud mirror that surfaces *real* failures (vs. guest
+  // skips) in the activity log. Wrapping at the call site keeps the
+  // happy-path mutation handlers free of try/catch noise.
+  const mirrorPush = (p: Prefab, label: string) => {
+    pushPrefabToCloud(p)
+      .then((r) => {
+        if (!r.ok && !r.skipped) {
+          pushLog("warn", `Cloud push of "${label}" failed: ${r.reason}`);
+        }
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        pushLog("warn", `Cloud push of "${label}" failed: ${msg}`);
+      });
+  };
+  const mirrorDelete = (projectIdArg: number, localId: number, label: string) => {
+    deletePrefabFromCloud(projectIdArg, localId)
+      .then((r) => {
+        if (!r.ok && !r.skipped) {
+          pushLog("warn", `Cloud delete of "${label}" failed: ${r.reason}`);
+        }
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        pushLog("warn", `Cloud delete of "${label}" failed: ${msg}`);
+      });
+  };
   const { data: prefabs = [], isLoading } = useListPrefabs(projectId ?? 0, {
     query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
   });
@@ -53,6 +90,143 @@ export function PrefabsPanel() {
   const updatePrefab = useUpdatePrefab();
   const createPrefab = useCreatePrefab();
   const createScript = useCreateScript();
+
+  // ── Cross-device prefab sync via Puter cloud ───────────────────────
+  //
+  // Once per (project, signed-in) pair: walk the cloud sidecar dir at
+  // `Grudge/prefabs/<projectId>/`, last-write-wins reconcile against the
+  // local API copy, and surface a single toast covering anything where the
+  // local copy was newer (so the user knows their edits propagated rather
+  // than being overwritten). Relies on the prefabs query already having
+  // resolved — `prefabs` is `[]` until then, which is fine: we only run
+  // the pass after `isLoading` flips false.
+  const syncedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!projectId || isLoading) return;
+    if (!isPuterSignedIn) {
+      syncedRef.current = null;
+      return;
+    }
+    const key = `${projectId}:${isPuterSignedIn ? 1 : 0}`;
+    if (syncedRef.current === key) return;
+    syncedRef.current = key;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await planPrefabSync(projectId, prefabs);
+        if (cancelled) return;
+        if (!result.ok) {
+          // Fail-closed: list/read of cloud sidecars failed, so we
+          // don't trust the snapshot. Skipping every push/pull this
+          // pass prevents stale local copies from clobbering cloud
+          // data on a transient Puter error. Reset the synced flag so
+          // the next mount can retry.
+          syncedRef.current = null;
+          pushLog(
+            "warn",
+            `Prefab cloud sync skipped (cloud unreachable): ${result.reason}`,
+          );
+          return;
+        }
+        const { plan, pendingDeletes } = result;
+        // Apply cloud-newer copies first so the local list reflects the
+        // freshest data before we push anything back up.
+        for (const { local, cloud: rec } of plan.toUpdateLocal) {
+          await updatePrefab.mutateAsync({
+            id: local.id,
+            data: { name: rec.name, data: rec.data },
+          });
+          // Anchor the conflict clock to the cloud's `updatedAt` (NOT
+          // whatever the API server stamped on this pull-driven write).
+          // Otherwise the next reconcile would see the synthetic local
+          // freshness and push it back up as a phantom "newer local copy".
+          recordSync(projectId, local.id, rec.cloudId, rec.updatedAt);
+        }
+        for (const rec of plan.toCreateLocal) {
+          const made = await createPrefab.mutateAsync({
+            data: { projectId, name: rec.name, data: rec.data },
+          });
+          // Same baseline rule for cloud-only adds — bind the freshly-
+          // minted local id to the cloud's identity *and* timestamp so
+          // we don't duplicate the sidecar on the next pass.
+          recordSync(projectId, made.id, rec.cloudId, rec.updatedAt);
+        }
+        // Push local-newer (and local-only) up. Awaited so the summary
+        // log line below reflects what actually landed.
+        for (const local of plan.toPushCloud) {
+          const r = await pushPrefabToCloud(local).catch((err: unknown) => ({
+            ok: false as const,
+            skipped: false as const,
+            reason: err instanceof Error ? err.message : String(err),
+          }));
+          if (!r.ok && !r.skipped) {
+            pushLog(
+              "warn",
+              `Cloud push of "${local.name}" failed: ${r.reason}`,
+            );
+          }
+        }
+        if (
+          plan.toUpdateLocal.length > 0 ||
+          plan.toCreateLocal.length > 0
+        ) {
+          qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+          pushLog(
+            "info",
+            `Prefab sync · pulled ${plan.toUpdateLocal.length + plan.toCreateLocal.length} from cloud, pushed ${plan.toPushCloud.length}.`,
+          );
+        } else if (plan.toPushCloud.length > 0) {
+          pushLog(
+            "info",
+            `Prefab sync · pushed ${plan.toPushCloud.length} to cloud.`,
+          );
+        }
+        // Retry queued cloud-deletes that failed on a previous run so
+        // the orphan sidecar doesn't loop back as `toCreateLocal` next
+        // time. We do this AFTER pulls so a successful retry doesn't
+        // race a stale create.
+        if (pendingDeletes.length > 0) {
+          const retry = await retryPendingDeletes(projectId);
+          if (retry.ok.length > 0) {
+            pushLog(
+              "info",
+              `Prefab sync · cleared ${retry.ok.length} pending cloud delete${retry.ok.length === 1 ? "" : "s"}.`,
+            );
+          }
+          if (retry.stillPending.length > 0) {
+            pushLog(
+              "warn",
+              `Prefab sync · ${retry.stillPending.length} cloud delete${retry.stillPending.length === 1 ? "" : "s"} still pending; will retry next session.`,
+            );
+          }
+        }
+        if (plan.localNewerNames.length > 0) {
+          const list = plan.localNewerNames.slice(0, 3).join(", ");
+          const more =
+            plan.localNewerNames.length > 3
+              ? ` (+${plan.localNewerNames.length - 3} more)`
+              : "";
+          toast.info(
+            `You have a newer local copy of ${list}${more} — pushed to Puter cloud.`,
+          );
+        }
+      } catch (err) {
+        // Reconcile failures shouldn't block the panel — surface in the log.
+        pushLog(
+          "warn",
+          `Prefab cloud sync failed: ${(err as Error).message}`,
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // We deliberately omit `prefabs`, `updatePrefab`, `createPrefab`, `qc`,
+    // and `pushLog` from the deps: the reconcile is one-shot per project
+    // sign-in pair, and re-running it on every prefab list change would
+    // create a feedback loop with the mutations it issues.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, isPuterSignedIn, isLoading]);
 
   // Auto-fill the hotbar the FIRST time a project shows starter prefabs and
   // the hotbar is still entirely empty. We match by name (case-insensitive)
@@ -107,7 +281,7 @@ export function PrefabsPanel() {
     if (!prefabSubScene || !projectId) return;
     const entities = getPrefabBufferEntities();
     try {
-      await updatePrefab.mutateAsync({
+      const updated = await updatePrefab.mutateAsync({
         id: prefabSubScene.prefabId,
         data: {
           name: prefabSubScene.prefabName,
@@ -117,6 +291,10 @@ export function PrefabsPanel() {
       qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
       markSaved();
       pushLog("info", `Saved prefab "${prefabSubScene.prefabName}" (${entities.length} entities)`);
+      // Mirror the new revision up to Puter so the user's other devices
+      // pick it up on next reconcile. Fire-and-forget — the local save
+      // already succeeded.
+      mirrorPush(updated, updated.name);
     } catch (err) {
       pushLog("error", `Save prefab failed: ${(err as Error).message}`);
     }
@@ -169,7 +347,7 @@ export function PrefabsPanel() {
       // Now flip the target. If turning ON, all previous players are
       // already cleared above; if turning OFF, this is a single mutation
       // with no other state to manage.
-      await updatePrefab.mutateAsync({
+      const updatedTarget = await updatePrefab.mutateAsync({
         id: target.id,
         data: {
           name: target.name,
@@ -181,6 +359,31 @@ export function PrefabsPanel() {
         },
       });
       qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      // Mirror the player-flag flip — and any prefabs we cleared above —
+      // to Puter so the mutual-exclusion invariant survives a device hop.
+      if (isPuterSignedIn) {
+        mirrorPush(updatedTarget, updatedTarget.name);
+        if (turningOn) {
+          for (const other of prefabs) {
+            if (other.id === target.id) continue;
+            const od = (other.data as PrefabPayload) ?? {};
+            if (od.isPlayerPrefab) {
+              mirrorPush(
+                {
+                  ...other,
+                  data: {
+                    entities: od.entities ?? [],
+                    rootId: od.rootId ?? null,
+                    isPlayerPrefab: false,
+                  },
+                  updatedAt: new Date().toISOString(),
+                },
+                other.name,
+              );
+            }
+          }
+        }
+      }
       pushLog(
         "info",
         turningOn
@@ -198,6 +401,11 @@ export function PrefabsPanel() {
     try {
       await deletePrefab.mutateAsync({ id: p.id });
       qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      // Drop the cloud sidecar too — otherwise the next reconcile would
+      // resurrect the prefab from Puter. The mapping is only forgotten
+      // on confirmed delete success, so a transient cloud failure will
+      // be retried on the next reconcile.
+      mirrorDelete(p.projectId, p.id, p.name);
       // Also clear the prefab from any hotbar slot it occupies — leaving a
       // stale id there would break the slot's spawn action.
       if (hotbar.includes(p.id)) {
@@ -272,13 +480,14 @@ export function PrefabsPanel() {
       for (const def of todo) {
         try {
           const entities = def.entities();
-          await createPrefab.mutateAsync({
+          const made = await createPrefab.mutateAsync({
             data: {
               projectId,
               name: def.name,
               data: { entities, rootId: entities[0]?.id ?? null },
             },
           });
+          mirrorPush(made, made.name);
           created++;
         } catch (err) {
           pushLog("error", `VFX "${def.name}" failed: ${(err as Error).message}`);
@@ -316,6 +525,7 @@ export function PrefabsPanel() {
         data: { entities, rootId: entities[0]?.id ?? null },
       },
     });
+    mirrorPush(res, res.name);
     return res;
   };
 
