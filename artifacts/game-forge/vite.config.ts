@@ -113,13 +113,10 @@ function excludeR3FFromCartographer(plugin: Plugin): Plugin {
   } as Plugin;
 }
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+// PORT is only used by the dev server (production deploy is `serve = "static"`).
+// Default to a placeholder so the prod build doesn't fail if the deploy build
+// context doesn't inherit `[services.env]`. Same rationale as BASE_PATH below.
+const rawPort = process.env.PORT || "24426";
 
 const port = Number(rawPort);
 
@@ -127,13 +124,13 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    "BASE_PATH environment variable is required but was not provided.",
-  );
-}
+// BASE_PATH is set by the platform at runtime (and by the workflow at dev
+// time via artifact.toml's `[services.env]`), but the deploy build context
+// doesn't always inherit it — and the artifact's `previewPath = "/"` means
+// the correct fallback is just "/". Defaulting here keeps the prod build
+// working even when the env var doesn't propagate, while still respecting
+// an explicit override (e.g. if this artifact is ever moved to a sub-path).
+const basePath = process.env.BASE_PATH || "/";
 
 export default defineConfig({
   base: basePath,
@@ -171,6 +168,13 @@ export default defineConfig({
         ]
       : []),
   ],
+  // Vite defaults `worker.format` to "iife", which rollup rejects whenever a
+  // worker bundle ends up code-split (our `colliderBaker.worker.ts` pulls in
+  // `vhacd-js` which lazy-imports its wasm loader). Switching to "es" lets
+  // rollup emit a multi-chunk worker output and unblocks the prod build.
+  worker: {
+    format: "es",
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
