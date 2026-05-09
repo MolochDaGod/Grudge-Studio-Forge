@@ -750,12 +750,12 @@ const MAX_HEALTH      = 50;
 // resolve to the GLB-baked clips instead.
 // Mirrored in lib/builtinModels.ts BUILTIN_MODEL_CLIPS (drift-tested).
 const RACE_CLIPS = {
-  warrior:       { idle: "idle", walk: "walk", run: "run", attack: "attack" },
-  dwarf:         { idle: "idle", walk: "walk", run: "run", attack: "attack" },
-  "frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack" },
-  elf:           { idle: "idle", walk: "walk", run: "run", attack: "attack" },
-  orc:           { idle: "idle", walk: "walk", run: "run", attack: "attack" },
-  skeleton:      { idle: "idle", walk: "walk", run: "run", attack: "attack" }
+  warrior:       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  dwarf:         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  elf:           { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  orc:           { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  skeleton:      { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" }
 };
 function publishClip(entityId, clip) {
   if (!clip || typeof window === "undefined") return;
@@ -812,10 +812,21 @@ exports.start = function(entity, ctx) {
     ctx.state.hostile = true;
     if (ctx.state.health <= 0) {
       ctx.state.dead = true;
-      // Hide the corpse permanently (no respawn) and emit a quiet death
-      // event. Intentionally NO "kill" emit — that would feed the
-      // deathmatch scoreboard.
-      ctx.scene.setPosition(entity.id, [entity.position[0], -200, entity.position[2]]);
+      // Stop steering immediately so the corpse doesn't keep gliding
+      // forward while the death clip plays.
+      if (ctx.state.seek)   ctx.state.seek.active   = false;
+      if (ctx.state.wander) ctx.state.wander.active = false;
+      ctx.state.vehicle.velocity.set(0, 0, 0);
+      // Publish the death clip up-front via the __agentClips bridge so
+      // EntityRenderer.LoadedModel crossfades into the one-shot collapse
+      // pose immediately (LoopOnce + clampWhenFinished — see the death
+      // branch in pickClipName's useFrame). The corpse stays where it
+      // fell rather than teleporting to y=-200 like before, so the
+      // pose is actually visible to the player. Intentionally NO
+      // "kill" emit — that would feed the deathmatch scoreboard.
+      if (entity.raceId && RACE_CLIPS[entity.raceId] && RACE_CLIPS[entity.raceId].death) {
+        publishClip(entity.id, RACE_CLIPS[entity.raceId].death);
+      }
       ctx.events.emit("enemyDied", { entityId: entity.id, killerId: fromId });
     }
   });

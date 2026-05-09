@@ -121,15 +121,16 @@ export interface RaceClipSet {
   death?: string;
 }
 // Names mirror `PROCEDURAL_BIPED_CLIP_NAMES` in `proceduralBipedAnimations.ts`.
-// Keep `death` empty until either the synthesizer adds a death pose or the
-// asset pack ships one — `publishClip` early-returns on a falsy clip name.
+// `death` resolves to the procedural one-shot collapse pose (the renderer
+// detects the "death" clip name and switches the AnimationAction to
+// LoopOnce + clampWhenFinished so the final pose holds).
 export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
-  "race:warrior":     { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
-  "race:dwarf":       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
-  "race:frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
-  "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
-  "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
-  "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:warrior":     { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:dwarf":       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
 };
 
 /** Look up the clip set for an entity's `raceId`. Returns undefined for

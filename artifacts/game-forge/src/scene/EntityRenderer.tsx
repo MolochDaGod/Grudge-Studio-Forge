@@ -16,7 +16,7 @@ import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
-import { synthesizeBipedClips } from "@/lib/proceduralBipedAnimations";
+import { synthesizeBipedClips, getBipedProfile } from "@/lib/proceduralBipedAnimations";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
   DEFAULT_SENSOR_LAYERS,
@@ -427,11 +427,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   // time. Cached per source scene inside `synthesizeBipedClips`, so
   // every clone of the same race shares the same `AnimationClip[]`
   // and drei's per-clone `useAnimations` binding stays cheap.
+  // Per-race profile picker: scene JSON references each race rig as
+  // `builtin:race:<id>`; we extract the id directly from the prop URL
+  // (LoadedModel receives the raw key, not the resolved CDN URL — see
+  // `resolveModelUrl` in the wrapper above) so the synthesizer can
+  // build per-race-tuned tracks. Non-race / user-imported bipeds fall
+  // back to `DEFAULT_BIPED_PROFILE` inside `getBipedProfile`.
+  const profile = useMemo(() => {
+    const raceId = url.startsWith("builtin:race:") ? url.slice("builtin:race:".length) : null;
+    return getBipedProfile(raceId);
+  }, [url]);
   const animations = useMemo(() => {
     if (gltf.animations.length > 0) return gltf.animations;
-    const synth = synthesizeBipedClips(gltf.scene);
+    const synth = synthesizeBipedClips(gltf.scene, profile);
     return synth.length > 0 ? synth : gltf.animations;
-  }, [gltf]);
+  }, [gltf, profile]);
   const { actions, names } = useAnimations(animations, groupRef);
 
   // Drop-to-ground: lift the inner scene so its world-y min = 0 in local
@@ -561,7 +571,20 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     if (!next) return;
     const prev = currentActionRef.current;
     if (prev && prev !== next) prev.fadeOut(0.2);
-    next.reset().fadeIn(0.2).play();
+    next.reset();
+    // The procedural "death" clip is a one-shot collapse. We switch
+    // the AnimationAction to LoopOnce + clampWhenFinished so the body
+    // holds the final fetal pose instead of springing back to T-pose.
+    // Other clips (idle/walk/run/attack) keep the default LoopRepeat
+    // so the existing crossfade behavior is preserved.
+    if (desired === "death") {
+      next.setLoop(THREE.LoopOnce, 1);
+      next.clampWhenFinished = true;
+    } else {
+      next.setLoop(THREE.LoopRepeat, Infinity);
+      next.clampWhenFinished = false;
+    }
+    next.fadeIn(0.2).play();
     currentActionRef.current = next;
     currentClipNameRef.current = desired;
   });

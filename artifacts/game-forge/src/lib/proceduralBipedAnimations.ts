@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { RaceId } from "./races";
 
 /**
  * Procedural locomotion clips for the toon-rts character pack.
@@ -12,13 +13,32 @@ import * as THREE from "three";
  * 3ds-Max biped skeleton (`Bip001 …` bone names) at load time and
  * inject the result into `gltf.animations`. The existing crossfade
  * bridge in `EntityRenderer.LoadedModel` then "just works" — drei's
- * `useAnimations` discovers `idle / walk / run / attack` and the
- * 0.2s crossfade in `pickClipName` transitions between them.
+ * `useAnimations` discovers `idle / walk / run / attack / death` and
+ * the 0.2s crossfade in `pickClipName` transitions between them.
  *
  * The synthesizer is a no-op for any rig that doesn't expose the
  * tell-tale Bip001 bone names, so it never fights the bundled
  * `builtin:character` rig (which already faces -Z and may carry its
  * own clips) or any user-imported model.
+ *
+ * Per-race personality: the synthesizer accepts an optional
+ * `BipedAnimProfile` that tunes clip duration, swing amplitude, pelvis
+ * bob, and picks one of four attack styles (overhand / cleave / stab /
+ * bow). The six toon-rts races each get their own profile in
+ * `BIPED_ANIM_PROFILES` — heavy-and-slow for dwarf/orc, light-and-fast
+ * with a bow draw for elf, stiff stab for skeleton, balanced overhand
+ * for warrior. Without a profile we fall back to `DEFAULT_PROFILE`
+ * (the original "warrior-ish" feel) so any non-race biped import still
+ * gets motion.
+ *
+ * Death pose: a one-shot 0.9s clip that collapses spine/legs/head into
+ * a forward fetal slump and drops the pelvis. The renderer detects the
+ * "death" clip name and switches the AnimationAction to LoopOnce +
+ * clampWhenFinished so the body stays in the final pose. Behaviors
+ * (e.g. `enemy-rpg`) publish "death" via `__agentClips` once the
+ * entity dies; pre-existing writers that didn't carry a death clip
+ * continue to work because the publish call early-returns on falsy
+ * clip names.
  *
  * Design choices:
  *   - We capture each animated bone's REST quaternion + position from
@@ -82,7 +102,12 @@ function deltaQ(axis: THREE.Vector3, angle: number): THREE.Quaternion {
 }
 
 /** Per-bone delta for a locomotion gait at normalized phase t∈[0,1].
- *  Returns null for bones we don't drive (so the track is skipped). */
+ *  Returns null for bones we don't drive (so the track is skipped).
+ *
+ *  Amplitudes are passed in by the caller so per-race profiles can
+ *  vary stride length / arm swing / knee lift independently for walk
+ *  vs. run.
+ */
 function locoDelta(
   boneName: string,
   t: number,
@@ -123,15 +148,84 @@ function idleDelta(boneName: string, t: number): THREE.Quaternion | null {
   }
 }
 
-function attackDelta(boneName: string, t: number): THREE.Quaternion | null {
-  // Triangle wave: 0 → 1 over [0,0.5], 1 → 0 over [0.5,1] — a single
-  // overhand strike that returns to the rest pose so the next clip
-  // crossfades cleanly back into idle / walk / run.
+/** Catalog of attack styles used by `BipedAnimProfile.attackKind`.
+ *  - `overhand`: classic right-arm chop (warrior, default fallback)
+ *  - `cleave`:   wide two-handed swing both arms together (orc, dwarf)
+ *  - `stab`:     forward thrust with right arm extended (skeleton)
+ *  - `bow`:      held draw-and-release with both arms (elf) */
+export type AttackKind = "overhand" | "cleave" | "stab" | "bow";
+
+function attackDelta(
+  kind: AttackKind,
+  boneName: string,
+  t: number,
+  amp: number,
+): THREE.Quaternion | null {
+  // Triangle wave: 0 → 1 over [0,0.5], 1 → 0 over [0.5,1] — strikes
+  // return to the rest pose so the next clip crossfades cleanly back
+  // into idle / walk / run.
   const u = t < 0.5 ? t * 2 : 1 - (t - 0.5) * 2;
+  switch (kind) {
+    case "overhand":
+      switch (boneName) {
+        case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -u * 1.6 * amp);
+        case "Bip001 R Forearm":  return deltaQ(Z_AXIS,  u * 0.8 * amp);
+        case "Bip001 Spine":      return deltaQ(Y_AXIS,  u * 0.20);
+        default:                  return null;
+      }
+    case "cleave":
+      // Both arms swing together — meatier, slower-feeling chop. The
+      // spine rotates further so it reads as a whole-body commit.
+      switch (boneName) {
+        case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -u * 1.4 * amp);
+        case "Bip001 L UpperArm": return deltaQ(Z_AXIS, -u * 1.2 * amp);
+        case "Bip001 R Forearm":  return deltaQ(Z_AXIS,  u * 0.6 * amp);
+        case "Bip001 L Forearm":  return deltaQ(Z_AXIS,  u * 0.5 * amp);
+        case "Bip001 Spine":      return deltaQ(Y_AXIS,  u * 0.30);
+        default:                  return null;
+      }
+    case "stab":
+      // Right arm punches forward to roughly horizontal, forearm
+      // straightens. Faster recovery — the triangle wave is the same
+      // duration but the smaller arc reads as a snap.
+      switch (boneName) {
+        case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -u * 1.3 * amp);
+        case "Bip001 R Forearm":  return deltaQ(Z_AXIS, -u * 0.3 * amp);
+        case "Bip001 Spine":      return deltaQ(Y_AXIS,  u * 0.12);
+        default:                  return null;
+      }
+    case "bow":
+      // Held draw: L arm sustains forward (constant offset), R arm
+      // pulls back over the first half of the clip then releases. The
+      // sustained left-arm offset uses `0.5 + u*0.5` so it ramps up at
+      // the start and stays near max for the rest of the cycle (we'd
+      // see a pop otherwise — the rest pose has both arms at side).
+      switch (boneName) {
+        case "Bip001 L UpperArm": return deltaQ(Z_AXIS, -(0.6 + u * 0.7) * amp);
+        case "Bip001 L Forearm":  return deltaQ(Z_AXIS,  0.20 * amp);
+        case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -(0.4 + u * 0.5) * amp);
+        case "Bip001 R Forearm":  return deltaQ(Z_AXIS,  (0.3 + u * 0.9) * amp);
+        case "Bip001 Spine":      return deltaQ(Y_AXIS, -u * 0.15);
+        default:                  return null;
+      }
+  }
+}
+
+/** Death pose: collapse forward into a fetal slump over ~0.6 of the
+ *  clip, then hold. The renderer plays this with LoopOnce + clamp so
+ *  the final pose persists. Pelvis Y also drops via `deathPelvisOffset`. */
+function deathDelta(boneName: string, t: number): THREE.Quaternion | null {
+  const u = Math.min(1, t * 1.6);
+  const ease = u * u * (3 - 2 * u); // smoothstep
   switch (boneName) {
-    case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -u * 1.6);
-    case "Bip001 R Forearm":  return deltaQ(Z_AXIS,  u * 0.8);
-    case "Bip001 Spine":      return deltaQ(Y_AXIS,  u * 0.2);
+    case "Bip001 Spine":      return deltaQ(Z_AXIS, -ease * 1.20);
+    case "Bip001 Head":       return deltaQ(Z_AXIS, -ease * 0.50);
+    case "Bip001 L Thigh":    return deltaQ(Z_AXIS, -ease * 0.95);
+    case "Bip001 R Thigh":    return deltaQ(Z_AXIS, -ease * 0.95);
+    case "Bip001 L Calf":     return deltaQ(Z_AXIS,  ease * 1.40);
+    case "Bip001 R Calf":     return deltaQ(Z_AXIS,  ease * 1.40);
+    case "Bip001 L UpperArm": return deltaQ(Z_AXIS,  ease * 0.55);
+    case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -ease * 0.55);
     default:                  return null;
   }
 }
@@ -140,6 +234,12 @@ function attackDelta(boneName: string, t: number): THREE.Quaternion | null {
  *  Centered around 0 so the entity transform stays on the navmesh. */
 function locoPelvisOffset(t: number, bobAmp: number): number {
   return Math.abs(Math.sin(t * Math.PI * 2)) * bobAmp - bobAmp * 0.5;
+}
+
+function deathPelvisOffset(t: number): number {
+  const u = Math.min(1, t * 1.6);
+  const ease = u * u * (3 - 2 * u);
+  return -ease * 0.45;
 }
 
 function buildClip(
@@ -202,18 +302,115 @@ function buildClip(
   return new THREE.AnimationClip(name, duration, tracks);
 }
 
-/** Per-source-scene cache so we only walk the bone tree once per GLB,
- *  even when many entities share the same race model. WeakMap so
- *  unloaded scenes can be GC'd. */
-const CLIP_CACHE = new WeakMap<THREE.Object3D, THREE.AnimationClip[]>();
+/** Per-race tuning for `synthesizeBipedClips`. All durations are seconds;
+ *  smaller = faster cycle. Amplitudes are radians for limb-swing peaks. */
+export interface BipedAnimProfile {
+  /** Stable id used as the cache key alongside the source scene, so two
+   *  entities of different races can share the same GLB without
+   *  cross-contaminating each other's procedural clips. */
+  id: string;
+  idleDur: number;
+  walk: { dur: number; ampLeg: number; ampArm: number; ampKnee: number; bob: number };
+  run:  { dur: number; ampLeg: number; ampArm: number; ampKnee: number; bob: number };
+  attack: { kind: AttackKind; amp: number; dur: number };
+}
 
-/** Build (and cache) idle / walk / run / attack clips for a Bip001 rig.
- *  Returns an empty array if the rig doesn't look like a Max biped. */
-export function synthesizeBipedClips(root: THREE.Object3D): THREE.AnimationClip[] {
-  const cached = CLIP_CACHE.get(root);
+/** Default "warrior-ish" profile used for any biped that isn't a known
+ *  race (user-imported toon-rts model, etc.). Mirrors the original
+ *  pre-profile constants so behavior is unchanged for legacy paths. */
+export const DEFAULT_BIPED_PROFILE: BipedAnimProfile = {
+  id: "default",
+  idleDur: 2.4,
+  walk:   { dur: 1.0,  ampLeg: 0.45, ampArm: 0.35, ampKnee: 0.6, bob: 0.04 },
+  run:    { dur: 0.55, ampLeg: 0.70, ampArm: 0.55, ampKnee: 0.95, bob: 0.08 },
+  attack: { kind: "overhand", amp: 1.0, dur: 0.5 },
+};
+
+/** Per-race personality table. Tuned by feel:
+ *  - warrior:  balanced overhand swing (matches default)
+ *  - dwarf:    slow heavy stride, two-handed cleave
+ *  - frost-dwarf: marginally heavier than dwarf
+ *  - elf:      light & fast, bow-draw attack
+ *  - orc:      brute swagger, big cleave
+ *  - skeleton: stiffer stride, fast snappy stab
+ */
+export const BIPED_ANIM_PROFILES: Record<RaceId, BipedAnimProfile> = {
+  warrior: {
+    id: "warrior",
+    idleDur: 2.4,
+    walk:   { dur: 1.00, ampLeg: 0.45, ampArm: 0.35, ampKnee: 0.60, bob: 0.04 },
+    run:    { dur: 0.55, ampLeg: 0.70, ampArm: 0.55, ampKnee: 0.95, bob: 0.08 },
+    attack: { kind: "overhand", amp: 1.00, dur: 0.50 },
+  },
+  dwarf: {
+    id: "dwarf",
+    idleDur: 2.6,
+    walk:   { dur: 1.15, ampLeg: 0.36, ampArm: 0.30, ampKnee: 0.52, bob: 0.05 },
+    run:    { dur: 0.65, ampLeg: 0.58, ampArm: 0.48, ampKnee: 0.85, bob: 0.10 },
+    attack: { kind: "cleave", amp: 1.10, dur: 0.62 },
+  },
+  "frost-dwarf": {
+    id: "frost-dwarf",
+    idleDur: 2.8,
+    walk:   { dur: 1.20, ampLeg: 0.34, ampArm: 0.30, ampKnee: 0.50, bob: 0.05 },
+    run:    { dur: 0.70, ampLeg: 0.55, ampArm: 0.46, ampKnee: 0.82, bob: 0.10 },
+    attack: { kind: "cleave", amp: 1.20, dur: 0.68 },
+  },
+  elf: {
+    id: "elf",
+    idleDur: 2.2,
+    walk:   { dur: 0.90, ampLeg: 0.50, ampArm: 0.42, ampKnee: 0.55, bob: 0.035 },
+    run:    { dur: 0.48, ampLeg: 0.78, ampArm: 0.62, ampKnee: 0.95, bob: 0.07 },
+    attack: { kind: "bow", amp: 1.00, dur: 0.85 },
+  },
+  orc: {
+    id: "orc",
+    idleDur: 2.5,
+    walk:   { dur: 1.10, ampLeg: 0.50, ampArm: 0.46, ampKnee: 0.72, bob: 0.06 },
+    run:    { dur: 0.60, ampLeg: 0.80, ampArm: 0.66, ampKnee: 1.00, bob: 0.10 },
+    attack: { kind: "cleave", amp: 1.25, dur: 0.55 },
+  },
+  skeleton: {
+    id: "skeleton",
+    idleDur: 1.8,
+    walk:   { dur: 0.95, ampLeg: 0.40, ampArm: 0.46, ampKnee: 0.42, bob: 0.03 },
+    run:    { dur: 0.52, ampLeg: 0.66, ampArm: 0.66, ampKnee: 0.72, bob: 0.06 },
+    attack: { kind: "stab", amp: 0.95, dur: 0.42 },
+  },
+};
+
+/** Look up a profile by race id; returns the default profile if none
+ *  matches (so user-imported bipeds and the legacy `builtin:character`
+ *  rig still get reasonable motion). */
+export function getBipedProfile(raceId: string | null | undefined): BipedAnimProfile {
+  if (!raceId) return DEFAULT_BIPED_PROFILE;
+  const key = raceId as RaceId;
+  return BIPED_ANIM_PROFILES[key] ?? DEFAULT_BIPED_PROFILE;
+}
+
+/** Per-source-scene cache so we only walk the bone tree once per GLB,
+ *  even when many entities share the same race model. Nested by
+ *  profile id because two entities sharing the same GLB but different
+ *  profiles need their own clip arrays. WeakMap so unloaded scenes
+ *  can be GC'd. */
+const CLIP_CACHE = new WeakMap<THREE.Object3D, Map<string, THREE.AnimationClip[]>>();
+
+/** Build (and cache) idle / walk / run / attack / death clips for a
+ *  Bip001 rig. Returns an empty array if the rig doesn't look like a
+ *  Max biped. */
+export function synthesizeBipedClips(
+  root: THREE.Object3D,
+  profile: BipedAnimProfile = DEFAULT_BIPED_PROFILE,
+): THREE.AnimationClip[] {
+  let perScene = CLIP_CACHE.get(root);
+  if (!perScene) {
+    perScene = new Map();
+    CLIP_CACHE.set(root, perScene);
+  }
+  const cached = perScene.get(profile.id);
   if (cached) return cached;
   if (!hasBipedSkeleton(root)) {
-    CLIP_CACHE.set(root, []);
+    perScene.set(profile.id, []);
     return [];
   }
   const rest = new Map<string, BoneRest>();
@@ -223,13 +420,21 @@ export function synthesizeBipedClips(root: THREE.Object3D): THREE.AnimationClip[
     rest.set(name, { q: bone.quaternion.clone(), p: bone.position.clone() });
   }
 
+  const w = profile.walk;
+  const r = profile.run;
+  const a = profile.attack;
   const clips: THREE.AnimationClip[] = [
-    buildClip("idle",   2.4,  rest, idleDelta,                             null,                                  24),
-    buildClip("walk",   1.0,  rest, (b, t) => locoDelta(b, t, 0.45, 0.35, 0.6),  (t) => locoPelvisOffset(t, 0.04), 20),
-    buildClip("run",    0.55, rest, (b, t) => locoDelta(b, t, 0.70, 0.55, 0.95), (t) => locoPelvisOffset(t, 0.08), 20),
-    buildClip("attack", 0.5,  rest, attackDelta,                           null,                                  16),
+    buildClip("idle",   profile.idleDur, rest, idleDelta,                                  null,                                       24),
+    buildClip("walk",   w.dur,           rest, (b, t) => locoDelta(b, t, w.ampLeg, w.ampArm, w.ampKnee), (t) => locoPelvisOffset(t, w.bob), 20),
+    buildClip("run",    r.dur,           rest, (b, t) => locoDelta(b, t, r.ampLeg, r.ampArm, r.ampKnee), (t) => locoPelvisOffset(t, r.bob), 20),
+    buildClip("attack", a.dur,           rest, (b, t) => attackDelta(a.kind, b, t, a.amp),  null,                                       16),
+    // Death is intentionally a one-shot — the renderer plays it with
+    // LoopOnce + clampWhenFinished so the body stays in the final
+    // collapsed pose. Duration is a touch longer than attack so the
+    // ease has room to breathe.
+    buildClip("death",  0.9,             rest, deathDelta,                                  deathPelvisOffset,                          18),
   ];
-  CLIP_CACHE.set(root, clips);
+  perScene.set(profile.id, clips);
   return clips;
 }
 
@@ -242,4 +447,5 @@ export const PROCEDURAL_BIPED_CLIP_NAMES = {
   walk: "walk",
   run: "run",
   attack: "attack",
+  death: "death",
 } as const;
