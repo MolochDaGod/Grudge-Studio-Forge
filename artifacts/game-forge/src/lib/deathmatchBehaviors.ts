@@ -740,13 +740,19 @@ const MAX_HEALTH      = 50;
 // Writing a clip name that doesn't exist in the GLB is a safe no-op
 // (drei's useAnimations finds no matching action and the heuristic
 // fallback in EntityRenderer.LoadedModel runs instead).
+// Empty clip slots intentional — the toon-rts character GLBs ship
+// with zero baked animations today (verified by direct CDN probe).
+// publishClip early-returns on a falsy clip, so the wiring is a safe
+// no-op until either the asset pack re-exports locomotion clips or
+// this table is filled in to point at a separate animation rig.
+// Mirrored in lib/builtinModels.ts BUILTIN_MODEL_CLIPS (drift-tested).
 const RACE_CLIPS = {
-  warrior:       { idle: "WK_male_loco_01_idle",  walk: "WK_male_loco_02_walk",  run: "WK_male_loco_03_run",  attack: "WK_male_1h_sword_07_attack" },
-  dwarf:         { idle: "DWF_male_loco_01_idle", walk: "DWF_male_loco_02_walk", run: "DWF_male_loco_03_run", attack: "DWF_male_2h_07_attack" },
-  "frost-dwarf": { idle: "BRB_male_loco_01_idle", walk: "BRB_male_loco_02_walk", run: "BRB_male_loco_03_run", attack: "BRB_spearman_07_attack" },
-  elf:           { idle: "ELF_male_loco_01_idle", walk: "ELF_male_loco_02_walk", run: "ELF_male_loco_03_run", attack: "ELF_male_longbow_07_attack" },
-  orc:           { idle: "ORC_male_loco_01_idle", walk: "ORC_male_loco_02_walk", run: "ORC_male_loco_03_run", attack: "ORC_male_2h_07_attack" },
-  skeleton:      { idle: "WK_male_loco_01_idle",  walk: "WK_male_loco_02_walk",  run: "WK_male_loco_03_run",  attack: "WK_male_1h_sword_07_attack" }
+  warrior:       { idle: "", walk: "", run: "", attack: "" },
+  dwarf:         { idle: "", walk: "", run: "", attack: "" },
+  "frost-dwarf": { idle: "", walk: "", run: "", attack: "" },
+  elf:           { idle: "", walk: "", run: "", attack: "" },
+  orc:           { idle: "", walk: "", run: "", attack: "" },
+  skeleton:      { idle: "", walk: "", run: "", attack: "" }
 };
 function publishClip(entityId, clip) {
   if (!clip || typeof window === "undefined") return;

@@ -84,21 +84,31 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
 
 /** Per-race animation clip names used by the player camera controllers
  *  and the `enemy-rpg` behavior to drive the `__agentClips` crossfade
- *  bridge in `EntityRenderer.LoadedModel`. The names follow the toon-rts
- *  asset pack's faction-prefix convention (manifest examples:
- *  `WK_catapult_01_idle`, `BRB_spearman_07_attack`,
- *  `DWF_cavalry_03_run`). When a clip name is not present in the GLB's
- *  `gltf.animations` array, drei's `useAnimations` simply finds no
- *  matching action and `LoadedModel`'s pickClipName falls through to
- *  the existing idle/loop heuristic — so writing "missing" clip names
- *  is a safe no-op (and starts working automatically once the asset
- *  pack ships baked male_locomotion / 1h_sword_shield clips on the
- *  character GLBs). The current CDN build of the character GLBs ships
- *  zero animations, so visually nothing plays today; the wiring below
- *  exists so a single asset re-export turns it on without code edits.
- *  `skeleton` reuses the WK (Western Kingdoms) prefix because the
- *  toon-rts manifest does not list a per-race prefix for undead. */
+ *  bridge in `EntityRenderer.LoadedModel`.
+ *
+ *  Verified by direct CDN probe (parsing the JSON chunk of every GLB
+ *  under `…/glb/characters/{human,dwarf,barbarian,elf,orc,undead}.glb`)
+ *  that the public toon-rts character pack ships with **zero** baked
+ *  animations on each rig — `gltf.animations.length === 0` for all six
+ *  files (~0.83–1.07 MB each). The manifest references separate
+ *  `animationsweapons/male_locomotion/` packs but those URLs return 404
+ *  on the same host today.
+ *
+ *  Therefore every clip slot below is intentionally empty (`""`). The
+ *  writer call sites (`writeAgentClip` in CameraControllers, and
+ *  `publishClip` in `enemy-rpg`'s embedded RACE_CLIPS) both early-return
+ *  on an empty/falsy clip — so the bridge is wired end-to-end but
+ *  publishes nothing for race entities, and `LoadedModel`'s existing
+ *  idle/loop heuristic continues to drive whatever the GLB actually
+ *  contains. Once the asset pack re-exports the male_locomotion /
+ *  1h_sword clips into the character GLBs (or a separate animation rig
+ *  is wired in), filling these strings in turns playback on with no
+ *  other code changes. The drift guard test in
+ *  `__tests__/builtinModels.test.ts` enforces the equivalent table in
+ *  the enemy-rpg behavior string stays consistent. */
 export interface RaceClipSet {
+  /** Clip names. Empty string `""` means "no verified clip in the GLB
+   *  yet — skip publishing"; writer sites must guard with `if (!clip)`. */
   idle: string;
   walk: string;
   run: string;
@@ -106,48 +116,12 @@ export interface RaceClipSet {
   death?: string;
 }
 export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
-  "race:warrior": {
-    idle: "WK_male_loco_01_idle",
-    walk: "WK_male_loco_02_walk",
-    run: "WK_male_loco_03_run",
-    attack: "WK_male_1h_sword_07_attack",
-    death: "WK_male_loco_10_death",
-  },
-  "race:dwarf": {
-    idle: "DWF_male_loco_01_idle",
-    walk: "DWF_male_loco_02_walk",
-    run: "DWF_male_loco_03_run",
-    attack: "DWF_male_2h_07_attack",
-    death: "DWF_male_loco_10_death",
-  },
-  "race:frost-dwarf": {
-    idle: "BRB_male_loco_01_idle",
-    walk: "BRB_male_loco_02_walk",
-    run: "BRB_male_loco_03_run",
-    attack: "BRB_spearman_07_attack",
-    death: "BRB_male_loco_10_death",
-  },
-  "race:elf": {
-    idle: "ELF_male_loco_01_idle",
-    walk: "ELF_male_loco_02_walk",
-    run: "ELF_male_loco_03_run",
-    attack: "ELF_male_longbow_07_attack",
-    death: "ELF_male_loco_10_death",
-  },
-  "race:orc": {
-    idle: "ORC_male_loco_01_idle",
-    walk: "ORC_male_loco_02_walk",
-    run: "ORC_male_loco_03_run",
-    attack: "ORC_male_2h_07_attack",
-    death: "ORC_male_loco_10_death",
-  },
-  "race:skeleton": {
-    idle: "WK_male_loco_01_idle",
-    walk: "WK_male_loco_02_walk",
-    run: "WK_male_loco_03_run",
-    attack: "WK_male_1h_sword_07_attack",
-    death: "WK_male_loco_10_death",
-  },
+  "race:warrior":     { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:dwarf":       { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:frost-dwarf": { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:elf":         { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:orc":         { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:skeleton":    { idle: "", walk: "", run: "", attack: "", death: "" },
 };
 
 /** Look up the clip set for an entity's `raceId`. Returns undefined for

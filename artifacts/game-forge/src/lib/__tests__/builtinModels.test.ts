@@ -13,48 +13,43 @@ describe("BUILTIN_MODEL_YAW_OFFSETS", () => {
 });
 
 describe("BUILTIN_MODEL_CLIPS", () => {
-  it("provides idle / walk / run for every race in the catalog", () => {
+  it("registers a clip set entry for every race in the catalog", () => {
+    // Entry presence is what matters — the values are intentionally
+    // empty strings today because the toon-rts character GLBs ship
+    // with zero baked animations (verified by CDN probe). Writers
+    // skip on a falsy clip name, so empty values are a safe no-op.
     for (const r of RACES) {
       const key = `race:${r.id}`;
       const clips = BUILTIN_MODEL_CLIPS[key];
       expect(clips, `missing clip set for ${key}`).toBeDefined();
-      expect(clips.idle.length, `${key} idle empty`).toBeGreaterThan(0);
-      expect(clips.walk.length, `${key} walk empty`).toBeGreaterThan(0);
-      expect(clips.run.length, `${key} run empty`).toBeGreaterThan(0);
+      for (const field of ["idle", "walk", "run"] as const) {
+        expect(typeof clips[field], `${key}.${field} should be string`).toBe("string");
+      }
     }
   });
 
   it("getRaceClips returns the matching set by raceId and undefined for unknown races", () => {
     const orc = getRaceClips("orc");
-    expect(orc?.run).toBe(BUILTIN_MODEL_CLIPS["race:orc"].run);
+    expect(orc).toBe(BUILTIN_MODEL_CLIPS["race:orc"]);
     expect(getRaceClips(undefined)).toBeUndefined();
     expect(getRaceClips(null)).toBeUndefined();
     expect(getRaceClips("not-a-race")).toBeUndefined();
   });
 
-  it("enemy-rpg behavior's embedded RACE_CLIPS table mirrors BUILTIN_MODEL_CLIPS for every race (drift guard)", () => {
+  it("enemy-rpg behavior's embedded RACE_CLIPS table covers every race id (drift guard)", () => {
     // The behavior script (`deathmatchBehaviors.ts → ENEMY_RPG`) compiles
     // through `new Function()` and can't import builtinModels — so the
-    // table is duplicated inline. This test extracts the inline object
-    // literal and verifies every race entry's idle/walk/run/attack clip
-    // names match the canonical registry, so future edits to one side
-    // can't silently drift.
+    // table is duplicated inline. We can't easily eval the snippet, so
+    // we sanity-check that every canonical race id appears as a key in
+    // the embedded table. Once real clip names land, expand this test
+    // to assert exact name parity.
     const src = BUILTIN_BEHAVIORS["enemy-rpg"];
     for (const r of RACES) {
-      const canonical = BUILTIN_MODEL_CLIPS[`race:${r.id}`];
-      for (const field of ["idle", "walk", "run", "attack"] as const) {
-        const expected = canonical[field];
-        if (!expected) continue;
-        // Each entry contains all four fields on one line, e.g.
-        //   warrior:       { idle: "WK_male_loco_01_idle", walk: ... }
-        // Just assert the canonical clip name string appears in the
-        // source — a far cheaper drift guard than hand-parsing the
-        // embedded JS object.
-        expect(
-          src.includes(`"${expected}"`),
-          `enemy-rpg RACE_CLIPS missing ${r.id}.${field}="${expected}"`,
-        ).toBe(true);
-      }
+      const keyToken = r.id.includes("-") ? `"${r.id}":` : `${r.id}:`;
+      expect(
+        src.includes(keyToken),
+        `enemy-rpg RACE_CLIPS is missing race "${r.id}"`,
+      ).toBe(true);
     }
   });
 });
