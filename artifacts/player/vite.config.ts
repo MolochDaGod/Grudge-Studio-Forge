@@ -58,6 +58,18 @@ export default defineConfig({
       // The shared editor `@` alias points at game-forge's src. All scene
       // files (EntityRenderer, PlayRuntime, agentRuntime, …) live there.
       { find: /^@\//, replacement: GAME_FORGE_SRC + "/" },
+      // Race portrait PNGs imported by `lib/races.ts` (which PlayRuntime
+      // pulls in for per-race stats since Task #107). These icons are
+      // editor-only UI but `races.ts` imports them eagerly at module load,
+      // so Rollup needs to resolve them. Mirrors game-forge's `@assets`
+      // alias — points at the same `attached_assets/` directory at the
+      // monorepo root. The resulting ~60KB of PNG bytes get inlined into
+      // the single-file player bundle (assetsInlineLimit is 100MB).
+      {
+        find: /^@assets\//,
+        replacement:
+          path.resolve(import.meta.dirname, "..", "..", "attached_assets") + "/",
+      },
       // Same Rapier shim the editor uses — keeps `@react-three/rapier`'s
       // transitive `@dimforge/rapier3d-compat` import flowing through the
       // streaming WASM build instead of the inlined-base64 -compat one.
