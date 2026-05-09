@@ -734,6 +734,25 @@ exports.update = function(entity, ctx) {
 const ENEMY_RPG = String.raw`
 // ── Tunables ─────────────────────────────────────────────────────────────────
 const MAX_HEALTH      = 50;
+// Per-race animation clip names — mirrors BUILTIN_MODEL_CLIPS in
+// lib/builtinModels.ts. We embed the table inline here because behavior
+// scripts compile through new Function() and can't import modules.
+// Writing a clip name that doesn't exist in the GLB is a safe no-op
+// (drei's useAnimations finds no matching action and the heuristic
+// fallback in EntityRenderer.LoadedModel runs instead).
+const RACE_CLIPS = {
+  warrior:       { idle: "WK_male_loco_01_idle",  walk: "WK_male_loco_02_walk",  run: "WK_male_loco_03_run",  attack: "WK_male_1h_sword_07_attack" },
+  dwarf:         { idle: "DWF_male_loco_01_idle", walk: "DWF_male_loco_02_walk", run: "DWF_male_loco_03_run", attack: "DWF_male_2h_07_attack" },
+  "frost-dwarf": { idle: "BRB_male_loco_01_idle", walk: "BRB_male_loco_02_walk", run: "BRB_male_loco_03_run", attack: "BRB_spearman_07_attack" },
+  elf:           { idle: "ELF_male_loco_01_idle", walk: "ELF_male_loco_02_walk", run: "ELF_male_loco_03_run", attack: "ELF_male_longbow_07_attack" },
+  orc:           { idle: "ORC_male_loco_01_idle", walk: "ORC_male_loco_02_walk", run: "ORC_male_loco_03_run", attack: "ORC_male_2h_07_attack" },
+  skeleton:      { idle: "WK_male_loco_01_idle",  walk: "WK_male_loco_02_walk",  run: "WK_male_loco_03_run",  attack: "WK_male_1h_sword_07_attack" }
+};
+function publishClip(entityId, clip) {
+  if (!clip || typeof window === "undefined") return;
+  if (!window.__agentClips) window.__agentClips = new Map();
+  window.__agentClips.set(entityId, clip);
+}
 const SEEK_MAX_SPEED  = 3.2;   // m/s when chasing
 const PATROL_SPEED    = 1.2;   // m/s when wandering peacefully
 const AGGRO_RADIUS    = 8;     // become hostile if player gets this close
@@ -858,8 +877,31 @@ exports.update = function(entity, ctx) {
 
   const vxf = ctx.state.vehicle.velocity.x;
   const vzf = ctx.state.vehicle.velocity.z;
-  if (Math.abs(vxf) + Math.abs(vzf) > 0.05) {
+  const speedXZ = Math.abs(vxf) + Math.abs(vzf);
+  if (speedXZ > 0.05) {
     entity.rotation[1] = Math.atan2(vxf, vzf);
+  }
+
+  // Per-race animation clip publish: idle while peaceful (or stopped in
+  // melee), walk while wandering, run while chasing, attack on the
+  // frame we just swung. Skips when the entity has no raceId so legacy
+  // non-toon-rts enemies fall through to LoadedModel's idle/loop
+  // heuristic.
+  const clipsForRace = entity.raceId && RACE_CLIPS[entity.raceId];
+  if (clipsForRace) {
+    var clip;
+    if (ctx.state.dead) {
+      clip = clipsForRace.idle;
+    } else if (!ctx.state.hostile) {
+      clip = speedXZ > 0.05 ? clipsForRace.walk : clipsForRace.idle;
+    } else if (dist > MELEE_RANGE) {
+      clip = clipsForRace.run;
+    } else {
+      clip = (ctx.state.lastAttack === ctx.time.elapsed && clipsForRace.attack)
+        ? clipsForRace.attack
+        : clipsForRace.idle;
+    }
+    publishClip(entity.id, clip);
   }
 };
 `;

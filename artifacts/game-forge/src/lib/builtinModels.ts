@@ -64,6 +64,101 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
 };
 
+/** Per-builtin-model Y rotation offset (radians) applied at render time
+ *  inside the entity's rigidbody/group, so the visual model faces the
+ *  same direction as the physics body's "forward". The toon-rts character
+ *  GLBs (the six `race:*` keys below) were authored facing +Z, while
+ *  three.js' convention — and our physics yaw + camera forward — assume
+ *  -Z, so they need a half-turn to look the right way. The original
+ *  `builtin:character` rig already faces -Z, so it is intentionally
+ *  absent from this map (its effective offset is 0). EntityRenderer's
+ *  resolution order is: `entity.model.yawOffset` ?? this map ?? 0. */
+export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
+  "race:warrior": Math.PI,
+  "race:dwarf": Math.PI,
+  "race:frost-dwarf": Math.PI,
+  "race:elf": Math.PI,
+  "race:orc": Math.PI,
+  "race:skeleton": Math.PI,
+};
+
+/** Per-race animation clip names used by the player camera controllers
+ *  and the `enemy-rpg` behavior to drive the `__agentClips` crossfade
+ *  bridge in `EntityRenderer.LoadedModel`. The names follow the toon-rts
+ *  asset pack's faction-prefix convention (manifest examples:
+ *  `WK_catapult_01_idle`, `BRB_spearman_07_attack`,
+ *  `DWF_cavalry_03_run`). When a clip name is not present in the GLB's
+ *  `gltf.animations` array, drei's `useAnimations` simply finds no
+ *  matching action and `LoadedModel`'s pickClipName falls through to
+ *  the existing idle/loop heuristic — so writing "missing" clip names
+ *  is a safe no-op (and starts working automatically once the asset
+ *  pack ships baked male_locomotion / 1h_sword_shield clips on the
+ *  character GLBs). The current CDN build of the character GLBs ships
+ *  zero animations, so visually nothing plays today; the wiring below
+ *  exists so a single asset re-export turns it on without code edits.
+ *  `skeleton` reuses the WK (Western Kingdoms) prefix because the
+ *  toon-rts manifest does not list a per-race prefix for undead. */
+export interface RaceClipSet {
+  idle: string;
+  walk: string;
+  run: string;
+  attack?: string;
+  death?: string;
+}
+export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
+  "race:warrior": {
+    idle: "WK_male_loco_01_idle",
+    walk: "WK_male_loco_02_walk",
+    run: "WK_male_loco_03_run",
+    attack: "WK_male_1h_sword_07_attack",
+    death: "WK_male_loco_10_death",
+  },
+  "race:dwarf": {
+    idle: "DWF_male_loco_01_idle",
+    walk: "DWF_male_loco_02_walk",
+    run: "DWF_male_loco_03_run",
+    attack: "DWF_male_2h_07_attack",
+    death: "DWF_male_loco_10_death",
+  },
+  "race:frost-dwarf": {
+    idle: "BRB_male_loco_01_idle",
+    walk: "BRB_male_loco_02_walk",
+    run: "BRB_male_loco_03_run",
+    attack: "BRB_spearman_07_attack",
+    death: "BRB_male_loco_10_death",
+  },
+  "race:elf": {
+    idle: "ELF_male_loco_01_idle",
+    walk: "ELF_male_loco_02_walk",
+    run: "ELF_male_loco_03_run",
+    attack: "ELF_male_longbow_07_attack",
+    death: "ELF_male_loco_10_death",
+  },
+  "race:orc": {
+    idle: "ORC_male_loco_01_idle",
+    walk: "ORC_male_loco_02_walk",
+    run: "ORC_male_loco_03_run",
+    attack: "ORC_male_2h_07_attack",
+    death: "ORC_male_loco_10_death",
+  },
+  "race:skeleton": {
+    idle: "WK_male_loco_01_idle",
+    walk: "WK_male_loco_02_walk",
+    run: "WK_male_loco_03_run",
+    attack: "WK_male_1h_sword_07_attack",
+    death: "WK_male_loco_10_death",
+  },
+};
+
+/** Look up the clip set for an entity's `raceId`. Returns undefined for
+ *  entities with no race (e.g. the legacy `builtin:character` player) so
+ *  callers can skip the `__agentClips` write and let LoadedModel's
+ *  idle/loop heuristic pick a clip. */
+export function getRaceClips(raceId: string | undefined | null): RaceClipSet | undefined {
+  if (!raceId) return undefined;
+  return BUILTIN_MODEL_CLIPS[`race:${raceId}`];
+}
+
 export const BUILTIN_MODEL_KEY = (key: keyof typeof BUILTIN_MODELS | string) =>
   `builtin:${key}`;
 

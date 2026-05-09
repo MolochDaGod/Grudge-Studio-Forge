@@ -15,7 +15,7 @@ import type { TriggerEvent } from "./GameBus";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
-import { resolveBuiltinModel } from "@/lib/builtinModels";
+import { resolveBuiltinModel, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
   DEFAULT_SENSOR_LAYERS,
@@ -261,6 +261,7 @@ function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProp
         label={entity.model?.label}
         selected={selected}
         onPick={onPick}
+        yawOffset={entity.model?.yawOffset}
         // Convention: any entity literally named "Map" is treated as
         // an environment / level mesh and drop-aligned to local Y=0
         // so its visible floor sits flush with the invisible Ground
@@ -381,9 +382,14 @@ interface LoadedModelProps {
    *  "walk" | "climb" | "swim" | "dig" | "slip" | "damage" | "nojump".
    *  See `.agents/skills/spatial-queries-and-surfaces/SKILL.md` §3. */
   surfaceTag?: string;
+  /** Optional Y-axis rotation override (radians) applied to a child group
+   *  inside groupRef so the visual mesh faces the same direction the
+   *  physics body's "forward" already points (-Z in three.js convention).
+   *  Resolution: this prop > `BUILTIN_MODEL_YAW_OFFSETS[builtinKey]` > 0. */
+  yawOffset?: number;
 }
 
-function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag }: LoadedModelProps) {
+function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag, yawOffset }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
   // `false, false` so drei does NOT install its own DRACO/Meshopt
@@ -630,6 +636,26 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     };
   }, [label, cloned]);
 
+  // ── Yaw offset: some asset packs author their characters facing +Z while
+  // three.js' (and our physics yaw + camera forward) convention is -Z. We
+  // apply the corrective rotation on a CHILD group nested INSIDE
+  // `groupRef` so that:
+  //   • bone animations on the cloned scene still play in the model's
+  //     own local frame (the action's tracks reference the cloned root,
+  //     not our wrapper group),
+  //   • selection, label, picking, and userData stamping continue to
+  //     read off `groupRef` / `cloned` exactly as before,
+  //   • the rigidbody / entity transform stays untouched — only the
+  //     visual mesh spins.
+  // Resolution order: explicit per-entity `entity.model.yawOffset`
+  // (handled by the renderer caller via the `clip`/`tint` style of prop
+  // drilling — see EntityRenderer below where it forwards
+  // `entity.model.yawOffset` as the `yawOffset` prop) > registry default
+  // for the stripped builtin key > 0.
+  const builtinKey = url.startsWith("builtin:") ? url.slice("builtin:".length) : null;
+  const registryYaw = builtinKey ? BUILTIN_MODEL_YAW_OFFSETS[builtinKey] ?? 0 : 0;
+  const effectiveYaw = (typeof yawOffset === "number" ? yawOffset : registryYaw);
+
   return (
     <group
       ref={groupRef}
@@ -638,8 +664,10 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
         onPick?.();
       }}
     >
-      <primitive object={cloned} />
-      {selected && <ModelSelectionBox target={cloned} />}
+      <group rotation={[0, effectiveYaw, 0]}>
+        <primitive object={cloned} />
+        {selected && <ModelSelectionBox target={cloned} />}
+      </group>
     </group>
   );
 }

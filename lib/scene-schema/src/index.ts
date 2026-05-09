@@ -109,6 +109,13 @@ export interface ModelComponent {
   /** Name of the GLB sub-node this proxy refers to (informational, used by the
    *  inspector and for debugging — runtime does not key off it). */
   subNode?: string;
+  /** Extra Y rotation (radians) applied to the rendered GLB to compensate
+   *  for asset-pack authoring conventions where "forward" is +Z instead of
+   *  three.js' default -Z. Does NOT change physics or rigidbody yaw — the
+   *  body still rotates to camera yaw — only the model inside the body
+   *  spins by this offset. Defaults to 0; per-model defaults live in
+   *  `BUILTIN_MODEL_YAW_OFFSETS` (game-forge `lib/builtinModels.ts`). */
+  yawOffset?: number;
 }
 
 export type ControllerKind = "none" | "thirdPerson" | "firstPerson";

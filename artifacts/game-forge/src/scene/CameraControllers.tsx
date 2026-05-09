@@ -8,6 +8,21 @@ import { useKeyboardState } from "@/lib/keyboard";
 import type { CameraMode, SceneEntity } from "@/scene/types";
 import { getPlaySession } from "@/scene/playSession";
 import { getRaceStats } from "@/scene/PlayRuntime";
+import { getRaceClips } from "@/lib/builtinModels";
+
+/** Publish the desired animation clip name for an entity into the same
+ *  `window.__agentClips` map the FSM agent bridge writes to (see
+ *  `PlayScriptRuntime.tsx`). `EntityRenderer.LoadedModel` reads this
+ *  each frame in `pickClipName` and crossfades over 0.2s. Writing a
+ *  clip name that doesn't exist in the GLB is a safe no-op (drei's
+ *  `useAnimations` simply finds no matching action and the heuristic
+ *  fallback runs). */
+function writeAgentClip(entityId: string, clip: string | undefined): void {
+  if (!clip) return;
+  const w = window as unknown as { __agentClips?: Map<string, string> };
+  w.__agentClips ??= new Map();
+  w.__agentClips.set(entityId, clip);
+}
 
 /**
  * Returns true when an external system (the deathmatch script runtime) has
@@ -358,10 +373,23 @@ export function ThirdPersonCameraController({
       // points down -Z at rest (matching three.js' "forward = -Z"
       // convention) and our forward vector at yaw=0 is (sin0, cos0) =
       // (0, +1). So feeding `yaw` directly aligns the model with the
-      // direction the camera is looking; an extra +π flips them around
-      // so we'd be staring at the back of their head — which is exactly
-      // the bug the user reported.
+      // direction the camera is looking. Asset packs that authored their
+      // characters facing +Z (toon-rts) get a per-model `yawOffset`
+      // applied inside EntityRenderer.LoadedModel — physics yaw stays
+      // canonical here.
       rotateBody(body, yawRef.current);
+    }
+
+    // Per-race locomotion clip: write idle / walk / run into the
+    // __agentClips bridge so LoadedModel crossfades to the matching clip
+    // name. We skip the write entirely when the player has no raceId
+    // (legacy `builtin:character`) so the existing idle/loop heuristic
+    // continues to pick the first available clip in the GLB.
+    const clips = getRaceClips(player.raceId);
+    if (clips) {
+      const isMoving = mx !== 0 || mz !== 0;
+      const isRunning = isMoving && !!k["Shift"];
+      writeAgentClip(player.id, isRunning ? clips.run : isMoving ? clips.walk : clips.idle);
     }
 
     // Fortnite-style over-the-shoulder camera.
@@ -494,6 +522,17 @@ export function FirstPersonCameraController({
       // FPS: same convention as the TPS path above — yaw alone aligns the
       // body's forward axis with the camera's look direction.
       rotateBody(body, yawRef.current);
+    }
+
+    // Same locomotion clip publish as the TPS controller — see comment
+    // there. In FPS the player rarely sees their own body, but enemies
+    // observing the player and any 3rd-party spectator camera still
+    // benefit from the correct walk/run animation playing.
+    const clips = getRaceClips(player.raceId);
+    if (clips) {
+      const isMoving = mx !== 0 || mz !== 0;
+      const isRunning = isMoving && !!k["Shift"];
+      writeAgentClip(player.id, isRunning ? clips.run : isMoving ? clips.walk : clips.idle);
     }
 
     // Camera at "head" height
