@@ -817,15 +817,40 @@ exports.start = function(entity, ctx) {
       if (ctx.state.seek)   ctx.state.seek.active   = false;
       if (ctx.state.wander) ctx.state.wander.active = false;
       ctx.state.vehicle.velocity.set(0, 0, 0);
-      // Publish the death clip up-front via the __agentClips bridge so
-      // EntityRenderer.LoadedModel crossfades into the one-shot collapse
-      // pose immediately (LoopOnce + clampWhenFinished — see the death
-      // branch in pickClipName's useFrame). The corpse stays where it
-      // fell rather than teleporting to y=-200 like before, so the
-      // pose is actually visible to the player. Intentionally NO
-      // "kill" emit — that would feed the deathmatch scoreboard.
+      // Publish the death clip up-front so the mesh contorts into the
+      // procedural fetal slump even when ragdoll physics aren't
+      // available (LoopOnce + clampWhenFinished — see the death
+      // branch in EntityRenderer.pickClipName's useFrame). This is
+      // the zero-physics fallback; with physics it plays on top of
+      // the tumbling capsule, which works because the mixer drives
+      // bones while Rapier drives the body's transform.
       if (entity.raceId && RACE_CLIPS[entity.raceId] && RACE_CLIPS[entity.raceId].death) {
         publishClip(entity.id, RACE_CLIPS[entity.raceId].death);
+      }
+      // Hand the body off to physics: switch to dynamic, unlock
+      // rotations, and apply an impulse along killer→victim so the
+      // direction of the killing hit influences the fall (a shot
+      // from the front knocks the body backward). When the killer
+      // isn't resolvable we fall straight down under gravity (zero
+      // impulse) instead of an arbitrary push. Intentionally NO
+      // "kill" emit — that would feed the deathmatch scoreboard.
+      if (typeof ctx.scene.ragdoll === "function") {
+        var pushX = 0, pushZ = 0, hasDir = false;
+        if (fromId) {
+          var killer = ctx.scene.findById(fromId);
+          if (killer) {
+            pushX = entity.position[0] - killer.position[0];
+            pushZ = entity.position[2] - killer.position[2];
+            hasDir = (pushX * pushX + pushZ * pushZ) > 1e-4;
+          }
+        }
+        // Small upward kick (Y=0.5) when we have a horizontal push so
+        // the body lifts off the ground briefly and tumbles instead of
+        // sliding flat. With no direction we send a zero vector — the
+        // helper handles that as a pure free-fall under gravity.
+        var pushY = hasDir ? 0.5 : 0;
+        var force = hasDir ? 7 : 0;
+        ctx.scene.ragdoll(entity.id, [pushX, pushY, pushZ], force);
       }
       ctx.events.emit("enemyDied", { entityId: entity.id, killerId: fromId });
     }

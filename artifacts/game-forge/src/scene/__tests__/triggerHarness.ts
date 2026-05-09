@@ -51,6 +51,7 @@ export function makePickupContext(): {
       cameraDirection: () => [0, 0, -1] as [number, number, number],
       freeze: noop,
       unfreeze: noop,
+      ragdoll: () => false,
       parentOf: () => undefined,
       childrenOf: () => [],
       descendantsOf: () => [],

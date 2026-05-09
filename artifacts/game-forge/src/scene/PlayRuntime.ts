@@ -118,6 +118,11 @@ export function makeContext(opts: {
   despawn: (id: string) => boolean;
   freeze: (id: string) => void;
   unfreeze: (id: string) => void;
+  ragdoll: (
+    id: string,
+    direction: [number, number, number],
+    force?: number,
+  ) => boolean;
   parentOf: (id: string) => ScriptEntity | undefined;
   childrenOf: (id: string) => ScriptEntity[];
   descendantsOf: (id: string) => ScriptEntity[];
@@ -170,6 +175,7 @@ export function makeContext(opts: {
       cameraDirection: opts.cameraDirection,
       freeze: opts.freeze,
       unfreeze: opts.unfreeze,
+      ragdoll: opts.ragdoll,
       parentOf: opts.parentOf,
       childrenOf: opts.childrenOf,
       descendantsOf: opts.descendantsOf,

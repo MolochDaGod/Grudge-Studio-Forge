@@ -212,6 +212,23 @@ export interface ScriptContext {
     freeze: (id: string) => void;
     /** Inverse of {@link freeze}. */
     unfreeze: (id: string) => void;
+    /** Switch the entity's RigidBody into a free-falling ragdoll: forces
+     *  it dynamic (in case it was kinematic), unlocks all rotation axes,
+     *  re-enables gravity, and applies a one-shot impulse so the corpse
+     *  tumbles in `direction` (which is normalized internally — pass an
+     *  un-normalized killer→victim vector). The body then settles against
+     *  the floor / props under regular Rapier physics. Subsequent agent
+     *  FSM ticks for this id stop writing `setLinvel`, so gravity and the
+     *  impulse run uncontested. The mesh's procedural death pose still
+     *  plays on top — the AnimationMixer drives bones, physics drives
+     *  the capsule. Returns true when an active rigid body was found.
+     *  Falsy returns (no body / non-physics group) leave the entity
+     *  posed by the death clip alone — the zero-physics fallback. */
+    ragdoll: (
+      id: string,
+      direction: [number, number, number],
+      force?: number,
+    ) => boolean;
     // --- Hierarchy traversal (scene-graph parent/children/world space) -----
     /** Direct parent of `id`, or undefined for top-level entities. */
     parentOf: (id: string) => ScriptEntity | undefined;

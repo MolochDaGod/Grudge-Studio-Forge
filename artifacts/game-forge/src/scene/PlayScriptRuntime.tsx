@@ -168,6 +168,12 @@ export function PlayScriptRuntime({
   const teleport = (id: string, position: [number, number, number]): boolean => {
     const bodyOrGroup = bodyRefs.current.get(id);
     if (!bodyOrGroup) return false;
+    // A teleport implies the entity is being relocated under script
+    // control (respawn, scene-load reset, etc.) — drop any prior
+    // ragdoll mark so the agent FSM can write velocities again. If
+    // the entity is still meant to be a corpse, the death handler
+    // can re-call `ctx.scene.ragdoll(...)` after the teleport.
+    session.ragdolledBodies.delete(id);
     if ("setNextKinematicTranslation" in bodyOrGroup) {
       const body = bodyOrGroup;
       const t = body.bodyType?.() ?? 0;
@@ -393,7 +399,13 @@ export function PlayScriptRuntime({
             navFindPath(loadedNav, s, e, { areaFilter: filter })
         : undefined;
       const { velocity, reached } = actor.tick({ position: pos, dt: delta, plan });
-      if (bg && "setLinvel" in bg) {
+      // Ragdolled corpses must NOT have their velocity overwritten —
+      // gravity + the death-impulse run uncontested while the body
+      // settles. The death pose still plays on the mesh.
+      const isRagdolled = session.ragdolledBodies.has(id);
+      if (isRagdolled) {
+        // skip — ragdoll owns this body now.
+      } else if (bg && "setLinvel" in bg) {
         // Preserve the body's current Y so gravity / jumps stay intact.
         const cur = bg.linvel();
         bg.setLinvel({ x: velocity[0], y: cur.y, z: velocity[2] }, true);
@@ -523,6 +535,53 @@ export function PlayScriptRuntime({
     };
     const freeze = (id: string) => session.frozenBodies.add(id);
     const unfreeze = (id: string) => session.frozenBodies.delete(id);
+    // Switch a body into a free-falling ragdoll. We force Dynamic
+    // (RigidBodyType=0) so kinematic / fixed bodies start responding
+    // to gravity, unlock all rotation axes (the player rotation lock
+    // would otherwise keep the corpse standing upright while it falls),
+    // re-enable gravity, then apply a one-shot impulse in `direction`.
+    // The id is added to `session.ragdolledBodies` so the agent FSM
+    // tick below stops calling `setLinvel` on it (otherwise the FSM
+    // would zero our impulse on the very next frame).
+    const ragdoll = (
+      id: string,
+      direction: [number, number, number],
+      force = 6,
+    ): boolean => {
+      const bodyOrGroup = bodyRefs.current.get(id);
+      if (!bodyOrGroup || !("setLinvel" in bodyOrGroup)) return false;
+      const body = bodyOrGroup;
+      // Normalize the direction so callers can pass un-normalized
+      // killer→victim vectors directly. A zero vector falls straight
+      // down — still a valid ragdoll.
+      const len = Math.hypot(direction[0], direction[1], direction[2]);
+      const nx = len > 1e-4 ? direction[0] / len : 0;
+      const ny = len > 1e-4 ? direction[1] / len : 0;
+      const nz = len > 1e-4 ? direction[2] / len : 0;
+      try {
+        // RigidBodyType.Dynamic === 0 (stable across rapier3d versions —
+        // see CameraControllers.tsx for the same enum-by-value usage).
+        if (body.bodyType?.() !== 0) {
+          body.setBodyType(0, true);
+        }
+        body.setEnabledRotations(true, true, true, true);
+        body.setGravityScale(1, true);
+        // Mass-aware impulse: scale by the body's mass so heavier
+        // characters don't fly. Falls back to `force` directly when
+        // mass is unavailable (Rapier returns 0 for fixed bodies).
+        const m = body.mass?.() ?? 1;
+        const k = force * Math.max(m, 0.5);
+        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        body.applyImpulse({ x: nx * k, y: ny * k, z: nz * k }, true);
+      } catch {
+        // RigidBody types vary slightly across react-three-rapier
+        // versions; if any setter is missing we still mark the body
+        // as ragdolled so the FSM writes stop and the death pose plays.
+      }
+      session.ragdolledBodies.add(id);
+      return true;
+    };
     const cameraPosition = (): [number, number, number] => [
       camera.position.x,
       camera.position.y,
@@ -634,6 +693,7 @@ export function PlayScriptRuntime({
         },
         freeze,
         unfreeze,
+        ragdoll,
         parentOf,
         childrenOf,
         descendantsOf,

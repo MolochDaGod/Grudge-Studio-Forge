@@ -29,6 +29,14 @@ export interface PlaySession {
    *  on the resurrection frame. Scripts manipulate this set via
    *  `ctx.scene.freeze(id)` / `ctx.scene.unfreeze(id)`. */
   frozenBodies: Set<string>;
+  /** Set of entity ids that have been switched to a free-falling
+   *  ragdoll by `ctx.scene.ragdoll(id, ...)`. Once an entity is in
+   *  this set the agent FSM tick stops writing `setLinvel` to its
+   *  body so gravity + the impulse can run uncontested. The procedural
+   *  death pose still plays on the mesh (the AnimationMixer doesn't
+   *  care that physics now owns the capsule transform). Cleared by
+   *  `resetPlaySession` when play mode tears down. */
+  ragdolledBodies: Set<string>;
   /** Map of entity id → `state.clock.elapsedTime` at which a teleport was
    *  queued. Read by external writers (camera controller) to skip their
    *  own write when the stamp equals the CURRENT frame's elapsedTime.
@@ -54,6 +62,7 @@ export function getPlaySession(): PlaySession {
       states: new EntityStates(),
       triggers: new TriggerInbox(),
       frozenBodies: new Set(),
+      ragdolledBodies: new Set(),
       pendingTeleportFrame: new Map(),
       epoch: 0,
     };
@@ -68,6 +77,7 @@ export function resetPlaySession(): void {
   session.states.reset();
   session.triggers.reset();
   session.frozenBodies.clear();
+  session.ragdolledBodies.clear();
   session.pendingTeleportFrame.clear();
   session.epoch += 1;
 }
