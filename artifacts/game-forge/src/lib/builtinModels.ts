@@ -94,18 +94,18 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
  *  `animationsweapons/male_locomotion/` packs but those URLs return 404
  *  on the same host today.
  *
- *  Therefore every clip slot below is intentionally empty (`""`). The
- *  writer call sites (`writeAgentClip` in CameraControllers, and
- *  `publishClip` in `enemy-rpg`'s embedded RACE_CLIPS) both early-return
- *  on an empty/falsy clip — so the bridge is wired end-to-end but
- *  publishes nothing for race entities, and `LoadedModel`'s existing
- *  idle/loop heuristic continues to drive whatever the GLB actually
- *  contains. Once the asset pack re-exports the male_locomotion /
- *  1h_sword clips into the character GLBs (or a separate animation rig
- *  is wired in), filling these strings in turns playback on with no
- *  other code changes. The drift guard test in
- *  `__tests__/builtinModels.test.ts` enforces the equivalent table in
- *  the enemy-rpg behavior string stays consistent. */
+ *  Workaround: `LoadedModel` calls `synthesizeBipedClips(gltf.scene)`
+ *  whenever a GLB has zero baked clips AND its rig matches the Max
+ *  biped naming convention (`Bip001 Pelvis / R UpperArm / L Thigh`).
+ *  That synthesizer emits `idle / walk / run / attack` AnimationClips
+ *  procedurally against the shared skeleton, which the names below
+ *  point at. Once the asset pack re-exports real locomotion clips
+ *  into the character GLBs, the synthesizer becomes a silent no-op
+ *  (the GLB-baked clips win) and these names continue to resolve.
+ *
+ *  The drift guard test in `__tests__/builtinModels.test.ts` enforces
+ *  the equivalent embedded table in the enemy-rpg behavior string
+ *  stays consistent. */
 export interface RaceClipSet {
   /** Clip names. Empty string `""` means "no verified clip in the GLB
    *  yet — skip publishing"; writer sites must guard with `if (!clip)`. */
@@ -115,13 +115,16 @@ export interface RaceClipSet {
   attack?: string;
   death?: string;
 }
+// Names mirror `PROCEDURAL_BIPED_CLIP_NAMES` in `proceduralBipedAnimations.ts`.
+// Keep `death` empty until either the synthesizer adds a death pose or the
+// asset pack ships one — `publishClip` early-returns on a falsy clip name.
 export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
-  "race:warrior":     { idle: "", walk: "", run: "", attack: "", death: "" },
-  "race:dwarf":       { idle: "", walk: "", run: "", attack: "", death: "" },
-  "race:frost-dwarf": { idle: "", walk: "", run: "", attack: "", death: "" },
-  "race:elf":         { idle: "", walk: "", run: "", attack: "", death: "" },
-  "race:orc":         { idle: "", walk: "", run: "", attack: "", death: "" },
-  "race:skeleton":    { idle: "", walk: "", run: "", attack: "", death: "" },
+  "race:warrior":     { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:dwarf":       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
+  "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "" },
 };
 
 /** Look up the clip set for an entity's `raceId`. Returns undefined for

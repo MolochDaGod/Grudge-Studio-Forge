@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BUILTIN_MODEL_YAW_OFFSETS, BUILTIN_MODEL_CLIPS, getRaceClips } from "../builtinModels";
 import { BUILTIN_BEHAVIORS } from "../deathmatchBehaviors";
+import { PROCEDURAL_BIPED_CLIP_NAMES } from "../proceduralBipedAnimations";
 import { RACES } from "../races";
 
 describe("BUILTIN_MODEL_YAW_OFFSETS", () => {
@@ -13,18 +14,21 @@ describe("BUILTIN_MODEL_YAW_OFFSETS", () => {
 });
 
 describe("BUILTIN_MODEL_CLIPS", () => {
-  it("registers a clip set entry for every race in the catalog", () => {
-    // Entry presence is what matters — the values are intentionally
-    // empty strings today because the toon-rts character GLBs ship
-    // with zero baked animations (verified by CDN probe). Writers
-    // skip on a falsy clip name, so empty values are a safe no-op.
+  it("registers a clip set entry for every race in the catalog, pointing at the procedural-biped clip names", () => {
+    // The toon-rts character GLBs ship with zero baked animations
+    // (verified by CDN probe), so `LoadedModel` falls back to the
+    // procedural-biped synthesizer. The names below must match what
+    // that synthesizer emits — `synthesizeBipedClips` in
+    // `proceduralBipedAnimations.ts` — or writes via __agentClips
+    // resolve to nothing and the rig stays in T-pose.
     for (const r of RACES) {
       const key = `race:${r.id}`;
       const clips = BUILTIN_MODEL_CLIPS[key];
       expect(clips, `missing clip set for ${key}`).toBeDefined();
-      for (const field of ["idle", "walk", "run"] as const) {
-        expect(typeof clips[field], `${key}.${field} should be string`).toBe("string");
-      }
+      expect(clips.idle).toBe(PROCEDURAL_BIPED_CLIP_NAMES.idle);
+      expect(clips.walk).toBe(PROCEDURAL_BIPED_CLIP_NAMES.walk);
+      expect(clips.run).toBe(PROCEDURAL_BIPED_CLIP_NAMES.run);
+      expect(clips.attack).toBe(PROCEDURAL_BIPED_CLIP_NAMES.attack);
     }
   });
 
@@ -49,6 +53,16 @@ describe("BUILTIN_MODEL_CLIPS", () => {
       expect(
         src.includes(keyToken),
         `enemy-rpg RACE_CLIPS is missing race "${r.id}"`,
+      ).toBe(true);
+      // Exact-name parity: every race must point at the procedural
+      // clip names. Detect a row like
+      //   warrior:       { idle: "idle", walk: "walk", run: "run", attack: "attack" }
+      const rowRe = new RegExp(
+        `${keyToken.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{[^}]*idle:\\s*"${PROCEDURAL_BIPED_CLIP_NAMES.idle}"[^}]*walk:\\s*"${PROCEDURAL_BIPED_CLIP_NAMES.walk}"[^}]*run:\\s*"${PROCEDURAL_BIPED_CLIP_NAMES.run}"[^}]*attack:\\s*"${PROCEDURAL_BIPED_CLIP_NAMES.attack}"`,
+      );
+      expect(
+        rowRe.test(src),
+        `enemy-rpg RACE_CLIPS for "${r.id}" must use procedural clip names ${JSON.stringify(PROCEDURAL_BIPED_CLIP_NAMES)}`,
       ).toBe(true);
     }
   });

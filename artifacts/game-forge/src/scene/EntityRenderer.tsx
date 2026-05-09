@@ -16,6 +16,7 @@ import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
+import { synthesizeBipedClips } from "@/lib/proceduralBipedAnimations";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
   DEFAULT_SENSOR_LAYERS,
@@ -417,7 +418,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   // .clone() breaks them — would T-pose every instance after the first).
   const cloned = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf]);
   const groupRef = useRef<THREE.Group>(null);
-  const { actions, names } = useAnimations(gltf.animations, groupRef);
+  // Augment the GLB's clip list with procedural idle/walk/run/attack
+  // when the rig is a Max biped (`Bip001 …` bones) AND no clips were
+  // baked in. This is what brings the toon-rts character pack to life
+  // — those GLBs ship with `gltf.animations.length === 0` and the
+  // separate `animationsweapons/male_locomotion/` URLs in the manifest
+  // 404 today, so we synthesize against the shared skeleton at load
+  // time. Cached per source scene inside `synthesizeBipedClips`, so
+  // every clone of the same race shares the same `AnimationClip[]`
+  // and drei's per-clone `useAnimations` binding stays cheap.
+  const animations = useMemo(() => {
+    if (gltf.animations.length > 0) return gltf.animations;
+    const synth = synthesizeBipedClips(gltf.scene);
+    return synth.length > 0 ? synth : gltf.animations;
+  }, [gltf]);
+  const { actions, names } = useAnimations(animations, groupRef);
 
   // Drop-to-ground: lift the inner scene so its world-y min = 0 in local
   // space. We do this on the cloned scene's position (NOT the entity

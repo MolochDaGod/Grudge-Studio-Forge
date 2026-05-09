@@ -740,19 +740,22 @@ const MAX_HEALTH      = 50;
 // Writing a clip name that doesn't exist in the GLB is a safe no-op
 // (drei's useAnimations finds no matching action and the heuristic
 // fallback in EntityRenderer.LoadedModel runs instead).
-// Empty clip slots intentional — the toon-rts character GLBs ship
-// with zero baked animations today (verified by direct CDN probe).
-// publishClip early-returns on a falsy clip, so the wiring is a safe
-// no-op until either the asset pack re-exports locomotion clips or
-// this table is filled in to point at a separate animation rig.
+// The clip names below match what synthesizeBipedClips in
+// lib/proceduralBipedAnimations.ts emits when it detects a Bip001
+// rig with zero baked animations (the toon-rts character pack today)
+// — so resolution flows: writer → __agentClips → LoadedModel →
+// procedural clip → AnimationMixer crossfade. Once the asset pack
+// re-exports real locomotion clips into the character GLBs, the
+// synthesizer becomes a silent no-op and these names continue to
+// resolve to the GLB-baked clips instead.
 // Mirrored in lib/builtinModels.ts BUILTIN_MODEL_CLIPS (drift-tested).
 const RACE_CLIPS = {
-  warrior:       { idle: "", walk: "", run: "", attack: "" },
-  dwarf:         { idle: "", walk: "", run: "", attack: "" },
-  "frost-dwarf": { idle: "", walk: "", run: "", attack: "" },
-  elf:           { idle: "", walk: "", run: "", attack: "" },
-  orc:           { idle: "", walk: "", run: "", attack: "" },
-  skeleton:      { idle: "", walk: "", run: "", attack: "" }
+  warrior:       { idle: "idle", walk: "walk", run: "run", attack: "attack" },
+  dwarf:         { idle: "idle", walk: "walk", run: "run", attack: "attack" },
+  "frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack" },
+  elf:           { idle: "idle", walk: "walk", run: "run", attack: "attack" },
+  orc:           { idle: "idle", walk: "walk", run: "run", attack: "attack" },
+  skeleton:      { idle: "idle", walk: "walk", run: "run", attack: "attack" }
 };
 function publishClip(entityId, clip) {
   if (!clip || typeof window === "undefined") return;
