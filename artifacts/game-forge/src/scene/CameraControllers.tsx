@@ -401,13 +401,25 @@ export function ThirdPersonCameraController({
     //
     // The "boom" (camera pivot) sits at the player's shoulder height,
     // offset SIDEWAYS along `right` by SHOULDER_OFFSET. The camera then
-    // sits behind that pivot along -forward by `dist`, with a small
-    // upward `pitch` lift. Crucially, lookAt targets a point that uses
-    // the SAME right-shoulder offset — that's what keeps the character
-    // pinned to the LEFT third of the screen and the aim reticle on the
-    // RIGHT third (the over-the-shoulder feel). If we instead looked at
-    // the body centre, the character would slide back to the middle and
-    // we'd be back to a generic orbit cam.
+    // sits BEHIND that pivot along -forward by `dist`, with the lookAt
+    // target placed AHEAD along +forward at the same shoulder line.
+    // Crucially, lookAt uses the SAME right-shoulder offset — that's
+    // what keeps the character pinned to the LEFT third of the screen
+    // and the aim reticle on the RIGHT third (the over-the-shoulder
+    // feel). If we instead looked at the body centre, the character
+    // would slide back to the middle and we'd be back to a generic
+    // orbit cam.
+    //
+    // Sign convention (CRITICAL — earlier versions had this inverted
+    // and the camera ended up IN FRONT of the player making "eye
+    // contact" with them): three.js' default forward is -Z, and
+    // `rotateBody(body, yawRef)` above leaves the player's facing as
+    // -Z at yaw=0. So the player's actual world-space forward vector
+    // is `(-sinY, 0, -cosY)` — the NEGATIVE of (sinY, 0, cosY). To
+    // place the camera BEHIND the player we therefore ADD the
+    // `(sinY*cosP, sinP, cosY*cosP)` vector to the shoulder pivot
+    // (that direction is opposite to the player's facing), and aim
+    // SUBTRACTS that same vector to look out in front.
     const d = distRef.current;
     const SHOULDER_OFFSET = 0.55;   // metres to the right of the spine
     const SHOULDER_HEIGHT = 1.55;   // ~head height for an average rig
@@ -417,11 +429,13 @@ export function ThirdPersonCameraController({
     const sinP = Math.sin(pitchRef.current);
     const cosP = Math.cos(pitchRef.current);
 
-    // forward = where the camera (and player) are looking; right is its
-    // 90° clockwise rotation in the XZ plane.
-    const fx =  sinY * cosP;
-    const fy =  sinP;
-    const fz =  cosY * cosP;
+    // Vector pointing FROM the player TOWARD where the camera sits
+    // (i.e. opposite of the player's facing). Player faces -Z at
+    // yaw=0, so this vector is +Z at yaw=0 → camera lands behind.
+    const bx = sinY * cosP;
+    const by = sinP;
+    const bz = cosY * cosP;
+    // Right vector (player's right at yaw=0 is +X).
     const rx =  cosY;
     const rz = -sinY;
 
@@ -430,13 +444,14 @@ export function ThirdPersonCameraController({
     const sy = pos.y + SHOULDER_HEIGHT;
     const sz = pos.z + rz * SHOULDER_OFFSET;
 
-    // Camera sits behind the shoulder along -forward.
-    camera.position.set(sx - fx * d, sy - fy * d, sz - fz * d);
+    // Camera sits behind the shoulder along +back (= opposite facing).
+    camera.position.set(sx + bx * d, sy + by * d, sz + bz * d);
 
-    // Aim point sits ahead of (and at) the same shoulder line, so the
-    // character stays parked on the left third and the crosshair lands
-    // on the right third — exactly the Fortnite framing.
-    camera.lookAt(sx + fx * AIM_AHEAD, sy + fy * AIM_AHEAD, sz + fz * AIM_AHEAD);
+    // Aim point sits ahead of (and at) the same shoulder line — i.e.
+    // along the player's actual forward direction, the negation of
+    // the back vector. Character stays parked on the left third, the
+    // crosshair lands on the right third.
+    camera.lookAt(sx - bx * AIM_AHEAD, sy - by * AIM_AHEAD, sz - bz * AIM_AHEAD);
   });
 
   return null;

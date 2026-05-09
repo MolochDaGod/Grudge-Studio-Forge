@@ -1,0 +1,1083 @@
+import * as THREE from "https://unpkg.com/three@0.125.1/build/three.module.js";
+import { GLTFLoader } from "https://unpkg.com/three@0.125.1/examples/jsm/loaders/GLTFLoader.js";
+
+// --- Configuration Constants ---
+// Tunable parameters for the third-person camera behavior.
+const CAMERA_CONFIG = {
+	PITCH_LIMIT_MIN_Y: 2, // Minimum camera height relative to player pivot. Controls min pitch angle.
+	PITCH_LIMIT_MAX_Y: 8, // Maximum camera height relative to player pivot. Controls max pitch angle.
+	ZOOM_MIN: 2, // Minimum distance from player pivot.
+	ZOOM_MAX: 15, // Maximum distance from player pivot.
+	INITIAL_ZOOM: 5, // Starting distance from the player.
+	INITIAL_Y_OFFSET: 4, // Starting height offset (defines initial pitch along with zoom).
+	INITIAL_ROTATION: -3, // Initial horizontal rotation angle in radians (approx -86 degrees).
+	SENSITIVITY_X: 0.003, // Multiplier for horizontal mouse movement affecting rotation.
+	SENSITIVITY_Y: 0.003, // Multiplier for vertical mouse movement affecting pitch (Y offset).
+	ZOOM_SENSITIVITY: 0.1, // Multiplier for mouse wheel scrolling affecting zoom distance. << ADJUSTED SENSITIVITY >>
+	TARGET_OFFSET_Y: 1.0 // Vertical offset from the player's base position (pivot) where the camera should lookAt.
+};
+// --- End Configuration ---
+
+/**
+ * Manages the third-person camera system.
+ * Updates the camera's position and orientation based on player position,
+ * mouse input (rotation, pitch), and mouse wheel input (zoom).
+ */
+export class CameraController {
+	/**
+	 * Initializes the CameraController.
+	 * @param {THREE.PerspectiveCamera} camera - The camera object to control.
+	 * @param {InputManager} inputManager - The input manager instance to read mouse/wheel state.
+	 */
+	constructor(camera, inputManager) {
+		/** @type {THREE.PerspectiveCamera} The camera being controlled. */
+		this.camera = camera;
+		/** @type {InputManager} Reference to the input manager. */
+		this.inputManager = inputManager;
+		/** @type {THREE.Object3D | null} Reference to the player object the camera should follow. */
+		this.player = null; // Set via setPlayer()
+
+		/** @type {number} Current horizontal rotation angle around the player (radians). */
+		this.rotationAngle = CAMERA_CONFIG.INITIAL_ROTATION;
+		/** @type {number} Current zoom distance from the player's pivot point. */
+		this.zoomDistance = CAMERA_CONFIG.INITIAL_ZOOM;
+		/** @type {number} Current vertical offset of the camera from the player's pivot point (controls pitch). */
+		this.yOffset = CAMERA_CONFIG.INITIAL_Y_OFFSET;
+
+		/** @type {THREE.Vector3} Offset from player position for the camera's lookAt target. */
+		this.cameraTargetOffset = new THREE.Vector3(
+			0,
+			CAMERA_CONFIG.TARGET_OFFSET_Y,
+			0
+		);
+	}
+
+	/**
+	 * Sets the player object for the camera to follow.
+	 * @param {THREE.Object3D} player - The player's 3D model.
+	 */
+	setPlayer(player) {
+		this.player = player;
+	}
+
+	/**
+	 * Updates the camera's position and lookAt target based on input and player position.
+	 * This version implements proportional zoom for distance and height.
+	 * Does NOT use delta time smoothing.
+	 */
+	update() {
+		// If no player is set yet, do nothing.
+		if (!this.player) return;
+
+		// Get mouse input state from the InputManager for this frame.
+		const {
+			mouseDeltaX,
+			mouseDeltaY,
+			zoomDelta,
+			mouseDown,
+			isCanvasActive
+		} = this.inputManager;
+
+		// --- Update Camera State based on Input ---
+
+		// Rotation (Horizontal Orbit) - Adjust based on mouse X movement.
+		if (mouseDown.right || (mouseDown.left && isCanvasActive)) {
+			this.rotationAngle -= mouseDeltaX * CAMERA_CONFIG.SENSITIVITY_X;
+		}
+
+		// Pitch (Vertical Orbit) - Adjust the Y-offset based ONLY on mouse Y movement.
+		if (mouseDown.right || (mouseDown.left && isCanvasActive)) {
+			this.yOffset += mouseDeltaY * CAMERA_CONFIG.SENSITIVITY_Y * 2;
+			// Clamp the Y-offset here after mouse movement adjustment.
+			this.yOffset = THREE.MathUtils.clamp(
+				this.yOffset,
+				CAMERA_CONFIG.PITCH_LIMIT_MIN_Y,
+				CAMERA_CONFIG.PITCH_LIMIT_MAX_Y
+			);
+		}
+
+		// Zoom - Adjust distance AND Y-offset proportionally based on mouse wheel scroll delta.
+		if (zoomDelta !== 0) {
+			// Calculate zoom factor. A positive zoomDelta (scroll down/away) should increase distance.
+			// Use a structure similar to the user's snippet: 1 + delta * sensitivity
+			// NOTE: Ensure InputManager's zoomDelta has the correct sign for your desired scroll direction.
+			// Assuming positive zoomDelta = zoom out:
+			const zoomFactor = 1.0 + zoomDelta * CAMERA_CONFIG.ZOOM_SENSITIVITY;
+
+			// Apply zoom factor to both distance and height offset to maintain angle.
+			this.zoomDistance *= zoomFactor;
+			this.yOffset *= zoomFactor; // <<<< KEY CHANGE: Scale Y offset proportionally
+
+			// Clamp the zoom distance *after* scaling.
+			this.zoomDistance = Math.max(
+				CAMERA_CONFIG.ZOOM_MIN,
+				Math.min(CAMERA_CONFIG.ZOOM_MAX, this.zoomDistance)
+			);
+			// Clamp the Y-offset *after* scaling to ensure it stays within pitch limits.
+			this.yOffset = THREE.MathUtils.clamp(
+				this.yOffset,
+				CAMERA_CONFIG.PITCH_LIMIT_MIN_Y,
+				CAMERA_CONFIG.PITCH_LIMIT_MAX_Y
+			);
+		}
+
+		// --- Calculate Final Camera Position ---
+		// Start with the player's current world position.
+		const cameraPosition = this.player.position.clone();
+
+		// Calculate the horizontal offset based on rotation angle and zoom distance.
+		const horizontalOffsetX = this.zoomDistance * Math.sin(this.rotationAngle);
+		const horizontalOffsetZ = this.zoomDistance * Math.cos(this.rotationAngle);
+
+		// Add the horizontal offset to the player's position.
+		cameraPosition.x += horizontalOffsetX;
+		cameraPosition.z += horizontalOffsetZ;
+
+		// Add the calculated vertical offset (which now reflects both pitch input and zoom scaling).
+		cameraPosition.y += this.yOffset;
+
+		// Set the camera's final calculated position.
+		this.camera.position.copy(cameraPosition);
+
+		// --- Update LookAt ---
+		// Calculate the point the camera should look at.
+		const lookAtTarget = this.player.position
+			.clone()
+			.add(this.cameraTargetOffset);
+		// Make the camera look at the calculated target point.
+		this.camera.lookAt(lookAtTarget);
+
+		// --- Reset Input Deltas ---
+		// Crucial: Reset accumulated mouse deltas in InputManager for the next frame.
+		this.inputManager.resetMouseDelta();
+	}
+}
+
+/**
+ * Manages all raw browser input events (keyboard, mouse buttons, mouse movement, wheel).
+ * Stores the current state of keys and mouse actions, making it available to other systems.
+ * It accumulates mouse movement and wheel deltas per frame, which need to be reset externally after consumption.
+ */
+export class InputManager {
+	/**
+	 * Initializes the InputManager and binds event listeners.
+	 * @param {HTMLCanvasElement} canvas - The canvas element to bind mouse events like click and wheel to.
+	 */
+	constructor(canvas) {
+		/** @type {HTMLCanvasElement} Reference to the canvas element. */
+		this.canvas = canvas;
+
+		/** @type {Object.<string, boolean>} Stores the state of relevant keyboard keys (true if pressed). Uses KeyboardEvent.code for keys. */
+		this.keys = {
+			KeyW: false,
+			KeyA: false,
+			KeyS: false,
+			KeyD: false, // Movement
+			ShiftLeft: false,
+			ShiftRight: false, // Sprint modifier
+			Space: false // Jump key
+		};
+
+		/** @type {boolean} Flag indicating if the jump action was triggered (typically on key up). Needs to be consumed (set back to false) by the player controller. */
+		this.jumpTriggered = false;
+
+		/** @type {number} Accumulated horizontal mouse movement since the last resetMouseDelta() call. */
+		this.mouseDeltaX = 0;
+		/** @type {number} Accumulated vertical mouse movement since the last resetMouseDelta() call. */
+		this.mouseDeltaY = 0;
+		/** @type {number} Accumulated mouse wheel scroll delta since the last resetMouseDelta() call. Positive=scroll down/away, Negative=scroll up/towards. */
+		this.zoomDelta = 0;
+
+		/** @type {boolean} Flag indicating if the mouse cursor is currently over the canvas element. */
+		this.isCanvasActive = false;
+		/** @type {Object.<string, boolean>} Stores the state of mouse buttons (true if pressed). */
+		this.mouseDown = { left: false, middle: false, right: false };
+
+		// Sensitivity moved to CameraController as it's primarily camera-related tuning.
+		// this.sensitivity = 0.003;
+
+		// Bind all necessary event listeners.
+		this._bindEvents();
+	}
+
+	/**
+	 * Sets up all the necessary DOM event listeners for keyboard and mouse input.
+	 * Private method, called by the constructor.
+	 */
+	_bindEvents() {
+		// --- Keyboard Events ---
+		document.addEventListener("keydown", (event) => {
+			// Check if the pressed key (using event.code for layout independence) is one we track.
+			if (event.code in this.keys) {
+				this.keys[event.code] = true; // Mark the key as pressed.
+			}
+			// Prevent default browser action for Space bar (scrolling).
+			if (event.code === "Space") {
+				event.preventDefault();
+				this.jumpTriggered = true; // Flag that jump should occur. Consumed by PlayerController.
+			}
+			// Could add handling for other keys or modifiers here if needed.
+		});
+
+		document.addEventListener("keyup", (event) => {
+			// Check if the released key is one we track.
+			if (event.code in this.keys) {
+				this.keys[event.code] = false; // Mark the key as released.
+			}
+		});
+
+		// --- Mouse Focus Events ---
+		// Track if the mouse is over the canvas. Useful for context-specific actions.
+		this.canvas.addEventListener("mouseover", () => {
+			this.isCanvasActive = true;
+		});
+		this.canvas.addEventListener("mouseout", () => {
+			this.isCanvasActive = false;
+		});
+
+		// --- Mouse Movement Events ---
+		document.addEventListener("mousemove", (event) => {
+			// Accumulate mouse movement deltas (event.movementX/Y).
+			// Accumulate only if:
+			// 1. Pointer lock is active (ideal for camera control).
+			// 2. OR a mouse button is pressed *while* the cursor is over the canvas (for drag interactions).
+			if (
+				document.pointerLockElement === document.body ||
+				(this.isCanvasActive &&
+					(this.mouseDown.left || this.mouseDown.right || this.mouseDown.middle))
+			) {
+				this.mouseDeltaX += event.movementX;
+				this.mouseDeltaY += event.movementY;
+			}
+		});
+
+		// --- Mouse Button Events ---
+		// Listen for mouse button presses.
+		document.addEventListener("mousedown", (event) => {
+			// Only process clicks that *originate* on the canvas element.
+			if (event.target === this.canvas) {
+				// Left mouse button (button code 0)
+				if (event.button === 0) this.mouseDown.left = true;
+				// Middle mouse button (button code 1)
+				if (event.button === 1) {
+					this.mouseDown.middle = true;
+					event.preventDefault(); // Prevent default middle-click behavior (e.g., autoscroll).
+				}
+				// Right mouse button (button code 2)
+				if (event.button === 2) {
+					this.mouseDown.right = true;
+					// Request browser pointer lock when right button is pressed on canvas (for camera control).
+					document.body
+						.requestPointerLock()
+						.catch((err) =>
+							console.log(
+								"Pointer lock request failed. User interaction likely required.",
+								err
+							)
+						);
+				}
+			}
+		});
+		// Listen for mouse button releases.
+		document.addEventListener("mouseup", (event) => {
+			// Release button state regardless of where the mouseup happens (robustness).
+			if (event.button === 0) this.mouseDown.left = false;
+			if (event.button === 1) this.mouseDown.middle = false;
+			if (event.button === 2) {
+				this.mouseDown.right = false;
+				// Exit pointer lock if it's currently active and was likely initiated by us.
+				if (document.pointerLockElement === document.body) {
+					document.exitPointerLock();
+				}
+			}
+		});
+
+		// --- Mouse Wheel Event ---
+		// Listen for wheel events specifically on the canvas to control zoom.
+		document.addEventListener(
+			"wheel",
+			(event) => {
+				event.preventDefault(); // Prevent default page scrolling action.
+				const scrollAmount = event.deltaY; // Get scroll delta (positive=down, negative=up).
+				// Normalize deltaY for consistency across browsers/platforms (optional).
+				const normalizedDelta =
+					Math.sign(scrollAmount) * Math.min(Math.abs(scrollAmount), 30); // Clamp magnitude.
+				// Accumulate the normalized delta, scaled down for sensitivity control.
+				this.zoomDelta += normalizedDelta * 0.01; // Scaling factor might become a constant.
+			},
+			{ passive: false }
+		); // passive: false is required to allow preventDefault().
+
+		// --- Context Menu Event ---
+		// Prevent the default browser context menu from appearing on right-click over the canvas.
+		this.canvas.addEventListener("contextmenu", (event) =>
+			event.preventDefault()
+		);
+
+		// --- Pointer Lock Event ---
+		// Handle changes in pointer lock state (e.g., user pressing Esc).
+		document.addEventListener(
+			"pointerlockchange",
+			() => {
+				if (document.pointerLockElement !== document.body) {
+					// Pointer lock was lost. If the right mouse button was logically 'down'
+					// for camera control, we might need to reset its state here, depending on desired behavior.
+					// Example: Ensure right mouse isn't stuck 'down' if Esc is pressed.
+					// if (this.mouseDown.right) {
+					//     this.mouseDown.right = false;
+					// }
+				}
+			},
+			false
+		);
+	}
+
+	/**
+	 * Resets the accumulated mouse movement and zoom deltas.
+	 * This MUST be called each frame after the deltas have been processed (usually by CameraController)
+	 * to prepare for accumulating the next frame's input.
+	 */
+	resetMouseDelta() {
+		this.mouseDeltaX = 0;
+		this.mouseDeltaY = 0;
+		this.zoomDelta = 0;
+		// Note: jumpTriggered is NOT reset here; it's reset by PlayerController after it's consumed.
+	}
+
+	/**
+	 * Helper method to quickly check if any movement key (WASD) is currently pressed.
+	 * @returns {boolean} True if W, A, S, or D is pressed.
+	 */
+	isMoving() {
+		return this.keys.KeyW || this.keys.KeyA || this.keys.KeyS || this.keys.KeyD;
+	}
+
+	/**
+	 * Helper method to quickly check if a sprint modifier key (Shift) is currently pressed.
+	 * @returns {boolean} True if Left Shift or Right Shift is pressed.
+	 */
+	isSprinting() {
+		return this.keys.ShiftLeft || this.keys.ShiftRight;
+	}
+}
+
+/**
+ * A static utility class for loading GLTF/GLB 3D models.
+ * Provides a consistent way to load models and apply basic configurations.
+ */
+export class ModelLoader {
+	/**
+	 * Loads a GLTF model from the specified path and configuration.
+	 * @param {object} config - Configuration object for the model.
+	 * @param {string} config.path - The URL path to the GLTF/GLB file.
+	 * @param {object} [config.position] - Optional initial position {x, y, z}.
+	 * @param {number} [config.scale] - Optional initial uniform scale factor.
+	 * @param {object} [config.rotation] - Optional initial rotation {x, y, z} in radians.
+	 * @param {function(object, THREE.Object3D)} onLoad - Success callback function. Receives the full gltf object and the extracted model scene (THREE.Object3D).
+	 * @param {function(ErrorEvent)} onError - Error callback function. Receives the error event.
+	 */
+	static loadModel(config, onLoad, onError) {
+		// Instantiate the GLTF loader provided by THREE.js examples.
+		const loader = new GLTFLoader();
+
+		// Start loading the model from the specified path.
+		loader.load(
+			config.path,
+			// --- Success Callback (gltf) ---
+			(gltf) => {
+				// The main visual part of the loaded GLTF is usually in gltf.scene.
+				const model = gltf.scene;
+
+				// Apply initial position if specified in the config.
+				if (config.position) {
+					model.position.set(
+						config.position.x,
+						config.position.y,
+						config.position.z
+					);
+				}
+
+				// Apply initial scale if specified in the config.
+				// Note: Normalization might happen later in MainGame for player/specific models.
+				if (config.scale) {
+					model.scale.set(config.scale, config.scale, config.scale);
+				}
+
+				// Apply initial rotation if specified in the config (in radians).
+				if (config.rotation) {
+					model.rotation.set(
+						config.rotation.x,
+						config.rotation.y,
+						config.rotation.z
+					);
+				}
+
+				// --- Default Setup ---
+				// Traverse through all child meshes within the loaded model.
+				model.traverse((child) => {
+					// Check if the child object is a Mesh.
+					if (child.isMesh) {
+						// Enable casting shadows for this mesh.
+						child.castShadow = true;
+						// Enable receiving shadows for this mesh.
+						child.receiveShadow = true;
+						// Optional: Could add more default material adjustments here if needed
+						// e.g., child.material.metalness = 0;
+					}
+				});
+
+				// Call the user-provided onLoad callback, passing the full gltf object
+				// (which includes animations, cameras, etc.) and the model scene.
+				if (onLoad) {
+					onLoad(gltf, model);
+				}
+			},
+			// --- Progress Callback (xhr) ---
+			// This callback is typically used to show loading progress (e.g., a percentage).
+			// Currently unused, but the argument placeholder is required.
+			undefined, // (xhr) => { console.log((xhr.loaded / xhr.total * 100) + '% loaded'); }
+
+			// --- Error Callback (error) ---
+			(error) => {
+				// Log the error to the console for debugging.
+				console.error("Error loading model:", config.path, error);
+				// Call the user-provided onError callback if it exists.
+				if (onError) {
+					onError(error);
+				}
+			}
+		);
+	}
+}
+
+// --- Configuration Constants ---
+// Contains tunable parameters for player behavior.
+const PLAYER_CONFIG = {
+	WALK_SPEED: 3.5, // Player movement speed when walking (units per second).
+	RUN_SPEED: 10.0, // Player movement speed when sprinting (units per second).
+	GRAVITY: -19.6, // Acceleration due to gravity (units per second squared). Adjusted for game feel.
+	JUMP_HEIGHT: 1.8, // The desired height the player should reach when jumping (units).
+	ROTATION_SPEED: 0.15, // Controls how quickly the player rotates to face movement direction (0 = no rotation, 1 = instant). Slerp factor.
+	ANIM_FADE_DURATION: 0.2, // Default time in seconds for animations to fade in/out smoothly.
+	MODEL_FORWARD_DIRECTION: new THREE.Vector3(0, 0, 1), // Assumed forward vector of the player model mesh. Must match the model's orientation in its file.
+	MOVEMENT_INPUT_THRESHOLD: 0.001 // Small value to prevent calculations when input is negligible.
+};
+
+// Stores the names of the animations as defined in the player's model file.
+export const ANIM_NAMES = {
+	IDLE: "stand", // Animation for standing still.
+	WALK: "walk", // Animation for walking.
+	RUN: "run", // Animation for running/sprinting.
+	JUMP: "jumpUp", // Animation for the upward phase of the jump.
+	FALL: "jumpDown" // Optional: Animation for the falling phase (looping).
+	// LAND: 'land',     // Optional: Short animation played upon landing.
+};
+// --- End Configuration ---
+
+/**
+ * Manages the player character's state, movement, physics, and animations.
+ * Reads input from InputManager, updates the player model's transform,
+ * and interacts with the animation system.
+ */
+export class PlayerController {
+	/**
+	 * Initializes the PlayerController.
+	 * @param {THREE.Object3D} player - The 3D model object representing the player.
+	 * @param {THREE.Camera} camera - The main game camera, used for calculating movement direction.
+	 * @param {InputManager} inputManager - The input manager instance to read player input state.
+	 * @param {object|null} modelAnimations - Optional object containing the THREE.AnimationMixer and actions map for the player model. Expected format: { mixer: THREE.AnimationMixer, actions: { 'animName': THREE.AnimationAction, ... } }
+	 */
+	constructor(player, camera, inputManager, modelAnimations = null) {
+		/** @type {THREE.Object3D} The player's 3D model. */
+		this.player = player;
+		/** @type {THREE.Camera} The main game camera. */
+		this.camera = camera;
+		/** @type {InputManager} Reference to the input manager. */
+		this.inputManager = inputManager;
+		/** @type {{mixer: THREE.AnimationMixer, actions: Object.<string, THREE.AnimationAction>}|null} Animation data. */
+		this.modelAnimations = modelAnimations;
+		/** @type {THREE.AnimationAction | null} The currently active animation action. */
+		this.currentAnimation = null;
+
+		/** @type {number} Player walk speed (units/sec). */
+		this.walkSpeed = PLAYER_CONFIG.WALK_SPEED;
+		/** @type {number} Player run speed (units/sec). */
+		this.runSpeed = PLAYER_CONFIG.RUN_SPEED;
+		/** @type {number} The current movement speed, determined by walking/running state. */
+		this.movementSpeed = this.walkSpeed;
+		/** @type {THREE.Vector3} The player's current horizontal velocity vector (units/sec). Captures direction and speed on the XZ plane. */
+		this.horizontalVelocity = new THREE.Vector3();
+
+		/** @type {boolean} Flag indicating if the player is currently in the jump state. */
+		this.isJumping = false;
+		/** @type {number} Acceleration due to gravity (units/sec^2). */
+		this.gravity = PLAYER_CONFIG.GRAVITY;
+		/** @type {number} Desired jump height (units). */
+		this.jumpHeight = PLAYER_CONFIG.JUMP_HEIGHT;
+		/** @type {number} The player's current vertical velocity (units/sec). */
+		this.velocityY = 0;
+
+		// Store animation names for easy access
+		/** @type {object} Map of animation state names to actual animation clip names. */
+		this.animNames = ANIM_NAMES;
+		// Check if optional animations exist in the loaded model's actions
+		/** @type {boolean} True if a 'fall' animation action exists. */
+		this.hasFallAnimation =
+			this.modelAnimations?.actions[this.animNames.FALL] !== undefined;
+		/** @type {boolean} True if a 'land' animation action exists. */
+		this.hasLandAnimation =
+			this.modelAnimations?.actions[this.animNames.LAND] !== undefined;
+
+		// Initialize the starting animation (usually Idle)
+		if (this.modelAnimations?.actions[this.animNames.IDLE]) {
+			this.switchAnimation(this.animNames.IDLE, 0); // Start idle instantly
+		}
+	}
+
+	/**
+	 * Calculates the intended movement direction vector based on WASD input
+	 * relative to the camera's current orientation on the horizontal plane.
+	 * @returns {THREE.Vector3} A normalized vector representing the desired movement direction in world space (XZ plane). Returns zero vector if no input.
+	 */
+	calculateMovementDirection() {
+		// Temporary vector to store raw input direction (X: A/D, Z: W/S)
+		const direction = new THREE.Vector3();
+		if (this.inputManager.keys.KeyW) direction.z += 1; // Forward
+		if (this.inputManager.keys.KeyS) direction.z -= 1; // Backward
+		if (this.inputManager.keys.KeyA) direction.x += 1; // Left Strafe
+		if (this.inputManager.keys.KeyD) direction.x -= 1; // Right Strafe
+
+		// If no direction keys are pressed, return zero vector immediately.
+		if (direction.lengthSq() === 0) {
+			// Use lengthSq for efficiency (avoids sqrt)
+			return direction;
+		}
+
+		// Get the camera's forward direction projected onto the horizontal plane (XZ)
+		const cameraForward = new THREE.Vector3();
+		this.camera.getWorldDirection(cameraForward); // Get camera's world direction
+		cameraForward.y = 0; // Ignore vertical component
+		cameraForward.normalize(); // Make it a unit vector
+
+		// Calculate the camera's right direction on the horizontal plane
+		const cameraRight = new THREE.Vector3();
+		// Use world UP vector (0,1,0) and camera's forward to get the right vector via cross product
+		cameraRight.crossVectors(this.camera.up, cameraForward).normalize();
+
+		// Combine the raw input direction with the camera's orientation
+		// moveVector = (cameraForward * input.z) + (cameraRight * input.x)
+		const moveVector = new THREE.Vector3()
+			.addScaledVector(cameraForward, direction.z) // Add forward/backward component
+			.addScaledVector(cameraRight, direction.x); // Add left/right strafe component
+
+		// Return the normalized final direction vector (unit vector)
+		return moveVector.normalize();
+	}
+
+	/**
+	 * Switches the currently playing animation smoothly.
+	 * Handles fading out the previous animation and fading in the new one.
+	 * Manages non-looping animations like landing.
+	 * @param {string} targetAnimName - The name (key from ANIM_NAMES) of the animation to switch to.
+	 * @param {number} [fadeDuration=PLAYER_CONFIG.ANIM_FADE_DURATION] - The duration of the crossfade in seconds.
+	 */
+	switchAnimation(
+		targetAnimName,
+		fadeDuration = PLAYER_CONFIG.ANIM_FADE_DURATION
+	) {
+		// Ensure animation data is available
+		if (!this.modelAnimations || !this.modelAnimations.actions) return;
+
+		// Get the target animation action from the stored map
+		const targetAction = this.modelAnimations.actions[targetAnimName];
+
+		// If the target animation doesn't exist in the model, do nothing
+		if (!targetAction) {
+			// console.warn(`Animation "${targetAnimName}" not found!`); // Optional warning
+			return;
+		}
+
+		// If the target animation is already the current one, do nothing
+		if (this.currentAnimation === targetAction) return;
+
+		// Fade out the current animation, if one is playing
+		if (this.currentAnimation) {
+			// Special case: If fading out from "https://esm.sh/Land", stop it immediately instead of fading
+			if (
+				this.currentAnimation === this.modelAnimations.actions[this.animNames.LAND]
+			) {
+				this.currentAnimation.stop(); // Avoid fade-out if it was landing
+			} else {
+				this.currentAnimation.fadeOut(fadeDuration);
+			}
+		}
+
+		// Reset the target animation, set its weight, fade it in, and play
+		targetAction
+			.reset() // Go back to the start
+			.setEffectiveWeight(1.0) // Ensure it has full influence
+			.fadeIn(fadeDuration) // Fade in smoothly
+			.play(); // Start playing
+
+		// Store the new action as the current one
+		this.currentAnimation = targetAction;
+
+		// Handle settings for non-looping animations
+		if (targetAnimName === this.animNames.LAND) {
+			targetAction.clampWhenFinished = true; // Pause on last frame when done
+			targetAction.loop = THREE.LoopOnce; // Play only once
+		} else {
+			// Ensure all other animations loop by default
+			targetAction.loop = THREE.LoopRepeat;
+		}
+	}
+
+	/**
+	 * Updates the player's state, position, rotation, and animation each frame.
+	 * @param {number} delta - The time elapsed since the last frame in seconds. Essential for frame-rate independent physics.
+	 */
+	update(delta) {
+		// Get current input states
+		const isMoving = this.inputManager.isMoving(); // Is any WASD key pressed?
+		const isSprinting = this.inputManager.isSprinting(); // Is Left or Right Shift pressed?
+
+		// --- Calculate Horizontal Movement (ONLY IF ON GROUND) ---
+		// This ensures no air control - horizontal velocity is fixed once airborne.
+		if (!this.isJumping) {
+			// Determine current speed based on sprinting state
+			this.movementSpeed = isSprinting ? this.runSpeed : this.walkSpeed;
+			// Get the desired movement direction based on input and camera
+			const moveDirection = this.calculateMovementDirection();
+			// Calculate final horizontal velocity: Velocity = Direction * Speed
+			// Use clone() so the original moveDirection isn't modified by multiplyScalar
+			this.horizontalVelocity = moveDirection
+				.clone()
+				.multiplyScalar(this.movementSpeed);
+		}
+		// If currently jumping, this.horizontalVelocity retains the value from the moment of takeoff.
+
+		// --- Jump Trigger Logic ---
+		// Check if the jump action was triggered and if the player is not already jumping
+		if (this.inputManager.jumpTriggered && !this.isJumping) {
+			this.isJumping = true; // Enter the jumping state
+			// Calculate the initial upward velocity needed to reach the desired jump height
+			// Physics formula: v0 = sqrt(-2 * gravity * jumpHeight)
+			this.velocityY = Math.sqrt(-2 * this.gravity * this.jumpHeight);
+			this.inputManager.jumpTriggered = false; // Consume the jump trigger so it doesn't fire again
+			this.switchAnimation(this.animNames.JUMP); // Play the jump animation
+			// Note: horizontalVelocity already holds the correct takeoff velocity from the block above.
+		}
+
+		// --- Physics & Position Update ---
+		let justLanded = false; // Flag to detect the exact frame of landing
+		// Apply physics updates only if the player is in the jumping state (which includes falling)
+		if (this.isJumping) {
+			// Apply gravity to vertical velocity: v = v0 + (g * t)
+			this.velocityY += this.gravity * delta;
+
+			// Apply vertical velocity to position: y = y0 + (v * t)
+			this.player.position.y += this.velocityY * delta;
+
+			// Switch to a falling animation if one exists and vertical velocity is negative (moving down)
+			if (this.hasFallAnimation && this.velocityY <= 0) {
+				this.switchAnimation(this.animNames.FALL);
+			}
+
+			// Ground Check: Detect if player has hit or gone below the ground (y=0)
+			if (this.player.position.y <= 0) {
+				this.player.position.y = 0; // Clamp position exactly to the ground
+				this.isJumping = false; // Exit the jumping state
+				this.velocityY = 0; // Reset vertical velocity
+				justLanded = true; // Set the flag for this frame
+				// horizontalVelocity will be recalculated next frame based on input.
+			}
+		}
+
+		// --- Apply Horizontal Movement ---
+		// This occurs whether jumping or on the ground.
+		// Uses the velocity calculated this frame (if on ground) or the takeoff velocity (if jumping).
+		// Position update: x = x0 + (vx * t)
+		this.player.position.x += this.horizontalVelocity.x * delta;
+		this.player.position.z += this.horizontalVelocity.z * delta;
+
+		// --- Rotation ---
+		// Rotate the player model to face the movement direction, but only when moving on the ground.
+		if (isMoving && !this.isJumping) {
+			// Check if there is significant horizontal velocity to avoid rotating to zero vector
+			if (
+				this.horizontalVelocity.lengthSq() > PLAYER_CONFIG.MOVEMENT_INPUT_THRESHOLD
+			) {
+				// Get the normalized direction from the horizontal velocity vector
+				const lookDirection = this.horizontalVelocity.clone().normalize();
+				// Calculate the target rotation (Quaternion) to align the model's forward with the lookDirection
+				const targetQuaternion = new THREE.Quaternion().setFromUnitVectors(
+					PLAYER_CONFIG.MODEL_FORWARD_DIRECTION, // Model's default forward
+					lookDirection // Desired world direction
+				);
+				// Smoothly interpolate the player's current rotation towards the target rotation using Spherical Linear Interpolation (slerp)
+				this.player.quaternion.slerp(
+					targetQuaternion,
+					PLAYER_CONFIG.ROTATION_SPEED
+				);
+			}
+		}
+
+		// --- Animation Update ---
+		// Handle animation transitions based on state (landing, on ground, moving/idle)
+		if (justLanded) {
+			// If a landing animation exists, play it.
+			if (this.hasLandAnimation) {
+				this.switchAnimation(this.animNames.LAND);
+				// Note: A more robust system might wait for the land animation to finish
+				// before transitioning to idle/walk/run, possibly using the AnimationMixer's 'finished' event.
+			} else {
+				// If no landing animation, immediately switch to the appropriate ground animation
+				const targetGroundAnim = isMoving
+					? isSprinting
+						? this.animNames.RUN
+						: this.animNames.WALK
+					: this.animNames.IDLE;
+				this.switchAnimation(targetGroundAnim);
+			}
+		} else if (!this.isJumping) {
+			// If on the ground (and not the exact landing frame)
+			// Only switch animations if the current one is set to loop (e.g., not interrupting 'Land')
+			if (
+				!this.currentAnimation ||
+				this.currentAnimation.loop === THREE.LoopRepeat
+			) {
+				// Determine target animation based on moving/sprinting state
+				const targetGroundAnim = isMoving
+					? isSprinting
+						? this.animNames.RUN
+						: this.animNames.WALK
+					: this.animNames.IDLE;
+				this.switchAnimation(targetGroundAnim); // Switch to the determined ground animation
+			}
+		}
+		// Note: Jump/Fall animations are handled within the isJumping physics block.
+	}
+}
+
+// --- Configuration Constants ---
+// General scene and rendering settings.
+const SCENE_CONFIG = {
+	CAMERA_FOV: 75, // Camera field of view in degrees.
+	CAMERA_NEAR: 0.1, // Camera near clipping plane distance.
+	CAMERA_FAR: 1000, // Camera far clipping plane distance.
+	AMBIENT_LIGHT_COLOR: 0xffffff, // Color of the ambient light.
+	AMBIENT_LIGHT_INTENSITY: 1.0, // Intensity of the ambient light.
+	SUNLIGHT_COLOR: 0xffffff, // Color of the directional light (sun).
+	SUNLIGHT_INTENSITY: 1.0, // Intensity of the directional light.
+	SUNLIGHT_POSITION: new THREE.Vector3(10, 20, 10), // Position of the directional light source.
+	SHADOW_MAP_SIZE: 2048, // Resolution of the shadow map (higher = sharper but more expensive).
+	SHADOW_CAMERA_NEAR: 0.5, // Near plane for the shadow camera.
+	SHADOW_CAMERA_FAR: 50, // Far plane for the shadow camera.
+	SHADOW_CAMERA_BOUNDS: 32, // Orthographic size of the shadow camera area.
+	GROUND_SIZE: 64, // Width and length of the ground plane.
+	GROUND_COLOR: 0x333333, // Color of the ground plane material.
+	DEFAULT_MODEL_NORMALIZE_TARGET_HEIGHT: 3.0 // Target height for models after normalization.
+};
+
+// Configuration for the player model. Could be moved to JSON later.
+const PLAYER_MODEL_CONFIG = {
+	path: "https://assets.codepen.io/1502334/catwoman.glb", // Path to the player's GLB file.
+	position: { x: 0, y: 0, z: 0 }, // Initial position in the world.
+	scale: 1, // Initial scale (will be adjusted by normalization).
+	isPlayer: true // Flag to identify the player model during loading.
+};
+
+// Configuration for other static/environment models. Could be moved to JSON later.
+const STATIC_MODEL_CONFIGS = [
+	// statics if applicable
+];
+const ENV_MODEL_CONFIGS = [
+	{
+		path: "https://assets.codepen.io/1502334/horse.glb",
+		position: { x: 12, y: 0, z: 12 },
+		scale: 1,
+		rotation: { x: 0, y: 1.5, z: 1.5 }
+	}, // Example env model
+	{
+		path: "https://assets.codepen.io/1502334/horse.glb",
+		position: { x: -12, y: 0, z: -12 },
+		scale: 1,
+		rotation: { x: -1, y: 2, z: 2 }
+	} // Example env model
+	// ... other environment models
+];
+// --- End Configuration ---
+
+/**
+ * The main class that ties everything together.
+ * Initializes the THREE.js scene, camera, renderer, loads assets,
+ * sets up controllers and managers, and runs the main animation loop.
+ */
+class MainGame {
+	/**
+	 * Initializes the entire game setup.
+	 */
+	constructor() {
+		// Core THREE.js components
+		/** @type {THREE.Scene} The main scene graph container. */
+		this.scene = new THREE.Scene();
+		/** @type {THREE.PerspectiveCamera} The primary camera used for rendering. */
+		this.camera = new THREE.PerspectiveCamera(
+			SCENE_CONFIG.CAMERA_FOV,
+			window.innerWidth / window.innerHeight, // Aspect ratio
+			SCENE_CONFIG.CAMERA_NEAR,
+			SCENE_CONFIG.CAMERA_FAR
+		);
+		/** @type {HTMLCanvasElement} The canvas element from the HTML. */
+		this.canvas = document.getElementById("canvas");
+		/** @type {THREE.WebGLRenderer} The renderer instance. */
+		this.renderer = new THREE.WebGLRenderer({
+			canvas: this.canvas,
+			alpha: true // Allows transparency (if needed for background)
+		});
+		// Configure renderer settings
+		this.renderer.setSize(window.innerWidth, window.innerHeight); // Match window size
+		this.renderer.setPixelRatio(window.devicePixelRatio); // Use device pixel ratio for sharpness
+		this.renderer.shadowMap.enabled = true; // Enable shadow mapping
+		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadow edges
+
+		// Managers and Controllers
+		/** @type {InputManager} Handles all user input. */
+		this.inputManager = new InputManager(this.canvas);
+		/** @type {THREE.Clock} Used for getting delta time between frames. */
+		this.clock = new THREE.Clock();
+		/** @type {Array<THREE.AnimationMixer>} Stores animation mixers for updating animations. */
+		this.mixers = [];
+		/** @type {CameraController} Manages the third-person camera. */
+		this.cameraController = new CameraController(this.camera, this.inputManager);
+		/** @type {PlayerController | null} Manages the player character. Initialized after model loads. */
+		this.playerController = null;
+
+		// Initialization steps
+		this.addLights(); // Add lights to the scene
+		this.addTile(); // Add a ground plane
+		this.loadModels(); // Load player and other models
+
+		// Event listener for window resize
+		window.addEventListener("resize", this.onWindowResize.bind(this), false);
+
+		// Start the main game loop
+		this.animate();
+	}
+
+	/**
+	 * Normalizes the scale of a loaded model so its maximum dimension matches a target height.
+	 * Helps ensure different models have a consistent size in the scene.
+	 * @param {THREE.Object3D} model - The model object (usually a THREE.Group or THREE.Scene from GLTF).
+	 */
+	normalizeModelScale(model) {
+		// Calculate the bounding box of the model to get its size.
+		const box = new THREE.Box3().setFromObject(model);
+		const size = new THREE.Vector3();
+		box.getSize(size); // Get the dimensions (width, height, depth)
+
+		// Find the largest dimension.
+		const maxDimension = Math.max(size.x, size.y, size.z);
+
+		// Avoid division by zero if the model has no size.
+		if (maxDimension === 0) return;
+
+		// Calculate the scale factor needed to make the largest dimension match the target height.
+		const scaleFactor =
+			SCENE_CONFIG.DEFAULT_MODEL_NORMALIZE_TARGET_HEIGHT / maxDimension;
+
+		// Apply the calculated scale factor uniformly to the model.
+		model.scale.set(scaleFactor, scaleFactor, scaleFactor);
+	}
+
+	/**
+	 * Adds a simple ground plane to the scene for reference.
+	 */
+	addTile() {
+		// Create geometry and material for the ground plane.
+		const grassGeometry = new THREE.PlaneGeometry(
+			SCENE_CONFIG.GROUND_SIZE,
+			SCENE_CONFIG.GROUND_SIZE
+		);
+		const grassMaterial = new THREE.MeshLambertMaterial({
+			color: SCENE_CONFIG.GROUND_COLOR
+		}); // Lambert material reacts to light
+		const grassTile = new THREE.Mesh(grassGeometry, grassMaterial);
+
+		// Rotate the plane to lie flat on the XZ axis.
+		grassTile.rotation.x = -Math.PI / 2; // Rotate -90 degrees around X-axis
+		// Position it at the world origin (can be adjusted).
+		grassTile.position.set(0, 0, 0);
+		// Allow the ground plane to receive shadows.
+		grassTile.receiveShadow = true;
+
+		// Add the tile to the scene.
+		this.scene.add(grassTile);
+	}
+
+	/**
+	 * Adds ambient and directional lights to the scene.
+	 */
+	addLights() {
+		// Ambient light provides basic illumination for all objects.
+		const ambientLight = new THREE.AmbientLight(
+			SCENE_CONFIG.AMBIENT_LIGHT_COLOR,
+			SCENE_CONFIG.AMBIENT_LIGHT_INTENSITY
+		);
+		this.scene.add(ambientLight);
+
+		// Directional light simulates sunlight, casting shadows.
+		const sunlight = new THREE.DirectionalLight(
+			SCENE_CONFIG.SUNLIGHT_COLOR,
+			SCENE_CONFIG.SUNLIGHT_INTENSITY
+		);
+		// Set position (direction comes from origin towards this position).
+		sunlight.position.copy(SCENE_CONFIG.SUNLIGHT_POSITION);
+		// Enable shadow casting for this light.
+		sunlight.castShadow = true;
+
+		// Configure shadow properties for quality and performance.
+		sunlight.shadow.mapSize.width = SCENE_CONFIG.SHADOW_MAP_SIZE; // Shadow map resolution (width)
+		sunlight.shadow.mapSize.height = SCENE_CONFIG.SHADOW_MAP_SIZE; // Shadow map resolution (height)
+		// Define the bounds of the shadow camera's view frustum.
+		sunlight.shadow.camera.near = SCENE_CONFIG.SHADOW_CAMERA_NEAR;
+		sunlight.shadow.camera.far = SCENE_CONFIG.SHADOW_CAMERA_FAR;
+		sunlight.shadow.camera.left = -SCENE_CONFIG.SHADOW_CAMERA_BOUNDS;
+		sunlight.shadow.camera.right = SCENE_CONFIG.SHADOW_CAMERA_BOUNDS;
+		sunlight.shadow.camera.top = SCENE_CONFIG.SHADOW_CAMERA_BOUNDS;
+		sunlight.shadow.camera.bottom = -SCENE_CONFIG.SHADOW_CAMERA_BOUNDS;
+		// Optional: Adjust shadow bias to prevent shadow acne (self-shadowing artifacts).
+		// sunlight.shadow.bias = -0.0001;
+
+		// Add the configured sunlight to the scene.
+		this.scene.add(sunlight);
+
+		// Optional: Helper to visualize the shadow camera frustum for debugging.
+		// const shadowHelper = new THREE.CameraHelper(sunlight.shadow.camera);
+		// this.scene.add(shadowHelper);
+	}
+
+	/**
+	 * Loads all configured 3D models (player, static, environment).
+	 * Initializes the PlayerController once the player model is loaded.
+	 */
+	loadModels() {
+		// Combine all model configurations into one list for iteration.
+		// Ensure player config is handled specifically due to controller initialization.
+		const allModelConfigs = [
+			PLAYER_MODEL_CONFIG,
+			...STATIC_MODEL_CONFIGS,
+			...ENV_MODEL_CONFIGS
+		];
+
+		allModelConfigs.forEach((config) => {
+			// Use the static ModelLoader class to load each model.
+			ModelLoader.loadModel(
+				config,
+				// Success callback (onLoad)
+				(gltf, model) => {
+					// Add the loaded model object to the scene.
+					this.scene.add(model);
+
+					// --- Animation Setup ---
+					let modelAnimations = null; // Prepare animation data structure
+					// Check if the loaded GLTF contains animations.
+					if (gltf.animations && gltf.animations.length > 0) {
+						// Create an AnimationMixer for this model.
+						const mixer = new THREE.AnimationMixer(model);
+						// Create a map to store animation actions by name.
+						const actions = {};
+						gltf.animations.forEach((clip) => {
+							// Create an AnimationAction for each clip.
+							actions[clip.name] = mixer.clipAction(clip);
+						});
+						// Store the mixer and actions map.
+						modelAnimations = { mixer, actions };
+						// Add the mixer to the global list for updating in the animate loop.
+						this.mixers.push(mixer);
+					}
+
+					// --- Player Specific Initialization ---
+					// Check if this loaded model is the designated player model.
+					if (config.isPlayer) {
+						// Normalize the player model's scale.
+						this.normalizeModelScale(model);
+
+						// Initialize the PlayerController with the loaded player model and its animations.
+						this.playerController = new PlayerController(
+							model,
+							this.camera,
+							this.inputManager,
+							modelAnimations
+						);
+
+						// Tell the CameraController which object to follow.
+						this.cameraController.setPlayer(model);
+
+						// Start the default animation (Idle) if it exists
+						if (modelAnimations && modelAnimations.actions[ANIM_NAMES.IDLE]) {
+							modelAnimations.actions[ANIM_NAMES.IDLE].play();
+						}
+					}
+					// --- Non-Player Animation Start ---
+					// Optional: Automatically play the first animation for non-player animated models.
+					else if (modelAnimations && gltf.animations.length > 0) {
+						// Play the first animation found in the GLTF file.
+						const firstClipName = gltf.animations[0].name;
+						modelAnimations.actions[firstClipName].play();
+					}
+				},
+				// Error callback (onError)
+				(error) => {
+					console.error(`Failed to load model (${config.path}):`, error);
+				}
+			);
+		});
+	}
+
+	/**
+	 * Handles the browser window resize event.
+	 * Updates the renderer size and camera aspect ratio to match the new window dimensions.
+	 */
+	onWindowResize() {
+		// Update renderer size.
+		this.renderer.setSize(window.innerWidth, window.innerHeight);
+		// Update camera aspect ratio.
+		this.camera.aspect = window.innerWidth / window.innerHeight;
+		// Apply the changes to the camera projection matrix.
+		this.camera.updateProjectionMatrix();
+	}
+
+	/**
+	 * The main animation loop, called repeatedly via requestAnimationFrame.
+	 * Updates game logic, animations, controllers, and renders the scene.
+	 */
+	animate() {
+		// Request the next frame, binding 'this' correctly.
+		requestAnimationFrame(this.animate.bind(this));
+
+		// Get the time elapsed since the last frame (delta time in seconds).
+		const delta = this.clock.getDelta();
+
+		// Update all active animation mixers.
+		this.mixers.forEach((mixer) => mixer.update(delta));
+
+		// Update the player controller logic (physics, movement, state).
+		// Pass delta time for frame-rate independent calculations.
+		if (this.playerController) {
+			this.playerController.update(delta);
+		}
+
+		// Update the camera controller logic (position, rotation, zoom).
+		// Note: The current CameraController.update doesn't use delta, but could be added for smoothing.
+		if (this.cameraController) {
+			this.cameraController.update(); // Pass delta if smoothing is implemented
+		}
+
+		// Render the scene from the perspective of the camera.
+		this.renderer.render(this.scene, this.camera);
+	}
+}
+
+// Create an instance of the MainGame class to start the application.
+const game = new MainGame();
