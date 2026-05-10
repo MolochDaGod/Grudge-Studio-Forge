@@ -168,6 +168,13 @@ router.post("/ai/chat", async (req, res) => {
     return;
   }
 
+  if (!anthropic) {
+    send({ type: "error", error: "Anthropic AI is not configured on this server. Use ?provider=puter with a Puter token instead, or set ANTHROPIC_API_KEY." });
+    send({ type: "stop", stop_reason: "error" });
+    res.end();
+    return;
+  }
+
   try {
     const stream = anthropic.messages.stream({
       model,

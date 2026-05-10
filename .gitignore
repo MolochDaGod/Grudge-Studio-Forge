@@ -49,6 +49,10 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Large assets (use R2 object storage instead)
+attached_assets/*.glb
+attached_assets/*.fbx
+
 # Replit
 .cache/
 .local/

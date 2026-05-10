@@ -1,0 +1,55 @@
+name: Release Desktop
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build renderer (game-forge)
+        run: pnpm --filter @workspace/game-forge-desktop run build:renderer
+
+      - name: Build main process
+        run: pnpm --filter @workspace/game-forge-desktop run build:main
+
+      - name: Package & publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_OWNER: MolochDaGod
+          GH_REPO: Grudge-Studio-Forge
+          # Code signing (optional — set these secrets if you have a cert):
+          # CSC_LINK: ${{ secrets.CSC_LINK }}
+          # CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # WIN_CSC_SUBJECT_NAME: ${{ secrets.WIN_CSC_SUBJECT_NAME }}
+        run: |
+          cd artifacts/game-forge-desktop
+          npx electron-builder --win --publish always --config electron-builder.yml
+        shell: pwsh
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/game-forge-desktop/dist/installer/*.exe
+          retention-days: 30
