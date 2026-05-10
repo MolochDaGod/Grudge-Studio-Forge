@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_MODEL_YAW_OFFSETS, BUILTIN_MODEL_CLIPS, getRaceClips } from "../builtinModels";
+import {
+  BUILTIN_MODEL_YAW_OFFSETS,
+  BUILTIN_MODEL_CLIPS,
+  getRaceClips,
+  shouldShowRaceVariantMesh,
+  isRaceVariantModel,
+} from "../builtinModels";
 import { BUILTIN_BEHAVIORS } from "../deathmatchBehaviors";
 import {
   PROCEDURAL_BIPED_CLIP_NAMES,
@@ -125,5 +131,81 @@ describe("BIPED_ANIM_PROFILES", () => {
 
   it("emits a death pose name in the procedural clip catalog", () => {
     expect(PROCEDURAL_BIPED_CLIP_NAMES.death).toBe("death");
+  });
+});
+
+describe("isRaceVariantModel", () => {
+  it("matches every builtin:race:<id> key for races in the catalog", () => {
+    for (const r of RACES) {
+      expect(isRaceVariantModel(`builtin:race:${r.id}`)).toBe(true);
+    }
+  });
+
+  it("does NOT match the held-weapon keys, the legacy character key, or absolute URLs", () => {
+    expect(isRaceVariantModel("builtin:race-weapon:warrior")).toBe(false);
+    expect(isRaceVariantModel("builtin:character")).toBe(false);
+    expect(isRaceVariantModel("builtin:rifle")).toBe(false);
+    expect(isRaceVariantModel("builtin:map-encampment")).toBe(false);
+    expect(isRaceVariantModel("https://cdn.example/foo.glb")).toBe(false);
+    expect(isRaceVariantModel("")).toBe(false);
+  });
+});
+
+describe("shouldShowRaceVariantMesh", () => {
+  it("hides every mesh whose name contains weapon / shield / xtra (case-insensitive)", () => {
+    const seen = new Set<string>();
+    // Universal across the toon-rts pack — these prefixes appear in
+    // human / dwarf / orc / undead / barbarian / elf rigs.
+    expect(shouldShowRaceVariantMesh("WK_weapon_sword_A", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("DWF_weapon_axe_B", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("ELF_weapon_Bow", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("ORC_Shield_C", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("WK_Xtra_quiver", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("UD_xtra_bag", seen)).toBe(false);
+  });
+
+  it("keeps the FIRST body-part variant per category and hides the rest (deterministic GLB-order pick)", () => {
+    const seen = new Set<string>();
+    // Walked in the order the source GLB lists them — the warrior
+    // (human.glb) emits Body_A first, then Body_B, etc.
+    expect(shouldShowRaceVariantMesh("WK_Units_Body_A", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("WK_Units_Body_B", seen)).toBe(false);
+    expect(shouldShowRaceVariantMesh("WK_Units_Body_C", seen)).toBe(false);
+    // Different category — head — gets its own first-keep.
+    expect(shouldShowRaceVariantMesh("WK_Units_head_A", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("WK_Units_head_B", seen)).toBe(false);
+    // Arms / Legs / shoulderpads each independent.
+    expect(shouldShowRaceVariantMesh("WK_Units_Arms_A", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("WK_Units_Legs_A", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("WK_Units_shoulderpads_A", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("WK_Units_shoulderpads_B", seen)).toBe(false);
+  });
+
+  it("works across race prefixes (DWF / ELF / ORC / UD / BRB) using their own naming", () => {
+    // Each call gets a fresh seen-set — simulating one filter pass per
+    // cloned scene, the way EntityRenderer.LoadedModel uses it.
+    {
+      const seen = new Set<string>();
+      expect(shouldShowRaceVariantMesh("DWF_Units_Body_A", seen)).toBe(true);
+      expect(shouldShowRaceVariantMesh("DWF_Units_Body_E", seen)).toBe(false);
+    }
+    {
+      const seen = new Set<string>();
+      expect(shouldShowRaceVariantMesh("UD_Units_body_G", seen)).toBe(true);
+      expect(shouldShowRaceVariantMesh("UD_Units_body_C", seen)).toBe(false);
+    }
+    {
+      const seen = new Set<string>();
+      expect(shouldShowRaceVariantMesh("BRB_body_A", seen)).toBe(true);
+      expect(shouldShowRaceVariantMesh("BRB_body_F", seen)).toBe(false);
+    }
+  });
+
+  it("keeps meshes with no recognized variant suffix (e.g. a unique skin / bone helper)", () => {
+    const seen = new Set<string>();
+    expect(shouldShowRaceVariantMesh("Bip001 Pelvis", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("RootSkin", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh("", seen)).toBe(true);
+    expect(shouldShowRaceVariantMesh(undefined, seen)).toBe(true);
   });
 });

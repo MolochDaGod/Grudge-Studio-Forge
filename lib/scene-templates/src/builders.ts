@@ -577,15 +577,26 @@ export function rpgVillageScene(): SceneData {
 
   // Visible village map (no physics — handled by the invisible Ground
   // plane below, same pattern as the deathmatch templates).
+  //
+  // We use map-encampment (war-camp tents + crates, scale 0.5) here
+  // instead of map-deserttown. The deserttown GLB has stray
+  // underground geometry (foundation meshes, dropped props, ladder
+  // pieces) extending hundreds of units below the visible terrain, so
+  // EntityRenderer's `dropToGround` (which lifts the model so its
+  // bbox.min.y == 0) ends up pushing the visible ground way above
+  // world Y=0 — characters spawn at Y=0 and end up buried under the
+  // desert floor. map-encampment has clean geometry that drop-aligns
+  // correctly at scale 0.5, and is the same map the proven
+  // tps-zombie-demo template uses with characters at Y=0.
   entities.push({
     id: id(),
     name: "Map",
     type: "model",
-    model: { url: "builtin:map-deserttown" },
+    model: { url: "builtin:map-encampment" },
     transform: {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
-      scale: [0.6, 0.6, 0.6],
+      scale: [0.5, 0.5, 0.5],
     },
     parentId: null,
   });

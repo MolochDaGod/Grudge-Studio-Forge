@@ -69,6 +69,58 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:skeleton": ensureBaseUrl(rifleUrl),
 };
 
+/** Decide whether a mesh inside a builtin race GLB should be visible.
+ *
+ *  The toon-rts-characters pack GLBs are MODULAR variant rigs — each
+ *  character file (~870 KB – 1.1 MB) contains every body / head / arms /
+ *  legs / shoulderpads variant the source Unity asset shipped (typically
+ *  4–9 variants per slot, named `<PREFIX>_Units_Body_A` … `_I`,
+ *  `<PREFIX>_Units_head_A` … `_I`, etc.) PLUS every weapon mesh
+ *  (`<PREFIX>_weapon_sword_A`, `_axe_B`, `_bow`, …), every shield
+ *  (`<PREFIX>_Shield_A` … `_D`), and a few "Xtra" props (quiver, bag,
+ *  wood). The pack expects the consumer to toggle visibility per-variant
+ *  in Unity — nothing in the GLB does it for us, so by default every
+ *  one of the ~42–50 meshes renders simultaneously, all bound to the
+ *  same skeleton. The visual result: each "character" looks like a
+ *  pile of overlapping body parts holding 15 weapons at once — exactly
+ *  the "holding every mesh instead of just a weapon and one set" bug
+ *  reported against the rpg-village template.
+ *
+ *  Rules (applied to any mesh inside a `builtin:race:<id>` model):
+ *    - Hide every mesh whose name matches /weapon|shield|xtra/i.
+ *      The held weapon is provided by a separate parented child entity
+ *      using the `builtin:race-weapon:<id>` model key, so the in-rig
+ *      weapon meshes are pure clutter.
+ *    - For body-part meshes (`*_A` … `*_I` or `*_01` … `*_09`), keep
+ *      only the FIRST variant encountered per category prefix. GLB
+ *      mesh order is deterministic (set when the artist exported), so
+ *      this is stable across loads — and across races, since every
+ *      race has a Body, head, Arms, Legs, and shoulderpads category
+ *      under its own prefix (WK_/DWF_/ELF_/ORC_/UD_/BRB_).
+ *
+ *  Pure: takes the mesh name and a per-call `seen` set so the caller can
+ *  walk a cloned scene once. Returns true to keep the mesh visible. */
+export function shouldShowRaceVariantMesh(meshName: string | undefined, seen: Set<string>): boolean {
+  const n = (meshName ?? "").toLowerCase();
+  if (!n) return true;
+  if (/weapon|shield|xtra/.test(n)) return false;
+  // Strip a trailing _<letter> or _<two-digit-number> variant tag so the
+  // remaining prefix names the slot category ("wk_units_body", etc.).
+  const m = n.match(/^(.*)_(?:[a-z]|[0-9]{2})$/);
+  if (!m) return true; // No recognized variant suffix → always show.
+  const cat = m[1];
+  if (seen.has(cat)) return false;
+  seen.add(cat);
+  return true;
+}
+
+/** True when a model URL key is a race rig that needs variant filtering
+ *  via {@link shouldShowRaceVariantMesh}. Centralized so EntityRenderer
+ *  and any future consumer (e.g. a prefab editor preview) stay in sync. */
+export function isRaceVariantModel(url: string): boolean {
+  return url.startsWith("builtin:race:");
+}
+
 /** Per-builtin-model Y rotation offset (radians) applied at render time
  *  inside the entity's rigidbody/group, so the visual model faces the
  *  same direction as the physics body's "forward". The toon-rts character

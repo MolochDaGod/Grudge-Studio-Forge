@@ -15,7 +15,12 @@ import type { TriggerEvent } from "./GameBus";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
-import { resolveBuiltinModel, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
+import {
+  resolveBuiltinModel,
+  BUILTIN_MODEL_YAW_OFFSETS,
+  isRaceVariantModel,
+  shouldShowRaceVariantMesh,
+} from "@/lib/builtinModels";
 import { synthesizeBipedClips, getBipedProfile } from "@/lib/proceduralBipedAnimations";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
@@ -468,6 +473,33 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
       cloned.position.y = originalY;
     };
   }, [cloned, dropToGround]);
+
+  // ── Race variant filter: the toon-rts character GLBs ship as modular
+  // packs containing every body / head / arms / legs variant AND every
+  // in-rig weapon / shield / xtra. Without filtering, all ~42–50 meshes
+  // render simultaneously bound to the same skeleton — the "holding
+  // every mesh" bug. We toggle `mesh.visible` on the cloned scene (one
+  // pass per clone) so each instance gets its own visibility flags
+  // without mutating drei's cached source `gltf.scene`. The filter is
+  // pure and unit-tested in `__tests__/builtinModels.test.ts`. Restored
+  // on cleanup so toggling URL at runtime can't leave stale flags.
+  useLayoutEffect(() => {
+    if (!isRaceVariantModel(url)) return;
+    const seen = new Set<string>();
+    const restore: { mesh: THREE.Object3D; prev: boolean }[] = [];
+    cloned.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const keep = shouldShowRaceVariantMesh(o.name, seen);
+      if (!keep) {
+        restore.push({ mesh: o, prev: o.visible });
+        o.visible = false;
+      }
+    });
+    return () => {
+      for (const r of restore) r.mesh.visible = r.prev;
+    };
+  }, [cloned, url]);
 
   // ── Surface tagging: stamp the cloned root's userData so a downstream
   // raycast (e.g. PlayRuntime → groundProbe) can read what kind of

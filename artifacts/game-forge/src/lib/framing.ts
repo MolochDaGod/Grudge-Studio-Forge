@@ -33,6 +33,14 @@ export interface ComputeFramingPoseOptions {
    *  entity (e.g. an empty marker) still produces a usable framing distance
    *  rather than collapsing the camera into the target. */
   minRadius?: number;
+  /** Cap on the framing distance. Without this, selecting a giant Map
+   *  GLB (e.g. the deserttown / encampment maps span 100–300 world units)
+   *  flings the camera 1000+ units away — past the editor camera's
+   *  default `far` plane (2000), so the user sees a black viewport and
+   *  thinks F just stopped working. Defaults to 200, which is enough to
+   *  comfortably frame the largest map we ship while staying well inside
+   *  the far plane. Pass `Infinity` to disable. */
+  maxDistance?: number;
 }
 
 export interface FramingPose {
@@ -75,7 +83,8 @@ export function computeFramingPose(opts: ComputeFramingPoseOptions): FramingPose
   // Horizontal fit (when aspect < 1 the horizontal FOV is the binding one)
   const fovH = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
   const distH = radius / Math.sin(fovH / 2);
-  const distance = Math.max(distV, distH) * margin;
+  const maxDistance = opts.maxDistance ?? 200;
+  const distance = Math.min(maxDistance, Math.max(distV, distH) * margin);
 
   // Preserve the current view direction. Fall back to a 1,1,1 isometric-ish
   // direction if the camera is sitting on the orbit target (degenerate).
