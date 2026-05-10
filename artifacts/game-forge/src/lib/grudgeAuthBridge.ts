@@ -1,0 +1,184 @@
+/**
+ * Grudge ID auth bridge for GameForge.
+ *
+ * Since the Forge runs on grudge-studio-forge.pages.dev (different TLD from
+ * grudge-studio.com), it cannot share the `.grudge-studio.com` session cookie.
+ * Instead it uses the launch-token popup flow:
+ *
+ *   1. User clicks "Sign in with Grudge ID"
+ *   2. Popup opens at grudge-studio.com/auth/popup?audience=<forge-origin>
+ *   3. User signs in via the unified modal (Discord, Phantom, guest, etc.)
+ *   4. Popup posts back { type: "grudge:auth:success", token, player }
+ *   5. Forge stores the token + player in the Zustand auth store
+ *
+ * On OAuth redirects the server appends ?grudge_token=<jwt> — this module
+ * also handles extracting and exchanging that on page load.
+ */
+
+import { useAuth, type AuthUser } from "@/store/auth";
+
+// The ENGINE host that serves the auth popup and API
+const GRUDGE_AUTH_HOST = "https://grudge-studio.com";
+const GRUDGE_API = GRUDGE_AUTH_HOST;
+
+export interface GrudgePlayer {
+  id: number;
+  username: string;
+  grudgeId: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  gbuxBalance: string;
+  role: string;
+}
+
+function grudgeToAuthUser(player: GrudgePlayer): AuthUser {
+  return {
+    id: player.grudgeId,
+    name: player.displayName || player.username,
+    // No puter identity — Forge treats this as a "signed in" user via Grudge ID.
+    // The isPuterSignedIn flag stays false, but the editor is unlocked.
+  };
+}
+
+const GRUDGE_SESSION_KEY = "grudge.auth.session";
+
+function storeGrudgeSession(player: GrudgePlayer, token: string): void {
+  try {
+    localStorage.setItem(GRUDGE_SESSION_KEY, JSON.stringify({ player, token, storedAt: Date.now() }));
+  } catch { /* quota / private mode */ }
+}
+
+function readGrudgeSession(): { player: GrudgePlayer; token: string } | null {
+  try {
+    const raw = localStorage.getItem(GRUDGE_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.player?.grudgeId || !data?.token) return null;
+    // Tokens expire after 5 min, but we keep the player data for display.
+    // On next page load, whoami() will verify if the session is still valid.
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export function clearGrudgeSession(): void {
+  try { localStorage.removeItem(GRUDGE_SESSION_KEY); } catch { /* */ }
+}
+
+/**
+ * Check for a `?grudge_token=` URL parameter (from cross-domain OAuth redirect).
+ * If found, exchange it for a session and hydrate the auth store.
+ * Returns true if a token was found and successfully exchanged.
+ */
+export async function checkGrudgeTokenParam(): Promise<boolean> {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("grudge_token");
+  if (!token) return false;
+
+  // Clean the token from the URL so it doesn't leak in bookmarks/history
+  params.delete("grudge_token");
+  params.delete("auth");
+  params.delete("new");
+  const cleanUrl = params.toString()
+    ? `${window.location.pathname}?${params.toString()}`
+    : window.location.pathname;
+  window.history.replaceState({}, "", cleanUrl);
+
+  try {
+    const res = await fetch(`${GRUDGE_API}/api/auth/session/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token, audience: window.location.origin }),
+    });
+    if (!res.ok) return false;
+    const player = (await res.json()) as GrudgePlayer;
+    storeGrudgeSession(player, token);
+    useAuth.getState().setSignedIn(grudgeToAuthUser(player));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Silent session check — try to restore a Grudge session from localStorage
+ * or by calling /api/auth/me with credentials.
+ */
+export async function checkGrudgeSession(): Promise<boolean> {
+  // First check localStorage for a cached session
+  const cached = readGrudgeSession();
+  if (cached) {
+    // Verify it's still valid via the API
+    try {
+      const res = await fetch(`${GRUDGE_API}/api/auth/me`, { credentials: "include" });
+      if (res.ok) {
+        const player = (await res.json()) as GrudgePlayer;
+        storeGrudgeSession(player, cached.token);
+        useAuth.getState().setSignedIn(grudgeToAuthUser(player));
+        return true;
+      }
+    } catch { /* fall through */ }
+    // Token expired — clear cache
+    clearGrudgeSession();
+  }
+  return false;
+}
+
+/**
+ * Open the Grudge auth popup. Must be called from a user-initiated click.
+ * Returns the authenticated player on success, throws on cancel/error.
+ */
+export function signInWithGrudge(): Promise<AuthUser> {
+  const audience = window.location.origin;
+  const width = 420;
+  const height = 640;
+  const left = (window.screenX || 0) + (window.outerWidth - width) / 2;
+  const top = (window.screenY || 0) + (window.outerHeight - height) / 2;
+
+  return new Promise((resolve, reject) => {
+    const popup = window.open(
+      `${GRUDGE_AUTH_HOST}/auth/popup?audience=${encodeURIComponent(audience)}`,
+      "grudge-auth",
+      `width=${width},height=${height},left=${left},top=${top},popup=yes`,
+    );
+    if (!popup) return reject(new Error("Popup blocked — allow popups for this site."));
+
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      if (popup && !popup.closed) popup.close();
+      clearInterval(poll);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== GRUDGE_AUTH_HOST) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+
+      if (data.type === "grudge:auth:success" && data.token && data.player) {
+        cleanup();
+        const player = data.player as GrudgePlayer;
+        storeGrudgeSession(player, data.token);
+        const authUser = grudgeToAuthUser(player);
+        useAuth.getState().setSignedIn(authUser);
+        resolve(authUser);
+      } else if (data.type === "grudge:auth:error") {
+        cleanup();
+        reject(new Error(data.error || "Authentication failed"));
+      } else if (data.type === "grudge:auth:cancel") {
+        cleanup();
+        reject(new Error("Authentication cancelled"));
+      }
+    };
+
+    const poll = setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+        reject(new Error("Popup closed before authentication finished"));
+      }
+    }, 500);
+
+    window.addEventListener("message", onMessage);
+  });
+}

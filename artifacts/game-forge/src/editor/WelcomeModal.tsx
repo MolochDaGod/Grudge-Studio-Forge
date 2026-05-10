@@ -20,13 +20,14 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Sparkles, LogIn, ArrowRight, Loader2 } from "lucide-react";
+import { Sparkles, LogIn, ArrowRight, Loader2, Shield } from "lucide-react";
 import { useAuth } from "@/store/auth";
 import { signInWithPuter, continueAsGuest } from "@/lib/authBootstrap";
+import { signInWithGrudge } from "@/lib/grudgeAuthBridge";
 
 export function WelcomeModal() {
   const status = useAuth((s) => s.status);
-  const [busy, setBusy] = useState<"signin" | "guest" | null>(null);
+  const [busy, setBusy] = useState<"signin" | "grudge" | "guest" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const open = status === "anon";
@@ -92,11 +93,11 @@ export function WelcomeModal() {
           </p>
         )}
 
-        <DialogFooter className="gap-2 sm:flex-row-reverse">
+        <DialogFooter className="gap-2 flex-col sm:flex-col">
           <Button
             onClick={onSignIn}
             disabled={busy !== null}
-            className="gap-1.5"
+            className="gap-1.5 w-full"
             data-testid="button-welcome-signin"
           >
             {busy === "signin" ? (
@@ -107,10 +108,34 @@ export function WelcomeModal() {
             Sign in with Puter
           </Button>
           <Button
+            variant="outline"
+            onClick={async () => {
+              setBusy("grudge");
+              setError(null);
+              try {
+                await signInWithGrudge();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Grudge sign-in failed.");
+              } finally {
+                setBusy(null);
+              }
+            }}
+            disabled={busy !== null}
+            className="gap-1.5 w-full border-[#d4af37]/40 text-[#d4af37] hover:bg-[#d4af37]/10"
+            data-testid="button-welcome-grudge"
+          >
+            {busy === "grudge" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Shield className="size-4" />
+            )}
+            Sign in with Grudge ID
+          </Button>
+          <Button
             variant="ghost"
             onClick={onGuest}
             disabled={busy !== null}
-            className="gap-1.5"
+            className="gap-1.5 w-full"
             data-testid="button-welcome-guest"
           >
             Continue without signing in

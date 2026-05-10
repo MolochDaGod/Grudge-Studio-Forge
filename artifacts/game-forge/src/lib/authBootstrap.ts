@@ -17,6 +17,7 @@
  */
 import { useAuth, type AuthUser, type PuterIdentity } from "@/store/auth";
 import { loadPuterSdk, getPuter, type PuterSdk } from "@/lib/puterSdk";
+import { checkGrudgeTokenParam, checkGrudgeSession, clearGrudgeSession } from "@/lib/grudgeAuthBridge";
 
 const GUEST_KEY = "grudge.auth.guestUser";
 
@@ -97,7 +98,13 @@ async function readPuterSession(sdk: PuterSdk): Promise<AuthUser | null> {
  * and otherwise leave the store at `anon` so the Welcome modal renders.
  */
 export async function bootstrapAuth(): Promise<void> {
-  // Try the SDK first. We tolerate CDN load failures (corp networks
+  // 1. Check for a ?grudge_token= URL param (cross-domain OAuth redirect)
+  if (await checkGrudgeTokenParam()) return;
+
+  // 2. Check for an existing Grudge ID session in localStorage
+  if (await checkGrudgeSession()) return;
+
+  // 3. Try the Puter SDK. We tolerate CDN load failures (corp networks
   // that block puter.com) by falling through to the guest path.
   let sdk: PuterSdk | null = null;
   try {
@@ -191,5 +198,6 @@ export async function signOut(): Promise<void> {
     }
   }
   writeStoredGuest(null);
+  clearGrudgeSession();
   useAuth.getState().reset();
 }
