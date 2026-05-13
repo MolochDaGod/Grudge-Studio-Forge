@@ -462,13 +462,30 @@ function FocusCameraController() {
 
   // Active tween bookkeeping. Null means "no tween in flight"; useFrame
   // bails immediately. The effect populates this when focusToken bumps.
+  //
+  // Note (intentional design): F is "go to selection", NOT "lock orbit
+  // to selection". We tween the camera to frame the entity and we
+  // update the camera's look direction to centre the entity, but at
+  // tween end we push the OrbitControls pivot OFF the entity, along
+  // the new view direction at the user's original orbit radius. That
+  // way subsequent middle-mouse orbit revolves around a pivot in
+  // free space (just like before pressing F) instead of feeling
+  // "stuck" on the entity, which is what users complained about.
   const tweenRef = useRef<{
     startTime: number;
     duration: number;
     startCam: THREE.Vector3;
     startTarget: THREE.Vector3;
     endCam: THREE.Vector3;
-    endTarget: THREE.Vector3;
+    /** Where the entity sits in world space — what the camera should
+     *  look at during and at the end of the tween. NOT the orbit
+     *  pivot; see `endPivotDistance` below. */
+    lookAt: THREE.Vector3;
+    /** User's pre-focus orbit radius. At tween end we place
+     *  controls.target this far along the camera's forward ray, so
+     *  the orbit feel is preserved (same orbit speed, same dolly
+     *  range) but the pivot is no longer pinned to the entity. */
+    endPivotDistance: number;
   } | null>(null);
 
   useEffect(() => {
@@ -518,13 +535,18 @@ function FocusCameraController() {
       aspect,
     });
 
+    // Preserve the user's orbit radius so the post-focus pivot lands
+    // at the same dolly distance — orbit feel is unchanged.
+    const endPivotDistance = Math.max(0.5, camera.position.distanceTo(curTarget));
+
     tweenRef.current = {
       startTime: performance.now(),
       duration: 250,
       startCam: camera.position.clone(),
       startTarget: curTarget,
       endCam: new THREE.Vector3(pose.position[0], pose.position[1], pose.position[2]),
-      endTarget: new THREE.Vector3(pose.target[0], pose.target[1], pose.target[2]),
+      lookAt: new THREE.Vector3(pose.target[0], pose.target[1], pose.target[2]),
+      endPivotDistance,
     };
   }, [focusToken, camera, controls, scene, size]);
 
@@ -540,9 +562,32 @@ function FocusCameraController() {
     // reason: see above — narrow drei's loosely-typed `controls` to the
     // OrbitControls subset.
     const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
-    if (c?.target) c.target.lerpVectors(t.startTarget, t.endTarget, e);
+    if (c?.target) {
+      // Throughout the tween: keep the pivot AT the look-at point so
+      // OrbitControls aims the camera at the entity (it derives
+      // camera.quaternion from `target - position` every frame).
+      c.target.lerpVectors(t.startTarget, t.lookAt, e);
+    }
     c?.update?.();
-    if (k >= 1) tweenRef.current = null;
+
+    if (k >= 1) {
+      // Tween done — now slide the orbit pivot off the entity along
+      // the camera's forward ray, parking it at the user's original
+      // orbit radius. The view direction (and therefore the visible
+      // framing) doesn't change a single pixel — only the pivot
+      // moves — so the user can immediately orbit/dolly without
+      // feeling locked onto the entity.
+      if (c?.target) {
+        const forward = t.lookAt.clone().sub(camera.position);
+        const dist = forward.length();
+        if (dist > 1e-4) {
+          forward.multiplyScalar(1 / dist); // normalize in place
+          c.target.copy(camera.position).addScaledVector(forward, t.endPivotDistance);
+          c.update?.();
+        }
+      }
+      tweenRef.current = null;
+    }
   });
 
   return null;
