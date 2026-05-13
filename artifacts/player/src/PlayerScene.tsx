@@ -89,7 +89,7 @@ export function PlayerScene(): React.ReactElement {
   return (
     <div style={{ position: "fixed", inset: 0 }}>
       <Canvas
-        shadows
+        shadows="soft"
         camera={{ position: [8, 8, 12], fov: 45 }}
         gl={{
           antialias: true,

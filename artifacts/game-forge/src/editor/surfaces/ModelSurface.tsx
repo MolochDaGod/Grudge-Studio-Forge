@@ -290,7 +290,7 @@ export function ModelSurface({ payload }: ModelSurfaceProps) {
       {prep.state === "ready" && !prep.data?.placeholder && prep.data && (
         <Canvas
           key={`${prep.data.url}-${epoch}`}
-          shadows
+          shadows="soft"
           camera={{ position: [4, 3, 6], fov: 45 }}
           gl={{
             antialias: true,

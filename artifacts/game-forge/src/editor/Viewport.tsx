@@ -1269,7 +1269,7 @@ export function Viewport() {
               * far/near ratio is well within float32 depth-buffer
               * precision for an editor camera. */}
             <Canvas
-              shadows
+              shadows="soft"
               camera={{ position: [8, 8, 12], fov: 45, near: 0.1, far: 5000 }}
               onPointerMissed={
                 isPlaying
@@ -1297,13 +1297,6 @@ export function Viewport() {
                 toneMapping: THREE.NoToneMapping,
                 outputColorSpace: THREE.SRGBColorSpace,
                 stencil: false,
-              }}
-              onCreated={({ gl }) => {
-                gl.shadowMap.enabled = true;
-                gl.shadowMap.type = THREE.PCFSoftShadowMap;
-                // autoUpdate=true (default) is fine; setting needsUpdate
-                // here would force a one-shot bake. We rely on R3F's
-                // continuous render loop to keep shadows fresh.
               }}
               dpr={[1, 2]}
               style={isPlaying ? { cursor: "none" } : undefined}

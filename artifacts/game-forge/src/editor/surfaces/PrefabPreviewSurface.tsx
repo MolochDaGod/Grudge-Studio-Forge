@@ -88,7 +88,7 @@ export function PrefabPreviewSurface({ payload }: { payload: PrefabTabPayload })
 
       {prefab && (
         <Canvas
-          shadows
+          shadows="soft"
           camera={{ position: [4, 3, 6], fov: 45 }}
           gl={{
             antialias: true,
