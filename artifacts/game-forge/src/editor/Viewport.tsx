@@ -1039,9 +1039,16 @@ export function Viewport() {
               setViewportEpoch((n) => n + 1);
             }}
           >
+            {/* Camera `far` bumped from the three.js default (1000)
+              * to 5000 so distant terrain, skybox geometry, and large
+              * open-world scenes don't get clipped at the horizon.
+              * Near stays at the default 0.1 — small enough to walk
+              * up to props without near-plane clipping. The 50000:1
+              * far/near ratio is well within float32 depth-buffer
+              * precision for an editor camera. */}
             <Canvas
               shadows
-              camera={{ position: [8, 8, 12], fov: 45 }}
+              camera={{ position: [8, 8, 12], fov: 45, near: 0.1, far: 5000 }}
               onPointerMissed={
                 isPlaying
                   ? undefined

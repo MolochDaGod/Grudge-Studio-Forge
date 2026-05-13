@@ -476,11 +476,16 @@ export interface SceneData {
 export const DEFAULT_GRAVITY: Vec3 = [0, -9.81, 0];
 
 /** Default linear-fog distances (world units). The viewport falls back to
- *  these when `Environment.fog` is unset. Sized for the current ~120u arena
- *  scale so the fog wall sits on the horizon, not behind the player. */
+ *  these when `Environment.fog` is unset. Bumped from 80→200 near and
+ *  320→1500 far after playtest feedback that the fog wall was visibly
+ *  closing in around the player on open-world / large-arena scenes
+ *  (anything > ~150u). The new range keeps fog as an atmospheric horizon
+ *  effect that only kicks in past mid-distance and never visibly blocks
+ *  geometry at gameplay range. Designers can still tighten fog per-scene
+ *  via `Environment.fog`. */
 export const DEFAULT_FOG = {
-  near: 80,
-  far: 320,
+  near: 200,
+  far: 1500,
 } as const;
 
 export const DEFAULT_ENV: Environment = {
