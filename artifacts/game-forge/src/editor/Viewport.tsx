@@ -456,6 +456,21 @@ function PointerLockBridge({ onChange }: { onChange: (locked: boolean) => void }
  *     (ease-out cubic) instead of teleporting.
  *
  *  Pure framing math lives in `@/lib/framing` and is unit-tested. */
+/** Tiny R3F-side helper that copies the live THREE.Scene reference up
+ *  to a parent ref so DOM-level event handlers (which can't use
+ *  `useThree`) can reach it. Identical pattern to capturing camera /
+ *  controls; we only need scene for raycast-to-terrain. */
+function SceneCapture({ sceneRef }: { sceneRef: React.MutableRefObject<THREE.Scene | null> }) {
+  const { scene } = useThree();
+  useEffect(() => {
+    sceneRef.current = scene;
+    return () => {
+      if (sceneRef.current === scene) sceneRef.current = null;
+    };
+  }, [scene, sceneRef]);
+  return null;
+}
+
 function FocusCameraController() {
   const focusToken = useEditor((s) => s.focusToken);
   const { camera, controls, scene, size } = useThree();
@@ -571,20 +586,25 @@ function FocusCameraController() {
     c?.update?.();
 
     if (k >= 1) {
-      // Tween done — now slide the orbit pivot off the entity along
-      // the camera's forward ray, parking it at the user's original
-      // orbit radius. The view direction (and therefore the visible
-      // framing) doesn't change a single pixel — only the pivot
-      // moves — so the user can immediately orbit/dolly without
-      // feeling locked onto the entity.
+      // Tween done — park the orbit pivot AT the entity center.
+      //
+      // Earlier we pushed the pivot OFF the entity along the camera's
+      // forward ray at the user's pre-F orbit radius (to avoid feeling
+      // "locked" on the entity). The downside: when the pre-F radius
+      // was much larger than the new camera→entity distance, the pivot
+      // landed far PAST the entity, so mouse-wheel dolly (which moves
+      // along the camera→pivot ray) zoomed straight through the
+      // focused thing instead of toward it. Net result: wheel-zoom
+      // felt broken right after pressing F.
+      //
+      // Parking the pivot at `lookAt` makes the wheel naturally dolly
+      // toward / away from the focused entity, which is what users
+      // expect from "frame this thing". The user can still re-anchor
+      // the pivot at any time with middle-mouse pan, the same way they
+      // would in Blender / Unity.
       if (c?.target) {
-        const forward = t.lookAt.clone().sub(camera.position);
-        const dist = forward.length();
-        if (dist > 1e-4) {
-          forward.multiplyScalar(1 / dist); // normalize in place
-          c.target.copy(camera.position).addScaledVector(forward, t.endPivotDistance);
-          c.update?.();
-        }
+        c.target.copy(t.lookAt);
+        c.update?.();
       }
       tweenRef.current = null;
     }
@@ -774,6 +794,7 @@ export function Viewport() {
   const cmdSetEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
   const requestFocus = useEditor((s) => s.requestFocus);
   const projectId = useEditor((s) => s.projectId);
+  const sceneRef = useRef<THREE.Scene | null>(null);
   const hotbar = useEditor((s) => s.hotbar);
   const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
   const pushLog = useEditor((s) => s.pushLog);
@@ -977,6 +998,170 @@ export function Viewport() {
     if (!trimmed || trimmed === currentName) return;
     cmdRenameEntity(id, trimmed);
   };
+  // ──────────────────────────────────────────────────────────────────────
+  // Hierarchy → Viewport bridge: "Move to ▸ Terrain / Pathfinding"
+  // ──────────────────────────────────────────────────────────────────────
+  // The Hierarchy context-menu fires `gameforge:moveTo` for the two
+  // operations that need a live THREE scene (downward raycast for
+  // Terrain) or the cached recast navmesh (nearest-poly for
+  // Pathfinding). We keep the listener up here in the wrapper
+  // component so we can call cmdSetEntityTransform (the same store
+  // action the gizmo drag uses) and emit a pushLog on failure.
+  useEffect(() => {
+    const handler = async (ev: Event) => {
+      const detail = (ev as CustomEvent<{ entityId?: string; target?: "terrain" | "navmesh" }>).detail;
+      const id = detail?.entityId;
+      const target = detail?.target;
+      if (!id || !target) return;
+      const scene = sceneRef.current;
+      if (!scene) {
+        pushLog("warn", "Move-to: scene not ready.");
+        return;
+      }
+      // Find the entity's three.js group via the same `userData.entityId`
+      // tag the FocusCameraController and click-pick rely on.
+      let obj: THREE.Object3D | null = null;
+      scene.traverse((o) => {
+        if (obj) return;
+        const ud = o.userData as { entityId?: string } | undefined;
+        if (ud?.entityId === id) obj = o;
+      });
+      if (!obj) {
+        pushLog("warn", "Move-to: entity not in scene.");
+        return;
+      }
+      const o3d = obj as THREE.Object3D;
+      o3d.updateWorldMatrix(true, false);
+      const worldPos = new THREE.Vector3();
+      o3d.getWorldPosition(worldPos);
+
+      if (target === "terrain") {
+        // Cast straight down from a point well above the entity. We
+        // walk THREE meshes filtered by `userData.layer === "Terrain"`
+        // so we don't snap onto random props underneath. Falls back to
+        // ANY visible mesh if no Terrain-tagged geometry is hit (so
+        // the action still works on simple scenes that haven't tagged
+        // their ground).
+        const start = worldPos.clone();
+        start.y += 100;
+        const ray = new THREE.Raycaster(start, new THREE.Vector3(0, -1, 0), 0, 1000);
+        // Collect candidate meshes once: skip the entity's own subtree
+        // (don't snap to yourself) and skip helper / gizmo objects.
+        const ownIds = new Set<THREE.Object3D>();
+        o3d.traverse((c) => ownIds.add(c));
+        const meshes: THREE.Mesh[] = [];
+        // Walk the parent chain looking for gizmos, TransformControls,
+        // helpers, drei <Grid>, or anything else that's not real scene
+        // geometry. We can't just check `userData.helper` because the
+        // selection gizmo's own meshes don't carry that tag — they live
+        // under a `TransformControls` ancestor instead.
+        const isHelperLike = (c: THREE.Object3D): boolean => {
+          let cur: THREE.Object3D | null = c;
+          while (cur) {
+            const t = cur.type;
+            if (
+              t === "TransformControls" ||
+              t === "TransformControlsPlane" ||
+              t === "TransformControlsGizmo" ||
+              t === "GridHelper" ||
+              t === "AxesHelper" ||
+              t === "BoxHelper" ||
+              t === "Line" ||
+              t === "LineSegments"
+            ) return true;
+            const ud = cur.userData as { helper?: boolean; isTransformControls?: boolean } | undefined;
+            if (ud?.helper || ud?.isTransformControls) return true;
+            cur = cur.parent;
+          }
+          return false;
+        };
+        scene.traverse((c) => {
+          if (!(c as THREE.Mesh).isMesh) return;
+          if (!c.visible) return;
+          if (ownIds.has(c)) return;
+          if (isHelperLike(c)) return;
+          meshes.push(c as THREE.Mesh);
+        });
+        const hits = ray.intersectObjects(meshes, false);
+        // Prefer Terrain-layer hits; fall back to any hit.
+        let hit = hits.find((h) => {
+          let cur: THREE.Object3D | null = h.object;
+          while (cur) {
+            const ud = cur.userData as { layer?: string } | undefined;
+            if (ud?.layer === "Terrain") return true;
+            cur = cur.parent;
+          }
+          return false;
+        }) ?? hits[0];
+        if (!hit) {
+          pushLog("warn", "Move-to terrain: no ground beneath entity.");
+          return;
+        }
+        // Convert the world-space hit point into the entity's PARENT
+        // space (cmdSetEntityTransform writes local position). For root
+        // entities parent is the scene → identity → world == local.
+        const local = hit.point.clone();
+        if (o3d.parent && o3d.parent !== scene) {
+          o3d.parent.updateWorldMatrix(true, false);
+          local.applyMatrix4(o3d.parent.matrixWorld.clone().invert());
+        }
+        cmdSetEntityTransform(id, "position", [local.x, local.y, local.z]);
+        pushLog("info", `Snapped "${o3d.name || id}" to ground.`);
+        return;
+      }
+
+      if (target === "navmesh") {
+        // Snap to the nearest navmesh poly. Requires a baked navmesh —
+        // we read from the session-scoped `__navmeshBlobs` map the
+        // bake flow populates.
+        try {
+          const blobs = (window as unknown as {
+            __navmeshBlobs?: Map<number, Uint8Array>;
+          }).__navmeshBlobs;
+          const env = useEditor.getState().sceneData.environment;
+          const assetId = env?.navmeshAssetId;
+          const blob = assetId ? blobs?.get(assetId) : undefined;
+          if (!blob) {
+            pushLog("warn", "Move-to pathfinding: no navmesh baked yet (use AI tool or bake panel).");
+            return;
+          }
+          const { loadNavmesh, sampleNavmesh } = await import("@/lib/navmesh");
+          const loaded = await loadNavmesh(blob, assetId);
+          // sampleNavmesh defaults to a tight ±2m XZ × ±4m Y search
+          // box, which is right for "snap an agent already standing on
+          // the mesh". For an editor "Move to ▸ Pathfinding" command
+          // the user expects global search, so we expand outward in
+          // exponentially larger boxes until we find a poly (or give
+          // up at ±256m).
+          let sampled: ReturnType<typeof sampleNavmesh> = null;
+          for (const extent of [4, 16, 64, 256]) {
+            sampled = sampleNavmesh(
+              loaded,
+              [worldPos.x, worldPos.y, worldPos.z],
+              [extent, Math.max(extent, 8), extent],
+            );
+            if (sampled) break;
+          }
+          if (!sampled) {
+            pushLog("warn", "Move-to pathfinding: no navmesh poly within range.");
+            return;
+          }
+          const local = new THREE.Vector3(sampled.point[0], sampled.point[1], sampled.point[2]);
+          if (o3d.parent && o3d.parent !== scene) {
+            o3d.parent.updateWorldMatrix(true, false);
+            local.applyMatrix4(o3d.parent.matrixWorld.clone().invert());
+          }
+          cmdSetEntityTransform(id, "position", [local.x, local.y, local.z]);
+          pushLog("info", `Snapped "${o3d.name || id}" onto navmesh.`);
+        } catch (err) {
+          pushLog("error", `Move-to pathfinding failed: ${(err as Error).message}`);
+        }
+      }
+    };
+    window.addEventListener("gameforge:moveTo", handler);
+    return () => window.removeEventListener("gameforge:moveTo", handler);
+  }, [cmdSetEntityTransform, pushLog]);
+
   const onEntityResetTransform = (id: string) => {
     cmdSetEntityTransform(id, "position", [0, 0, 0]);
     cmdSetEntityTransform(id, "rotation", [0, 0, 0]);
@@ -1139,6 +1324,12 @@ export function Viewport() {
                   />
                   <OrbitControls makeDefault />
                   <FocusCameraController />
+                  {/* Captures the live THREE.Scene out of the R3F
+                    * tree into the parent component's ref so the
+                    * `gameforge:moveTo` listener (which lives outside
+                    * Canvas) can run raycasts against it without
+                    * needing a render-tree-spanning context. */}
+                  <SceneCapture sceneRef={sceneRef} />
                 </>
               )}
               <ClickToDeselect />

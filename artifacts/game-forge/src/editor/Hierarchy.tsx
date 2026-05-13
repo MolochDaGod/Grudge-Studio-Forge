@@ -15,12 +15,24 @@ import {
   Plus,
   Crosshair,
   Sparkles,
+  Wand2,
+  Move,
+  Mountain,
+  Anchor,
+  Route,
+  User as UserIcon,
+  Skull,
+  PackagePlus,
+  MessageSquare,
 } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useEditor } from "@/store/editor";
@@ -159,6 +171,8 @@ interface RowProps {
   onRename: () => void;
   onAddChild: () => void;
   onFocus: () => void;
+  onSmartSetup: (kind: "terrain" | "pickup" | "spawn" | "enemy" | "npc") => void;
+  onMoveTo: (target: "terrain" | "parent" | "navmesh") => void;
   onDragStart: (id: string) => void;
   onDragOverRow: (id: string, e: React.DragEvent) => void;
   onDragLeaveRow: (id: string) => void;
@@ -185,6 +199,8 @@ function HierarchyRow({
   onRename,
   onAddChild,
   onFocus,
+  onSmartSetup,
+  onMoveTo,
   onDragStart,
   onDragOverRow,
   onDragLeaveRow,
@@ -380,6 +396,58 @@ function HierarchyRow({
           <Crosshair className="size-3.5 mr-2" /> Focus camera
           <span className="ml-auto text-[10px] text-muted-foreground">F</span>
         </ContextMenuItem>
+        {/* Move-to submenu — physics-aware snap actions. "Terrain" and
+          * "Pathfinding" need access to the live THREE scene + the
+          * cached navmesh, so they fire a custom DOM event the
+          * Viewport's effect picks up (mirrors the existing
+          * `gameforge:forgePrefab` pattern). "Parent" is a pure local
+          * mutation (zero out the local position) so it stays in this
+          * component's onMoveTo callback. */}
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Move className="size-3.5 mr-2" /> Move to
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="min-w-[200px]">
+            <ContextMenuItem onClick={() => onMoveTo("terrain")}>
+              <Mountain className="size-3.5 mr-2" /> Terrain (snap to ground)
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onMoveTo("navmesh")}>
+              <Route className="size-3.5 mr-2" /> Pathfinding (nearest navmesh)
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => onMoveTo("parent")}
+              disabled={!entity.parentId}
+            >
+              <Anchor className="size-3.5 mr-2" /> Parent origin
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        {/* Smart Setup — one-click presets that combine layer + surface
+          * + behavior tagging so designers don't have to fish through
+          * three inspector dropdowns to make a working pickup, enemy,
+          * or spawnpoint. */}
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>
+            <Wand2 className="size-3.5 mr-2" /> Smart setup
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent className="min-w-[220px]">
+            <ContextMenuItem onClick={() => onSmartSetup("terrain")}>
+              <Mountain className="size-3.5 mr-2" /> Walkable terrain
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onSmartSetup("pickup")}>
+              <PackagePlus className="size-3.5 mr-2" /> Pickup trigger
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onSmartSetup("spawn")}>
+              <Sparkles className="size-3.5 mr-2" /> Player spawnpoint
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onSmartSetup("enemy")}>
+              <Skull className="size-3.5 mr-2" /> Enemy NPC
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onSmartSetup("npc")}>
+              <MessageSquare className="size-3.5 mr-2" /> Friendly NPC (dialog)
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -396,6 +464,8 @@ export function Hierarchy() {
   const cmdSetEntityParent = useEditor((s) => s.cmdSetEntityParent);
   const cmdRenameEntity = useEditor((s) => s.cmdRenameEntity);
   const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
+  const cmdUpdateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const cmdSetEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
   const requestFocus = useEditor((s) => s.requestFocus);
   const toggleCollapsed = useEditor((s) => s.cmdToggleCollapsed);
   const snapshotSubtree = useEditor((s) => s.snapshotSubtree);
@@ -615,6 +685,61 @@ export function Hierarchy() {
         onFocus={() => {
           selectEntity(entity.id);
           requestFocus();
+        }}
+        onSmartSetup={(kind) => {
+          // Combined layer + surface + behavior preset. Each preset
+          // mirrors the manual sequence a designer would do across the
+          // inspector's three dropdowns; bundling them avoids fishing
+          // for the right combination from a 10-layer × 6-surface ×
+          // 8-behavior matrix.
+          cmdUpdateEntity(entity.id, (d) => {
+            switch (kind) {
+              case "terrain":
+                d.layer = "Terrain";
+                d.surface = "Walk";
+                break;
+              case "pickup":
+                // Layer "Trigger" auto-spawns the body as a Rapier
+                // sensor (see DEFAULT_SENSOR_LAYERS), so no per-entity
+                // sensor flag needed — `pickup-trigger` behavior reads
+                // the intersection events from there.
+                d.layer = "Trigger";
+                d.behavior = "pickup-trigger";
+                d.physics = { ...(d.physics ?? {}), bodyType: "fixed" };
+                break;
+              case "spawn":
+                d.layer = "Trigger";
+                d.behavior = "spawnpoint";
+                break;
+              case "enemy":
+                d.layer = "NPC";
+                d.behavior = "enemy-deathmatch";
+                break;
+              case "npc":
+                d.layer = "NPC";
+                d.behavior = "npc-dialog";
+                if (!d.npcLine) d.npcLine = "Hello, traveler!";
+                break;
+            }
+          });
+          pushLog("info", `Smart-setup applied: ${kind} → "${entity.name}"`);
+        }}
+        onMoveTo={(target) => {
+          if (target === "parent") {
+            // "Move to parent" = local position [0,0,0]. Disabled in
+            // the menu when the entity has no parent.
+            cmdSetEntityTransform(entity.id, "position", [0, 0, 0]);
+            return;
+          }
+          // Terrain / navmesh snapping needs the live THREE scene +
+          // (for navmesh) the cached recast blob. Both live in
+          // Viewport so we cross the boundary via a custom DOM event,
+          // mirroring the existing `gameforge:forgePrefab` pattern.
+          window.dispatchEvent(
+            new CustomEvent("gameforge:moveTo", {
+              detail: { entityId: entity.id, target },
+            }),
+          );
         }}
         onDragStart={onDragStart}
         onDragOverRow={onDragOverRow}
