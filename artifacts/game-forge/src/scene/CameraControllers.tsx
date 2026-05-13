@@ -3,6 +3,7 @@ import { OrbitControls, PointerLockControls } from "@react-three/drei";
 import type { RapierRigidBody } from "@react-three/rapier";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { writeClip, writeClipWithVelocity } from "@/lib/agentClipBridge";
 import { useEditor } from "@/store/editor";
 import { useKeyboardState } from "@/lib/keyboard";
 import type { CameraMode, Environment, SceneEntity } from "@/scene/types";
@@ -64,12 +65,25 @@ export function deriveLookFromCameraStart(
  *  each frame in `pickClipName` and crossfades over 0.2s. Writing a
  *  clip name that doesn't exist in the GLB is a safe no-op (drei's
  *  `useAnimations` simply finds no matching action and the heuristic
- *  fallback runs). */
-function writeAgentClip(entityId: string, clip: string | undefined): void {
+ *  fallback runs).
+ *
+ *  PR-B: when the writer can supply the rigid body's current linear
+ *  + angular velocity, we publish the richer envelope so the
+ *  renderer can blend idle/walk/run weights from actual speed and
+ *  apply body lean. Falls back to the bare-string form when no body
+ *  is available (legacy behaviour). */
+function writeAgentClip(
+  entityId: string,
+  clip: string | undefined,
+  velocity?: [number, number, number],
+  angularVelocity?: number,
+): void {
   if (!clip) return;
-  const w = window as unknown as { __agentClips?: Map<string, string> };
-  w.__agentClips ??= new Map();
-  w.__agentClips.set(entityId, clip);
+  if (velocity && typeof angularVelocity === "number") {
+    writeClipWithVelocity(entityId, clip, velocity, angularVelocity);
+  } else {
+    writeClip(entityId, clip);
+  }
 }
 
 /**
@@ -651,7 +665,13 @@ export function FirstPersonCameraController({
     if (clips) {
       const isMoving = mx !== 0 || mz !== 0;
       const isRunning = isMoving && !!k["Shift"];
-      writeAgentClip(player.id, isRunning ? clips.run : isMoving ? clips.walk : clips.idle);
+      const lin = body && "linvel" in body ? body.linvel() : { x: vx, y: 0, z: vz };
+      writeAgentClip(
+        player.id,
+        isRunning ? clips.run : isMoving ? clips.walk : clips.idle,
+        [lin.x, lin.y, lin.z],
+        0,
+      );
     }
 
     // Camera at "head" height

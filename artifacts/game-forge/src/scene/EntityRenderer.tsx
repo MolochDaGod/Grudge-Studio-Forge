@@ -29,6 +29,10 @@ import {
 } from "@/lib/mixamoClipsRegistry";
 import { unifyClips } from "@/lib/clipResolver";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
+import { getBipedFootRig, plantFeetOnTerrain, type BipedFootRig } from "@/lib/footPlanting";
+import { useRapier } from "@react-three/rapier";
+import { readClipEnvelope, readClipName } from "@/lib/agentClipBridge";
+import { computeBodyLean, computeGaitWeights } from "@/lib/gaitBlend";
 import {
   DEFAULT_SENSOR_LAYERS,
   rapierCollisionGroups,
@@ -363,9 +367,22 @@ const touchedTextures: WeakSet<THREE.Texture> = new WeakSet();
  *  static `entity.model.clip` so the renderer can crossfade in response
  *  to FSM transitions without coupling to agentRuntime. */
 function readAgentClip(entityId: string): string | undefined {
-  const w = window as unknown as { __agentClips?: Map<string, string> };
-  return w.__agentClips?.get(entityId);
+  return readClipName(entityId);
 }
+
+/** Names that opt the locomotion blender in. When the writer supplies a
+ *  velocity envelope AND the resolved desired clip is one of these,
+ *  EntityRenderer blends idle/walk/run weights from speed instead of
+ *  crossfading between them as discrete actions. Anything else falls
+ *  back to the legacy single-action crossfade path. */
+const LOCOMOTION_CLIPS: ReadonlySet<string> = new Set(["idle", "walk", "run"]);
+
+/** Tunable for the gait blender — m/s. Mid-walk gait at 1.5 m/s, full
+ *  run at 4 m/s. Tuned against the toon-rts character pack at scale 1
+ *  and the default `playerMoveSpeed = 6` × shift = sprint 9.6 m/s
+ *  (which clamps to pure run). */
+const GAIT_WALK_SPEED = 1.5;
+const GAIT_RUN_SPEED = 4;
 
 interface LoadedModelProps {
   /** Entity id — required so the animation manager can pull the FSM's
@@ -642,6 +659,15 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   // blend without us calling `mixer.update` ourselves.
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
   const currentClipNameRef = useRef<string | null>(null);
+  // PR-B: when locomotion-blend mode is active, all three clip
+  // actions are simultaneously `.play()`ing with weights set from the
+  // body's actual speed each frame. We track the mode flag separately
+  // from `currentClipNameRef` so the legacy crossfade path can be
+  // resumed cleanly when the writer transitions to a non-locomotion
+  // clip (attack/death/etc.) — at that point we fade out the three
+  // locomotion actions and hand control back to the single-action
+  // crossfade.
+  const inLocomotionBlendRef = useRef(false);
   const pickClipName = (): string | null => {
     if (!names.length) return null;
     const fsmClip = readAgentClip(entityId);
@@ -656,12 +682,102 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   };
   useFrame(() => {
     const desired = pickClipName();
-    if (!desired || desired === currentClipNameRef.current) return;
+    if (!desired) return;
+    const envelope = readClipEnvelope(entityId);
+
+    // ── PR-B: locomotion-blend path. Writer supplied a velocity
+    // envelope AND the desired clip is one of idle/walk/run AND the
+    // GLB has all three locomotion clips available — blend their
+    // weights from horizontal speed.
+    const canBlend =
+      envelope !== null &&
+      LOCOMOTION_CLIPS.has(desired) &&
+      names.includes("idle") &&
+      names.includes("walk") &&
+      names.includes("run") &&
+      actions.idle &&
+      actions.walk &&
+      actions.run;
+
+    if (canBlend && envelope) {
+      // Project the velocity onto the horizontal plane — vertical
+      // velocity (jump / fall) shouldn't push the gait toward run.
+      const vx = envelope.velocity[0];
+      const vz = envelope.velocity[2];
+      const speed = Math.hypot(vx, vz);
+      const w = computeGaitWeights(speed, GAIT_WALK_SPEED, GAIT_RUN_SPEED);
+
+      // Enter blend mode: stop the legacy single-action and start all
+      // three locomotion actions at zero weight, fading them up to
+      // their computed weights this frame.
+      if (!inLocomotionBlendRef.current) {
+        const prev = currentActionRef.current;
+        if (prev && prev !== actions.idle && prev !== actions.walk && prev !== actions.run) {
+          prev.fadeOut(0.2);
+        }
+        for (const name of ["idle", "walk", "run"] as const) {
+          const a = actions[name];
+          if (!a) continue;
+          a.reset();
+          a.setLoop(THREE.LoopRepeat, Infinity);
+          a.clampWhenFinished = false;
+          a.setEffectiveWeight(0);
+          a.play();
+        }
+        inLocomotionBlendRef.current = true;
+        currentActionRef.current = null;
+        currentClipNameRef.current = null;
+      }
+
+      actions.idle?.setEffectiveWeight(w.idle);
+      actions.walk?.setEffectiveWeight(w.walk);
+      actions.run?.setEffectiveWeight(w.run);
+
+      // Body lean from forward speed + yaw rate. We write to the
+      // outer groupRef.rotation so the per-yaw-offset child group
+      // (which owns the visual model) inherits the lean transform
+      // without disturbing the per-race yaw alignment.
+      const lean = computeBodyLean({
+        speed,
+        angularVelocity: envelope.angularVelocity,
+        runSpeed: GAIT_RUN_SPEED,
+      });
+      const g = groupRef.current;
+      if (g) {
+        // Smooth toward the target lean (5 Hz time constant) so
+        // sudden direction reversals don't snap the body — the
+        // mixer's clip blend is already smooth, the lean should be
+        // too. Lerp factor tuned by feel; constant per-frame so it's
+        // dt-aware enough at typical 60 / 90 / 120 fps.
+        g.rotation.x = THREE.MathUtils.lerp(g.rotation.x, lean.forwardPitch, 0.15);
+        g.rotation.z = THREE.MathUtils.lerp(g.rotation.z, lean.rollLean, 0.15);
+      }
+      return;
+    }
+
+    // ── Legacy single-action crossfade path.
+    if (inLocomotionBlendRef.current) {
+      // Leaving blend mode: fade the three locomotion actions out so
+      // the next single-action takes over cleanly, and ease lean back
+      // to neutral over the same window.
+      for (const name of ["idle", "walk", "run"] as const) {
+        actions[name]?.fadeOut(0.2);
+      }
+      inLocomotionBlendRef.current = false;
+      const g = groupRef.current;
+      if (g) {
+        g.rotation.x = 0;
+        g.rotation.z = 0;
+      }
+    }
+
+    if (desired === currentClipNameRef.current) return;
     const next = actions[desired];
     if (!next) return;
     const prev = currentActionRef.current;
     if (prev && prev !== next) prev.fadeOut(0.2);
     next.reset();
+    next.setEffectiveWeight(1);
     // The procedural "death" clip is a one-shot collapse. We switch
     // the AnimationAction to LoopOnce + clampWhenFinished so the body
     // holds the final fetal pose instead of springing back to T-pose.
@@ -685,6 +801,22 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
       currentClipNameRef.current = null;
     };
   }, []);
+
+  // ── Foot planting (PR-A): only mount the driver during play mode
+  // because (a) it needs the Rapier physics world to raycast against
+  // and (b) IK on every character every frame in the editor would
+  // be wasted work — the editor doesn't simulate gravity, so feet
+  // are wherever the dropToGround offset put them.
+  //
+  // We resolve the biped rig once per cloned scene; the driver
+  // returns null for non-biped rigs which silently disables IK
+  // (the cube/sphere/etc. characters keep their plain animated
+  // pose). Calling getBipedFootRig outside the conditional means
+  // the WeakMap cache lookup is identical between editor + play,
+  // so toggling Play doesn't pay a fresh traversal.
+  const isPlaying = useEditor((s) => s.isPlaying);
+  const footRig = useMemo(() => getBipedFootRig(cloned), [cloned]);
+  const showFootPlanting = isPlaying && footRig !== null;
 
   // Material + Tint: clone GLB materials per-instance so coloring
   // one entity doesn't bleed across cached siblings. Applies both
@@ -796,8 +928,36 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
         <primitive object={cloned} />
         {selected && <ModelSelectionBox target={cloned} />}
       </group>
+      {showFootPlanting && footRig && (
+        <FootPlantingDriver rig={footRig} groupRef={groupRef} />
+      )}
     </group>
   );
+}
+
+/** Per-character driver that runs the foot-IK pass each frame. Mounted
+ *  only inside <Physics> (when `isPlaying`) so `useRapier()` is always
+ *  safe. Runs at `useFrame` priority `1` so the AnimationMixer (which
+ *  drei registers at the default priority `0`) has already produced
+ *  the candidate pose for this frame — IK then corrects it. */
+function FootPlantingDriver({
+  rig,
+  groupRef,
+}: {
+  rig: BipedFootRig;
+  groupRef: React.RefObject<THREE.Group | null>;
+}) {
+  const { world } = useRapier();
+  const forwardScratch = useRef(new THREE.Vector3(0, 0, -1)).current;
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    // Read the character's world-space forward (THREE convention: -Z)
+    // and pass it as the IK pole hint so knees bend forward.
+    forwardScratch.set(0, 0, -1).applyQuaternion(g.getWorldQuaternion(new THREE.Quaternion()));
+    plantFeetOnTerrain(rig, world ?? null, forwardScratch);
+  }, 1);
+  return null;
 }
 
 /** A wireframe box sized to the model's actual bounding box, rendered on top

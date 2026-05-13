@@ -50,6 +50,7 @@ import type { SceneEntity } from "@/scene/types";
 import { BUILTIN_BEHAVIORS } from "@/lib/deathmatchBehaviors";
 import { getPlaySession, resetPlaySession } from "@/scene/playSession";
 import { EntityRenderer } from "@/scene/EntityRenderer";
+import { writeClip, writeClipWithVelocity, deleteClip, clipKeys } from "@/lib/agentClipBridge";
 
 /**
  * Renders the scene tree (entities + their children) inside the play tree
@@ -315,18 +316,27 @@ export function PlayScriptRuntime({
     // crossfade without coupling EntityRenderer to the agent runtime.
     // We refresh on every frame so a state transition (chase→attack→
     // chase) lands on the next render tick.
-    const w = window as unknown as {
-      __agentClips?: Map<string, string>;
-    };
-    w.__agentClips ??= new Map();
+    // PR-B: publish the rich envelope (clip + linvel + angvel) so the
+    // renderer can blend idle/walk/run weights from the body's actual
+    // speed and apply lean from yaw rate. Falls back to the bare
+    // string when the body isn't a Rapier rigid body (e.g. plain
+    // group transforms used by some scripted entities).
     for (const [id, actor] of agentsRef.current) {
-      w.__agentClips.set(id, actor.currentClip());
+      const clip = actor.currentClip();
+      const bg = bodyRefs.current.get(id);
+      if (bg && "linvel" in bg && "angvel" in bg) {
+        const lv = bg.linvel();
+        const av = bg.angvel();
+        writeClipWithVelocity(id, clip, [lv.x, lv.y, lv.z], av.y);
+      } else {
+        writeClip(id, clip);
+      }
     }
     // Drop dead entries so a despawned agent's last clip doesn't
     // pin the renderer to e.g. "attack" forever on a future entity
     // that happens to reuse the same id.
-    for (const id of [...w.__agentClips.keys()]) {
-      if (!agentsRef.current.has(id)) w.__agentClips.delete(id);
+    for (const id of [...clipKeys()]) {
+      if (!agentsRef.current.has(id)) deleteClip(id);
     }
 
     // ── Drain queued AI `move_agent_to` requests. The tool runs at
