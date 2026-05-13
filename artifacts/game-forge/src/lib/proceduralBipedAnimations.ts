@@ -139,12 +139,22 @@ function locoDelta(
 }
 
 function idleDelta(boneName: string, t: number): THREE.Quaternion | null {
-  // Subtle breathing + a barely-noticeable head sway.
-  const breathe = Math.sin(t * Math.PI * 2) * 0.03;
+  // Breathing + head sway + subtle arm sway. The previous values were
+  // so small (0.03 rad ≈ 1.7°) the rig looked frozen on screen — feedback
+  // from playtest. Bumped to ~5° on spine, with low-frequency arm sway
+  // out of phase so the character reads as "alive but standing".
+  const breathe = Math.sin(t * Math.PI * 2) * 0.09;       // ~5°
+  const headSway = Math.sin(t * Math.PI * 2 + 0.4) * 0.07; // ~4°, slight lag
+  // Half-frequency arm sway (one cycle per two breaths) so it doesn't
+  // sync with the breathing and read as mechanical. Opposite phase
+  // L/R so the body twists subtly side-to-side.
+  const armSway = Math.sin(t * Math.PI) * 0.05;            // ~3°
   switch (boneName) {
-    case "Bip001 Spine": return deltaQ(Z_AXIS, breathe);
-    case "Bip001 Head":  return deltaQ(Y_AXIS, Math.sin(t * Math.PI * 2) * 0.04);
-    default:             return null;
+    case "Bip001 Spine":      return deltaQ(Z_AXIS, breathe);
+    case "Bip001 Head":       return deltaQ(Y_AXIS, headSway);
+    case "Bip001 L UpperArm": return deltaQ(Z_AXIS,  armSway);
+    case "Bip001 R UpperArm": return deltaQ(Z_AXIS, -armSway);
+    default:                  return null;
   }
 }
 
@@ -161,10 +171,22 @@ function attackDelta(
   t: number,
   amp: number,
 ): THREE.Quaternion | null {
-  // Triangle wave: 0 → 1 over [0,0.5], 1 → 0 over [0.5,1] — strikes
-  // return to the rest pose so the next clip crossfades cleanly back
-  // into idle / walk / run.
-  const u = t < 0.5 ? t * 2 : 1 - (t - 0.5) * 2;
+  // Asymmetric ease: fast wind-up over [0, 0.35], snappy strike at
+  // 0.35, hold-then-release over [0.35, 1]. Replaces the symmetric
+  // triangle wave which felt mechanical (linear up, linear down). The
+  // smoothstep on each half hides the kink at the apex so the strike
+  // reads as a coiled punch, not a metronome. Still returns to 0 by
+  // t=1 so crossfade back to idle/walk is clean.
+  const APEX = 0.35;
+  let u: number;
+  if (t < APEX) {
+    const x = t / APEX;
+    u = x * x * (3 - 2 * x); // smoothstep wind-up
+  } else {
+    const x = (t - APEX) / (1 - APEX);
+    const eased = x * x * (3 - 2 * x);
+    u = 1 - eased; // smoothstep release
+  }
   switch (kind) {
     case "overhand":
       switch (boneName) {
@@ -316,13 +338,16 @@ export interface BipedAnimProfile {
 }
 
 /** Default "warrior-ish" profile used for any biped that isn't a known
- *  race (user-imported toon-rts model, etc.). Mirrors the original
- *  pre-profile constants so behavior is unchanged for legacy paths. */
+ *  race (user-imported toon-rts model, etc.). Amplitudes bumped from
+ *  the original ~0.45 rad walk leg / 0.70 rad run leg after playtest
+ *  feedback that motion looked stiff — the new values (~30° walk leg,
+ *  ~46° run leg) match real-life human gait amplitudes more closely
+ *  and read as actual locomotion at any camera distance. */
 export const DEFAULT_BIPED_PROFILE: BipedAnimProfile = {
   id: "default",
   idleDur: 2.4,
-  walk:   { dur: 1.0,  ampLeg: 0.45, ampArm: 0.35, ampKnee: 0.6, bob: 0.04 },
-  run:    { dur: 0.55, ampLeg: 0.70, ampArm: 0.55, ampKnee: 0.95, bob: 0.08 },
+  walk:   { dur: 1.0,  ampLeg: 0.55, ampArm: 0.50, ampKnee: 0.80, bob: 0.06 },
+  run:    { dur: 0.55, ampLeg: 0.85, ampArm: 0.75, ampKnee: 1.15, bob: 0.12 },
   attack: { kind: "overhand", amp: 1.0, dur: 0.5 },
 };
 
@@ -335,46 +360,51 @@ export const DEFAULT_BIPED_PROFILE: BipedAnimProfile = {
  *  - skeleton: stiffer stride, fast snappy stab
  */
 export const BIPED_ANIM_PROFILES: Record<RaceId, BipedAnimProfile> = {
+  // Per-race amplitudes bumped roughly +20-25% across the board after
+  // playtest feedback that motion looked stiff. Targets ~30-50° leg
+  // swing for walk, ~50-65° for run — close to real human gait. Pelvis
+  // bob also bumped so the silhouette reads as "weight transferring"
+  // instead of "feet pumping under a static body".
   warrior: {
     id: "warrior",
     idleDur: 2.4,
-    walk:   { dur: 1.00, ampLeg: 0.45, ampArm: 0.35, ampKnee: 0.60, bob: 0.04 },
-    run:    { dur: 0.55, ampLeg: 0.70, ampArm: 0.55, ampKnee: 0.95, bob: 0.08 },
+    walk:   { dur: 1.00, ampLeg: 0.55, ampArm: 0.50, ampKnee: 0.80, bob: 0.06 },
+    run:    { dur: 0.55, ampLeg: 0.85, ampArm: 0.75, ampKnee: 1.15, bob: 0.12 },
     attack: { kind: "overhand", amp: 1.00, dur: 0.50 },
   },
   dwarf: {
     id: "dwarf",
     idleDur: 2.6,
-    walk:   { dur: 1.15, ampLeg: 0.36, ampArm: 0.30, ampKnee: 0.52, bob: 0.05 },
-    run:    { dur: 0.65, ampLeg: 0.58, ampArm: 0.48, ampKnee: 0.85, bob: 0.10 },
+    walk:   { dur: 1.15, ampLeg: 0.46, ampArm: 0.42, ampKnee: 0.70, bob: 0.07 },
+    run:    { dur: 0.65, ampLeg: 0.72, ampArm: 0.62, ampKnee: 1.00, bob: 0.13 },
     attack: { kind: "cleave", amp: 1.10, dur: 0.62 },
   },
   "frost-dwarf": {
     id: "frost-dwarf",
     idleDur: 2.8,
-    walk:   { dur: 1.20, ampLeg: 0.34, ampArm: 0.30, ampKnee: 0.50, bob: 0.05 },
-    run:    { dur: 0.70, ampLeg: 0.55, ampArm: 0.46, ampKnee: 0.82, bob: 0.10 },
+    walk:   { dur: 1.20, ampLeg: 0.44, ampArm: 0.40, ampKnee: 0.68, bob: 0.07 },
+    run:    { dur: 0.70, ampLeg: 0.70, ampArm: 0.60, ampKnee: 0.98, bob: 0.13 },
     attack: { kind: "cleave", amp: 1.20, dur: 0.68 },
   },
   elf: {
     id: "elf",
     idleDur: 2.2,
-    walk:   { dur: 0.90, ampLeg: 0.50, ampArm: 0.42, ampKnee: 0.55, bob: 0.035 },
-    run:    { dur: 0.48, ampLeg: 0.78, ampArm: 0.62, ampKnee: 0.95, bob: 0.07 },
+    walk:   { dur: 0.90, ampLeg: 0.62, ampArm: 0.55, ampKnee: 0.75, bob: 0.05 },
+    run:    { dur: 0.48, ampLeg: 0.92, ampArm: 0.80, ampKnee: 1.15, bob: 0.10 },
     attack: { kind: "bow", amp: 1.00, dur: 0.85 },
   },
   orc: {
     id: "orc",
     idleDur: 2.5,
-    walk:   { dur: 1.10, ampLeg: 0.50, ampArm: 0.46, ampKnee: 0.72, bob: 0.06 },
-    run:    { dur: 0.60, ampLeg: 0.80, ampArm: 0.66, ampKnee: 1.00, bob: 0.10 },
+    walk:   { dur: 1.10, ampLeg: 0.62, ampArm: 0.58, ampKnee: 0.90, bob: 0.08 },
+    run:    { dur: 0.60, ampLeg: 0.95, ampArm: 0.82, ampKnee: 1.20, bob: 0.14 },
     attack: { kind: "cleave", amp: 1.25, dur: 0.55 },
   },
   skeleton: {
     id: "skeleton",
     idleDur: 1.8,
-    walk:   { dur: 0.95, ampLeg: 0.40, ampArm: 0.46, ampKnee: 0.42, bob: 0.03 },
-    run:    { dur: 0.52, ampLeg: 0.66, ampArm: 0.66, ampKnee: 0.72, bob: 0.06 },
+    walk:   { dur: 0.95, ampLeg: 0.52, ampArm: 0.58, ampKnee: 0.58, bob: 0.04 },
+    run:    { dur: 0.52, ampLeg: 0.80, ampArm: 0.80, ampKnee: 0.90, bob: 0.08 },
     attack: { kind: "stab", amp: 0.95, dur: 0.42 },
   },
 };

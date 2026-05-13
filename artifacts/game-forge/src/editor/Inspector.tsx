@@ -1259,6 +1259,68 @@ export function Inspector() {
                 data-testid="input-model-url"
               />
             </div>
+            {/* "Flip Facing" toggle — toggles the model's visual yaw 180°
+              * without touching the physics body. The toon-rts character
+              * pack and most user-imported GLBs are authored facing one
+              * of two conventions; if the model appears to look in the
+              * wrong direction (e.g. faces the camera in third-person
+              * play mode), one click here corrects it. Tri-state:
+              *   undefined → use the registry default for this model key
+              *   0         → no offset (model faces -Z, three.js default)
+              *   π         → flipped 180° (model authored facing +Z) */}
+            {!entity.model.proxy && entity.model.url && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-muted-foreground">Facing</Label>
+                  <span className="text-[10px] text-muted-foreground font-mono">
+                    {typeof entity.model.yawOffset === "number"
+                      ? `${Math.round((entity.model.yawOffset * 180) / Math.PI)}°`
+                      : "auto"}
+                  </span>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs flex-1"
+                    onClick={() =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.model) d.model = {};
+                        const cur = d.model.yawOffset ?? 0;
+                        // Toggle between 0 and ±π. Normalise into the
+                        // (-π, π] range so we don't accumulate after
+                        // many clicks.
+                        const next = Math.abs(cur) < 1e-3 ? Math.PI : 0;
+                        d.model.yawOffset = next;
+                      })
+                    }
+                    data-testid="button-flip-facing"
+                  >
+                    Flip Facing 180°
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.model) d.model = {};
+                        delete d.model.yawOffset;
+                      })
+                    }
+                    title="Reset to registry default for this model"
+                    data-testid="button-reset-facing"
+                  >
+                    Reset
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Use this if your character looks the wrong way in
+                  Play mode (e.g. faces the camera). Visual only —
+                  doesn't affect physics or movement direction.
+                </p>
+              </div>
+            )}
             {entity.model.proxy ? (
               <p className="text-[11px] text-muted-foreground">
                 Locator (proxy) for sub-node{" "}
