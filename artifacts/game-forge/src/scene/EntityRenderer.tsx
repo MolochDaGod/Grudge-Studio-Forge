@@ -362,6 +362,11 @@ function buildLabelSprite(text: string): THREE.Sprite {
  *  textures get GC'd normally when the GLB unloads. */
 const touchedTextures: WeakSet<THREE.Texture> = new WeakSet();
 const yawDebugSeen: Set<string> = new Set();
+/** One-shot trimesh-collider mount diagnostic. When a model entity
+ *  with `physics.colliderType === "trimesh"` finishes loading, we log
+ *  total vertex count exactly once per entity so silent trimesh
+ *  failures (zero-vert collider) become loud. */
+const trimeshDiagSeen: Set<string> = new Set();
 
 /** Per-entity desired clip name published by the agent FSM (Viewport.tsx
  *  refreshes it each play-mode tick). When present it overrides the
@@ -952,6 +957,64 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
       hint: "If visibleFwdAfterInnerYaw.z is positive, the inner-yaw rotates the model TOWARD +Z. Combined with the entity transform.rotation set by the controller / scene, this is the visible facing direction in body-local space.",
     });
   }, [entityId, url, yawOffset, registryYaw, effectiveYaw, gltf, cloned]);
+
+  // ── Trimesh-collider mount diagnostic + one-shot terrain snap.
+  // Both run AFTER the GLB has loaded (we're inside LoadedModel) so:
+  //   • the trimesh log can sum real vertex counts off the cloned
+  //     scene — silent zero-vert bakes become a loud "vertices=0"
+  //     in the console;
+  //   • the terrain raycast hits real visible geometry rather than a
+  //     not-yet-mounted stand-in.
+  // Both are gated by per-entity Sets so re-renders don't re-fire.
+  useEffect(() => {
+    // Read live entity state from the store (LoadedModel doesn't get
+    // the full entity prop). One read per mount is fine — the effect
+    // depends on `entityId` + `cloned`, which only change when the
+    // model itself rebuilds.
+    const entity = useEditor.getState().sceneData.entities.find(
+      (e) => e.id === entityId,
+    );
+    if (!entity) return undefined;
+
+    if (
+      entity.physics?.colliderType === "trimesh" &&
+      !trimeshDiagSeen.has(entityId)
+    ) {
+      trimeshDiagSeen.add(entityId);
+      let meshCount = 0;
+      let totalVerts = 0;
+      cloned.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const geo = mesh.geometry as THREE.BufferGeometry | undefined;
+        const pos = geo?.getAttribute?.("position") as
+          | THREE.BufferAttribute
+          | undefined;
+        if (!pos) return;
+        meshCount += 1;
+        totalVerts += pos.count;
+      });
+      const tag = totalVerts > 0 ? "[TRIMESH-OK]" : "[TRIMESH-EMPTY]";
+      // eslint-disable-next-line no-console
+      console.log(
+        `${tag} entity=${entityId} (${entity.name}) meshes=${meshCount} vertices=${totalVerts} url=${url}`,
+      );
+    }
+
+    if (entity.pendingTerrainSnap) {
+      // Defer one frame so the editor scene's transient mount state
+      // (matrices, userData stamping on still-mounting siblings) has
+      // settled. Without this the raycast occasionally misses the map
+      // because its parent group's world matrix isn't dirty-flushed yet.
+      const handle = window.requestAnimationFrame(() => {
+        void import("@/lib/terrainSnap").then((m) =>
+          m.snapEntityToTerrainOnce(entityId),
+        );
+      });
+      return () => window.cancelAnimationFrame(handle);
+    }
+    return undefined;
+  }, [entityId, cloned, url]);
 
   return (
     <group

@@ -325,6 +325,15 @@ export interface SceneEntity {
    *  mode, the agent runtime instantiates one XState machine to drive
    *  it (idle/patrol/chase/climb/swim/stuck/dead). */
   navAgent?: NavAgentComponent;
+  /** One-shot flag: after the entity mounts, raycast straight down
+   *  against scene meshes tagged `userData.surface === "Walk"` and snap
+   *  the entity's Y position to the hit point — then clear this flag.
+   *  Set by scene-template authors so characters don't spawn floating
+   *  above (or buried under) a map at non-trivial scale. Honored by
+   *  EntityRenderer's `LoadedModel` after the GLB has loaded so the
+   *  raycast hits the real visible geometry, not a not-yet-mounted
+   *  stand-in. */
+  pendingTerrainSnap?: boolean;
   /** Per-entity soft-body / particle tuning consumed by the verlet
    *  simulation in `EntityRenderer` for `cloth` / `flag` / `particles`
    *  types. All fields optional — sensible per-type defaults are

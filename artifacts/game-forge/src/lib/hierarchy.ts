@@ -155,6 +155,14 @@ export function sanitizeEntities(
     if (!e.surface) e.surface = inferDefaultSurface(e);
   }
 
+  // Pass 6: drop consumed `pendingTerrainSnap === false` flags so they
+  // don't accumulate in serialized scenes. A `true` value is preserved
+  // — it means a previous mount never resolved (e.g. saved before the
+  // map GLB finished loading) and we want the next load to retry.
+  for (const e of cleaned) {
+    if (e.pendingTerrainSnap === false) delete e.pendingTerrainSnap;
+  }
+
   return { entities: cleaned, warnings };
 }
 

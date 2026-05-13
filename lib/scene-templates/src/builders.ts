@@ -702,7 +702,10 @@ export function rpgVillageScene(): SceneData {
     type: "model",
     model: { url: "builtin:race:warrior" },
     raceId: "warrior",
-    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    // Map is at scale 0.5 so characters at scale 1.0 are 2× too tall
+    // for the buildings. Match the map scale so plaza interiors and
+    // door frames look proportional.
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [0.5, 0.5, 0.5] },
     physics: {
       bodyType: "kinematicPosition",
       colliderType: "cylinder",
@@ -713,6 +716,10 @@ export function rpgVillageScene(): SceneData {
     controllerKind: "thirdPerson",
     behavior: "player-rpg",
     parentId: playersGroupId,
+    // After mount, raycast down against the encampment trimesh and
+    // snap Y to the dirt — characters spawned at literal Y=0 float
+    // (or sink) on any map whose visible ground isn't exactly at Y=0.
+    pendingTerrainSnap: true,
   });
   entities.push({
     id: id(),
@@ -754,7 +761,7 @@ export function rpgVillageScene(): SceneData {
       transform: {
         position: f.pos,
         rotation: [0, Math.atan2(-f.pos[0], -f.pos[2]), 0], // face plaza center
-        scale: [1, 1, 1],
+        scale: [0.5, 0.5, 0.5],
       },
       physics: {
         bodyType: "kinematicPosition",
@@ -768,6 +775,7 @@ export function rpgVillageScene(): SceneData {
       behavior: "npc-dialog",
       npcLine: f.line,
       parentId: friendliesGroupId,
+      pendingTerrainSnap: true,
     });
     entities.push({
       id: id(),
@@ -801,7 +809,7 @@ export function rpgVillageScene(): SceneData {
       transform: {
         position: e.pos,
         rotation: [0, Math.atan2(-e.pos[0], -e.pos[2]), 0],
-        scale: [1, 1, 1],
+        scale: [0.5, 0.5, 0.5],
       },
       physics: {
         bodyType: "kinematicPosition",
@@ -812,6 +820,7 @@ export function rpgVillageScene(): SceneData {
       },
       behavior: "enemy-rpg",
       parentId: enemiesGroupId,
+      pendingTerrainSnap: true,
     });
     entities.push({
       id: id(),
@@ -977,6 +986,9 @@ function buildDeathmatch(opts: {
     controllerKind: "thirdPerson",
     behavior: "player-deathmatch",
     parentId: playersGroupId,
+    // Snap to terrain after the map trimesh mounts so the player isn't
+    // floating above (or buried under) the visible ground.
+    pendingTerrainSnap: true,
   });
 
   // Spawn points group. Layer "Trigger" makes the bodies sensors so
@@ -1019,6 +1031,7 @@ function buildDeathmatch(opts: {
       physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
       behavior: "enemy-deathmatch",
       parentId: enemiesGroupId,
+      pendingTerrainSnap: true,
     });
   }
 

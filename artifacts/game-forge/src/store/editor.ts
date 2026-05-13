@@ -428,6 +428,62 @@ export const useEditor = create<EditorState>((set, get) => ({
       isPaused: false,
     });
     for (const w of warnings) get().pushLog("warn", `Scene load: ${w}`);
+
+    // Auto-bake navmesh after first load if the scene has Walk-tagged
+    // entities AND no navmesh asset is already attached. Templates
+    // ship without a baked navmesh (the bake is content-addressed by
+    // SHA-1 of the *baked* meshes, so we can't seed it from JSON), so
+    // without this hook every fresh scene needs a manual "Bake
+    // NavMesh" click before AI find_path / patrol behaviors work.
+    //
+    // Deferred ~1.5s so map GLBs (esp. multi-MB encampment / fort)
+    // have time to finish loading and stamp their userData.surface
+    // tags onto the editor scene tree — bakeSceneNavmesh walks the
+    // live THREE scene, so an early bake would miss the geometry.
+    //
+    // Wrapped in try/catch + dynamic import to keep the store free of
+    // a hard dep on the bake pipeline (which transitively pulls in
+    // recast-navigation). Failures are non-fatal; the user can still
+    // click "Bake NavMesh" manually.
+    const hasWalkable = entities.some((e) => e.surface === "Walk");
+    const alreadyBaked = !!envFromServer.navmeshAssetId;
+    if (hasWalkable && !alreadyBaked && typeof window !== "undefined") {
+      // Cancel any in-flight bake from a previous loadScene call so HMR
+      // / rapid scene swaps don't queue overlapping bakes that race on
+      // navmeshAssetId writes.
+      const w = window as unknown as { __navmeshAutoBakeTimer?: number };
+      if (w.__navmeshAutoBakeTimer !== undefined) {
+        window.clearTimeout(w.__navmeshAutoBakeTimer);
+      }
+      w.__navmeshAutoBakeTimer = window.setTimeout(() => {
+        w.__navmeshAutoBakeTimer = undefined;
+        // Re-check inside the timer — the user may have navigated to
+        // a different scene before the bake fires.
+        const now = useEditor.getState();
+        if (now.sceneId !== sceneId) return;
+        if (now.sceneData.environment.navmeshAssetId) return;
+        void import("@/lib/navmeshBake")
+          .then((m) => m.bakeSceneNavmesh())
+          .then((res) => {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[NAVMESH-AUTOBAKE] scene="${name}" assetId=${res.assetId} polys=${res.stats.polyCount} cached=${res.cached}`,
+            );
+            useEditor
+              .getState()
+              .pushLog(
+                "info",
+                `Navmesh auto-baked (${res.stats.polyCount} polys${res.cached ? ", cached" : ""}).`,
+              );
+          })
+          .catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            // eslint-disable-next-line no-console
+            console.warn(`[NAVMESH-AUTOBAKE] skipped: ${msg}`);
+          });
+      }, 1500);
+    }
+
     if (draftRestoredAt !== null) {
       const ageSec = Math.max(1, Math.round((Date.now() - draftRestoredAt) / 1000));
       const ageStr =

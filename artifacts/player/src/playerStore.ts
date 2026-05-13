@@ -74,6 +74,16 @@ interface PlayerState {
   cmdBakeNavmesh: (
     next: { assetId: number; blobKey?: string } | null,
   ) => void;
+  /** No-op stub. The editor's `updateEntity` mutates the scene tree
+   *  via Immer; cross-imported helpers like `lib/terrainSnap.ts` call
+   *  it to snap a fresh entity onto walkable geometry. The player
+   *  ships a fully-baked scene (terrain snap already happened in the
+   *  editor at template-load time), so we discard the call to keep
+   *  the cross-import typecheck-clean. */
+  updateEntity: (
+    entityId: string,
+    mutator: (entity: SceneEntity) => void,
+  ) => void;
 }
 
 export const useEditor = create<PlayerState>((set) => ({
@@ -90,6 +100,9 @@ export const useEditor = create<PlayerState>((set) => ({
   setPaused: (paused) => set({ isPaused: paused }),
   cmdBakeNavmesh: () => {
     /* no-op — see PlayerState.cmdBakeNavmesh docs */
+  },
+  updateEntity: () => {
+    /* no-op — see PlayerState.updateEntity docs */
   },
   pushLog: (level, text, meta) => {
     // Forward to the browser console; published players have no log panel.
