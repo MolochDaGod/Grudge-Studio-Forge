@@ -11,13 +11,17 @@ import {
   useListAssets,
   useCreateAsset,
   useDeleteAsset,
+  useListPrefabs,
+  useCreatePrefab,
   getListAssetsQueryKey,
+  getListPrefabsQueryKey,
   getGetProjectSummaryQueryKey,
 } from "@workspace/api-client-react";
+import { buildPrefabPayloadFromModelAsset } from "@/lib/forgeFromAsset";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users, Hammer } from "lucide-react";
 import { RACES, type Race } from "@/lib/races";
 import { useViewportTabs } from "@/store/viewportTabs";
 import { openModelTabFromAsset } from "@/lib/openModelTab";
@@ -562,13 +566,93 @@ function ProjectAssets() {
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.cmdAddEntity);
   const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  // Forge wiring: surface prefabs as first-class assets in the
+  // browser. Double-click a prefab row → openPrefabSubScene; click
+  // "Forge" on a .glb row → create a new draft prefab whose root
+  // entity references the model, then enter the sub-scene editor.
+  const openPrefabSubScene = useEditor((s) => s.openPrefabSubScene);
+  const prefabSubScene = useEditor((s) => s.prefabSubScene);
   const openTab = useViewportTabs((s) => s.openTab);
   const qc = useQueryClient();
   const { data: assets = [], isLoading } = useListAssets(projectId ?? 0, {
     query: { queryKey: getListAssetsQueryKey(projectId ?? 0), enabled: !!projectId },
   });
+  const { data: prefabs = [], isLoading: prefabsLoading } = useListPrefabs(projectId ?? 0, {
+    query: { queryKey: getListPrefabsQueryKey(projectId ?? 0), enabled: !!projectId },
+  });
   const createAsset = useCreateAsset();
   const deleteAsset = useDeleteAsset();
+  const createPrefab = useCreatePrefab();
+
+  /** Forge a fresh prefab from a .glb / .gltf asset and immediately
+   *  open it in the sub-scene editor. Builds the payload via the pure
+   *  `buildPrefabPayloadFromModelAsset` helper (covered by unit tests),
+   *  persists via `createPrefab`, then hands off to `openPrefabSubScene`
+   *  so the user lands inside the Prefab Stage with the model as the
+   *  selected root. Refuses while another prefab is being edited so
+   *  we don't silently swap contexts mid-edit. */
+  const onForgeAsset = async (a: { name: string; url: string }) => {
+    if (!projectId) {
+      pushLog("warn", "Open a project first to forge prefabs.");
+      return;
+    }
+    if (prefabSubScene) {
+      pushLog(
+        "warn",
+        `Close the current prefab editor first ("${prefabSubScene.prefabName}") before forging another.`,
+      );
+      return;
+    }
+    const { name, payload } = buildPrefabPayloadFromModelAsset({
+      assetName: a.name,
+      url: a.url,
+    });
+    try {
+      const created = await createPrefab.mutateAsync({
+        data: {
+          projectId,
+          name,
+          // Spread + override `entities` with a guaranteed-defined
+          // array so `PrefabPayload` (entities optional) narrows to
+          // the API's `PrefabData` (entities required).
+          data: { ...payload, entities: payload.entities ?? [] },
+        },
+      });
+      qc.invalidateQueries({ queryKey: getListPrefabsQueryKey(projectId) });
+      qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+      // Re-read live editor state AFTER the mutation resolves: the
+      // user may have switched projects or opened another prefab
+      // while the create was in flight. The closure-captured
+      // `projectId`/`prefabSubScene` would be stale, and
+      // `openPrefabSubScene` no-ops if a sub-scene is already
+      // active — that would leave the user staring at the original
+      // scene and a misleading "Forged" success line. So in either
+      // race outcome we surface a precise message and skip auto-open
+      // instead of silently losing the user.
+      const live = useEditor.getState();
+      if (live.projectId !== projectId) {
+        pushLog(
+          "warn",
+          `Forged prefab "${created.name}" — not opened (project changed during create). Find it in the Prefabs panel.`,
+        );
+        return;
+      }
+      if (live.prefabSubScene) {
+        pushLog(
+          "warn",
+          `Forged prefab "${created.name}" — not opened (another prefab "${live.prefabSubScene.prefabName}" was opened during create).`,
+        );
+        return;
+      }
+      // payload.entities is always populated by the helper but the
+      // PrefabPayload type marks it optional — fall back to [] for
+      // type-narrowing rather than a non-null assertion.
+      openPrefabSubScene(created.id, created.name, payload.entities ?? []);
+      pushLog("info", `Forged prefab "${created.name}" from ${a.name}.`);
+    } catch (err) {
+      pushLog("error", `Forge failed: ${(err as Error).message}`);
+    }
+  };
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -673,6 +757,90 @@ function ProjectAssets() {
         </Button>
       </div>
       <ScrollArea className="flex-1">
+        {/* Prefabs section — first-class category in the asset browser
+            (Unity-parity). Double-click any prefab → opens the Forge
+            sub-scene editor; the existing Prefabs bottom panel keeps
+            its full management UI (delete / hotbar / player flag /
+            cloud sync) so this listing stays compact. Empty state and
+            "<n> prefab(s)" header are intentionally rendered even when
+            the section is empty so users discover the Forge action on
+            .glb rows below ("create your first prefab"). */}
+        {!!projectId && (
+          <div className="p-1.5 pb-0">
+            <div className="px-2 py-1 flex items-center gap-2 text-[10px] font-heading uppercase tracking-[0.2em] text-muted-foreground">
+              <Hammer className="size-3 text-primary/70" />
+              Prefabs
+              <span className="text-muted-foreground/60 normal-case tracking-normal">
+                · {prefabsLoading ? "…" : prefabs.length}
+              </span>
+            </div>
+            {!prefabsLoading && prefabs.length === 0 && (
+              <p className="text-[11px] text-muted-foreground/80 px-2 pb-1.5">
+                No prefabs yet. Press <span className="text-primary">Forge</span> on a model below to create one.
+              </p>
+            )}
+            {prefabs.map((p) => {
+              const editing = prefabSubScene?.prefabId === p.id;
+              return (
+                <div
+                  key={`prefab-${p.id}`}
+                  className={`group flex items-center gap-2 h-7 px-2 rounded-sm hover-elevate text-xs cursor-pointer ${
+                    editing ? "bg-primary/10 border border-primary/40" : ""
+                  }`}
+                  // Double-click opens the prefab editor (Unity-style
+                  // Prefab Stage). Single-click is reserved so users
+                  // can drag-select rows without firing a context swap.
+                  onDoubleClick={() => {
+                    if (prefabSubScene) {
+                      pushLog(
+                        "warn",
+                        `Close the current prefab editor first ("${prefabSubScene.prefabName}").`,
+                      );
+                      return;
+                    }
+                    const data = p.data as { entities?: import("@/scene/types").SceneEntity[] };
+                    if (!data?.entities?.length) {
+                      pushLog("warn", `Prefab "${p.name}" is empty.`);
+                      return;
+                    }
+                    openPrefabSubScene(p.id, p.name, data.entities);
+                    pushLog("info", `Opened prefab "${p.name}" in the Forge editor.`);
+                  }}
+                  title="Double-click to open in the Forge editor"
+                  data-testid={`asset-prefab-row-${p.id}`}
+                >
+                  <span className="font-mono text-[9px] uppercase text-primary/80 w-10 shrink-0 tracking-wider">
+                    prefab
+                  </span>
+                  <span className="font-medium truncate flex-1">{p.name}</span>
+                  {editing && (
+                    <span className="font-heading text-[9px] uppercase tracking-[0.18em] text-primary">
+                      editing
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] opacity-0 group-hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (prefabSubScene) return;
+                      const data = p.data as { entities?: import("@/scene/types").SceneEntity[] };
+                      if (!data?.entities?.length) return;
+                      openPrefabSubScene(p.id, p.name, data.entities);
+                      pushLog("info", `Opened prefab "${p.name}" in the Forge editor.`);
+                    }}
+                    disabled={!!prefabSubScene}
+                    title="Open in the Forge editor"
+                    data-testid={`button-asset-open-prefab-${p.id}`}
+                  >
+                    <Hammer className="size-3 mr-1" /> Forge
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {isLoading && <p className="text-xs text-muted-foreground p-3">Loading…</p>}
         {!isLoading && assets.length === 0 && (
           <p className="text-xs text-muted-foreground p-3 text-center">
@@ -716,6 +884,24 @@ function ProjectAssets() {
                     }}
                   >
                     <Plus className="size-3 mr-1" /> Spawn
+                  </Button>
+                  {/* Forge: turn the .glb into a brand-new prefab and
+                      drop the user inside the Prefab Stage. Disabled
+                      while another prefab is being edited (the create
+                      handler logs a warning + bails in that case as a
+                      defense-in-depth check). */}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] opacity-0 group-hover:opacity-100 text-primary hover:text-primary"
+                    onClick={() => {
+                      void onForgeAsset({ name: a.name, url: a.url });
+                    }}
+                    disabled={!!prefabSubScene || createPrefab.isPending}
+                    title="Create a prefab from this model and open the Forge editor"
+                    data-testid={`button-forge-asset-${a.id}`}
+                  >
+                    <Hammer className="size-3 mr-1" /> Forge
                   </Button>
                 </>
               )}

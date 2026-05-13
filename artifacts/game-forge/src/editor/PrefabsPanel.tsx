@@ -650,6 +650,17 @@ export function PrefabsPanel() {
                       e.dataTransfer.setData("text/prefab-id", String(p.id));
                       e.dataTransfer.effectAllowed = "copy";
                     }}
+                    // Unity parity: double-click a prefab in the list →
+                    // enter the sub-scene editor (Forge mode). Disabled
+                    // while we're already editing some other prefab so
+                    // the user doesn't accidentally swap mid-edit. The
+                    // Spawn / Open buttons remain available for explicit
+                    // disambiguation.
+                    onDoubleClick={() => {
+                      if (prefabSubScene && prefabSubScene.prefabId !== p.id) return;
+                      if (prefabSubScene?.prefabId === p.id) return;
+                      onOpen(p);
+                    }}
                     // Warm the GLB cache on intent signals so the first
                     // Spawn click of a heavy model-backed prefab feels
                     // instant. No-op for primitive-only prefabs.

@@ -500,13 +500,34 @@ export function Toolbar({
           <span className="font-display text-[12px] tracking-wide brand-gold">
             {prefabSubScene.prefabName}
           </span>
+          {/* Inline Save action so users don't have to hunt down the
+              Prefabs panel (or remember Ctrl+S) to persist the buffer.
+              Reuses the toolbar's existing onSave path which already
+              branches on prefabSubScene → updatePrefab — no extra
+              save logic introduced here. */}
+          <button
+            onClick={() => {
+              if (saving || !projectId) return;
+              window.dispatchEvent(new CustomEvent("gameforge:save"));
+            }}
+            disabled={saving || !projectId}
+            className="ml-1 px-2 py-0.5 rounded font-heading text-[10px] uppercase tracking-[0.18em] text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50"
+            title={
+              isDirty
+                ? "Save prefab changes (Ctrl+S)"
+                : "No unsaved prefab changes — saves anyway as a no-op"
+            }
+            data-testid="button-toolbar-save-prefab"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
           <button
             onClick={() => {
               const ok = !isDirty ||
                 confirm("Close prefab sub-scene? Unsaved prefab changes will be lost.");
               if (ok) closePrefabSubScene();
             }}
-            className="ml-1 px-2 py-0.5 rounded font-heading text-[10px] uppercase tracking-[0.18em] text-primary/80 hover:text-primary hover:bg-primary/15"
+            className="px-2 py-0.5 rounded font-heading text-[10px] uppercase tracking-[0.18em] text-primary/80 hover:text-primary hover:bg-primary/15"
             title={
               isDirty
                 ? "Close sub-scene (unsaved prefab changes will be lost)"
@@ -514,7 +535,7 @@ export function Toolbar({
             }
             data-testid="button-toolbar-close-prefab"
           >
-            Close
+            Back to Scene
           </button>
         </div>
       )}
