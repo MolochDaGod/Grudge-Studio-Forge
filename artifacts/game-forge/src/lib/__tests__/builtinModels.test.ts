@@ -16,10 +16,15 @@ import {
 import { RACES } from "../races";
 
 describe("BUILTIN_MODEL_YAW_OFFSETS", () => {
-  it("registers a +π half-turn for every toon-rts race so the model faces away from the camera at rest", () => {
+  it("registers no implicit yaw offset for any toon-rts race (the GLBs already face -Z natively, see task #121)", () => {
+    // Empirical correction: the previous +π entries were the cause of
+    // the 'player looking right at camera' bug across TPS / FPS /
+    // editor — the toon-rts GLBs already match three.js' -Z forward
+    // convention, so no implicit half-turn is needed. Per-entity
+    // overrides via `entity.model.yawOffset` still work.
     for (const r of RACES) {
       const key = `race:${r.id}`;
-      expect(BUILTIN_MODEL_YAW_OFFSETS[key], `missing yaw offset for ${key}`).toBe(Math.PI);
+      expect(BUILTIN_MODEL_YAW_OFFSETS[key], `unexpected yaw offset for ${key}`).toBeUndefined();
     }
   });
 });

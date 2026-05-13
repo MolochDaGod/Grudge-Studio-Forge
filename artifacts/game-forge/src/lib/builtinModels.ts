@@ -123,21 +123,22 @@ export function isRaceVariantModel(url: string): boolean {
 
 /** Per-builtin-model Y rotation offset (radians) applied at render time
  *  inside the entity's rigidbody/group, so the visual model faces the
- *  same direction as the physics body's "forward". The toon-rts character
- *  GLBs (the six `race:*` keys below) were authored facing +Z, while
- *  three.js' convention — and our physics yaw + camera forward — assume
- *  -Z, so they need a half-turn to look the right way. The original
- *  `builtin:character` rig already faces -Z, so it is intentionally
- *  absent from this map (its effective offset is 0). EntityRenderer's
- *  resolution order is: `entity.model.yawOffset` ?? this map ?? 0. */
-export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
-  "race:warrior": Math.PI,
-  "race:dwarf": Math.PI,
-  "race:frost-dwarf": Math.PI,
-  "race:elf": Math.PI,
-  "race:orc": Math.PI,
-  "race:skeleton": Math.PI,
-};
+ *  same direction as the physics body's "forward".
+ *
+ *  Empirical correction (task #121): the toon-rts character GLBs DO
+ *  already face -Z natively (matching three.js' convention), so they do
+ *  NOT need a half-turn. The previous `Math.PI` entries were spinning
+ *  every race character 180° from the body's actual forward, which
+ *  manifested as "player looking right at camera" in TPS/FPS/editor
+ *  modes regardless of template — confirmed by user diagnostics:
+ *    • W still moved the player AWAY from the camera (body forward OK)
+ *    • bug reproduced in editor mode where no controller writes yaw
+ *  Both facts isolate the regression to the visual yaw-offset layer.
+ *  EntityRenderer's resolution order remains:
+ *    `entity.model.yawOffset` ?? this map ?? 0
+ *  so a per-entity override can still flip an asset that genuinely
+ *  ships with the opposite handedness. */
+export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {};
 
 /** Per-race animation clip names used by the player camera controllers
  *  and the `enemy-rpg` behavior to drive the `__agentClips` crossfade
