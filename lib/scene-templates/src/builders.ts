@@ -2,6 +2,8 @@ import type {
   SceneData,
   SceneEntity,
   ControllerKind,
+  LayerName,
+  SurfaceKind,
 } from "@workspace/scene-schema";
 import { DEFAULT_ENV } from "@workspace/scene-schema";
 
@@ -73,6 +75,13 @@ interface BuildOpts {
   light?: SceneEntity["light"];
   modelUrl?: string;
   noPhysics?: boolean;
+  /** Tri-axis tagging — written verbatim onto the entity so the
+   *  navmesh baker, AI perception, and the inspector inheritance
+   *  chips all see them. Templates that omit these still inherit
+   *  from the parent group via `resolveInheritedFields`. */
+  layer?: LayerName;
+  surface?: SurfaceKind;
+  behavior?: SceneEntity["behavior"];
 }
 
 const ent = (o: BuildOpts): SceneEntity => {
@@ -98,12 +107,39 @@ const ent = (o: BuildOpts): SceneEntity => {
   if (o.light) e.light = o.light;
   if (o.modelUrl) e.model = { url: o.modelUrl };
   if (o.controllerKind) e.controllerKind = o.controllerKind;
+  if (o.layer) e.layer = o.layer;
+  if (o.surface) e.surface = o.surface;
+  if (o.behavior) e.behavior = o.behavior;
   if (!o.noPhysics && o.type !== "light" && o.type !== "camera" && o.type !== "empty") {
     e.physics = o.fixed
       ? { bodyType: "fixed", colliderType: "cuboid", mass: 0, restitution: 0.2, friction: 1 }
       : { bodyType: "dynamic", colliderType: o.type === "sphere" ? "ball" : "cuboid", mass: 1, restitution: 0.4, friction: 0.6 };
   }
   return e;
+};
+
+/** Empty grouping node used as a hierarchy header — purely organisational
+ *  (no physics, no visuals). The Hierarchy panel collapses these into
+ *  folder-like rows; child entities inherit Layer/Surface from the
+ *  closest set ancestor via `resolveInheritedFields`, so giving the
+ *  group a `layer` cascades it to every descendant that doesn't set
+ *  its own. Used by every template to organise:
+ *    Map / Players / Enemies / Spawns / Lighting / GameLogic. */
+const group = (
+  groupId: string,
+  name: string,
+  opts: { parentId?: string | null; layer?: LayerName; surface?: SurfaceKind } = {},
+): SceneEntity => {
+  const g: SceneEntity = {
+    id: groupId,
+    name,
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: opts.parentId ?? null,
+  };
+  if (opts.layer) g.layer = opts.layer;
+  if (opts.surface) g.surface = opts.surface;
+  return g;
 };
 
 /** Third-person zombie shooter sandbox inspired by YetAnotherZombieHorror
@@ -586,11 +622,13 @@ export function characterShowcaseScene(): SceneData {
 export function rpgVillageScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Visible village map (no physics — handled by the invisible Ground
-  // plane below, same pattern as the deathmatch templates).
+  // Same six-group skeleton as the deathmatch templates (Map / Players /
+  // Friendlies / Enemies / Lighting / GameLogic). Spawns group is
+  // omitted — the RPG starter doesn't respawn anyone, the player and
+  // NPCs all start at fixed plaza positions.
   //
-  // We use map-encampment (war-camp tents + crates, scale 0.5) here
-  // instead of map-deserttown. The deserttown GLB has stray
+  // Map choice: we use map-encampment (war-camp tents + crates, scale
+  // 0.5) here instead of map-deserttown. The deserttown GLB has stray
   // underground geometry (foundation meshes, dropped props, ladder
   // pieces) extending hundreds of units below the visible terrain, so
   // EntityRenderer's `dropToGround` (which lifts the model so its
@@ -599,9 +637,11 @@ export function rpgVillageScene(): SceneData {
   // desert floor. map-encampment has clean geometry that drop-aligns
   // correctly at scale 0.5, and is the same map the proven
   // tps-zombie-demo template uses with characters at Y=0.
+  const mapGroupId = id();
+  entities.push(group(mapGroupId, "Map", { layer: "Terrain", surface: "Walk" }));
   entities.push({
     id: id(),
-    name: "Map",
+    name: "MapModel",
     type: "model",
     model: { url: "builtin:map-encampment" },
     transform: {
@@ -609,10 +649,11 @@ export function rpgVillageScene(): SceneData {
       rotation: [0, 0, 0],
       scale: [0.5, 0.5, 0.5],
     },
-    parentId: null,
+    parentId: mapGroupId,
+    physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
   });
 
-  // Invisible collision ground.
+  // Invisible safety ground (catches off-map falls).
   entities.push(
     ent({
       name: "Ground",
@@ -623,6 +664,9 @@ export function rpgVillageScene(): SceneData {
       roughness: 1,
       metalness: 0,
       fixed: true,
+      parentId: mapGroupId,
+      layer: "Terrain",
+      surface: "Walk",
     }),
   );
 
@@ -646,9 +690,11 @@ export function rpgVillageScene(): SceneData {
     scale: [1, 1, 1],
   };
 
-  // Player — Warrior at center plaza, holding the warrior's sword.
-  // raceId stamps the warrior's baseStats (HP 100, speed 5.0, damage 12)
-  // onto the player so player-rpg + the camera controller use them.
+  // Players group + the warrior. raceId stamps the warrior's baseStats
+  // (HP 100, speed 5.0, damage 12) onto the player so player-rpg + the
+  // camera controller use them.
+  const playersGroupId = id();
+  entities.push(group(playersGroupId, "Players", { layer: "Player" }));
   const playerId = id();
   entities.push({
     id: playerId,
@@ -666,7 +712,7 @@ export function rpgVillageScene(): SceneData {
     },
     controllerKind: "thirdPerson",
     behavior: "player-rpg",
-    parentId: null,
+    parentId: playersGroupId,
   });
   entities.push({
     id: id(),
@@ -692,6 +738,11 @@ export function rpgVillageScene(): SceneData {
     { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5], line: "Cold steel and colder ale — that's the dwarven way." },
     { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5], line: "Tread softly. Even the desert stones remember." },
   ];
+  // Friendlies group — quest-giver / chatter NPCs. Layer "NPC" since
+  // they're characters but not enemies; the dialog behavior makes them
+  // approachable.
+  const friendliesGroupId = id();
+  entities.push(group(friendliesGroupId, "Friendlies", { layer: "NPC" }));
   for (const f of FRIENDLIES) {
     const npcId = id();
     entities.push({
@@ -716,7 +767,7 @@ export function rpgVillageScene(): SceneData {
       // PlayHUD's npcDialog subscriber).
       behavior: "npc-dialog",
       npcLine: f.line,
-      parentId: null,
+      parentId: friendliesGroupId,
     });
     entities.push({
       id: id(),
@@ -736,6 +787,9 @@ export function rpgVillageScene(): SceneData {
     { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
     { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
   ];
+  // Enemies group — hostile NPCs across the plaza.
+  const enemiesGroupId = id();
+  entities.push(group(enemiesGroupId, "Enemies", { layer: "NPC" }));
   for (const e of ENEMIES) {
     const enemyId = id();
     entities.push({
@@ -757,7 +811,7 @@ export function rpgVillageScene(): SceneData {
         friction: 0.8,
       },
       behavior: "enemy-rpg",
-      parentId: null,
+      parentId: enemiesGroupId,
     });
     entities.push({
       id: id(),
@@ -769,15 +823,19 @@ export function rpgVillageScene(): SceneData {
     });
   }
 
-  // Lighting — warm directional sun + soft hemisphere ambient (matches
-  // the deserttown tone). The sun is encoded as a directional light
-  // entity; ambient/hemisphere is driven by the environment fields.
+  // Lighting group — warm directional sun + soft hemisphere ambient
+  // (matches the deserttown tone). The sun is encoded as a directional
+  // light entity; ambient/hemisphere is driven by the environment
+  // fields.
+  const lightingGroupId = id();
+  entities.push(group(lightingGroupId, "Lighting"));
   entities.push(
     ent({
       name: "Sun",
       type: "light",
       position: [12, 18, 8],
       light: { kind: "directional", color: "#ffe6b8", intensity: 4 },
+      parentId: lightingGroupId,
     }),
   );
 
@@ -797,6 +855,18 @@ export function rpgVillageScene(): SceneData {
       // the warrior to face slightly +X / mostly -Z (toward the
       // orc + skeleton across the plaza).
       cameraStart: { position: [-2, 6, 10], target: [1, 1, 0] },
+      // Warm desert vibe: subtle bloom for the bright sun, gentle
+      // vignette for plaza framing, no SSAO (the open plaza doesn't
+      // benefit and SSAO costs perf on weaker GPUs).
+      visuals: {
+        ...DEFAULT_ENV.visuals,
+        postFX: {
+          ...DEFAULT_ENV.visuals!.postFX,
+          bloom: { enabled: true, intensity: 0.35, threshold: 0.9 },
+          vignette: { enabled: true, intensity: 0.2 },
+          colorGrade: { contrast: 1.05, saturation: 1.1, temperature: 0.15 },
+        },
+      },
     },
   };
 }
@@ -835,11 +905,34 @@ function buildDeathmatch(opts: {
 }): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Visible map (no physics). The big GLB drives the look; physics is handled
-  // by the invisible ground plane below so the player can't fall through.
+  // ── Hierarchy reorg ──────────────────────────────────────────────────
+  // Old templates dumped 14+ entities at the root which made the
+  // hierarchy panel a wall of items. New shape is a six-group skeleton
+  // every template shares so a designer can scan the scene at a glance:
+  //
+  //   Map        (layer=Terrain) ─ map model + invisible safety ground
+  //   Players    (layer=Player)  ─ the player rig + held weapon
+  //   Enemies    (layer=NPC)     ─ all Enemy_* spawns
+  //   Spawns     (layer=Trigger) ─ all Spawn_* respawn points
+  //   Lighting                   ─ all per-scene mood lights
+  //   GameLogic                  ─ the hidden GameManager
+  //
+  // Layer tags on each group cascade to descendants via
+  // `resolveInheritedFields`, so individual entities only need to set
+  // their layer when they differ from the group default.
+  // ─────────────────────────────────────────────────────────────────────
+  const mapGroupId = id();
+  entities.push(group(mapGroupId, "Map", { layer: "Terrain", surface: "Walk" }));
+
+  // Visible map model parented under the Map group. We now ship a real
+  // trimesh fixed-body collider on the GLB so its geometry is honored
+  // for raycasts + agent colliders + the navmesh baker (Recast walks
+  // any mesh in the THREE scene). The invisible Ground plane below
+  // stays as a safety net so off-map falls don't drop the player to
+  // -infinity.
   entities.push({
     id: id(),
-    name: "Map",
+    name: "MapModel",
     type: "model",
     model: { url: `builtin:${opts.mapKey}` },
     transform: {
@@ -847,10 +940,12 @@ function buildDeathmatch(opts: {
       rotation: [0, opts.mapRotationY ?? 0, 0],
       scale: [opts.mapScale, opts.mapScale, opts.mapScale],
     },
-    parentId: null,
+    parentId: mapGroupId,
+    physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
   });
 
-  // Invisible collision ground.
+  // Invisible safety ground (catches the player if they walk off the
+  // map mesh). Cuboid collider — cheap.
   entities.push(
     ent({
       name: "Ground",
@@ -861,10 +956,16 @@ function buildDeathmatch(opts: {
       roughness: 1,
       metalness: 0,
       fixed: true,
+      parentId: mapGroupId,
+      layer: "Terrain",
+      surface: "Walk",
     }),
   );
 
-  // Player.
+  // Players group + the player rig. Layer cascades from the group.
+  const playersGroupId = id();
+  entities.push(group(playersGroupId, "Players", { layer: "Player" }));
+
   const playerId = id();
   entities.push({
     id: playerId,
@@ -875,10 +976,13 @@ function buildDeathmatch(opts: {
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "thirdPerson",
     behavior: "player-deathmatch",
-    parentId: null,
+    parentId: playersGroupId,
   });
 
-  // Spawn points (six on a ring; each enemy + player picks one at respawn).
+  // Spawn points group. Layer "Trigger" makes the bodies sensors so
+  // the player can step over them without a contact bump.
+  const spawnsGroupId = id();
+  entities.push(group(spawnsGroupId, "Spawns", { layer: "Trigger" }));
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     entities.push({
@@ -891,11 +995,13 @@ function buildDeathmatch(opts: {
         scale: [1, 1, 1],
       },
       behavior: "spawnpoint",
-      parentId: null,
+      parentId: spawnsGroupId,
     });
   }
 
-  // Enemies.
+  // Enemies group.
+  const enemiesGroupId = id();
+  entities.push(group(enemiesGroupId, "Enemies", { layer: "NPC" }));
   for (let i = 0; i < opts.enemyCount; i++) {
     const a = (i / opts.enemyCount) * Math.PI * 2 + Math.PI / opts.enemyCount;
     const r = opts.spawnRadius * 0.85;
@@ -912,11 +1018,13 @@ function buildDeathmatch(opts: {
       },
       physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
       behavior: "enemy-deathmatch",
-      parentId: null,
+      parentId: enemiesGroupId,
     });
   }
 
-  // Mood lights specific to the setting.
+  // Lighting group — all mood lights per setting.
+  const lightingGroupId = id();
+  entities.push(group(lightingGroupId, "Lighting"));
   for (const bl of opts.brazierLights ?? []) {
     entities.push(
       ent({
@@ -924,18 +1032,21 @@ function buildDeathmatch(opts: {
         type: "light",
         position: bl.pos,
         light: { kind: "point", color: bl.color, intensity: bl.intensity, distance: bl.distance },
+        parentId: lightingGroupId,
       }),
     );
   }
 
-  // Hidden game manager.
+  // GameLogic group — hidden book-keeping entities.
+  const logicGroupId = id();
+  entities.push(group(logicGroupId, "GameLogic"));
   entities.push({
     id: id(),
     name: "GameManager",
     type: "empty",
     transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     behavior: "gamemode-deathmatch",
-    parentId: null,
+    parentId: logicGroupId,
   });
 
   return {
@@ -980,6 +1091,24 @@ export function cyberpunkDeathmatchScene(): SceneData {
       groundColor: "#0a0a18",
       ambientIntensity: 0.32,
       sunIntensity: 0.28,
+      // Cyberpunk vibe: pump bloom hard so the neon braziers visibly
+      // bleed across the screen; light SSAO for stone shadows in the
+      // alleys; cool blue-shift colour grade.
+      visuals: {
+        ...DEFAULT_ENV.visuals,
+        toneMapping: "ACES",
+        exposure: 1.15,
+        postFX: {
+          ...DEFAULT_ENV.visuals!.postFX,
+          bloom: { enabled: true, intensity: 1.4, threshold: 0.7 },
+          ssao: { enabled: true, intensity: 0.6, radius: 0.6 },
+          vignette: { enabled: true, intensity: 0.4 },
+          colorGrade: { contrast: 1.15, saturation: 1.25, temperature: -0.2 },
+        },
+      },
+      // Cyberpunk arena is large + has lots of vertical alleys —
+      // tighten cellSize so doorways/walkways resolve cleanly.
+      navmeshBake: { cellSize: 0.25, agentRadius: 0.45, maxSlope: 35, walkableClimb: 0.3 },
     },
     brazierLights: [
       { pos: [60, 18, 0], color: "#ff2d8a", intensity: 90, distance: 140 },
@@ -1004,6 +1133,23 @@ export function encampmentDeathmatchScene(): SceneData {
       groundColor: "#1f1a14",
       ambientIntensity: 0.28,
       sunIntensity: 0.5,
+      // Forest encampment: warm orange firelight, soft bloom, strong
+      // vignette to sell the dusk mood.
+      visuals: {
+        ...DEFAULT_ENV.visuals,
+        toneMapping: "ACES",
+        exposure: 1.05,
+        postFX: {
+          ...DEFAULT_ENV.visuals!.postFX,
+          bloom: { enabled: true, intensity: 0.7, threshold: 0.8 },
+          ssao: { enabled: true, intensity: 0.4, radius: 0.5 },
+          vignette: { enabled: true, intensity: 0.45 },
+          colorGrade: { contrast: 1.1, saturation: 1.15, temperature: 0.25 },
+        },
+      },
+      // Wooded outdoor terrain — slightly larger cellSize trades
+      // blob-size for bake speed since slopes/cover dominate.
+      navmeshBake: { cellSize: 0.35, agentRadius: 0.5, maxSlope: 50, walkableClimb: 0.4 },
     },
     brazierLights: [
       { pos: [50, 14, 36], color: "#ff8a3d", intensity: 80, distance: 130 },
@@ -1052,6 +1198,26 @@ export function fortRoyaleDeathmatchScene(): SceneData {
       groundColor: "#2a1f14",
       ambientIntensity: 0.35,
       sunIntensity: 0.45,
+      // Stone fort interior: SSAO is the headline effect (carves
+      // depth into the masonry), modest warm bloom for braziers,
+      // heavier vignette for that torch-lit-keep claustrophobia.
+      visuals: {
+        ...DEFAULT_ENV.visuals,
+        toneMapping: "ACES",
+        exposure: 1.0,
+        postFX: {
+          ...DEFAULT_ENV.visuals!.postFX,
+          bloom: { enabled: true, intensity: 0.55, threshold: 0.82 },
+          ssao: { enabled: true, intensity: 0.85, radius: 0.7 },
+          vignette: { enabled: true, intensity: 0.5 },
+          colorGrade: { contrast: 1.1, saturation: 0.9, temperature: 0.15 },
+        },
+      },
+      // Fort is at 50× scale so navmesh cells need to scale up too —
+      // a 0.3m cell on a 2km fort would create a multi-MB blob and
+      // a multi-second bake. 1.5m cells keep the bake snappy while
+      // still resolving doorways and ramps.
+      navmeshBake: { cellSize: 1.5, cellHeight: 0.6, agentRadius: 0.6, agentHeight: 2.0, maxSlope: 40, walkableClimb: 0.5 },
     },
     brazierLights: [
       { pos: [300, 80, 300], color: "#ff8a3d", intensity: 600, distance: 900 },

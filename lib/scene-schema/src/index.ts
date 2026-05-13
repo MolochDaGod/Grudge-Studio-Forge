@@ -457,6 +457,120 @@ export interface Environment {
    *  cloth/flag verts; m/s velocity bias added to spawned particles).
    *  Defaults to {@link DEFAULT_WIND} when unset. */
   wind?: Vec3;
+  /** Scene-wide physics tuning. Solver iterations, default
+   *  restitution/friction (used when a body's `PhysicsComponent` omits
+   *  them), and global linear/angular damping. Read by the play-mode
+   *  `<Physics>` rig at boot; per-entity values still override. */
+  physics?: PhysicsSettings;
+  /** Scene-wide collider defaults + per-layer CCD (continuous collision
+   *  detection) opt-in. Templates set this so heavy / fast bodies on
+   *  e.g. the Player layer don't tunnel through walls at high speed. */
+  colliders?: ColliderSettings;
+  /** Recast bake parameters used by `bakeSceneNavmesh`. Centralised so
+   *  the editor's bake button, the AI `bake_navmesh` tool, and any
+   *  per-template overrides read the same defaults. Bumping any field
+   *  invalidates the cached navmesh blob (the bake hash includes
+   *  these). */
+  navmeshBake?: NavmeshBakeSettings;
+  /** Visual / post-FX systems applied to the WebGL renderer + a
+   *  drei <EffectComposer>. All fields optional; missing values fall
+   *  back to {@link DEFAULT_VISUALS}. The viewport reads this on
+   *  every frame so designers can tweak live. */
+  visuals?: VisualSettings;
+}
+
+/** Scene-wide physics tuning. All optional — missing values fall back
+ *  to {@link DEFAULT_PHYSICS}. The play-mode `<Physics>` rig reads
+ *  this once at boot to size the Rapier integration step + solver. */
+export interface PhysicsSettings {
+  /** Fixed-step duration in seconds (default 1/60). Lower = more
+   *  accurate, higher CPU. */
+  timeStep?: number;
+  /** Rapier velocity-solver iterations per step (default 4). */
+  solverIterations?: number;
+  /** Default coefficient of restitution applied when a
+   *  PhysicsComponent omits it (default 0.2). */
+  defaultRestitution?: number;
+  /** Default coefficient of friction applied when a
+   *  PhysicsComponent omits it (default 0.6). */
+  defaultFriction?: number;
+  /** Global linear damping added to every dynamic body — bleeds off
+   *  velocity each step. Default 0 (no extra damping). */
+  linearDamping?: number;
+  /** Global angular damping (rotational equivalent of the above). */
+  angularDamping?: number;
+  /** Substep refinement count for Rapier's velocity integrator
+   *  (default 1). Bump to 2-4 for high-speed projectiles. */
+  maxVelocityIterations?: number;
+}
+
+/** Scene-wide collider defaults + CCD (tunneling protection) opt-in
+ *  per layer. */
+export interface ColliderSettings {
+  /** Collider shape used when a freshly-created entity doesn't carry
+   *  one (the inspector "Add physics" button reads this). */
+  defaultColliderType?: PhysicsComponent["colliderType"];
+  /** Layers whose dynamic bodies get continuous collision detection
+   *  on. CCD costs perf so it's opt-in — typically `["Player",
+   *  "Projectile"]`. */
+  ccdEnabledLayers?: LayerName[];
+  /** Default V-HACD knobs used when the user clicks "Bake convex
+   *  hulls" without first opening the advanced panel. Per-entity
+   *  `physics.colliderBakeOptions` still override. */
+  convexDecompDefaults?: ColliderBakeOptions;
+}
+
+/** Recast / Detour navmesh bake parameters. Mirrors the field names
+ *  used by `lib/navmesh.ts → bakeNavmesh`, so any value set here is
+ *  passed straight through. The bake hash includes every field, so
+ *  changing any of them invalidates the cached blob. */
+export interface NavmeshBakeSettings {
+  /** Voxel size on the XZ plane in metres (default 0.3). Smaller =
+   *  finer mesh, slower bake, larger blob. */
+  cellSize?: number;
+  /** Voxel size along Y (default 0.2). */
+  cellHeight?: number;
+  /** Capsule radius the agent body uses for clearance — Recast carves
+   *  the navmesh inwards by this amount (default 0.5 m). */
+  agentRadius?: number;
+  /** Standing height the agent fits under — gates ducking under
+   *  overhangs (default 1.8 m). */
+  agentHeight?: number;
+  /** Maximum walkable slope in degrees (default 45). */
+  maxSlope?: number;
+  /** Maximum step-up the agent climbs in one frame (default 0.4 m). */
+  walkableClimb?: number;
+  /** Auto-rebake the navmesh on every scene save when true. Default
+   *  false — bakes only on explicit user / AI request. */
+  autoBakeOnSave?: boolean;
+}
+
+/** Visual / post-FX systems. All optional — missing values fall back
+ *  to {@link DEFAULT_VISUALS}. */
+export interface VisualSettings {
+  /** WebGL tone-mapping operator. ACES is the modern HDR-aware
+   *  default; `linear` matches the classic three.js look. */
+  toneMapping?: "linear" | "ACES" | "reinhard";
+  /** Exposure multiplier applied after tone-mapping (default 1.0). */
+  exposure?: number;
+  shadows?: {
+    enabled?: boolean;
+    /** Shadow-map texture resolution in pixels (default 2048). */
+    resolution?: number;
+    /** Depth bias to prevent shadow acne (default 0.0001). */
+    bias?: number;
+  };
+  postFX?: {
+    bloom?: { enabled?: boolean; intensity?: number; threshold?: number };
+    ssao?: { enabled?: boolean; intensity?: number; radius?: number };
+    vignette?: { enabled?: boolean; intensity?: number };
+    colorGrade?: { contrast?: number; saturation?: number; temperature?: number };
+  };
+  /** Tint colour for the sky-side of the global hemisphere light. */
+  hemisphereTint?: string;
+  /** Asset id for an HDR / EXR skybox (drives both the sky background
+   *  and PBR reflections via `useEnvironment`). */
+  skyboxAssetId?: number;
 }
 
 /** Gentle default wind — a light breeze blowing in +X. Picked so a
@@ -488,6 +602,63 @@ export const DEFAULT_FOG = {
   far: 1500,
 } as const;
 
+/** Defaults for the new {@link PhysicsSettings} block. Earth gravity is
+ *  separate (`DEFAULT_GRAVITY`); these knobs cover the integrator
+ *  itself. */
+export const DEFAULT_PHYSICS: Required<Omit<PhysicsSettings, never>> = {
+  timeStep: 1 / 60,
+  solverIterations: 4,
+  defaultRestitution: 0.2,
+  defaultFriction: 0.6,
+  linearDamping: 0,
+  angularDamping: 0,
+  maxVelocityIterations: 1,
+};
+
+/** Defaults for {@link ColliderSettings}. CCD is on for Player +
+ *  Projectile by default — those are the layers most prone to
+ *  tunneling. Convex-decomp defaults match the inspector's collapsed
+ *  defaults so first-click bakes are predictable. */
+export const DEFAULT_COLLIDERS: Required<Pick<ColliderSettings,
+  "defaultColliderType" | "ccdEnabledLayers"
+>> & { convexDecompDefaults: ColliderBakeOptions } = {
+  defaultColliderType: "cuboid",
+  ccdEnabledLayers: ["Player", "Projectile"],
+  convexDecompDefaults: {
+    maxHulls: 32,
+    minHullVolume: 0.001,
+    voxelResolution: 200000,
+    maxVerticesPerHull: 64,
+    fillMode: "flood",
+  },
+};
+
+/** Defaults for {@link NavmeshBakeSettings}. Mirrors the values the
+ *  bake panel ships with so the schema and UI agree. */
+export const DEFAULT_NAVMESH_BAKE: Required<Omit<NavmeshBakeSettings, never>> = {
+  cellSize: 0.3,
+  cellHeight: 0.2,
+  agentRadius: 0.5,
+  agentHeight: 1.8,
+  maxSlope: 45,
+  walkableClimb: 0.4,
+  autoBakeOnSave: false,
+};
+
+/** Defaults for {@link VisualSettings}. ACES + soft bloom is the modern
+ *  hand-drawn / stylised look; templates can override per-scene. */
+export const DEFAULT_VISUALS: VisualSettings = {
+  toneMapping: "ACES",
+  exposure: 1.0,
+  shadows: { enabled: true, resolution: 2048, bias: 0.0001 },
+  postFX: {
+    bloom: { enabled: true, intensity: 0.4, threshold: 0.85 },
+    ssao: { enabled: false, intensity: 0.5, radius: 0.4 },
+    vignette: { enabled: true, intensity: 0.25 },
+    colorGrade: { contrast: 1.0, saturation: 1.0, temperature: 0 },
+  },
+};
+
 export const DEFAULT_ENV: Environment = {
   skyColor: "#0a0a14",
   groundColor: "#1a1a2e",
@@ -499,6 +670,23 @@ export const DEFAULT_ENV: Environment = {
   playerMoveSpeed: 6,
   mouseSensitivity: 0.0025,
   sensorLayers: [...DEFAULT_SENSOR_LAYERS],
+  physics: { ...DEFAULT_PHYSICS },
+  colliders: {
+    defaultColliderType: DEFAULT_COLLIDERS.defaultColliderType,
+    ccdEnabledLayers: [...DEFAULT_COLLIDERS.ccdEnabledLayers],
+    convexDecompDefaults: { ...DEFAULT_COLLIDERS.convexDecompDefaults },
+  },
+  navmeshBake: { ...DEFAULT_NAVMESH_BAKE },
+  visuals: {
+    ...DEFAULT_VISUALS,
+    shadows: { ...DEFAULT_VISUALS.shadows! },
+    postFX: {
+      bloom: { ...DEFAULT_VISUALS.postFX!.bloom! },
+      ssao: { ...DEFAULT_VISUALS.postFX!.ssao! },
+      vignette: { ...DEFAULT_VISUALS.postFX!.vignette! },
+      colorGrade: { ...DEFAULT_VISUALS.postFX!.colorGrade! },
+    },
+  },
 };
 
 /** Infer a default {@link LayerName} for an entity that has no `layer`
