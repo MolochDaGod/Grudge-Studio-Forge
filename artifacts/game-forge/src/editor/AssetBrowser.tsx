@@ -21,7 +21,12 @@ import { buildPrefabPayloadFromModelAsset } from "@/lib/forgeFromAsset";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users, Hammer } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users, Hammer, Wand2 } from "lucide-react";
+import {
+  useMixamoRegistry,
+  loadAndRetargetSource,
+  isSourceLoaded,
+} from "@/lib/mixamoClipsRegistry";
 import { RACES, type Race } from "@/lib/races";
 import { useViewportTabs } from "@/store/viewportTabs";
 import { openModelTabFromAsset } from "@/lib/openModelTab";
@@ -561,8 +566,107 @@ function GrudgeGrid({
   );
 }
 
+/** Per-row Mixamo button. Lives in its own component so the local
+ *  detect/loading state doesn't force the entire ProjectAssets list
+ *  to re-render on every state transition.
+ *
+ *  Three states the user sees:
+ *    - "Mixamo" (default): URL not yet registered; click to detect +
+ *      register. Disabled while a detection request is in flight.
+ *    - Spinner: detection in progress (loads + parses the GLB once).
+ *    - "Mixamo ✓": URL is in the registry. Click to remove.
+ *    - "Not Mixamo": after a failed detection, surfaces the negative
+ *      result inline so the user knows the file isn't usable. The
+ *      label resets to "Mixamo" after a few seconds so they can try
+ *      a different file. */
+function MixamoRowButton({ url }: { url: string }) {
+  const sources = useMixamoRegistry((s) => s.sources);
+  const projectId = useMixamoRegistry((s) => s.projectId);
+  const add = useMixamoRegistry((s) => s.add);
+  const remove = useMixamoRegistry((s) => s.remove);
+  const [phase, setPhase] = useState<"idle" | "detecting" | "rejected">("idle");
+  const isRegistered = sources.includes(url);
+
+  // Auto-clear the "rejected" message after 4s so the button becomes
+  // actionable again. Using a real timer (not a render-time cmp)
+  // because the parent never re-renders on its own — phase is local.
+  useEffect(() => {
+    if (phase !== "rejected") return;
+    const t = window.setTimeout(() => setPhase("idle"), 4000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
+  const onClick = async () => {
+    if (isRegistered) {
+      remove(url);
+      return;
+    }
+    if (projectId == null) return;
+    setPhase("detecting");
+    // detectMixamoSource shares the cache with loadAndRetargetSource —
+    // calling it here means a successful registration doesn't trigger
+    // a second network round-trip on add().
+    const entry = await loadAndRetargetSource(url);
+    if (!entry) {
+      setPhase("rejected");
+      return;
+    }
+    add(url);
+    setPhase("idle");
+  };
+
+  // Color hint: registered = primary, rejected = destructive, idle =
+  // muted. Lucide Wand2 reads as "transform / convert" which fits the
+  // retargeting metaphor.
+  const cls = isRegistered
+    ? "text-primary hover:text-primary"
+    : phase === "rejected"
+    ? "text-destructive"
+    : "text-muted-foreground";
+  const label = isRegistered
+    ? "Mixamo ✓"
+    : phase === "detecting"
+    ? "Detecting…"
+    : phase === "rejected"
+    ? "Not Mixamo"
+    : isSourceLoaded(url) // cached from a prior detection in this session
+    ? "Mixamo"
+    : "Mixamo";
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={`h-6 text-[10px] opacity-0 group-hover:opacity-100 ${cls}`}
+      onClick={onClick}
+      disabled={phase === "detecting" || projectId == null}
+      title={
+        isRegistered
+          ? "Remove from Mixamo clip pack"
+          : "Detect Mixamo skeleton and use this GLB's clips on every race"
+      }
+      data-testid={`button-mixamo-${url}`}
+    >
+      {phase === "detecting" ? (
+        <Loader2 className="size-3 mr-1 animate-spin" />
+      ) : (
+        <Wand2 className="size-3 mr-1" />
+      )}
+      {label}
+    </Button>
+  );
+}
+
 function ProjectAssets() {
   const projectId = useEditor((s) => s.projectId);
+  // Sync the project-scoped Mixamo clip registry whenever the active
+  // project changes. The registry hydrates from localStorage and
+  // kicks off background loads of every persisted source GLB so the
+  // first character that mounts after page load already has its
+  // retargeted clips available.
+  const setMixamoProject = useMixamoRegistry((s) => s.setProject);
+  useEffect(() => {
+    setMixamoProject(projectId ?? null);
+  }, [projectId, setMixamoProject]);
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.cmdAddEntity);
   const updateEntity = useEditor((s) => s.cmdUpdateEntity);
@@ -903,6 +1007,13 @@ function ProjectAssets() {
                   >
                     <Hammer className="size-3 mr-1" /> Forge
                   </Button>
+                  {/* Mixamo: opt this .glb in as a clip pack. The
+                      runtime retargeter rewrites every track to the
+                      Bip001 convention used by all six toon-rts
+                      races, scales hip height per race, and strips
+                      baked XZ root motion. Persisted per project so
+                      a reload keeps the clip pack active. */}
+                  <MixamoRowButton url={a.url} />
                 </>
               )}
               {a.source === "upload" && a.url && (

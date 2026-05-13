@@ -22,6 +22,12 @@ import {
   shouldShowRaceVariantMesh,
 } from "@/lib/builtinModels";
 import { synthesizeBipedClips, getBipedProfile } from "@/lib/proceduralBipedAnimations";
+import { synthesizeRifleClips } from "@/lib/proceduralRifleClips";
+import {
+  useMixamoRegistry,
+  getRetargetedClipsForTarget,
+} from "@/lib/mixamoClipsRegistry";
+import { unifyClips } from "@/lib/clipResolver";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
   DEFAULT_SENSOR_LAYERS,
@@ -442,11 +448,63 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     const raceId = url.startsWith("builtin:race:") ? url.slice("builtin:race:".length) : null;
     return getBipedProfile(raceId);
   }, [url]);
+  // Subscribe to the Mixamo clip registry so retargeted clips become
+  // available to LoadedModel as soon as the AssetBrowser registers a
+  // new source. Two things to watch: (1) loadVersion bumps when a
+  // source GLB finishes loading + parsing, (2) the sources array
+  // changes when the user adds/removes URLs. Reading both via
+  // shallow selectors keeps the render cost negligible.
+  // loadVersion is the SINGLE source of truth for "the retargeted
+  // clip set may have changed" — it's bumped by add/remove/
+  // setProject AND by every successful background source load. We
+  // intentionally do NOT depend on `sources.length` separately
+  // because identical-length project switches change source identity
+  // without changing length, and would silently miss the recompute.
+  const mixamoLoadVersion = useMixamoRegistry((s) => s.loadVersion);
+  const mixamoHasSources = useMixamoRegistry((s) => s.sources.length > 0);
   const animations = useMemo(() => {
-    if (gltf.animations.length > 0) return gltf.animations;
-    const synth = synthesizeBipedClips(gltf.scene, profile);
-    return synth.length > 0 ? synth : gltf.animations;
-  }, [gltf, profile]);
+    // Resolution priority is enforced by `unifyClips`:
+    //   1. Retargeted Mixamo clips (user-imported, highest priority)
+    //   2. GLB-baked clips (artist-authored content in the source GLB)
+    //   3. Procedurally synthesized clips (biped fallback for the
+    //      toon-rts pack which ships with zero baked clips)
+    //
+    // For (3) we ALSO emit the rifle weapon-pose set
+    // (rifle_idle/walk/run/aim/fire/reload). drei's `useAnimations`
+    // indexes by `clip.name`, so unifyClips dedupes by name with
+    // priority order — a Mixamo `walk` retarget cleanly overrides
+    // the procedural `walk` for the same race without renaming.
+    const baked = gltf.animations;
+    // Synthesized only kicks in when the GLB has zero baked clips
+    // AND the rig is a Bip001 biped (synthesizers themselves return
+    // `[]` on a non-biped — silent no-op).
+    let synthesized: THREE.AnimationClip[] | undefined;
+    if (baked.length === 0) {
+      const base = synthesizeBipedClips(gltf.scene, profile);
+      if (base.length > 0) {
+        const rifle = synthesizeRifleClips(gltf.scene, profile);
+        synthesized = rifle.length > 0 ? [...base, ...rifle] : base;
+      }
+    }
+    // Retargeted clips: the registry keeps a per-source-URL cache and
+    // the retargeter caches per (clip, targetScene). With both warm
+    // this collapses to two Map lookups per source.
+    const retargeted = mixamoHasSources ? getRetargetedClipsForTarget(gltf.scene) : undefined;
+    const unified = unifyClips({
+      retargeted,
+      baked,
+      synthesized,
+    });
+    // Important: when no source / no synth contributed anything we
+    // still want `useAnimations` to bind against the original
+    // `gltf.animations` array (not an empty array — drei's hook
+    // tolerates that but it triggers an extra reconcile pass).
+    return unified.length > 0 ? unified : gltf.animations;
+    // mixamoLoadVersion intentionally listed — bumping it should
+    // re-evaluate the retargeted set when a fresh source finishes
+    // loading.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gltf, profile, mixamoLoadVersion, mixamoHasSources]);
   const { actions, names } = useAnimations(animations, groupRef);
 
   // Drop-to-ground: lift the inner scene so its world-y min = 0 in local

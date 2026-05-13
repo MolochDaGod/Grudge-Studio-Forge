@@ -171,19 +171,102 @@ export interface RaceClipSet {
   run: string;
   attack?: string;
   death?: string;
+  /** Optional weapon-pose variants. When the entity has a non-unarmed
+   *  EquippedWeapon, `pickClipName(baseClipName, pose)` returns the
+   *  matching variant from this map (e.g. `"walk"` + `"rifle"` →
+   *  `"rifle_walk"`). When a variant is absent, callers fall back to
+   *  the base clip — so equipping an unsupported weapon never produces
+   *  a missing-clip crossfade. */
+  weapons?: Partial<Record<WeaponPose, WeaponClipSet>>;
 }
+
+/** Weapon poses the engine knows about. `unarmed` is the implicit
+ *  default — `pickClipName(name, "unarmed")` returns `name` unchanged
+ *  so callers don't need to special-case it. New weapon kinds become
+ *  one new entry here + a new entry in `WEAPON_CLIP_NAMES` + matching
+ *  procedural synthesizer (e.g. `proceduralRifleClips.ts`). */
+export type WeaponPose = "unarmed" | "rifle";
+
+export interface WeaponClipSet {
+  idle: string;
+  walk: string;
+  run: string;
+  /** Held aim / sight-picture loop. Optional — entities that just
+   *  equip the weapon for visual flair can omit it. */
+  aim?: string;
+  /** One-shot fire / strike. */
+  fire?: string;
+  /** One-shot reload. */
+  reload?: string;
+}
+
+/** Canonical clip names per weapon pose. Mirrors the names emitted
+ *  by `proceduralRifleClips.ts` so a procedurally-synthesized rifle
+ *  clip resolves through this table without a renaming step. */
+export const WEAPON_CLIP_NAMES: Record<Exclude<WeaponPose, "unarmed">, Required<WeaponClipSet>> = {
+  rifle: {
+    idle: "rifle_idle",
+    walk: "rifle_walk",
+    run: "rifle_run",
+    aim: "rifle_aim",
+    fire: "rifle_fire",
+    reload: "rifle_reload",
+  },
+};
 // Names mirror `PROCEDURAL_BIPED_CLIP_NAMES` in `proceduralBipedAnimations.ts`.
 // `death` resolves to the procedural one-shot collapse pose (the renderer
 // detects the "death" clip name and switches the AnimationAction to
 // LoopOnce + clampWhenFinished so the final pose holds).
+//
+// Every race shares the same `weapons.rifle` set because the procedural
+// rifle synthesizer (`proceduralRifleClips.ts`) emits identical clip
+// NAMES for every race — only the per-bone deltas differ via the per-
+// race `BipedAnimProfile`. Drop-in Mixamo retargets follow the same
+// convention via the asset-browser tagger so adding real authored
+// rifle content for one race doesn't require editing this table.
+const RIFLE_CLIPS: WeaponClipSet = WEAPON_CLIP_NAMES.rifle;
 export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
-  "race:warrior":     { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
-  "race:dwarf":       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
-  "race:frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
-  "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
-  "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
-  "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
+  "race:warrior":     { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  "race:dwarf":       { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  "race:frost-dwarf": { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
 };
+
+/** Resolve a base clip name + a weapon pose to the actual clip name
+ *  the renderer should crossfade to.
+ *
+ *  - `unarmed` is the identity case — returns `baseClipName` unchanged
+ *    so writers can call this unconditionally without wrapping.
+ *  - For armed poses, looks up the variant in the race's `weapons[pose]`
+ *    table. Falls back to `baseClipName` when the variant is missing
+ *    (e.g. a race with rifle-walk but no rifle-attack), so an unknown
+ *    base clip never produces an undefined crossfade target.
+ *
+ *  Pure: no I/O, no store reads. Both the player camera controllers
+ *  and the enemy-rpg behavior call this just before writing into
+ *  `__agentClips`, keeping the pose-resolution logic out of every
+ *  writer site. */
+export function pickClipName(
+  baseClipName: string,
+  pose: WeaponPose,
+  raceClips: RaceClipSet | undefined,
+): string {
+  if (pose === "unarmed" || !raceClips?.weapons) return baseClipName;
+  const variants = raceClips.weapons[pose];
+  if (!variants) return baseClipName;
+  switch (baseClipName) {
+    case "idle":   return variants.idle;
+    case "walk":   return variants.walk;
+    case "run":    return variants.run;
+    case "attack": return variants.fire ?? baseClipName;
+    case "aim":    return variants.aim ?? baseClipName;
+    case "fire":   return variants.fire ?? baseClipName;
+    case "reload": return variants.reload ?? baseClipName;
+    default:       return baseClipName;
+  }
+}
 
 /** Look up the clip set for an entity's `raceId`. Returns undefined for
  *  entities with no race (e.g. the legacy `builtin:character` player) so
