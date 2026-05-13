@@ -43,8 +43,23 @@ function Lights(): React.ReactElement {
         position={[10, 12, 8]}
         intensity={env.sunIntensity ?? 1.2}
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.04}
+        shadow-camera-near={0.5}
+        shadow-camera-far={120}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
+      />
+      {/* Cool fill from the opposite side — non-shadow-casting,
+          mirrors the editor Viewport preset for consistent look. */}
+      <directionalLight
+        position={[-8, 10, -6]}
+        intensity={(env.sunIntensity ?? 1.2) * 0.25}
+        color="#9eb8ff"
       />
     </>
   );
@@ -77,7 +92,9 @@ export function PlayerScene(): React.ReactElement {
         shadows
         camera={{ position: [8, 8, 12], fov: 45 }}
         gl={{
-          antialias: false,
+          antialias: true,
+          outputColorSpace: THREE.SRGBColorSpace,
+          stencil: false,
           powerPreference: "high-performance",
           toneMapping: THREE.NoToneMapping,
         }}

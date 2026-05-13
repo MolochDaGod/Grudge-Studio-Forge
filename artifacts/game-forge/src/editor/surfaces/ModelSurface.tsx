@@ -199,9 +199,19 @@ function ViewerLights() {
         position={[6, 10, 4]}
         intensity={1.4}
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.04}
+        shadow-camera-near={0.5}
+        shadow-camera-far={40}
+        shadow-camera-left={-15}
+        shadow-camera-right={15}
+        shadow-camera-top={15}
+        shadow-camera-bottom={-15}
       />
+      {/* Cool rim fill — gives loaded models edge definition. */}
+      <directionalLight position={[-6, 8, -4]} intensity={0.35} color="#9eb8ff" />
       <hemisphereLight args={["#dcd4ff", "#1a1325", 0.4]} />
     </>
   );
@@ -286,6 +296,8 @@ export function ModelSurface({ payload }: ModelSurfaceProps) {
             antialias: true,
             powerPreference: "high-performance",
             toneMapping: THREE.ACESFilmicToneMapping,
+            outputColorSpace: THREE.SRGBColorSpace,
+            stencil: false,
           }}
           dpr={[1, 2]}
         >
@@ -306,7 +318,7 @@ export function ModelSurface({ payload }: ModelSurfaceProps) {
             fadeDistance={30}
             fadeStrength={1.4}
             infiniteGrid
-            position={[0, -0.001, 0]}
+            position={[0, -0.02, 0]}
           />
           <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
           <Stats className="!left-auto !right-3 !top-3" />

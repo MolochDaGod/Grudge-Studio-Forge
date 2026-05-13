@@ -90,7 +90,12 @@ export function PrefabPreviewSurface({ payload }: { payload: PrefabTabPayload })
         <Canvas
           shadows
           camera={{ position: [4, 3, 6], fov: 45 }}
-          gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+          gl={{
+            antialias: true,
+            toneMapping: THREE.ACESFilmicToneMapping,
+            outputColorSpace: THREE.SRGBColorSpace,
+            stencil: false,
+          }}
           dpr={[1, 2]}
         >
           <DevtoolsBridge label={`Forge · Prefab: ${payload.prefabName}`} />
@@ -100,9 +105,18 @@ export function PrefabPreviewSurface({ payload }: { payload: PrefabTabPayload })
             position={[6, 10, 4]}
             intensity={1.4}
             castShadow
-            shadow-mapSize-width={1024}
-            shadow-mapSize-height={1024}
+            shadow-mapSize-width={2048}
+            shadow-mapSize-height={2048}
+            shadow-bias={-0.0005}
+            shadow-normalBias={0.04}
+            shadow-camera-near={0.5}
+            shadow-camera-far={40}
+            shadow-camera-left={-15}
+            shadow-camera-right={15}
+            shadow-camera-top={15}
+            shadow-camera-bottom={-15}
           />
+          <directionalLight position={[-6, 8, -4]} intensity={0.35} color="#9eb8ff" />
           <Suspense fallback={null}>
             <Bounds fit clip observe margin={1.4}>
               <Center>
@@ -125,7 +139,7 @@ export function PrefabPreviewSurface({ payload }: { payload: PrefabTabPayload })
             fadeDistance={30}
             fadeStrength={1.4}
             infiniteGrid
-            position={[0, -0.001, 0]}
+            position={[0, -0.02, 0]}
           />
           <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
         </Canvas>

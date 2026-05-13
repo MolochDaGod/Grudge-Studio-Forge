@@ -356,16 +356,53 @@ function Lights() {
   const ambient = env.ambientIntensity ?? 0.4;
   const sky = env.skyColor ?? "#0a0a14";
   const ground = env.groundColor ?? "#1a1a2e";
+  const sunIntensity = env.sunIntensity ?? 1.2;
   return (
     <>
       <ambientLight intensity={ambient} />
       <hemisphereLight args={[sky, ground, ambient * 0.85]} />
+      {/*
+        Key (sun) light. Previously a 1024² shadow map covering the
+        renderer-default ortho frustum (~10 units across) with no
+        bias — gave both shadow acne (flickering speckle on every
+        lit surface) and shadows that vanished a few meters from the
+        origin on the new ~120-unit arena scale.
+
+        Fixes:
+          • 2048² map so per-texel area is small enough to avoid
+            staircase aliasing on character feet.
+          • Explicit ortho bounds covering ±60 units (matches the
+            new arena scale) at far=120 → shadow texels stay dense.
+          • bias=-0.0005 + normalBias=0.04 eliminates the
+            speckle/acne while the small negative bias keeps contact
+            shadows tight under feet.
+      */}
       <directionalLight
         position={[10, 12, 8]}
-        intensity={env.sunIntensity ?? 1.2}
+        intensity={sunIntensity}
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
+        shadow-bias={-0.0005}
+        shadow-normalBias={0.04}
+        shadow-camera-near={0.5}
+        shadow-camera-far={120}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
+      />
+      {/*
+        Cool back/rim fill from the opposite side at ~25% sun
+        intensity — gives geometry edge definition without flatness
+        and prevents the "muddy unlit back-side" look on characters
+        and props. Does NOT cast shadows (would double the shadow
+        cost and produce conflicting shadows from two suns).
+      */}
+      <directionalLight
+        position={[-8, 10, -6]}
+        intensity={sunIntensity * 0.25}
+        color="#9eb8ff"
       />
     </>
   );
@@ -1243,9 +1280,30 @@ export function Viewport() {
                     }
               }
               gl={{
-                antialias: false,
+                /*
+                 * Stable-rendering preset. Previously ran with
+                 * antialias:false + relied solely on SMAA inside
+                 * EffectsRig — in low-quality / transition states
+                 * this produced visible edge shimmer ("blinking").
+                 * MSAA + sRGB output + explicit PCFSoft shadow map
+                 * gives a solid baseline regardless of post-FX state.
+                 *
+                 * Tone mapping stays NoToneMapping at the renderer
+                 * because EffectsRig applies ACES via the <ToneMapping>
+                 * effect; setting both would double-tone the image.
+                 */
+                antialias: true,
                 powerPreference: "high-performance",
                 toneMapping: THREE.NoToneMapping,
+                outputColorSpace: THREE.SRGBColorSpace,
+                stencil: false,
+              }}
+              onCreated={({ gl }) => {
+                gl.shadowMap.enabled = true;
+                gl.shadowMap.type = THREE.PCFSoftShadowMap;
+                // autoUpdate=true (default) is fine; setting needsUpdate
+                // here would force a one-shot bake. We rely on R3F's
+                // continuous render loop to keep shadows fresh.
               }}
               dpr={[1, 2]}
               style={isPlaying ? { cursor: "none" } : undefined}
@@ -1309,6 +1367,16 @@ export function Viewport() {
               {showStats && <Stats className="!left-auto !right-3 !top-3" />}
               {!isPlaying && (
                 <>
+                  {/*
+                    Grid was at y=-0.001 which is well inside the
+                    float32 depth-fight zone for any ground plane
+                    sitting at y=0 — the visible "blink" on map
+                    ground was the grid texels and the ground
+                    fragment alternating per-frame as the camera
+                    moved. Dropped to y=-0.02 (still imperceptible
+                    against any solid ground) which is past the
+                    fight zone at editor camera distances.
+                  */}
                   <Grid
                     args={[40, 40]}
                     cellSize={1}
@@ -1320,7 +1388,7 @@ export function Viewport() {
                     fadeDistance={40}
                     fadeStrength={1.4}
                     infiniteGrid
-                    position={[0, -0.001, 0]}
+                    position={[0, -0.02, 0]}
                   />
                   <OrbitControls makeDefault />
                   <FocusCameraController />
