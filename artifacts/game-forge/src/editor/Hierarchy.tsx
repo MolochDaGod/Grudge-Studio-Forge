@@ -24,6 +24,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useEditor } from "@/store/editor";
+import { Globe2 } from "lucide-react";
+import {
+  resolveInheritedFields,
+  indexEntitiesById,
+  type InheritedFields,
+} from "@workspace/scene-schema";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +68,74 @@ const ICONS: Record<EntityType, typeof Box> = {
   particles: Circle,
 };
 
+/** Visual presentation tables for the hierarchy inheritance chips.
+ *  Kept here (not in `scene-schema`) because they're purely UI-side —
+ *  the schema package shouldn't know about Tailwind colors. The 3-letter
+ *  layer codes match what users see in collision-matrix tooltips so the
+ *  vocabulary is consistent across the editor. */
+const LAYER_BADGE: Record<string, { code: string; cls: string; label: string }> = {
+  Default:       { code: "Def", cls: "bg-slate-500/20 text-slate-300 border-slate-500/40",   label: "Default — generic prop" },
+  Terrain:       { code: "Ter", cls: "bg-amber-700/20 text-amber-300 border-amber-700/40",   label: "Terrain — static ground/walls" },
+  Player:        { code: "Plr", cls: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40", label: "Player — controlled by user" },
+  NPC:           { code: "NPC", cls: "bg-rose-500/20 text-rose-300 border-rose-500/40",       label: "NPC — AI-driven character" },
+  Item:          { code: "Itm", cls: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40", label: "Item — pickup / loot" },
+  Projectile:    { code: "Prj", cls: "bg-orange-500/20 text-orange-300 border-orange-500/40", label: "Projectile — bullets, arrows" },
+  Trigger:       { code: "Trg", cls: "bg-cyan-500/20 text-cyan-300 border-cyan-500/40",       label: "Trigger — sensor volume" },
+  Water:         { code: "Wtr", cls: "bg-sky-500/20 text-sky-300 border-sky-500/40",          label: "Water — swimmable / sensor" },
+  IgnoreRaycast: { code: "IgR", cls: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",       label: "IgnoreRaycast — hidden from rays" },
+  UI3D:          { code: "UI",  cls: "bg-violet-500/20 text-violet-300 border-violet-500/40", label: "UI3D — decorative, no physics" },
+};
+const SURFACE_BADGE: Record<string, { code: string; cls: string; label: string }> = {
+  Walk:  { code: "W", cls: "text-emerald-300", label: "Walk — ground locomotion" },
+  Climb: { code: "C", cls: "text-amber-300",   label: "Climb — vertical traversal" },
+  Swim:  { code: "S", cls: "text-sky-300",     label: "Swim — water locomotion" },
+  Jump:  { code: "J", cls: "text-fuchsia-300", label: "Jump — must be jumped onto" },
+  Dig:   { code: "D", cls: "text-orange-300",  label: "Dig — destructible terrain" },
+  None:  { code: "·", cls: "text-muted-foreground", label: "None — non-traversable" },
+};
+const MATERIAL_BADGE: Record<string, { code: string; cls: string; label: string }> = {
+  Solid:    { code: "▣", cls: "text-slate-300",   label: "Solid" },
+  Metal:    { code: "M", cls: "text-zinc-300",    label: "Metal" },
+  Glass:    { code: "G", cls: "text-cyan-200",    label: "Glass" },
+  Wood:     { code: "W", cls: "text-amber-700",   label: "Wood" },
+  Stone:    { code: "S", cls: "text-stone-400",   label: "Stone" },
+  Cloth:    { code: "C", cls: "text-rose-300",    label: "Cloth" },
+  Flag:     { code: "F", cls: "text-rose-400",    label: "Flag" },
+  Foliage:  { code: "L", cls: "text-emerald-400", label: "Foliage" },
+  Liquid:   { code: "~", cls: "text-sky-300",     label: "Liquid" },
+  Particle: { code: "•", cls: "text-fuchsia-300", label: "Particle" },
+  Smoke:    { code: "~", cls: "text-zinc-400",    label: "Smoke" },
+};
+
+/** Per-row inheritance chip. `own=true` renders bold/solid (the value is
+ *  set on this entity); `own=false` renders dim/italic and the tooltip
+ *  notes which ancestor it was inherited from — so users can scan a
+ *  parent's tags propagating down a subtree at a glance. */
+function InheritChip({
+  entry,
+  own,
+  fromName,
+  testid,
+}: {
+  entry: { code: string; cls: string; label: string };
+  own: boolean;
+  fromName?: string;
+  testid?: string;
+}) {
+  const tip = own ? entry.label : `${entry.label} — inherited from "${fromName ?? "parent"}"`;
+  return (
+    <span
+      title={tip}
+      className={`inline-flex items-center justify-center px-1 min-w-4 h-4 rounded-sm border text-[9px] font-mono leading-none ${
+        entry.cls
+      } ${own ? "" : "italic opacity-55 border-transparent"}`}
+      data-testid={testid}
+    >
+      {entry.code}
+    </span>
+  );
+}
+
 interface RowProps {
   entity: SceneEntity;
   depth: number;
@@ -69,6 +143,13 @@ interface RowProps {
   collapsed: boolean;
   selected: boolean;
   matchesFilter: boolean;
+  /** Resolved tri-axis tags (own value wins, else nearest ancestor).
+   *  Pre-computed once per render in the parent for O(N) cost across
+   *  the whole tree instead of O(N·depth) if each row resolved itself. */
+  inherited: InheritedFields;
+  /** Display name of the ancestor each axis was inherited from (for the
+   *  chip tooltip). Undefined when the value is set on this entity. */
+  inheritedFrom: { layer?: string; surface?: string; material?: string };
   onPick: () => void;
   onToggle: () => void;
   onDuplicate: () => void;
@@ -93,6 +174,8 @@ function HierarchyRow({
   collapsed,
   selected,
   matchesFilter,
+  inherited,
+  inheritedFrom,
   onPick,
   onToggle,
   onDuplicate,
@@ -156,12 +239,64 @@ function HierarchyRow({
       )}
       <Icon className="size-3.5 shrink-0 opacity-70" />
       <span className="flex-1 truncate">{entity.name}</span>
+      {/* Tri-axis inheritance chips. Compact one-letter / 3-letter
+        * badges so a 30-row hierarchy still scans at a glance. We
+        * only render a chip when the resolved value is "interesting"
+        * — Default layer / None surface are omitted unless the user
+        * explicitly set them (avoids visual noise on prop-heavy
+        * scenes). Italic+dim = inherited from an ancestor; solid =
+        * set on this entity. */}
+      {(() => {
+        const layerName = inherited.layer;
+        const showLayer = layerName && (entity.layer || layerName !== "Default");
+        const surfaceName = inherited.surface;
+        const showSurface = surfaceName && (entity.surface || surfaceName !== "None");
+        const matKind = inherited.materialKind;
+        const showMat = matKind && (entity.material?.kind || matKind !== "Solid");
+        if (!showLayer && !showSurface && !showMat) return null;
+        return (
+          <div className="flex items-center gap-0.5 mr-1 shrink-0">
+            {showLayer && LAYER_BADGE[layerName] && (
+              <InheritChip
+                entry={LAYER_BADGE[layerName]}
+                own={!!entity.layer}
+                fromName={inheritedFrom.layer}
+                testid={`row-${entity.id}-layer`}
+              />
+            )}
+            {showSurface && SURFACE_BADGE[surfaceName] && (
+              <InheritChip
+                entry={SURFACE_BADGE[surfaceName]}
+                own={!!entity.surface}
+                fromName={inheritedFrom.surface}
+                testid={`row-${entity.id}-surface`}
+              />
+            )}
+            {showMat && MATERIAL_BADGE[matKind] && (
+              <InheritChip
+                entry={MATERIAL_BADGE[matKind]}
+                own={!!entity.material?.kind}
+                fromName={inheritedFrom.material}
+                testid={`row-${entity.id}-material`}
+              />
+            )}
+          </div>
+        );
+      })()}
       {isPrefabInstance && (
         <span
           className="font-heading text-[9px] uppercase tracking-[0.18em] px-1.5 py-px rounded-sm bg-primary/15 text-primary border border-primary/40"
           title="Instance of a Prefab"
         >
           Prefab
+        </span>
+      )}
+      {entity.behavior && (
+        <span
+          className="text-[9px] font-mono text-fuchsia-300/90 px-1 py-px rounded-sm bg-fuchsia-500/15 border border-fuchsia-500/30"
+          title={`Built-in behavior: ${entity.behavior}`}
+        >
+          AI
         </span>
       )}
       {entity.scriptId && <span className="text-[10px] text-accent font-mono">{"<>"}</span>}
@@ -298,6 +433,49 @@ export function Hierarchy() {
   const childrenByParent = useMemo(() => buildTree(entities), [entities]);
   const roots = childrenByParent.get(null) ?? [];
 
+  // Build the entity index + per-entity resolved inheritance ONCE per
+  // hierarchy render. resolveInheritedFields walks the parent chain
+  // (capped at depth 64) so doing this in the parent is O(N·avg_depth)
+  // total instead of O(N²) if every row resolved itself. The
+  // `inheritedFrom` map records WHICH ancestor each axis came from so
+  // the chip tooltip can name it ("inherited from 'Map root'").
+  const { inheritedById, inheritedFromById } = useMemo(() => {
+    const idx = indexEntitiesById(entities);
+    const inh = new Map<string, InheritedFields>();
+    const from = new Map<string, { layer?: string; surface?: string; material?: string }>();
+    for (const e of entities) {
+      const r = resolveInheritedFields(e, idx);
+      inh.set(e.id, r);
+      // Walk up to find the ancestor that actually defined each axis,
+      // for the tooltip. We re-walk here (cheap — bounded by depth)
+      // because resolveInheritedFields doesn't return provenance.
+      const provenance: { layer?: string; surface?: string; material?: string } = {};
+      if (!e.layer && r.layer) {
+        let cur = e.parentId ? idx.get(e.parentId) : undefined;
+        while (cur) {
+          if (cur.layer) { provenance.layer = cur.name; break; }
+          cur = cur.parentId ? idx.get(cur.parentId) : undefined;
+        }
+      }
+      if (!e.surface && r.surface) {
+        let cur = e.parentId ? idx.get(e.parentId) : undefined;
+        while (cur) {
+          if (cur.surface) { provenance.surface = cur.name; break; }
+          cur = cur.parentId ? idx.get(cur.parentId) : undefined;
+        }
+      }
+      if (!e.material?.kind && r.materialKind) {
+        let cur = e.parentId ? idx.get(e.parentId) : undefined;
+        while (cur) {
+          if (cur.material?.kind) { provenance.material = cur.name; break; }
+          cur = cur.parentId ? idx.get(cur.parentId) : undefined;
+        }
+      }
+      from.set(e.id, provenance);
+    }
+    return { inheritedById: inh, inheritedFromById: from };
+  }, [entities]);
+
   // Drag/drop reparenting
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -421,6 +599,8 @@ export function Hierarchy() {
         collapsed={collapsed}
         selected={selectedId === entity.id}
         matchesFilter={matchesFilter}
+        inherited={inheritedById.get(entity.id) ?? {}}
+        inheritedFrom={inheritedFromById.get(entity.id) ?? {}}
         onPick={() => selectEntity(entity.id)}
         onToggle={() => toggleCollapsed(entity.id)}
         onDuplicate={() => cmdDuplicateEntity(entity.id)}
@@ -566,6 +746,32 @@ export function Hierarchy() {
               onDropRoot();
             }}
           >
+            {/* Environment pseudo-row — always first, always present.
+              * Selecting it clears the entity selection so the inspector
+              * shows the scene-wide Environment panel (sky, fog, sun,
+              * ambient, gravity). Before this users had to deselect
+              * everything and hope the inspector panel was open to find
+              * those settings. */}
+            <div
+              onClick={() => selectEntity(null)}
+              className={`group flex items-center gap-1 pr-2 py-1 rounded text-sm cursor-pointer hover-elevate ${
+                selectedId === null
+                  ? "bg-primary/15 text-primary border border-primary/30"
+                  : ""
+              }`}
+              style={{ paddingLeft: 6 }}
+              title="Scene environment — sky, fog, sun, ambient, gravity"
+              data-testid="row-environment"
+            >
+              <span className="size-3.5" />
+              <Globe2 className="size-3.5 shrink-0 opacity-70" />
+              <span className="flex-1 truncate font-heading text-[11px] uppercase tracking-[0.18em]">
+                Environment
+              </span>
+              <span className="text-[9px] text-muted-foreground font-mono">
+                sky · fog · sun
+              </span>
+            </div>
             {roots.flatMap((e) => renderNode(e, 0))}
             {entities.length === 0 && (
               <p className="text-xs text-muted-foreground px-3 py-6 text-center">

@@ -1388,6 +1388,61 @@ export function Inspector() {
           </div>
         </Section>
 
+        <Section title="AI Behavior" Icon={Bot}>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Built-in behavior</Label>
+            <Select
+              value={entity.behavior ?? "__none"}
+              onValueChange={(v) =>
+                updateEntity(entity.id, (d) => {
+                  if (v === "__none") delete d.behavior;
+                  else d.behavior = v as typeof d.behavior;
+                })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-behavior">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              {/* Built-in behaviors live in `lib/deathmatchBehaviors.ts`
+                * and run in addition to any attached user Script. The
+                * labels below are the designer-friendly names; the value
+                * is the BehaviorKind string the runtime keys off of. */}
+              <SelectContent>
+                <SelectItem value="__none">None</SelectItem>
+                <SelectItem value="player-deathmatch">Player — Deathmatch (respawn, kill feed)</SelectItem>
+                <SelectItem value="player-rpg">Player — RPG (melee, interact, no respawn)</SelectItem>
+                <SelectItem value="enemy-deathmatch">Enemy — Deathmatch (always hostile)</SelectItem>
+                <SelectItem value="enemy-rpg">Enemy — RPG (peaceful until provoked)</SelectItem>
+                <SelectItem value="gamemode-deathmatch">Gamemode — Deathmatch (scoring + win)</SelectItem>
+                <SelectItem value="spawnpoint">Spawnpoint marker</SelectItem>
+                <SelectItem value="pickup-trigger">Pickup trigger (despawn on player touch)</SelectItem>
+                <SelectItem value="npc-dialog">NPC dialog (E to talk)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Built-in behaviors run alongside any attached script.
+              Picking one auto-tags the entity with a sensible physics
+              layer (Player / NPC / Trigger) at runtime.
+            </p>
+            {entity.behavior === "npc-dialog" && (
+              <div className="mt-2">
+                <Label className="text-xs text-muted-foreground mb-1.5 block">Dialog line</Label>
+                <Input
+                  value={entity.npcLine ?? ""}
+                  onChange={(e) =>
+                    updateEntity(entity.id, (d) => {
+                      d.npcLine = e.target.value;
+                    })
+                  }
+                  placeholder="Hello, traveler!"
+                  className="h-7 text-xs"
+                  data-testid="input-npc-line"
+                />
+              </div>
+            )}
+          </div>
+        </Section>
+
         <Section title="Script" Icon={Code2}>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Attached Script</Label>
