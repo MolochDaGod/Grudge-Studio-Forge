@@ -56,3 +56,18 @@ describe("rpgVillageScene", () => {
     expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
   });
 });
+
+describe("rpgVillageScene cameraStart", () => {
+  it("sets a behind-and-above starting view that frames the plaza on load", () => {
+    const env = build().environment;
+    expect(env.cameraStart).toBeDefined();
+    const cs = env.cameraStart!;
+    // Camera must be ABOVE the player (y high enough to see the ring
+    // of NPCs) and OUTSIDE the player's collider — within sight of
+    // both the friendly cluster (-X side) and the enemies (+X side).
+    expect(cs.position[1]).toBeGreaterThan(2);
+    expect(Math.hypot(cs.position[0], cs.position[2])).toBeGreaterThan(4);
+    // Target should sit near plaza centre, NOT inside the ground (y >= 0).
+    expect(cs.target[1]).toBeGreaterThanOrEqual(0);
+  });
+});

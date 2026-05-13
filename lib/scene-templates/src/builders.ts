@@ -289,6 +289,11 @@ export function tpsZombieDemoScene(): SceneData {
       sunIntensity: 0.85,
       cameraMode: "thirdPerson",
       cameraTargetEntityId: playerId,
+      // Frame the camp from behind / above the player so the user
+      // immediately sees the spawn ring of zombies. Seeds the TPS
+      // controller's yaw to ~0 (player facing -Z toward the +X/-Z
+      // half of the ring on Play press) — see deriveOrbitFromCameraStart.
+      cameraStart: { position: [0, 6, 12], target: [0, 1, 0] },
       playerMoveSpeed: 6,
       gameMode: "deathmatch",
       scoreLimit: 10,
@@ -480,6 +485,12 @@ export function fpsArenaScene(): SceneData {
       sunIntensity: 0.35,
       cameraMode: "firstPerson",
       cameraTargetEntityId: playerId,
+      // Editor view: behind-and-above the cylinder player so the user
+      // sees the arena before pressing Play. The FPS controller only
+      // extracts yaw/pitch from this — `target - position` points into
+      // -Z (toward the enemy triangle at z=-10/-4), so Play opens with
+      // the camera looking at the action instead of snapping to +Z.
+      cameraStart: { position: [0, 6, 14], target: [0, 1, -4] },
       playerMoveSpeed: 7,
       gameMode: "deathmatch",
       scoreLimit: 10,
@@ -780,6 +791,12 @@ export function rpgVillageScene(): SceneData {
       sunIntensity: 1.4,
       cameraMode: "thirdPerson",
       cameraTargetEntityId: playerId,
+      // Plaza framing: slightly behind-left of player so both the
+      // friendlies (-X side) and the enemies (+X side) are visible
+      // in one shot. Seeded TPS yaw ≈ -0.24 rad — Play start rotates
+      // the warrior to face slightly +X / mostly -Z (toward the
+      // orc + skeleton across the plaza).
+      cameraStart: { position: [-2, 6, 10], target: [1, 1, 0] },
     },
   };
 }
@@ -928,6 +945,14 @@ function buildDeathmatch(opts: {
       ...opts.env,
       cameraMode: "thirdPerson",
       cameraTargetEntityId: playerId,
+      // Frame the spawn ring from behind / above the player. The
+      // editor camera sits roughly at the ring radius for a clear
+      // look at all enemies; the TPS controller seeds yaw=0 (player
+      // facing -Z half of the ring) — see deriveOrbitFromCameraStart.
+      cameraStart: {
+        position: [0, opts.spawnRadius * 0.5, opts.spawnRadius * 1.0],
+        target: [0, 1, 0],
+      },
       gameMode: "deathmatch",
       scoreLimit: 10,
       respawnDelay: 5,

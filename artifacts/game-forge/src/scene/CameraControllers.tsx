@@ -5,10 +5,58 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import { useKeyboardState } from "@/lib/keyboard";
-import type { CameraMode, SceneEntity } from "@/scene/types";
+import type { CameraMode, Environment, SceneEntity } from "@/scene/types";
 import { getPlaySession } from "@/scene/playSession";
 import { getRaceStats } from "@/scene/PlayRuntime";
 import { getRaceClips } from "@/lib/builtinModels";
+
+/** Decompose a `cameraStart` (world-space position + target) into the
+ *  orbit angles the play-mode controllers store internally:
+ *
+ *    yaw   — atan2(back.x, back.z)        (matches the controllers'
+ *                                           sin(yaw)/cos(yaw) frame so
+ *                                           yaw=0 puts the camera
+ *                                           directly behind the player
+ *                                           along world +Z)
+ *    pitch — asin(back.y / dist)          (positive = camera above
+ *                                           target; matches the
+ *                                           controllers' sin(pitch)
+ *                                           used for vertical offset)
+ *    dist  — |back|                       (orbit boom length)
+ *
+ *  The TPS controller orbits around a *shoulder pivot*, not the focus
+ *  point, so the seeded distance is approximate — close enough that
+ *  Play opens on a sensible heading without snapping to (0, *, +Z) like
+ *  it used to. Returns null when |back| is degenerate so callers fall
+ *  back to their default refs (yaw=0, pitch=0.18, dist=3.2). */
+export function deriveOrbitFromCameraStart(
+  start: NonNullable<Environment["cameraStart"]>,
+): { yaw: number; pitch: number; dist: number } | null {
+  const bx = start.position[0] - start.target[0];
+  const by = start.position[1] - start.target[1];
+  const bz = start.position[2] - start.target[2];
+  const dist = Math.hypot(bx, by, bz);
+  if (!Number.isFinite(dist) || dist < 1e-4) return null;
+  const yaw = Math.atan2(bx, bz);
+  const pitch = Math.asin(THREE.MathUtils.clamp(by / dist, -1, 1));
+  return { yaw, pitch, dist };
+}
+
+/** First-person look-direction → (yaw, pitch). Forward = (target - pos),
+ *  matching the FPS controller's `(sin(yaw)*cos(pitch), sin(pitch),
+ *  cos(yaw)*cos(pitch))` look basis. */
+export function deriveLookFromCameraStart(
+  start: NonNullable<Environment["cameraStart"]>,
+): { yaw: number; pitch: number } | null {
+  const fx = start.target[0] - start.position[0];
+  const fy = start.target[1] - start.position[1];
+  const fz = start.target[2] - start.position[2];
+  const len = Math.hypot(fx, fy, fz);
+  if (!Number.isFinite(len) || len < 1e-4) return null;
+  const yaw = Math.atan2(fx, fz);
+  const pitch = Math.asin(THREE.MathUtils.clamp(fy / len, -1, 1));
+  return { yaw, pitch };
+}
 
 /** Publish the desired animation clip name for an entity into the same
  *  `window.__agentClips` map the FSM agent bridge writes to (see
@@ -182,7 +230,29 @@ function rotateBody(
 /* -------------------------------------------------------------------------- */
 
 export function EditorCameraController() {
-  return <OrbitControls makeDefault />;
+  const { camera } = useThree();
+  // Templates publish a recommended starting view via
+  // `environment.cameraStart`. Snap the editor's free-orbit camera to
+  // it once per scene load, so opening rpg-village (or any template)
+  // doesn't dump the user at whatever stale orbit pose the previous
+  // scene left behind. Detection key is the cameraStart object's
+  // *reference identity* — `loadScene` rebuilds `environment` on every
+  // load, so a fresh template always gets a fresh object even if the
+  // numeric values happen to match. After the snap we leave OrbitControls
+  // alone; the user is free to orbit / pan / zoom from that pose.
+  const start = useEditor((s) => s.sceneData.environment.cameraStart);
+  const controlsRef = useRef<{ target: THREE.Vector3; update: () => void } | null>(null);
+  const appliedRef = useRef<typeof start | null>(null);
+  useEffect(() => {
+    if (!start || appliedRef.current === start) return;
+    const c = controlsRef.current;
+    if (!c) return;
+    camera.position.set(start.position[0], start.position[1], start.position[2]);
+    c.target.set(start.target[0], start.target[1], start.target[2]);
+    c.update();
+    appliedRef.current = start;
+  }, [start, camera]);
+  return <OrbitControls makeDefault ref={controlsRef as React.Ref<never>} />;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -287,6 +357,20 @@ export function ThirdPersonCameraController({
   const yawRef = useRef(0);
   const pitchRef = useRef(0.18);
   const distRef = useRef(3.2);
+  // Seed yaw/pitch/dist from `environment.cameraStart` once per scene
+  // load — same one-shot pattern as `EditorCameraController`. Without
+  // this, every Play press snaps to (yaw=0, pitch=0.18) which puts the
+  // camera due north of the player regardless of where the action is.
+  const startedRef = useRef<typeof env.cameraStart | null>(null);
+  if (env.cameraStart && startedRef.current !== env.cameraStart) {
+    const seed = deriveOrbitFromCameraStart(env.cameraStart);
+    if (seed) {
+      yawRef.current = seed.yaw;
+      pitchRef.current = THREE.MathUtils.clamp(seed.pitch, -0.4, 1.2);
+      distRef.current = THREE.MathUtils.clamp(seed.dist, 2.2, 5.5);
+    }
+    startedRef.current = env.cameraStart;
+  }
   // True while the canvas owns pointer-lock — mouselook only applies then so
   // editor mode (no lock) doesn't accidentally orbit when the cursor moves.
   // The PointerLockBridge in Viewport.tsx is the canonical owner of the lock
@@ -473,6 +557,26 @@ export function FirstPersonCameraController({
   const yawRef = useRef(0);
   const pitchRef = useRef(0);
   const lockedRef = useRef(false);
+  // Seed look direction from `environment.cameraStart` once per scene
+  // load (same one-shot pattern as the TPS controller above). For FPS
+  // we use `target - position` instead of `position - target` because
+  // the FPS look-basis is `(sin yaw cos pitch, sin pitch, cos yaw cos
+  // pitch)` — i.e. forward, not back. This makes a template that wants
+  // the player to start looking down the hallway actually start looking
+  // down the hallway, not snapped to +Z.
+  const startedRef = useRef<typeof env.cameraStart | null>(null);
+  if (env.cameraStart && startedRef.current !== env.cameraStart) {
+    const seed = deriveLookFromCameraStart(env.cameraStart);
+    if (seed) {
+      yawRef.current = seed.yaw;
+      pitchRef.current = THREE.MathUtils.clamp(
+        seed.pitch,
+        -Math.PI / 2 + 0.05,
+        Math.PI / 2 - 0.05,
+      );
+    }
+    startedRef.current = env.cameraStart;
+  }
 
   useEffect(() => {
     const el = gl.domElement;

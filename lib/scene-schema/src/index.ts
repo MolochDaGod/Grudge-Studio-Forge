@@ -396,6 +396,14 @@ export interface Environment {
   cameraMode?: CameraMode;
   /** Entity id the play-mode camera should follow (TPS/FPS/RTS focus). */
   cameraTargetEntityId?: string | null;
+  /** Template-recommended starting view, applied once when the scene
+   *  loads. Snaps the editor's free-orbit camera to (position → target)
+   *  and seeds the play-mode controllers' initial yaw / pitch / distance
+   *  so pressing Play doesn't fling the camera to a random heading.
+   *  After the user starts orbiting / mouselooking the controllers
+   *  resume normal behavior — `cameraStart` only fires on the FIRST
+   *  frame of each scene load. Both vectors are world-space. */
+  cameraStart?: { position: Vec3; target: Vec3 };
   /** Player movement speed in m/s (WASD). */
   playerMoveSpeed?: number;
   /** Mouselook sensitivity (radians per pixel, default 0.0025). */
