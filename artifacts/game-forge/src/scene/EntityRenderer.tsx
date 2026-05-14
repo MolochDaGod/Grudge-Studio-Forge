@@ -361,7 +361,6 @@ function buildLabelSprite(text: string): THREE.Sprite {
  *  spawns (e.g. cloning a single Map across a level). WeakSet so cached
  *  textures get GC'd normally when the GLB unloads. */
 const touchedTextures: WeakSet<THREE.Texture> = new WeakSet();
-const yawDebugSeen: Set<string> = new Set();
 /** One-shot trimesh-collider mount diagnostic. When a model entity
  *  with `physics.colliderType === "trimesh"` finishes loading, we log
  *  total vertex count exactly once per entity so silent trimesh
@@ -921,42 +920,6 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   const builtinKey = url.startsWith("builtin:") ? url.slice("builtin:".length) : null;
   const registryYaw = builtinKey ? BUILTIN_MODEL_YAW_OFFSETS[builtinKey] ?? 0 : 0;
   const effectiveYaw = (typeof yawOffset === "number" ? yawOffset : registryYaw);
-
-  useLayoutEffect(() => {
-    if (!url.startsWith("builtin:race:")) return;
-    if (yawDebugSeen.has(entityId)) return;
-    yawDebugSeen.add(entityId);
-    const sceneEuler = gltf.scene.rotation;
-    const sceneQ = gltf.scene.quaternion;
-    let chestRestEuler: { x: number; y: number; z: number } | null = null;
-    const chest = (() => {
-      let f: THREE.Object3D | null = null;
-      cloned.traverse((o) => { if (!f && o.name === "Bip001 Spine") f = o; });
-      return f;
-    })();
-    if (chest) {
-      const e = (chest as THREE.Object3D).rotation;
-      chestRestEuler = { x: +e.x.toFixed(3), y: +e.y.toFixed(3), z: +e.z.toFixed(3) };
-    }
-    const fwd = new THREE.Vector3(0, 0, -1);
-    const innerWorld = new THREE.Object3D();
-    innerWorld.rotation.y = effectiveYaw;
-    innerWorld.updateMatrixWorld(true);
-    const visibleFwd = fwd.clone().applyQuaternion(innerWorld.quaternion);
-    // eslint-disable-next-line no-console
-    console.log("[YAW-DEBUG]", {
-      entityId,
-      url,
-      yawOffsetProp: yawOffset,
-      registryYaw: +registryYaw.toFixed(3),
-      effectiveYaw: +effectiveYaw.toFixed(3),
-      gltfSceneEuler: { x: +sceneEuler.x.toFixed(3), y: +sceneEuler.y.toFixed(3), z: +sceneEuler.z.toFixed(3) },
-      gltfSceneQuat: { x: +sceneQ.x.toFixed(3), y: +sceneQ.y.toFixed(3), z: +sceneQ.z.toFixed(3), w: +sceneQ.w.toFixed(3) },
-      chestRestEuler,
-      visibleFwdAfterInnerYaw: { x: +visibleFwd.x.toFixed(3), y: +visibleFwd.y.toFixed(3), z: +visibleFwd.z.toFixed(3) },
-      hint: "If visibleFwdAfterInnerYaw.z is positive, the inner-yaw rotates the model TOWARD +Z. Combined with the entity transform.rotation set by the controller / scene, this is the visible facing direction in body-local space.",
-    });
-  }, [entityId, url, yawOffset, registryYaw, effectiveYaw, gltf, cloned]);
 
   // ── Trimesh-collider mount diagnostic + one-shot terrain snap.
   // Both run AFTER the GLB has loaded (we're inside LoadedModel) so:
