@@ -609,6 +609,11 @@ const BEHAVIOR_DOCS: Record<
     description:
       "RTS building damage receiver — required on town_hall and other static buildings so that footman scene.send('damage', …) decrements entity.rts.hp and fires `rts:killed` for the gamemode win/lose check.",
   },
+  "rts-creep": {
+    description:
+      "RTS neutral creep — leashed POI/camp guard. Aggros any non-neutral unit within sight (and on-hit from outside sight); chases until pulled past LEASH_RADIUS from spawn, then walks home. Stats baked into entity.rts.stats by the template builder.",
+    recommendedLayer: "NPC",
+  },
   "rts-gamemode": {
     description:
       "RTS match manager — seeds starting resources for both factions, publishes `rts:resources` HUD updates on every deposit, and emits win/lose when an enemy or player town_hall reaches 0 HP. Attach to a hidden empty named 'RTSGameManager'.",

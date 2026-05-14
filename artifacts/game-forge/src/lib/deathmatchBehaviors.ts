@@ -997,6 +997,7 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "rts-peon": RTS_BEHAVIORS["rts-peon"],
   "rts-footman": RTS_BEHAVIORS["rts-footman"],
   "rts-building": RTS_BEHAVIORS["rts-building"],
+  "rts-creep": RTS_BEHAVIORS["rts-creep"],
   "rts-gamemode": RTS_BEHAVIORS["rts-gamemode"],
 };
 
@@ -1022,5 +1023,8 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   // Buildings live on Player or NPC depending on faction — assigned by
   // the template builder. Leave inference off here.
   "rts-building": null,
+  // Neutral creeps occupy the NPC layer so they collide with both
+  // factions' projectiles and bodies.
+  "rts-creep": "NPC",
   "rts-gamemode": null,
 };

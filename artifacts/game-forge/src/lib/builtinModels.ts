@@ -41,6 +41,12 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
+  // Neutral NPC mutant — bundled in `public/builtin/` (10.25 MB Draco-
+  // compressed). Mixamo-rigged, ships with real GLB-baked clips
+  // (idle / walk / run / attack / death / jump / breathing_idle / flex /
+  // turn_left / turn_right) authored against the source FBX pack, so
+  // `synthesizeBipedClips` is a silent no-op for this model.
+  "creature:mutant": ensureBaseUrl("builtin/creature-mutant.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key
@@ -143,6 +149,10 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
   "race:elf": Math.PI,
   "race:orc": Math.PI,
   "race:skeleton": Math.PI,
+  // Mixamo source characters export facing +Z (same as the toon-rts
+  // race rigs), so the mutant needs the same half-turn so its forward
+  // matches the physics body's -Z forward.
+  "creature:mutant": Math.PI,
 };
 
 /** Per-race animation clip names used by the player camera controllers
@@ -238,6 +248,12 @@ export const BUILTIN_MODEL_CLIPS: Record<string, RaceClipSet> = {
   "race:elf":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
   "race:orc":         { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
   "race:skeleton":    { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death", weapons: { rifle: RIFLE_CLIPS } },
+  // Mutant neutral NPC — clip names are baked into the merged GLB by
+  // `scripts/merge_creature_animations.mjs` (FBX→GLB → animation merge
+  // → Draco) using the canonical idle / walk / run / attack / death
+  // names so the same crossfade bridge in `LoadedModel` drives both
+  // race characters and the mutant uniformly.
+  "creature:mutant":  { idle: "idle", walk: "walk", run: "run", attack: "attack", death: "death" },
 };
 
 /** Resolve a base clip name + a weapon pose to the actual clip name

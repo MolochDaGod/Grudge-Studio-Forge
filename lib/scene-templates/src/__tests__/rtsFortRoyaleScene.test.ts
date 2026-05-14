@@ -54,6 +54,22 @@ describe("rtsFortRoyaleScene (PR-1 RTS conversion)", () => {
     expect(manager!.name).toBe("RTSGameManager");
   });
 
+  it("seeds 3 neutral mutant creep camps (PR-1.5) — 7 mutants total guarding the POIs", () => {
+    const creeps = scene.entities.filter((e) => e.rts?.unit === "creep");
+    expect(creeps.length).toBe(7); // 2 + 2 + 3
+    for (const c of creeps) {
+      expect(c.rts!.faction).toBe("neutral");
+      expect(c.behavior).toBe("rts-creep");
+      expect(c.layer).toBe("NPC");
+      expect(c.type).toBe("model");
+      expect(c.model?.url).toBe("builtin:creature:mutant");
+      expect(c.rts!.hp).toBeGreaterThan(0);
+    }
+    // The mid-forest camp should have 3 mutants ringing the wood node.
+    const midCamp = creeps.filter((c) => c.name.startsWith("Camp_MidForest"));
+    expect(midCamp.length).toBe(3);
+  });
+
   it("bakes per-unit combat stats into entity.rts.stats for footmen", () => {
     const footmen = scene.entities.filter((e) => e.rts?.unit === "footman");
     expect(footmen).toHaveLength(2);

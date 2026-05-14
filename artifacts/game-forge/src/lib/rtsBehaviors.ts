@@ -316,9 +316,179 @@ exports.start = function(entity, ctx) {
 exports.update = function() {};
 `;
 
+// ──────────────────────────────────────────────────────────────────────
+// Creep (neutral leashed attacker — POI guards / minions)
+// ──────────────────────────────────────────────────────────────────────
+
+const RTS_CREEP = String.raw`
+const SIGHT_RANGE   = 18;
+const LEASH_RADIUS  = 22;     // hard tether from spawn — return-home if pulled past
+const DEFAULT_RANGE = 1.8;
+const DEFAULT_DMG   = 14;
+const DEFAULT_SPEED = 3.6;
+const ATTACK_CD     = 1.4;
+const RETURN_SPEED  = 4.5;    // a bit faster on the leash so they reset cleanly
+const TARGET_RESCAN = 0.4;
+
+function statsOf(entity) {
+  const u = (entity.rts && entity.rts.stats) || {};
+  return {
+    range: typeof u.range === "number" ? u.range : DEFAULT_RANGE,
+    dmg:   typeof u.dmg   === "number" ? u.dmg   : DEFAULT_DMG,
+    speed: typeof u.speed === "number" ? u.speed : DEFAULT_SPEED,
+  };
+}
+function findNearestHostile(entity, ctx, here) {
+  let best = null;
+  let bestD = Infinity;
+  ctx.scene.findAll(function(e) {
+    if (!e || !e.rts || !e.rts.faction) return false;
+    // Creeps hate the world equally — attack any non-neutral faction.
+    if (e.rts.faction === "neutral") return false;
+    if (e.rts.hp !== undefined && e.rts.hp <= 0) return false;
+    return true;
+  }).forEach(function(e) {
+    const dx = e.position[0] - here[0];
+    const dz = e.position[2] - here[2];
+    const d = dx*dx + dz*dz;
+    if (d < bestD) { bestD = d; best = e; }
+  });
+  if (best && bestD <= SIGHT_RANGE * SIGHT_RANGE) return best;
+  return null;
+}
+function moveToward(entity, ctx, tx, tz, speed) {
+  const dx = tx - entity.position[0];
+  const dz = tz - entity.position[2];
+  const d  = Math.sqrt(dx*dx + dz*dz);
+  if (d < 0.001) return 0;
+  const step = Math.min(d, speed * ctx.time.delta);
+  entity.position[0] += (dx / d) * step;
+  entity.position[2] += (dz / d) * step;
+  entity.rotation[1] = Math.atan2(dx, dz);
+  return d - step;
+}
+// Mirror of the publishClip helper in deathmatchBehaviors — drives the
+// EntityRenderer.LoadedModel crossfade bridge so the mutant rig
+// switches between the GLB-baked idle/walk/run/attack/death clips
+// instead of falling back to the loop-name heuristic. Safe no-op on
+// the server / SSR path.
+function publishClip(entityId, clip) {
+  if (!clip || typeof window === "undefined") return;
+  if (!window.__agentClips) window.__agentClips = new Map();
+  window.__agentClips.set(entityId, clip);
+}
+
+exports.start = function(entity, ctx) {
+  // Latch the spawn point as the leash anchor.
+  ctx.state.home = [entity.position[0], entity.position[1], entity.position[2]];
+  ctx.state.targetId = null;
+  /** True when ctx.state.targetId came from an on-hit aggro rather
+   *  than a sight scan. Sight rescans must NOT overwrite this — that
+   *  was the bug architect flagged: the 0.4s rescan was clobbering
+   *  out-of-sight retaliation aggro within ~half a second. */
+  ctx.state.aggroForced = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.lastScan = -999;
+  if (!entity.rts) entity.rts = { faction: "neutral", unit: "creep", hp: 80, maxHp: 80 };
+  publishClip(entity.id, "idle");
+
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (!entity.rts) return;
+    if (entity.rts.hp <= 0) return;
+    const dmg = payload && typeof payload.amount === "number" ? payload.amount : 5;
+    entity.rts.hp = Math.max(0, entity.rts.hp - dmg);
+    ctx.events.emit("rts:damage", { id: entity.id, faction: "neutral", hp: entity.rts.hp, fromId: fromId });
+    if (entity.rts.hp <= 0) {
+      ctx.events.emit("rts:killed", { id: entity.id, faction: "neutral", fromId: fromId });
+      publishClip(entity.id, "death");
+    } else if (fromId) {
+      // Aggro-on-hit, even if attacker is outside sight range. Always
+      // forces — a closer hostile being attacked while a distant
+      // attacker hits us shouldn't get to deflect aggro to itself.
+      ctx.state.targetId = fromId;
+      ctx.state.aggroForced = true;
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (!entity.rts || entity.rts.hp <= 0) {
+    publishClip(entity.id, "death");
+    return;
+  }
+  const home = ctx.state.home;
+  const here = entity.position;
+  const s = statsOf(entity);
+
+  // Leash check first — if pulled too far, drop target and walk home.
+  const hx = here[0] - home[0];
+  const hz = here[2] - home[2];
+  const leashedTooFar = (hx*hx + hz*hz) > (LEASH_RADIUS * LEASH_RADIUS);
+  if (leashedTooFar) {
+    ctx.state.targetId = null;
+    ctx.state.aggroForced = false;
+    moveToward(entity, ctx, home[0], home[2], RETURN_SPEED);
+    publishClip(entity.id, "run");
+    return;
+  }
+
+  // Resolve current target, dropping dead/missing ones.
+  let target = ctx.state.targetId ? ctx.scene.find(ctx.state.targetId) : null;
+  const targetDead = target && target.rts && target.rts.hp !== undefined && target.rts.hp <= 0;
+  if (!target || targetDead) {
+    target = null;
+    ctx.state.targetId = null;
+    ctx.state.aggroForced = false;
+  }
+
+  // Sight-scan periodically — but ONLY when we don't already have a
+  // forced (on-hit) aggro target. Without this guard the rescan would
+  // immediately replace an out-of-sight retaliation target with the
+  // closest in-sight hostile (often nothing → idles instead of chasing).
+  if (!target && (ctx.time.elapsed - ctx.state.lastScan) > TARGET_RESCAN) {
+    ctx.state.lastScan = ctx.time.elapsed;
+    const found = findNearestHostile(entity, ctx, here);
+    if (found) {
+      target = found;
+      ctx.state.targetId = found.id;
+      ctx.state.aggroForced = false;
+    }
+  }
+
+  if (!target) {
+    // Idle drift home if we've wandered off our anchor.
+    const dh2 = hx*hx + hz*hz;
+    if (dh2 > 4) {
+      moveToward(entity, ctx, home[0], home[2], s.speed * 0.5);
+      publishClip(entity.id, "walk");
+    } else {
+      publishClip(entity.id, "idle");
+    }
+    return;
+  }
+
+  const dx = target.position[0] - here[0];
+  const dz = target.position[2] - here[2];
+  const dist = Math.sqrt(dx*dx + dz*dz);
+
+  if (dist > s.range) {
+    moveToward(entity, ctx, target.position[0], target.position[2], s.speed);
+    publishClip(entity.id, "run");
+  } else {
+    if ((ctx.time.elapsed - ctx.state.lastAttack) >= ATTACK_CD) {
+      ctx.state.lastAttack = ctx.time.elapsed;
+      ctx.scene.send(target.id, "damage", { amount: s.dmg, fromId: entity.id });
+      entity.rotation[1] = Math.atan2(dx, dz);
+    }
+    publishClip(entity.id, "attack");
+  }
+};
+`;
+
 export const RTS_BEHAVIORS = {
   "rts-peon": RTS_PEON,
   "rts-footman": RTS_FOOTMAN,
   "rts-building": RTS_BUILDING,
+  "rts-creep": RTS_CREEP,
   "rts-gamemode": RTS_GAMEMODE,
 } as const;

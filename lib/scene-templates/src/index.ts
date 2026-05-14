@@ -44,7 +44,7 @@ import {
  *  20260514.1: Replaced the Fort Royale deathmatch (`dm-fort-royale`)
  *  with the new Warcraft-2-style RTS template (`rts-fort-royale`) —
  *  PR-1 of the RTS conversion. */
-export const TEMPLATES_VERSION = "20260514.1";
+export const TEMPLATES_VERSION = "20260514.2";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */

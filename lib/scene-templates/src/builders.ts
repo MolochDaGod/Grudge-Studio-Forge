@@ -1275,6 +1275,57 @@ function rtsBuilding(args: {
   };
 }
 
+function rtsCreep(args: {
+  name: string;
+  position: [number, number, number];
+  parentId: string;
+  /** Override per-creep stats (dmg/range/speed). Falls back to the
+   *  in-script `DEFAULT_*` constants in `rts-creep` when omitted. */
+  stats?: { dmg?: number; range?: number; speed?: number };
+}): SceneEntity {
+  const hp = 80;
+  return {
+    id: id(),
+    name: args.name,
+    type: "model",
+    // The neutral mutant ships in `public/builtin/creature-mutant.glb`
+    // (Mixamo-rigged, ~10 MB Draco). The +π yaw offset is registered in
+    // BUILTIN_MODEL_YAW_OFFSETS so the model's forward matches its
+    // physics body — same convention as the toon-rts race rigs.
+    model: { url: "builtin:creature:mutant" },
+    transform: {
+      position: args.position,
+      rotation: [0, 0, 0],
+      // Mixamo characters export at ~1m unit scale; bump to 0.022 so
+      // they read at roughly footman size on the 50× fort map.
+      scale: [0.022, 0.022, 0.022],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      // No "capsule" in the schema — `cylinder` is the closest standing-
+      // humanoid analog and what the toon-rts race units use too.
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.05,
+      friction: 1,
+    },
+    behavior: "rts-creep",
+    parentId: args.parentId,
+    pendingTerrainSnap: true,
+    layer: "NPC",
+    rts: {
+      faction: "neutral",
+      unit: "creep",
+      hp,
+      maxHp: hp,
+      // Bake defaults so `RTSComponent.stats` (all-required) is satisfied
+      // and the in-script DEFAULT_* constants stay as a single source of
+      // truth — overrides from `args.stats` win.
+      stats: { dmg: 14, range: 1.8, speed: 3.6, ...(args.stats ?? {}) },
+    },
+  };
+}
+
 function rtsResourceNode(args: {
   name: string;
   kind: "gold" | "wood";
@@ -1371,6 +1422,33 @@ export function rtsFortRoyaleScene(): SceneData {
   entities.push(rtsResourceNode({ name: "GoldMine_PlayerSide", kind: "gold", amount: 1500, position: [-200, 0, -200], parentId: resGroupId }));
   entities.push(rtsResourceNode({ name: "GoldMine_EnemySide",  kind: "gold", amount: 1500, position: [ 200, 0,  200], parentId: resGroupId }));
   entities.push(rtsResourceNode({ name: "Forest_Mid",          kind: "wood", amount: 1200, position: [   0, 0,    0], parentId: resGroupId }));
+
+  // ── Neutral creep camps (3 mutant POI guards) ──────────────────────────
+  // Each camp is leashed near its POI so creeps don't path off across
+  // the map; players must clear the camp to safely harvest the resource.
+  const creepGroupId = id();
+  entities.push(group(creepGroupId, "NeutralCamps", { layer: "NPC" }));
+  const CAMPS: Array<{ name: string; anchor: [number, number, number]; size: number }> = [
+    { name: "Camp_PlayerGold", anchor: [-200, 0, -200], size: 2 },
+    { name: "Camp_EnemyGold",  anchor: [ 200, 0,  200], size: 2 },
+    { name: "Camp_MidForest",  anchor: [   0, 0,    0], size: 3 },
+  ];
+  for (const camp of CAMPS) {
+    for (let i = 0; i < camp.size; i++) {
+      // Ring of mutants around each POI (radius ~6m).
+      const angle = (i / camp.size) * Math.PI * 2;
+      const offset: [number, number, number] = [
+        camp.anchor[0] + Math.cos(angle) * 6,
+        0,
+        camp.anchor[2] + Math.sin(angle) * 6,
+      ];
+      entities.push(rtsCreep({
+        name: camp.name + "_Mutant_" + (i + 1),
+        position: offset,
+        parentId: creepGroupId,
+      }));
+    }
+  }
 
   // ── Lighting (carry over the BR template's torchlit fort mood) ─────────
   const lightingGroupId = id();

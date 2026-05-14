@@ -25,6 +25,9 @@ const BASE: Record<UnitKind, UnitStats> = {
   mounted_archer: { hp: 75,  dmg: 11,  range: 13,  speed: 6.8, scale: 1.0,  attackKind: "ranged", cost: { gold: 130, wood: 40  }, description: "Mounted ranged. Hit-and-run skirmisher." },
   mounted_mage:   { hp: 70,  dmg: 20,  range: 12,  speed: 6.2, scale: 1.0,  attackKind: "magic",  cost: { gold: 160, wood: 0   }, description: "Mounted caster. Mobile artillery." },
   catapult:       { hp: 120, dmg: 50,  range: 18,  speed: 2.4, scale: 1.4,  attackKind: "ranged", cost: { gold: 200, wood: 100 }, description: "Siege engine. Devastates buildings; slow." },
+  // Neutral creep — not trainable; cost is symbolic, stats are the
+  // baseline for `rts-creep` (templates may override per-camp).
+  creep:          { hp: 80,  dmg: 14,  range: 1.8, speed: 3.6, scale: 0.022, attackKind: "melee",  cost: { gold: 0,   wood: 0   }, description: "Neutral creep — leashed POI guard. Not trainable." },
 };
 
 /** Per-race stat multipliers reflecting the user's flavor brief:

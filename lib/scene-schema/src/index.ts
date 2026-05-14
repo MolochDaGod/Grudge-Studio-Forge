@@ -286,6 +286,11 @@ export type BehaviorKind =
    *  on `damage`) actually decrements `entity.rts.hp` and fires
    *  `rts:killed` for the gamemode win/lose check. */
   | "rts-building"
+  /** RTS creep (neutral leashed attacker — POI / minion camp guards).
+   *  Aggros any non-neutral unit within sight; chases until pulled past
+   *  `LEASH_RADIUS` from spawn, then walks home. Aggro-on-hit even
+   *  when the attacker is outside sight range. */
+  | "rts-creep"
   | "rts-peon"
   /** RTS combat unit (footman/archer/mage). Auto-attacks the nearest
    *  enemy-faction unit/building within sight; obeys explicit move/attack
@@ -315,7 +320,11 @@ export type UnitKind =
   | "knight"
   | "mounted_archer"
   | "mounted_mage"
-  | "catapult";
+  | "catapult"
+  /** Neutral creep — POI / camp guard driven by the `rts-creep` behavior.
+   *  Doesn't belong to either player faction; spawned by template builders
+   *  to gate access to gold mines / forest patches. */
+  | "creep";
 
 /** Catalog of building kinds. Maps to the five building types the user
  *  asked for plus the central town_hall. */
