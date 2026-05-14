@@ -48,8 +48,12 @@ import {
  *  dark fallback Ground plane (the visible "black square"), renamed
  *  the GLB entity to "Map" so dropToGround fires, split PlayerBase /
  *  EnemyBase into Buildings + Units subgroups, one subgroup per
- *  creep camp, and spawn at y=8 to give the snap-retry headroom. */
-export const TEMPLATES_VERSION = "20260514.3";
+ *  creep camp, and spawn at y=8 to give the snap-retry headroom.
+ *  20260514.4: rts-fort-royale Map is now a procedural `terrain`
+ *  entity (vertex-colored heightfield, deterministic seed) instead of
+ *  the fort-royale GLB, so the RTS map has actual hills + a horizon
+ *  for the SC1-style overhead camera. */
+export const TEMPLATES_VERSION = "20260514.4";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */

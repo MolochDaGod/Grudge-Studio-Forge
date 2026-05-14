@@ -251,6 +251,7 @@ export const ListScenesResponseItem = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -463,6 +464,7 @@ export const CreateSceneBody = zod.object({
             "cloth",
             "flag",
             "particles",
+            "terrain",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -685,6 +687,7 @@ export const GetSceneResponse = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -899,6 +902,7 @@ export const UpdateSceneBody = zod.object({
             "cloth",
             "flag",
             "particles",
+            "terrain",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -1117,6 +1121,7 @@ export const UpdateSceneResponse = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1422,6 +1427,7 @@ export const ListPrefabsResponseItem = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1597,6 +1603,7 @@ export const CreatePrefabBody = zod.object({
             "cloth",
             "flag",
             "particles",
+            "terrain",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -1782,6 +1789,7 @@ export const GetPrefabResponse = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -1959,6 +1967,7 @@ export const UpdatePrefabBody = zod.object({
             "cloth",
             "flag",
             "particles",
+            "terrain",
           ]),
           transform: zod.object({
             position: zod.array(zod.number()),
@@ -2140,6 +2149,7 @@ export const UpdatePrefabResponse = zod.object({
           "cloth",
           "flag",
           "particles",
+          "terrain",
         ]),
         transform: zod.object({
           position: zod.array(zod.number()),
@@ -2393,6 +2403,7 @@ export const GetTemplateResponse = zod.object({
         "cloth",
         "flag",
         "particles",
+        "terrain",
       ]),
       transform: zod.object({
         position: zod.array(zod.number()),

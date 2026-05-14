@@ -53,9 +53,12 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
 
   // RTS resource counters — populated by `rts-gamemode` via `rts:resources`
   // events. `null` means no RTS gamemode is active in this scene; the pill
-  // stays hidden so deathmatch / RPG sessions are unaffected.
+  // stays hidden so deathmatch / RPG sessions are unaffected. `food` and
+  // `pop` (current population / pop cap) are optional — the gamemode
+  // started emitting them in PR-2; older saves get `0` and the slot just
+  // shows "0/0" until upgraded.
   const [rtsResources, setRtsResources] = useState<{
-    player: { gold: number; wood: number };
+    player: { gold: number; wood: number; food: number; pop: number; popCap: number };
     enemy: { gold: number; wood: number };
   } | null>(null);
 
@@ -81,11 +84,20 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     offs.push(
       bus.on("rts:resources", (p) => {
         const obj = p as
-          | { player?: { gold?: number; wood?: number }; enemy?: { gold?: number; wood?: number } }
+          | {
+              player?: { gold?: number; wood?: number; food?: number; pop?: number; popCap?: number };
+              enemy?: { gold?: number; wood?: number };
+            }
           | undefined;
         if (!obj || !obj.player || !obj.enemy) return;
         setRtsResources({
-          player: { gold: obj.player.gold ?? 0, wood: obj.player.wood ?? 0 },
+          player: {
+            gold: obj.player.gold ?? 0,
+            wood: obj.player.wood ?? 0,
+            food: obj.player.food ?? 0,
+            pop: obj.player.pop ?? 0,
+            popCap: obj.player.popCap ?? 0,
+          },
           enemy: { gold: obj.enemy.gold ?? 0, wood: obj.enemy.wood ?? 0 },
         });
       }),
@@ -292,33 +304,51 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         })}
       </div>
 
-      {/* RTS resource pill — top left, only when an RTS gamemode is running.
-          Sits above the health bar so the deathmatch HUD layout is unchanged. */}
+      {/* RTS resource bar — top center, SC1-style. Only shown when an
+          RTS gamemode is running; deathmatch / RPG layouts are unaffected. */}
       {rtsResources && (
-        <div className="absolute left-4 top-4 flex gap-2 rounded bg-black/55 px-3 py-2 text-white shadow">
-          <div className="flex items-center gap-1 text-sm font-semibold">
-            <span className="text-yellow-300">●</span>
-            <span>{rtsResources.player.gold}</span>
-            <span className="text-[10px] uppercase tracking-wider text-white/60">gold</span>
-          </div>
-          <div className="h-4 w-px bg-white/20" />
-          <div className="flex items-center gap-1 text-sm font-semibold">
-            <span className="text-emerald-400">●</span>
-            <span>{rtsResources.player.wood}</span>
-            <span className="text-[10px] uppercase tracking-wider text-white/60">wood</span>
-          </div>
-          <div className="h-4 w-px bg-white/20" />
-          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-white/50">
-            <span className="text-red-300">enemy</span>
-            <span>{rtsResources.enemy.gold}g</span>
-            <span>{rtsResources.enemy.wood}w</span>
+        <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2">
+          <div className="flex items-center gap-3 rounded-md border border-white/15 bg-black/65 px-4 py-2 text-white shadow-lg backdrop-blur-sm">
+            <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
+              <span className="text-yellow-300">◆</span>
+              <span>{rtsResources.player.gold}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/55">gold</span>
+            </div>
+            <div className="h-4 w-px bg-white/20" />
+            <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
+              <span className="text-emerald-400">▲</span>
+              <span>{rtsResources.player.wood}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/55">wood</span>
+            </div>
+            <div className="h-4 w-px bg-white/20" />
+            <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
+              <span className="text-orange-300">●</span>
+              <span>{rtsResources.player.food}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/55">food</span>
+            </div>
+            <div className="h-4 w-px bg-white/20" />
+            <div className="flex items-center gap-1.5 text-sm font-semibold tabular-nums">
+              <span className="text-sky-300">♟</span>
+              <span>
+                {rtsResources.player.pop}/{rtsResources.player.popCap}
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-white/55">pop</span>
+            </div>
+            <div className="h-4 w-px bg-white/20" />
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/50">
+              <span className="text-red-300">enemy</span>
+              <span className="tabular-nums">{rtsResources.enemy.gold}g</span>
+              <span className="tabular-nums">{rtsResources.enemy.wood}w</span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Health bar — top left (offset down when the RTS pill is showing) */}
+      {/* Health bar — top left. The RTS pill moved to the top-center so
+          we no longer need to offset the health bar when an RTS scene is
+          loaded. */}
       <div
-        className={`absolute ${rtsResources ? "left-4 top-16" : "left-4 top-4"} w-56 rounded bg-black/55 px-3 py-2 text-white shadow`}
+        className="absolute left-4 top-4 w-56 rounded bg-black/55 px-3 py-2 text-white shadow"
       >
         <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/70">
           <span>Health</span>

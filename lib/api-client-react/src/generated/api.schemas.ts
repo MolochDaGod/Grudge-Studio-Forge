@@ -95,6 +95,7 @@ export const EntityType = {
   cloth: "cloth",
   flag: "flag",
   particles: "particles",
+  terrain: "terrain",
 } as const;
 
 export interface Transform {

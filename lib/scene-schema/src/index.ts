@@ -24,7 +24,14 @@ export type EntityType =
    *  is wired up. */
   | "cloth"
   | "flag"
-  | "particles";
+  | "particles"
+  /** Procedural heightmap terrain — a noise-displaced grid mesh with
+   *  vertex-colored biomes (sand / grass / rock / snow). Built
+   *  deterministically from `terrain.heightSeed` so the same scene JSON
+   *  always produces the exact same landscape. The renderer auto-stamps
+   *  layer="Terrain" + surface="Walk" so terrainSnap raycasts and the
+   *  navmesh baker treat it as the ground. See {@link TerrainComponent}. */
+  | "terrain";
 
 export type BodyType = "fixed" | "dynamic" | "kinematicPosition" | "kinematicVelocity";
 
@@ -430,6 +437,30 @@ export interface SceneEntity {
   /** RTS component (faction, unit/building/resource role, HP, carry).
    *  Set on RTS-template entities; ignored by other gamemodes. */
   rts?: RTSComponent;
+  /** Procedural-terrain parameters. Required when `type === "terrain"`,
+   *  ignored otherwise. The same `(size, segments, heightSeed)` triple
+   *  always produces the exact same heightfield, so saved scenes are
+   *  fully reproducible across machines. */
+  terrain?: TerrainComponent;
+}
+
+/** Procedural heightmap terrain knobs. Read by the `terrain` entity
+ *  renderer in `EntityRenderer.tsx`. */
+export interface TerrainComponent {
+  /** Square side length in world meters. Typical RTS map: 800–2000m. */
+  size: number;
+  /** Grid resolution (vertices per side − 1). Higher = smoother hills
+   *  but slower trimesh-collider bake. 96–192 is the sweet spot. */
+  segments: number;
+  /** Peak elevation in world meters above mean sea level (= y=0). The
+   *  noise output `[-1..1]` is mapped onto `[-0.05·amp .. 1.0·amp]`
+   *  so the rim sinks just below 0 and frames the play area. */
+  heightAmp: number;
+  /** Deterministic noise seed. Same seed → same landscape. */
+  heightSeed: number;
+  /** Optional fbm frequency multiplier in 1/world-meter. Default 0.012
+   *  ≈ 80m feature size. Smaller = bigger features. */
+  noiseScale?: number;
 }
 
 /** Tuning knobs for the lightweight verlet / particle simulation that
@@ -801,7 +832,7 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   "type" | "name" | "controllerKind" | "behavior"
 >): LayerName {
   const lower = (e.name ?? "").toLowerCase();
-  if (e.type === "plane" || lower === "map" || lower === "terrain") return "Terrain";
+  if (e.type === "plane" || e.type === "terrain" || lower === "map" || lower === "terrain") return "Terrain";
   if (e.controllerKind && e.controllerKind !== "none") return "Player";
   if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
   if (e.behavior === "npc-dialog") return "NPC";
@@ -826,7 +857,7 @@ export function inferDefaultSurface(
   // Map / terrain naming wins even when the layer hasn't been set yet
   // (sanitizer runs surface-inference before the layer pass for some
   // import paths, e.g. AI-generated scenes).
-  if (e.type === "plane" || lower === "map" || lower === "terrain") return "Walk";
+  if (e.type === "plane" || e.type === "terrain" || lower === "map" || lower === "terrain") return "Walk";
   return "None";
 }
 

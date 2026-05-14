@@ -46,6 +46,7 @@ import {
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 import { ClothEntity, FlagEntity, ParticlesEntity } from "./SoftBodies";
+import { TerrainMesh } from "./TerrainMesh";
 
 /** Resolve a model URL. Order:
  *   1. `builtin:<key>` → bundled Vite asset URL (works in dev + prod)
@@ -153,6 +154,9 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
   }
   if (entity.type === "particles") {
     return <ParticlesEntity entity={entity} selected={selected} onPick={onPick} effectiveMaterial={effectiveMaterial} />;
+  }
+  if (entity.type === "terrain") {
+    return <TerrainMesh entity={entity} selected={selected} onPick={onPick} />;
   }
 
   // Selection overlay is a SIBLING (not a child) and slightly inflated so it

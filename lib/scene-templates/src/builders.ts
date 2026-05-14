@@ -1365,21 +1365,23 @@ export function rtsFortRoyaleScene(): SceneData {
   const entities: SceneEntity[] = [];
 
   // ── Map ─────────────────────────────────────────────────────────────────
-  // Single root model entity named "Map" (lowercase-match) so
-  // EntityRenderer.dropToGround fires and the GLB's lowest point sits
-  // at y=0. No wrapper group, no dark fallback plane — the GLB's own
-  // trimesh collider IS the walkable surface (every mesh stamps
-  // `userData.surface = "walk"` from the entity's surface tag, which
-  // terrainSnap and the navmesh baker both filter on).
+  // Procedural heightmap terrain — vertex-colored biomes (sand → grass
+  // → rock → snow) so the map has actual hills + a horizon instead of
+  // a flat plane. The renderer auto-emits a trimesh collider from the
+  // displaced geometry, which is what terrainSnap raycasts and the
+  // navmesh baker walk.  Size 1200m gives ~600m radius play area —
+  // the player/enemy bases at ±380 sit comfortably inside the falloff
+  // ring.  heightAmp 12m is gentle enough that units don't get stuck
+  // on cliffs.
   entities.push({
     id: id(),
     name: "Map",
-    type: "model",
-    model: { url: "builtin:map-fort-royale" },
-    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [50, 50, 50] },
+    type: "terrain",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
     layer: "Terrain",
     surface: "Walk",
+    terrain: { size: 1200, segments: 128, heightAmp: 12, heightSeed: 0xfa17, noiseScale: 0.008 },
   });
 
   // Spawn units a few meters above terrain so the snap retry has

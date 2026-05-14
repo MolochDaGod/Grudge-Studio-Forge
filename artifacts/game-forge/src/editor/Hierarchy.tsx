@@ -78,6 +78,7 @@ const ICONS: Record<EntityType, typeof Box> = {
   cloth: Square,
   flag: Square,
   particles: Circle,
+  terrain: Square,
 };
 
 /** Visual presentation tables for the hierarchy inheritance chips.

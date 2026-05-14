@@ -848,7 +848,7 @@ components:
           type: string
         type:
           type: string
-          enum: [box, sphere, cylinder, plane, light, camera, model, empty, cloth, flag, particles]
+          enum: [box, sphere, cylinder, plane, light, camera, model, empty, cloth, flag, particles, terrain]
         transform:
           $ref: "#/components/schemas/Transform"
         physics:
