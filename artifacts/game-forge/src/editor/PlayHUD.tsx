@@ -51,6 +51,14 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     Array<{ id: number; label: string; ts: number }>
   >([]);
 
+  // RTS resource counters — populated by `rts-gamemode` via `rts:resources`
+  // events. `null` means no RTS gamemode is active in this scene; the pill
+  // stays hidden so deathmatch / RPG sessions are unaffected.
+  const [rtsResources, setRtsResources] = useState<{
+    player: { gold: number; wood: number };
+    enemy: { gold: number; wood: number };
+  } | null>(null);
+
   // Friendly NPC speech bubble — shown for NPC_DIALOG_TTL_MS after the
   // npc-dialog behavior emits `npcDialog`. Only the latest line is shown
   // so back-to-back interactions replace cleanly.
@@ -66,6 +74,20 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         const obj = p as { health?: number; max?: number } | undefined;
         if (typeof obj?.health === "number") setPlayerHealth(obj.health);
         if (typeof obj?.max === "number") setPlayerMaxHealth(obj.max);
+      }),
+    );
+    // RTS resource pill — `rts-gamemode` republishes the full counters
+    // object on every deposit so the HUD stays in sync without diffing.
+    offs.push(
+      bus.on("rts:resources", (p) => {
+        const obj = p as
+          | { player?: { gold?: number; wood?: number }; enemy?: { gold?: number; wood?: number } }
+          | undefined;
+        if (!obj || !obj.player || !obj.enemy) return;
+        setRtsResources({
+          player: { gold: obj.player.gold ?? 0, wood: obj.player.wood ?? 0 },
+          enemy: { gold: obj.enemy.gold ?? 0, wood: obj.enemy.wood ?? 0 },
+        });
       }),
     );
     offs.push(
@@ -270,8 +292,34 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         })}
       </div>
 
-      {/* Health bar — top left */}
-      <div className="absolute left-4 top-4 w-56 rounded bg-black/55 px-3 py-2 text-white shadow">
+      {/* RTS resource pill — top left, only when an RTS gamemode is running.
+          Sits above the health bar so the deathmatch HUD layout is unchanged. */}
+      {rtsResources && (
+        <div className="absolute left-4 top-4 flex gap-2 rounded bg-black/55 px-3 py-2 text-white shadow">
+          <div className="flex items-center gap-1 text-sm font-semibold">
+            <span className="text-yellow-300">●</span>
+            <span>{rtsResources.player.gold}</span>
+            <span className="text-[10px] uppercase tracking-wider text-white/60">gold</span>
+          </div>
+          <div className="h-4 w-px bg-white/20" />
+          <div className="flex items-center gap-1 text-sm font-semibold">
+            <span className="text-emerald-400">●</span>
+            <span>{rtsResources.player.wood}</span>
+            <span className="text-[10px] uppercase tracking-wider text-white/60">wood</span>
+          </div>
+          <div className="h-4 w-px bg-white/20" />
+          <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-white/50">
+            <span className="text-red-300">enemy</span>
+            <span>{rtsResources.enemy.gold}g</span>
+            <span>{rtsResources.enemy.wood}w</span>
+          </div>
+        </div>
+      )}
+
+      {/* Health bar — top left (offset down when the RTS pill is showing) */}
+      <div
+        className={`absolute ${rtsResources ? "left-4 top-16" : "left-4 top-4"} w-56 rounded bg-black/55 px-3 py-2 text-white shadow`}
+      >
         <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/70">
           <span>Health</span>
           <span>
@@ -354,8 +402,13 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         </div>
       )}
 
-      {/* Scoreboard — top center */}
-      <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded bg-black/55 px-4 py-2 text-white shadow">
+      {/* Scoreboard — top center. Hidden when the RTS gamemode is active
+          (it has its own resource pill in the top-left and no kill-based
+          score), so deathmatch / RTS HUDs don't overlap. */}
+      <div
+        className="absolute left-1/2 top-4 -translate-x-1/2 rounded bg-black/55 px-4 py-2 text-white shadow"
+        hidden={!!rtsResources}
+      >
         <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-white/70">
           Deathmatch — first to {scoreLimit}
         </div>

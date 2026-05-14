@@ -4,7 +4,7 @@ import {
   cyberpunkDeathmatchScene,
   encampmentDeathmatchScene,
   deserttownDeathmatchScene,
-  fortRoyaleDeathmatchScene,
+  rtsFortRoyaleScene,
   yardDeathmatchScene,
   winterBaseDeathmatchScene,
   fpsArenaScene,
@@ -13,13 +13,14 @@ import {
 } from "../builders.js";
 import type { SceneData } from "@workspace/scene-schema";
 
-const TEMPLATES: { name: string; build: () => SceneData; mode: "thirdPerson" | "firstPerson" }[] = [
+const TEMPLATES: { name: string; build: () => SceneData; mode: "thirdPerson" | "firstPerson" | "rts" }[] = [
   { name: "tps-zombie-demo", build: () => withIdScope("tpsZombieDemoScene", () => tpsZombieDemoScene()), mode: "thirdPerson" },
   { name: "fps-arena", build: () => withIdScope("fpsArenaScene", () => fpsArenaScene()), mode: "firstPerson" },
   { name: "dm-cyberpunk", build: () => withIdScope("cyberpunkDeathmatchScene", () => cyberpunkDeathmatchScene()), mode: "thirdPerson" },
   { name: "dm-encampment", build: () => withIdScope("encampmentDeathmatchScene", () => encampmentDeathmatchScene()), mode: "thirdPerson" },
   { name: "dm-deserttown", build: () => withIdScope("deserttownDeathmatchScene", () => deserttownDeathmatchScene()), mode: "thirdPerson" },
-  { name: "dm-fort-royale", build: () => withIdScope("fortRoyaleDeathmatchScene", () => fortRoyaleDeathmatchScene()), mode: "thirdPerson" },
+  // PR-1 RTS conversion: fort-royale is now an RTS template, not a deathmatch.
+  { name: "rts-fort-royale", build: () => withIdScope("rtsFortRoyaleScene", () => rtsFortRoyaleScene()), mode: "rts" },
   { name: "dm-yard", build: () => withIdScope("yardDeathmatchScene", () => yardDeathmatchScene()), mode: "thirdPerson" },
   { name: "dm-winter-base", build: () => withIdScope("winterBaseDeathmatchScene", () => winterBaseDeathmatchScene()), mode: "thirdPerson" },
 ];

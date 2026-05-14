@@ -595,6 +595,24 @@ const BEHAVIOR_DOCS: Record<
     description:
       "Score tracker for player vs. enemy kills; emits win/lose when scoreLimit is reached. Attach to a hidden empty named 'GameManager'.",
   },
+  "rts-peon": {
+    description:
+      "RTS worker — finds the nearest gold/wood node, gathers up to its carrying capacity, returns to the nearest friendly town_hall, and deposits. Loop continues until depleted.",
+    recommendedLayer: "Player",
+  },
+  "rts-footman": {
+    description:
+      "RTS melee combatant — auto-acquires the nearest enemy-faction unit/building, chases via nav, and attacks on cooldown using stats from entity.rts.stats.",
+    recommendedLayer: "Player",
+  },
+  "rts-building": {
+    description:
+      "RTS building damage receiver — required on town_hall and other static buildings so that footman scene.send('damage', …) decrements entity.rts.hp and fires `rts:killed` for the gamemode win/lose check.",
+  },
+  "rts-gamemode": {
+    description:
+      "RTS match manager — seeds starting resources for both factions, publishes `rts:resources` HUD updates on every deposit, and emits win/lose when an enemy or player town_hall reaches 0 HP. Attach to a hidden empty named 'RTSGameManager'.",
+  },
   spawnpoint: {
     description:
       "Pure marker — lets player/enemy behaviors find spawn points by behavior tag.",

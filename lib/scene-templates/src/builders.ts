@@ -1190,30 +1190,223 @@ export function deserttownDeathmatchScene(): SceneData {
   });
 }
 
-// Fort Royale — small medieval-style castle map (9.7 MB GLB, fastest of the
-// shooter maps to load). Warm torchlight + dim ambient so the stone walls
-// and braziers read clearly.
-export function fortRoyaleDeathmatchScene(): SceneData {
-  return buildDeathmatch({
-    // Cranked to 50× per user request — the previous 7× still felt
-    // tiny, so this is now an open-world-scale fort (~2 km across)
-    // that you actually have to traverse. Spawn radius pushed to 540
-    // so the six spawn points sit out by the perimeter walls instead
-    // of clustering at the courtyard center, and the four corner
-    // brazier lights pushed out + boosted in range so they stay
-    // visible at this footprint without going pitch black between.
-    mapKey: "map-fort-royale",
-    mapScale: 50.0,
-    spawnRadius: 540,
-    enemyCount: 6,
-    env: {
+// ─── Fort Royale — RTS (PR-1 of the Warcraft-2-style conversion) ────────────
+// Replaces the old battle-royale deathmatch on the same fort GLB. Two bases
+// face off at SW vs NE corners with a midfield gold mine and forest patch.
+// The player commands one starting peon (auto-gathers the nearest gold node)
+// and one starting footman (auto-engages enemy units on sight). The enemy
+// base mirrors the layout. The `rts-gamemode` manager seeds 400 gold /
+// 200 wood per side and declares win/lose when either town_hall HP hits 0.
+
+const PLAYER_RACE = "warrior" as const;
+const ENEMY_RACE = "orc" as const;
+
+interface RTSUnitOpts {
+  name: string;
+  unit: "peon" | "footman";
+  faction: "player" | "enemy";
+  race: "warrior" | "orc";
+  position: [number, number, number];
+  parentId: string;
+  /** Stamped onto entity.userData.rtsStats so `rts-footman` reads its
+   *  damage / range / speed without importing RACE_LOADOUTS at runtime. */
+  stats?: { dmg: number; range: number; speed: number };
+}
+
+function rtsUnit(o: RTSUnitOpts): SceneEntity {
+  const hp = o.unit === "peon" ? 40 : 90;
+  return {
+    id: id(),
+    name: o.name,
+    type: "model",
+    model: { url: `builtin:race:${o.race}` },
+    transform: {
+      position: o.position,
+      rotation: [0, o.faction === "player" ? 0 : Math.PI, 0],
+      scale: [0.95, 0.95, 0.95],
+    },
+    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    behavior: o.unit === "peon" ? "rts-peon" : "rts-footman",
+    parentId: o.parentId,
+    pendingTerrainSnap: true,
+    layer: o.faction === "player" ? "Player" : "NPC",
+    raceId: o.race,
+    rts: {
+      faction: o.faction,
+      unit: o.unit,
+      hp,
+      maxHp: hp,
+      ...(o.stats ? { stats: o.stats } : {}),
+    },
+  };
+}
+
+function rtsBuilding(args: {
+  name: string;
+  building: "town_hall";
+  faction: "player" | "enemy";
+  position: [number, number, number];
+  parentId: string;
+}): SceneEntity {
+  const hp = 1500;
+  return {
+    id: id(),
+    name: args.name,
+    type: "box",
+    transform: {
+      position: args.position,
+      rotation: [0, 0, 0],
+      scale: [10, 8, 10],
+    },
+    material: {
+      color: args.faction === "player" ? "#3a6ea8" : "#a83a3a",
+      roughness: 0.85,
+      metalness: 0.05,
+    },
+    physics: { bodyType: "fixed", colliderType: "cuboid", mass: 0, restitution: 0.1, friction: 1 },
+    // `rts-building` is a passive damage receiver — without it,
+    // `rts-footman` attacks on the town hall would no-op and the
+    // gamemode win/lose condition would never fire.
+    behavior: "rts-building",
+    parentId: args.parentId,
+    pendingTerrainSnap: true,
+    layer: args.faction === "player" ? "Player" : "NPC",
+    rts: { faction: args.faction, building: args.building, hp, maxHp: hp },
+  };
+}
+
+function rtsResourceNode(args: {
+  name: string;
+  kind: "gold" | "wood";
+  amount: number;
+  position: [number, number, number];
+  parentId: string;
+}): SceneEntity {
+  return {
+    id: id(),
+    name: args.name,
+    type: args.kind === "gold" ? "box" : "cylinder",
+    transform: {
+      position: args.position,
+      rotation: [0, 0, 0],
+      scale: args.kind === "gold" ? [4, 2.5, 4] : [3, 6, 3],
+    },
+    material: {
+      color: args.kind === "gold" ? "#e0b840" : "#3d6b3d",
+      emissive: args.kind === "gold" ? "#553f10" : "#0a1408",
+      roughness: 0.6,
+      metalness: args.kind === "gold" ? 0.7 : 0.05,
+    },
+    physics: { bodyType: "fixed", colliderType: "cuboid", mass: 0, restitution: 0.1, friction: 1 },
+    parentId: args.parentId,
+    pendingTerrainSnap: true,
+    layer: "Default",
+    rts: {
+      faction: "neutral",
+      hp: 1,
+      maxHp: 1,
+      resource: { kind: args.kind, amount: args.amount },
+    },
+  };
+}
+
+export function rtsFortRoyaleScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // ── Map (reuses the fort-royale GLB at the same 50× scale) ─────────────
+  const mapGroupId = id();
+  entities.push(group(mapGroupId, "Map", { layer: "Terrain", surface: "Walk" }));
+  entities.push({
+    id: id(),
+    name: "MapModel",
+    type: "model",
+    model: { url: "builtin:map-fort-royale" },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [50, 50, 50] },
+    parentId: mapGroupId,
+    physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
+  });
+  entities.push(
+    ent({
+      name: "Ground",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [200, 200, 1],
+      color: "#1c1810",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+      parentId: mapGroupId,
+      layer: "Terrain",
+      surface: "Walk",
+    }),
+  );
+
+  // ── Player base (SW corner of the fort) ────────────────────────────────
+  const playerGroupId = id();
+  entities.push(group(playerGroupId, "PlayerBase", { layer: "Player" }));
+  const PB: [number, number, number] = [-380, 0, -380];
+  entities.push(rtsBuilding({ name: "PlayerTownHall", building: "town_hall", faction: "player", position: PB, parentId: playerGroupId }));
+  entities.push(rtsUnit({ name: "PlayerPeon", unit: "peon", faction: "player", race: PLAYER_RACE, position: [PB[0] + 14, 0, PB[2]], parentId: playerGroupId }));
+  entities.push(rtsUnit({
+    name: "PlayerFootman", unit: "footman", faction: "player", race: PLAYER_RACE,
+    position: [PB[0] + 14, 0, PB[2] + 14], parentId: playerGroupId,
+    stats: { dmg: 12, range: 1.6, speed: 4.5 },
+  }));
+
+  // ── Enemy base (NE corner, mirrored) ───────────────────────────────────
+  const enemyGroupId = id();
+  entities.push(group(enemyGroupId, "EnemyBase", { layer: "NPC" }));
+  const EB: [number, number, number] = [380, 0, 380];
+  entities.push(rtsBuilding({ name: "EnemyTownHall", building: "town_hall", faction: "enemy", position: EB, parentId: enemyGroupId }));
+  entities.push(rtsUnit({ name: "EnemyPeon", unit: "peon", faction: "enemy", race: ENEMY_RACE, position: [EB[0] - 14, 0, EB[2]], parentId: enemyGroupId }));
+  entities.push(rtsUnit({
+    name: "EnemyFootman", unit: "footman", faction: "enemy", race: ENEMY_RACE,
+    position: [EB[0] - 14, 0, EB[2] - 14], parentId: enemyGroupId,
+    stats: { dmg: 14, range: 1.6, speed: 4.3 },
+  }));
+
+  // ── Resource group (midfield: 2 gold + 1 forest patch) ─────────────────
+  const resGroupId = id();
+  entities.push(group(resGroupId, "Resources"));
+  entities.push(rtsResourceNode({ name: "GoldMine_PlayerSide", kind: "gold", amount: 1500, position: [-200, 0, -200], parentId: resGroupId }));
+  entities.push(rtsResourceNode({ name: "GoldMine_EnemySide",  kind: "gold", amount: 1500, position: [ 200, 0,  200], parentId: resGroupId }));
+  entities.push(rtsResourceNode({ name: "Forest_Mid",          kind: "wood", amount: 1200, position: [   0, 0,    0], parentId: resGroupId }));
+
+  // ── Lighting (carry over the BR template's torchlit fort mood) ─────────
+  const lightingGroupId = id();
+  entities.push(group(lightingGroupId, "Lighting"));
+  for (const pos of [[300, 80, 300], [-300, 80, 300], [300, 80, -300], [-300, 80, -300]] as Array<[number, number, number]>) {
+    entities.push(
+      ent({
+        name: "Brazier",
+        type: "light",
+        position: pos,
+        light: { kind: "point", color: "#ff8a3d", intensity: 600, distance: 900 },
+        parentId: lightingGroupId,
+      }),
+    );
+  }
+
+  // ── GameLogic — single rts-gamemode manager ────────────────────────────
+  const logicGroupId = id();
+  entities.push(group(logicGroupId, "GameLogic"));
+  entities.push({
+    id: id(),
+    name: "RTSGameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "rts-gamemode",
+    parentId: logicGroupId,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
       skyColor: "#1a1410",
       groundColor: "#2a1f14",
-      ambientIntensity: 0.35,
-      sunIntensity: 0.45,
-      // Stone fort interior: SSAO is the headline effect (carves
-      // depth into the masonry), modest warm bloom for braziers,
-      // heavier vignette for that torch-lit-keep claustrophobia.
+      ambientIntensity: 0.45,
+      sunIntensity: 0.7,
       visuals: {
         ...DEFAULT_ENV.visuals,
         toneMapping: "ACES",
@@ -1221,24 +1414,23 @@ export function fortRoyaleDeathmatchScene(): SceneData {
         postFX: {
           ...DEFAULT_ENV.visuals!.postFX,
           bloom: { enabled: true, intensity: 0.55, threshold: 0.82 },
-          ssao: { enabled: true, intensity: 0.85, radius: 0.7 },
-          vignette: { enabled: true, intensity: 0.5 },
-          colorGrade: { contrast: 1.1, saturation: 0.9, temperature: 0.15 },
+          ssao: { enabled: true, intensity: 0.7, radius: 0.7 },
+          vignette: { enabled: true, intensity: 0.35 },
+          colorGrade: { contrast: 1.1, saturation: 0.95, temperature: 0.1 },
         },
       },
-      // Fort is at 50× scale so navmesh cells need to scale up too —
-      // a 0.3m cell on a 2km fort would create a multi-MB blob and
-      // a multi-second bake. 1.5m cells keep the bake snappy while
-      // still resolving doorways and ramps.
+      // Same large-scale navmesh tuning as the old BR template — the
+      // 50× fort needs 1.5 m cells to bake quickly.
       navmeshBake: { cellSize: 1.5, cellHeight: 0.6, agentRadius: 0.6, agentHeight: 2.0, maxSlope: 40, walkableClimb: 0.5 },
+      // RTS overhead camera — orbit looking down at the player base.
+      cameraMode: "rts",
+      cameraStart: {
+        position: [PB[0], 220, PB[2] + 220],
+        target: PB,
+      },
+      gameMode: "rts",
     },
-    brazierLights: [
-      { pos: [300, 80, 300], color: "#ff8a3d", intensity: 600, distance: 900 },
-      { pos: [-300, 80, 300], color: "#ff8a3d", intensity: 600, distance: 900 },
-      { pos: [300, 80, -300], color: "#ff8a3d", intensity: 600, distance: 900 },
-      { pos: [-300, 80, -300], color: "#ff8a3d", intensity: 600, distance: 900 },
-    ],
-  });
+  };
 }
 
 // Yard — open-air industrial yard. Daylight, neutral ambient, no mood lights

@@ -39,6 +39,7 @@
 
 import type { LayerName } from "@workspace/scene-schema";
 import type { BehaviorKind } from "@/scene/types";
+import { RTS_BEHAVIORS } from "./rtsBehaviors";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Player
@@ -993,6 +994,10 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "player-rpg": PLAYER_RPG,
   "enemy-rpg": ENEMY_RPG,
   "npc-dialog": NPC_DIALOG,
+  "rts-peon": RTS_BEHAVIORS["rts-peon"],
+  "rts-footman": RTS_BEHAVIORS["rts-footman"],
+  "rts-building": RTS_BEHAVIORS["rts-building"],
+  "rts-gamemode": RTS_BEHAVIORS["rts-gamemode"],
 };
 
 /** Default physics layer per built-in behavior. Lets prefab definitions and
@@ -1010,4 +1015,12 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   "player-rpg": "Player",
   "enemy-rpg": "NPC",
   "npc-dialog": "NPC",
+  // RTS units sit on Player/NPC layers per faction; the template builder
+  // assigns them explicitly, so leave inference off here.
+  "rts-peon": null,
+  "rts-footman": null,
+  // Buildings live on Player or NPC depending on faction — assigned by
+  // the template builder. Leave inference off here.
+  "rts-building": null,
+  "rts-gamemode": null,
 };

@@ -54,6 +54,23 @@ export interface ScriptEntity {
    *  `ctx.races` to size max health, movement speed, and per-hit damage
    *  from the race's `baseStats`. Undefined for non-character entities. */
   raceId?: string;
+  /** Optional RTS gameplay component (faction / unit / building / resource
+   *  / hp / carrying / stats). Mirrors the `rts` field on
+   *  {@link import("@workspace/scene-schema").SceneEntity}; passed through
+   *  by `PlayScriptRuntime.snapshot` so the built-in `rts-peon` /
+   *  `rts-footman` / `rts-gamemode` behaviors can read faction and stats
+   *  without re-querying the editor store. Loosely typed here to keep
+   *  csTranspile decoupled from the scene-schema RTS enums. */
+  rts?: {
+    faction: "player" | "enemy" | "neutral";
+    unit?: string;
+    building?: string;
+    hp: number;
+    maxHp: number;
+    resource?: { kind: "gold" | "wood"; amount: number };
+    carrying?: { kind: "gold" | "wood"; amount: number };
+    stats?: { dmg: number; range: number; speed: number };
+  };
 }
 
 /** Per-race tuning surfaced to scripts via {@link ScriptContext.races}.

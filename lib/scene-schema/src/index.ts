@@ -248,6 +248,10 @@ export const DEFAULT_NAV_AGENT: Required<Omit<NavAgentComponent, "animationClips
  *  These are equivalent to attaching a pre-written script — they live in
  *  `lib/deathmatchBehaviors.ts` and are compiled through the same JS pipeline
  *  as user scripts. They run *in addition to* a user-attached `scriptId`. */
+// NOTE: when adding a new BehaviorKind here, also add it to BEHAVIOR_DOCS
+// in artifacts/game-forge/src/ai/tools/scripting/index.ts (exhaustive
+// Record<BehaviorKind, …> — typecheck will fail otherwise) AND to
+// BUILTIN_BEHAVIORS / BEHAVIOR_DEFAULT_LAYERS in deathmatchBehaviors.ts.
 export type BehaviorKind =
   | "player-deathmatch"
   | "enemy-deathmatch"
@@ -273,7 +277,82 @@ export type BehaviorKind =
    *  this entity, emits a `npcDialog` HUD event with the per-entity
    *  {@link SceneEntity.npcLine} (or a generic fallback). The HUD speech
    *  bubble in `PlayHUD` shows the line for a few seconds. */
-  | "npc-dialog";
+  | "npc-dialog"
+  /** RTS peon (worker). Right-click on a `resource`-tagged entity to
+   *  gather; auto-shuttles between the resource and the nearest friendly
+   *  `town_hall`. Deposits emit `rts:resources` events to the HUD. */
+  /** RTS building (passive damage receiver). Required on town_hall and
+   *  any other static building so the footman attack pipeline (`scene.send`
+   *  on `damage`) actually decrements `entity.rts.hp` and fires
+   *  `rts:killed` for the gamemode win/lose check. */
+  | "rts-building"
+  | "rts-peon"
+  /** RTS combat unit (footman/archer/mage). Auto-attacks the nearest
+   *  enemy-faction unit/building within sight; obeys explicit move/attack
+   *  right-clicks via `rts:command` scene messages. */
+  | "rts-footman"
+  /** RTS gamemode manager. Seeds starting resources per faction, owns
+   *  the resource counters, declares win/lose when a side's town_hall
+   *  HP reaches 0. One per scene. */
+  | "rts-gamemode";
+
+// ─────────────────────────────────────────────────────────────────────────
+// RTS taxonomy (PR-1: foundation for the Warcraft-2-style game mode).
+// All fields are optional on SceneEntity so existing scenes are unaffected.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Which side a unit/building/resource belongs to. `neutral` is for
+ *  resource nodes (gold mines, forests) and any unaligned props. */
+export type Faction = "player" | "enemy" | "neutral";
+
+/** Catalog of unit kinds. Five infantry types + three mounted variants +
+ *  catapult. The mounted variants are upgrades unlocked in PR-3. */
+export type UnitKind =
+  | "peon"
+  | "footman"
+  | "archer"
+  | "mage"
+  | "knight"
+  | "mounted_archer"
+  | "mounted_mage"
+  | "catapult";
+
+/** Catalog of building kinds. Maps to the five building types the user
+ *  asked for plus the central town_hall. */
+export type BuildingKind =
+  | "town_hall"
+  | "barracks"
+  | "tower"
+  | "blacksmith"
+  | "archery"
+  | "mage_hall";
+
+/** Harvestable resource kinds. */
+export type ResourceKind = "gold" | "wood";
+
+/** RTS component attached to units, buildings, and resource nodes. All
+ *  inner fields are optional — a unit fills `unit`, a building fills
+ *  `building`, a resource node fills `resource`. */
+export interface RTSComponent {
+  faction: Faction;
+  /** Set on units. */
+  unit?: UnitKind;
+  /** Set on buildings. */
+  building?: BuildingKind;
+  /** Set on resource nodes (gold mine, forest). `amount` is the remaining
+   *  reserves; once 0 the node despawns. */
+  resource?: { kind: ResourceKind; amount: number };
+  /** Current HP. Defaults to `maxHp` on spawn. */
+  hp: number;
+  /** Maximum HP — drives the health bar fill. */
+  maxHp: number;
+  /** Set on peons while they're carrying a load home. */
+  carrying?: { kind: ResourceKind; amount: number };
+  /** Combat stats baked in by the template builder (resolved through
+   *  RACE_LOADOUTS at template-build time). Read by `rts-footman` so
+   *  the script doesn't need to import the game-forge race catalog. */
+  stats?: { dmg: number; range: number; speed: number };
+}
 
 export interface SceneEntity {
   id: string;
@@ -339,6 +418,9 @@ export interface SceneEntity {
    *  types. All fields optional — sensible per-type defaults are
    *  applied when unset. See {@link SoftBodyComponent}. */
   softBody?: SoftBodyComponent;
+  /** RTS component (faction, unit/building/resource role, HP, carry).
+   *  Set on RTS-template entities; ignored by other gamemodes. */
+  rts?: RTSComponent;
 }
 
 /** Tuning knobs for the lightweight verlet / particle simulation that
@@ -419,7 +501,7 @@ export interface Environment {
   mouseSensitivity?: number;
   /** Game mode driving the play HUD. `deathmatch` shows the kill counter,
    *  damage flash, hit indicators, respawn timer, win/lose banner. */
-  gameMode?: "sandbox" | "deathmatch";
+  gameMode?: "sandbox" | "deathmatch" | "rts";
   /** Deathmatch: score required to win (default 10). */
   scoreLimit?: number;
   /** Deathmatch: respawn delay in seconds (default 5). */

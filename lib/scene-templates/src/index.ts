@@ -32,15 +32,19 @@ import type { SceneData } from "@workspace/scene-schema";
 import {
   cyberpunkDeathmatchScene,
   encampmentDeathmatchScene,
-  fortRoyaleDeathmatchScene,
+  rtsFortRoyaleScene,
   rpgVillageScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
- *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260513.1";
+ *  resolving. Format: yyyymmdd.n
+ *
+ *  20260514.1: Replaced the Fort Royale deathmatch (`dm-fort-royale`)
+ *  with the new Warcraft-2-style RTS template (`rts-fort-royale`) —
+ *  PR-1 of the RTS conversion. */
+export const TEMPLATES_VERSION = "20260514.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -63,11 +67,11 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
     build: cyberpunkDeathmatchScene,
   },
   {
-    key: "dm-fort-royale",
-    label: "Deathmatch — Fort Royale",
+    key: "rts-fort-royale",
+    label: "RTS — Fort Royale (Warcraft-2 style)",
     description:
-      "First-to-10 deathmatch inside a small medieval fort. 6 AI enemies, four corner braziers, fastest-loading map.",
-    build: fortRoyaleDeathmatchScene,
+      "Real-time strategy on the medieval fort map. Command a peon (auto-gathers gold) and a footman (auto-engages enemies) against a mirror enemy base. PR-1 foundation for the full WC2-style mode.",
+    build: rtsFortRoyaleScene,
   },
   {
     key: "dm-encampment",
@@ -106,7 +110,7 @@ export interface TemplateApiManifest {
 export {
   cyberpunkDeathmatchScene,
   encampmentDeathmatchScene,
-  fortRoyaleDeathmatchScene,
+  rtsFortRoyaleScene,
   rpgVillageScene,
   withIdScope,
 } from "./builders.js";

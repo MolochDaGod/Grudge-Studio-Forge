@@ -147,6 +147,12 @@ export function PlayScriptRuntime({
       layer: entity.layer ?? "Default",
       npcLine: entity.npcLine,
       raceId: entity.raceId,
+      // Pass through the optional RTS component so the rts-* behaviors
+      // can resolve faction / unit / building / hp / stats without
+      // reaching back into the editor store. Spread to a fresh object
+      // so script mutations (e.g. peon `rts.carrying`) don't write to
+      // the persisted scene model.
+      rts: entity.rts ? { ...entity.rts } : undefined,
     };
     const bodyOrGroup = bodyRefs.current.get(entity.id);
     if (bodyOrGroup) {

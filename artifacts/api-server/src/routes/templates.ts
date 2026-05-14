@@ -41,12 +41,24 @@ router.get("/templates", (req: Request, res: Response) => {
   res.json(manifest);
 });
 
+/** Legacy template keys → current key. Lets old `?scene=…` deep links and
+ *  any persisted "load this template" flows keep working after a rename
+ *  without breaking the user. PR-1 of the RTS conversion replaced
+ *  `dm-fort-royale` with `rts-fort-royale`. */
+const LEGACY_TEMPLATE_ALIASES: Record<string, string> = {
+  "dm-fort-royale": "rts-fort-royale",
+};
+
 router.get("/templates/:key", async (req: Request, res: Response) => {
   const rawKey = req.params.key;
   // Express 5 types `req.params` values as `string | string[]` to allow
   // for repeated wildcard patterns; for a single named param it's
   // always a string at runtime, but we narrow defensively.
-  const key = Array.isArray(rawKey) ? rawKey.join("/") : rawKey;
+  let key = Array.isArray(rawKey) ? rawKey.join("/") : rawKey;
+  if (LEGACY_TEMPLATE_ALIASES[key]) {
+    req.log.info({ from: key, to: LEGACY_TEMPLATE_ALIASES[key] }, "Template alias resolved");
+    key = LEGACY_TEMPLATE_ALIASES[key];
+  }
   // Defense-in-depth: the OpenAPI pattern already restricts this, but
   // routes can be hit outside the spec'd client. Keep the regex tight to
   // avoid traversal.
