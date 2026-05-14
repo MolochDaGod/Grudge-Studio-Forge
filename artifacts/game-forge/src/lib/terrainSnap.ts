@@ -20,8 +20,11 @@
  *
  * On no hit (no walkable terrain mounted yet, entity over a hole, or
  * raycast against a dynamically-loaded map that hasn't finished
- * loading), we leave the entity where it was and log a warning. Loud
- * is better than silently buried.
+ * loading), we schedule a bounded retry via setTimeout instead of
+ * giving up — the most common cause of "unit floats at y=0" is the
+ * unit's small GLB finishing before the much larger map GLB, and a
+ * second pass ~250ms later usually finds the terrain. After
+ * `MAX_RETRY_ATTEMPTS` failures we clear the flag and warn loudly.
  *
  * Tied to `userData.surface === "Walk"` rather than layer === "Terrain"
  * because surface is the per-mesh navmesh-driving signal — a designer
@@ -31,8 +34,15 @@
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 
-const RAY_FROM_HEIGHT = 200;
-const RAY_MAX_DISTANCE = 500;
+const RAY_FROM_HEIGHT = 500;
+const RAY_MAX_DISTANCE = 1500;
+const RETRY_DELAY_MS = 250;
+const MAX_RETRY_ATTEMPTS = 24; // ~6s of patience for slow GLBs
+
+/** Per-entity retry counter — module-scoped so a quick play/stop cycle
+ *  resets it on next snap call (the entity remounts → renderer effect
+ *  fires → flag is true again → counter starts at 0). */
+const retryCounts = new Map<string, number>();
 
 function getEditorScene(): THREE.Object3D | null {
   if (typeof window === "undefined") return null;
@@ -78,11 +88,32 @@ export function snapEntityToTerrainOnce(entityId: string): {
 } {
   const store = useEditor.getState();
   const entity = store.sceneData.entities.find((e) => e.id === entityId);
-  if (!entity) return { snapped: false, reason: "no-entity" };
-  if (!entity.pendingTerrainSnap) return { snapped: false, reason: "no-flag" };
+  if (!entity) {
+    retryCounts.delete(entityId);
+    return { snapped: false, reason: "no-entity" };
+  }
+  if (!entity.pendingTerrainSnap) {
+    // Flag was cleared elsewhere (e.g. previous successful snap). Drop
+    // any leftover counter so the next legitimate snap on this id
+    // starts fresh — template IDs are deterministic, so a re-load of
+    // the same template reuses the same entity ids.
+    retryCounts.delete(entityId);
+    return { snapped: false, reason: "no-flag" };
+  }
 
   const scene = getEditorScene();
-  if (!scene) return { snapped: false, reason: "no-scene" };
+  if (!scene) {
+    // Scene not mounted yet — schedule a retry (same budget as no-hit)
+    // rather than dropping the snap entirely.
+    const attempts = (retryCounts.get(entityId) ?? 0) + 1;
+    retryCounts.set(entityId, attempts);
+    if (attempts < MAX_RETRY_ATTEMPTS && typeof window !== "undefined") {
+      window.setTimeout(() => snapEntityToTerrainOnce(entityId), RETRY_DELAY_MS);
+    } else {
+      retryCounts.delete(entityId);
+    }
+    return { snapped: false, reason: "no-scene" };
+  }
 
   const [px, , pz] = entity.transform.position;
   const origin = new THREE.Vector3(px, RAY_FROM_HEIGHT, pz);
@@ -109,6 +140,9 @@ export function snapEntityToTerrainOnce(entityId: string): {
       ];
       e.pendingTerrainSnap = false;
     });
+    // Clear the retry counter so a future re-snap on the same
+    // (deterministic) entity id starts with a full retry budget.
+    retryCounts.delete(entityId);
     // eslint-disable-next-line no-console
     console.log(
       `[TERRAIN-SNAP] entity=${entityId} (${entity.name}) snapped to y=${hitY.toFixed(3)}`,
@@ -116,15 +150,24 @@ export function snapEntityToTerrainOnce(entityId: string): {
     return { snapped: true, reason: "ok", hitY };
   }
 
-  // No walkable hit — clear the flag anyway so we don't re-attempt
-  // every render, and warn so a sunk/floating character is visible in
-  // the console rather than a silent mystery.
+  // No walkable hit — most likely the map GLB hasn't finished loading
+  // yet (large fort-royale terrain at scale 50 takes a beat). Schedule
+  // a bounded retry instead of clearing the flag, so spawners /
+  // characters don't permanently float at y=0 in front of the user.
+  const attempts = (retryCounts.get(entityId) ?? 0) + 1;
+  retryCounts.set(entityId, attempts);
+  if (attempts < MAX_RETRY_ATTEMPTS && typeof window !== "undefined") {
+    window.setTimeout(() => snapEntityToTerrainOnce(entityId), RETRY_DELAY_MS);
+    return { snapped: false, reason: "no-hit" };
+  }
+  // Final attempt failed — clear the flag and warn loudly.
+  retryCounts.delete(entityId);
   store.updateEntity(entityId, (e) => {
     e.pendingTerrainSnap = false;
   });
   // eslint-disable-next-line no-console
   console.warn(
-    `[TERRAIN-SNAP] entity=${entityId} (${entity.name}) no Walk-tagged terrain under (${px.toFixed(2)}, ${pz.toFixed(2)}); leaving at y=${entity.transform.position[1].toFixed(3)}.`,
+    `[TERRAIN-SNAP] entity=${entityId} (${entity.name}) no Walk-tagged terrain under (${px.toFixed(2)}, ${pz.toFixed(2)}) after ${MAX_RETRY_ATTEMPTS} attempts; leaving at y=${entity.transform.position[1].toFixed(3)}.`,
   );
   return { snapped: false, reason: "no-hit" };
 }

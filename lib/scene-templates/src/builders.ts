@@ -1364,88 +1364,94 @@ function rtsResourceNode(args: {
 export function rtsFortRoyaleScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // ── Map (reuses the fort-royale GLB at the same 50× scale) ─────────────
-  const mapGroupId = id();
-  entities.push(group(mapGroupId, "Map", { layer: "Terrain", surface: "Walk" }));
+  // ── Map ─────────────────────────────────────────────────────────────────
+  // Single root model entity named "Map" (lowercase-match) so
+  // EntityRenderer.dropToGround fires and the GLB's lowest point sits
+  // at y=0. No wrapper group, no dark fallback plane — the GLB's own
+  // trimesh collider IS the walkable surface (every mesh stamps
+  // `userData.surface = "walk"` from the entity's surface tag, which
+  // terrainSnap and the navmesh baker both filter on).
   entities.push({
     id: id(),
-    name: "MapModel",
+    name: "Map",
     type: "model",
     model: { url: "builtin:map-fort-royale" },
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [50, 50, 50] },
-    parentId: mapGroupId,
     physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
+    layer: "Terrain",
+    surface: "Walk",
   });
-  entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#1c1810",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
-      parentId: mapGroupId,
-      layer: "Terrain",
-      surface: "Walk",
-    }),
-  );
 
-  // ── Player base (SW corner of the fort) ────────────────────────────────
+  // Spawn units a few meters above terrain so the snap retry has
+  // headroom while the map GLB streams in (snap raycasts down from
+  // y=500 and is bounded-retry safe — see lib/terrainSnap.ts). At y=0
+  // they could be inside the terrain mesh on first frame.
+  const SPAWN_Y = 8;
+
+  // ── Player base (SW corner, with Buildings + Units subgroups) ──────────
   const playerGroupId = id();
   entities.push(group(playerGroupId, "PlayerBase", { layer: "Player" }));
-  const PB: [number, number, number] = [-380, 0, -380];
-  entities.push(rtsBuilding({ name: "PlayerTownHall", building: "town_hall", faction: "player", position: PB, parentId: playerGroupId }));
-  entities.push(rtsUnit({ name: "PlayerPeon", unit: "peon", faction: "player", race: PLAYER_RACE, position: [PB[0] + 14, 0, PB[2]], parentId: playerGroupId }));
+  const playerBuildingsId = id();
+  entities.push(group(playerBuildingsId, "Buildings", { layer: "Player", parentId: playerGroupId }));
+  const playerUnitsId = id();
+  entities.push(group(playerUnitsId, "Units", { layer: "Player", parentId: playerGroupId }));
+  const PB: [number, number, number] = [-380, SPAWN_Y, -380];
+  entities.push(rtsBuilding({ name: "PlayerTownHall", building: "town_hall", faction: "player", position: PB, parentId: playerBuildingsId }));
+  entities.push(rtsUnit({ name: "PlayerPeon", unit: "peon", faction: "player", race: PLAYER_RACE, position: [PB[0] + 14, SPAWN_Y, PB[2]], parentId: playerUnitsId }));
   entities.push(rtsUnit({
     name: "PlayerFootman", unit: "footman", faction: "player", race: PLAYER_RACE,
-    position: [PB[0] + 14, 0, PB[2] + 14], parentId: playerGroupId,
+    position: [PB[0] + 14, SPAWN_Y, PB[2] + 14], parentId: playerUnitsId,
     stats: { dmg: 12, range: 1.6, speed: 4.5 },
   }));
 
   // ── Enemy base (NE corner, mirrored) ───────────────────────────────────
   const enemyGroupId = id();
   entities.push(group(enemyGroupId, "EnemyBase", { layer: "NPC" }));
-  const EB: [number, number, number] = [380, 0, 380];
-  entities.push(rtsBuilding({ name: "EnemyTownHall", building: "town_hall", faction: "enemy", position: EB, parentId: enemyGroupId }));
-  entities.push(rtsUnit({ name: "EnemyPeon", unit: "peon", faction: "enemy", race: ENEMY_RACE, position: [EB[0] - 14, 0, EB[2]], parentId: enemyGroupId }));
+  const enemyBuildingsId = id();
+  entities.push(group(enemyBuildingsId, "Buildings", { layer: "NPC", parentId: enemyGroupId }));
+  const enemyUnitsId = id();
+  entities.push(group(enemyUnitsId, "Units", { layer: "NPC", parentId: enemyGroupId }));
+  const EB: [number, number, number] = [380, SPAWN_Y, 380];
+  entities.push(rtsBuilding({ name: "EnemyTownHall", building: "town_hall", faction: "enemy", position: EB, parentId: enemyBuildingsId }));
+  entities.push(rtsUnit({ name: "EnemyPeon", unit: "peon", faction: "enemy", race: ENEMY_RACE, position: [EB[0] - 14, SPAWN_Y, EB[2]], parentId: enemyUnitsId }));
   entities.push(rtsUnit({
     name: "EnemyFootman", unit: "footman", faction: "enemy", race: ENEMY_RACE,
-    position: [EB[0] - 14, 0, EB[2] - 14], parentId: enemyGroupId,
+    position: [EB[0] - 14, SPAWN_Y, EB[2] - 14], parentId: enemyUnitsId,
     stats: { dmg: 14, range: 1.6, speed: 4.3 },
   }));
 
-  // ── Resource group (midfield: 2 gold + 1 forest patch) ─────────────────
+  // ── Resource nodes (midfield) ──────────────────────────────────────────
   const resGroupId = id();
   entities.push(group(resGroupId, "Resources"));
-  entities.push(rtsResourceNode({ name: "GoldMine_PlayerSide", kind: "gold", amount: 1500, position: [-200, 0, -200], parentId: resGroupId }));
-  entities.push(rtsResourceNode({ name: "GoldMine_EnemySide",  kind: "gold", amount: 1500, position: [ 200, 0,  200], parentId: resGroupId }));
-  entities.push(rtsResourceNode({ name: "Forest_Mid",          kind: "wood", amount: 1200, position: [   0, 0,    0], parentId: resGroupId }));
+  entities.push(rtsResourceNode({ name: "GoldMine_PlayerSide", kind: "gold", amount: 1500, position: [-200, SPAWN_Y, -200], parentId: resGroupId }));
+  entities.push(rtsResourceNode({ name: "GoldMine_EnemySide",  kind: "gold", amount: 1500, position: [ 200, SPAWN_Y,  200], parentId: resGroupId }));
+  entities.push(rtsResourceNode({ name: "Forest_Mid",          kind: "wood", amount: 1200, position: [   0, SPAWN_Y,    0], parentId: resGroupId }));
 
-  // ── Neutral creep camps (3 mutant POI guards) ──────────────────────────
+  // ── Neutral creep camps (3 mutant POI guards, one subgroup per camp) ──
   // Each camp is leashed near its POI so creeps don't path off across
   // the map; players must clear the camp to safely harvest the resource.
   const creepGroupId = id();
   entities.push(group(creepGroupId, "NeutralCamps", { layer: "NPC" }));
   const CAMPS: Array<{ name: string; anchor: [number, number, number]; size: number }> = [
-    { name: "Camp_PlayerGold", anchor: [-200, 0, -200], size: 2 },
-    { name: "Camp_EnemyGold",  anchor: [ 200, 0,  200], size: 2 },
-    { name: "Camp_MidForest",  anchor: [   0, 0,    0], size: 3 },
+    { name: "Camp_PlayerGold", anchor: [-200, SPAWN_Y, -200], size: 2 },
+    { name: "Camp_EnemyGold",  anchor: [ 200, SPAWN_Y,  200], size: 2 },
+    { name: "Camp_MidForest",  anchor: [   0, SPAWN_Y,    0], size: 3 },
   ];
   for (const camp of CAMPS) {
+    const campGroupId = id();
+    entities.push(group(campGroupId, camp.name, { layer: "NPC", parentId: creepGroupId }));
     for (let i = 0; i < camp.size; i++) {
       // Ring of mutants around each POI (radius ~6m).
       const angle = (i / camp.size) * Math.PI * 2;
       const offset: [number, number, number] = [
         camp.anchor[0] + Math.cos(angle) * 6,
-        0,
+        SPAWN_Y,
         camp.anchor[2] + Math.sin(angle) * 6,
       ];
       entities.push(rtsCreep({
         name: camp.name + "_Mutant_" + (i + 1),
         position: offset,
-        parentId: creepGroupId,
+        parentId: campGroupId,
       }));
     }
   }

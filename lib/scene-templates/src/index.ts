@@ -43,8 +43,13 @@ import {
  *
  *  20260514.1: Replaced the Fort Royale deathmatch (`dm-fort-royale`)
  *  with the new Warcraft-2-style RTS template (`rts-fort-royale`) —
- *  PR-1 of the RTS conversion. */
-export const TEMPLATES_VERSION = "20260514.2";
+ *  PR-1 of the RTS conversion.
+ *  20260514.3: rts-fort-royale hierarchy + terrain pass — dropped the
+ *  dark fallback Ground plane (the visible "black square"), renamed
+ *  the GLB entity to "Map" so dropToGround fires, split PlayerBase /
+ *  EnemyBase into Buildings + Units subgroups, one subgroup per
+ *  creep camp, and spawn at y=8 to give the snap-retry headroom. */
+export const TEMPLATES_VERSION = "20260514.3";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
