@@ -11,6 +11,15 @@ import { loadTemplateWithProgress } from "@/lib/loadTemplate";
 import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
 import type { SceneData } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
+import {
+  useCreateProject,
+  useCreateScene,
+  useDeleteProject,
+  getListProjectsQueryKey,
+  getListScenesQueryKey,
+  getGetProjectSummaryQueryKey,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface ActiveLoad {
   key: string;
@@ -19,10 +28,36 @@ interface ActiveLoad {
 
 const DIALOG_HOLD_MS = 250;
 
+/**
+ * Auto-generated project name when the user picks an example template
+ * with no active project. Format: `Example project YYYY-MM-DD HH:MM`
+ * (local time). The user can rename it from the project picker; this
+ * is just the placeholder until they do.
+ */
+function defaultExampleProjectName(now = new Date()): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const stamp =
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+    `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return `Example project ${stamp}`;
+}
+
 export function useTemplateLoader() {
   const setSceneData = useEditor((s) => s.setSceneData);
   const setSceneName = useEditor((s) => s.setSceneName);
   const pushLog = useEditor((s) => s.pushLog);
+  const setProject = useEditor((s) => s.setProject);
+  const loadScene = useEditor((s) => s.loadScene);
+  // Read projectId via getState() at start-time (not a subscription) —
+  // we only need the current value when a load fires; subscribing would
+  // re-run start's identity on every project switch and force callers
+  // to re-bind their handlers.
+  const getProjectId = useEditor.getState;
+
+  const qc = useQueryClient();
+  const createProjectMut = useCreateProject();
+  const createSceneMut = useCreateScene();
+  const deleteProjectMut = useDeleteProject();
 
   const [active, setActive] = useState<ActiveLoad | null>(null);
   const [progress, setProgress] = useState<TemplateLoadProgress | null>(null);
@@ -79,7 +114,7 @@ export function useTemplateLoader() {
           setProgress(() => p);
         },
       })
-        .then((data: SceneData) => {
+        .then(async (data: SceneData) => {
           if (loadIdRef.current !== id) return;
           // Kick off background warm-up of every `builtin:` GLB referenced
           // by the template's entities BEFORE the dialog closes and the
@@ -90,8 +125,88 @@ export function useTemplateLoader() {
           // download. This call is best-effort and dedupes against drei's
           // loader cache, so re-picking the same template is a no-op.
           warmBuiltinModelsForEntities(data.entities);
+
+          // Auto-create a project if the user picked an example template
+          // without one open. Naming pattern: `Example project YYYY-MM-DD
+          // HH:MM` — visible in the project picker until the user renames
+          // it. Without this, the template would scribble onto whatever
+          // last-loaded scratch buffer was around and never persist
+          // server-side, surprising users who expected "examples" to live
+          // somewhere they can come back to.
+          //
+          // Cancellation safety:
+          //   We DELIBERATELY do not call setProject() until BOTH the
+          //   project AND the scene exist server-side and we've re-checked
+          //   loadId. setProject() resets sceneData to emptyScene() and
+          //   clears the command stack, so calling it speculatively would
+          //   destroy the user's current scratch buffer if they then
+          //   cancel the dialog or click another template mid-create.
+          //   On supersede after createProject succeeds we issue a
+          //   best-effort rollback delete so we don't leak orphan empty
+          //   projects to the project picker.
+          const activeProjectId = getProjectId().projectId;
+          if (activeProjectId == null) {
+            const projName = defaultExampleProjectName();
+            let newProjectId: number | null = null;
+            try {
+              const proj = await createProjectMut.mutateAsync({
+                data: { name: projName, description: `Auto-created from example "${label}".` },
+              });
+              newProjectId = proj.id;
+              // Supersede check #1 — if a newer load fired while
+              // /api/projects was in flight, roll back the orphan.
+              if (loadIdRef.current !== id) {
+                deleteProjectMut.mutate({ id: proj.id });
+                return;
+              }
+              const sceneRes = await createSceneMut.mutateAsync({
+                data: { projectId: proj.id, name: label, data },
+              });
+              // Supersede check #2 — same window between scene-create
+              // resolve and our state apply. Roll back project + its
+              // empty scene (server cascades) before bailing.
+              if (loadIdRef.current !== id) {
+                deleteProjectMut.mutate({ id: proj.id });
+                return;
+              }
+              // All server work succeeded → atomic UI commit. setProject
+              // first to wipe any prior scratch + reset undo, then
+              // loadScene to populate sceneId + the persisted entities.
+              setProject(proj.id);
+              loadScene(sceneRes.id, sceneRes.name, sceneRes.data as SceneData);
+              qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+              qc.invalidateQueries({ queryKey: getListScenesQueryKey(proj.id) });
+              qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(proj.id) });
+              pushLog(
+                "info",
+                `Created project "${projName}" with example "${label}" (${data.entities.length} entities).`,
+              );
+              // Hold the 100% bar briefly so the user sees completion
+              // before the dialog vanishes.
+              holdTimerRef.current = window.setTimeout(() => {
+                holdTimerRef.current = null;
+                if (loadIdRef.current !== id) return;
+                finalizeIfCurrent(id);
+              }, DIALOG_HOLD_MS);
+              return;
+            } catch (err) {
+              // Either createProject or createScene failed mid-way. If
+              // the project DID get created (createScene was the failing
+              // step), best-effort rollback so the picker doesn't grow
+              // empty entries on every flaky network blip.
+              if (newProjectId != null) {
+                deleteProjectMut.mutate({ id: newProjectId });
+              }
+              pushLog(
+                "warn",
+                `Could not auto-create project: ${(err as Error).message}. Loading template into scratch scene.`,
+              );
+              // fall through to the in-memory path below
+            }
+          }
+
           // Hold the 100% bar for a beat so the user sees completion
-          // before the dialog vanishes.
+          // before the dialog vanishes (in-memory / legacy path).
           holdTimerRef.current = window.setTimeout(() => {
             holdTimerRef.current = null;
             if (loadIdRef.current !== id) return;
