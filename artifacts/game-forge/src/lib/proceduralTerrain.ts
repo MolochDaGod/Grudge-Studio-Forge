@@ -14,7 +14,12 @@ import * as THREE from "three";
 export interface TerrainOptions {
   size: number;
   segments: number;
+  /** Peak elevation above sea level (positive metres). */
   heightAmp: number;
+  /** Depth below sea level (positive metres). The rim falloff and the
+   *  deepest valleys reach `-heightFloor`. Optional for backward-compat
+   *  with pre-5km-default scenes; falls back to `heightAmp * 0.05`. */
+  heightFloor?: number;
   heightSeed: number;
   noiseScale?: number;
 }
@@ -76,7 +81,16 @@ const SNOW = new THREE.Color("#e8eef2");
  */
 export function buildTerrainGeometry(opts: TerrainOptions): THREE.BufferGeometry {
   const { size, segments, heightAmp, heightSeed } = opts;
-  const noiseScale = opts.noiseScale ?? 0.012;
+  // Default noiseScale tracks the map size so feature size stays roughly
+  // constant in screen-space across small (200m) and large (5km) maps.
+  // 200m → 0.012 (≈80m features); 5000m → 0.0012 (≈800m features).
+  const noiseScale = opts.noiseScale ?? Math.max(0.0006, 2.4 / size);
+  // Backward-compat: legacy scenes only stored heightAmp; the rim sat at
+  // 5% of amp below sea level and we used the old skewed remap. We
+  // detect "legacy" by absence of heightFloor and switch math accordingly
+  // so existing saved terrains render identically to before.
+  const isLegacy = opts.heightFloor === undefined;
+  const heightFloor = opts.heightFloor ?? heightAmp * 0.05;
   const geom = new THREE.PlaneGeometry(size, size, segments, segments);
   geom.rotateX(-Math.PI / 2);
   const pos = geom.attributes.position;
@@ -93,8 +107,20 @@ export function buildTerrainGeometry(opts: TerrainOptions): THREE.BufferGeometry
     const r = Math.min(1, Math.hypot(dx, dz));
     const falloff = 1 - smoothstep((r - 0.7) / 0.3);
     const n = fbm(x * noiseScale, z * noiseScale, heightSeed);
-    // Map noise [-1..1] → [-0.05..1] · heightAmp · falloff.
-    const h = (n * 0.6 + 0.4) * heightAmp * falloff - heightAmp * 0.05;
+    let h: number;
+    if (isLegacy) {
+      // Legacy mapping (pre-5km defaults): noise [-1..1] → [-0.05..1] · amp.
+      // Preserved so saved scenes that only stored heightAmp still render
+      // identically to what the user previewed when they saved them.
+      h = (n * 0.6 + 0.4) * heightAmp * falloff - heightAmp * 0.05;
+    } else {
+      // New mapping: noise [-1..1] → [0..1] then linearly interpolate
+      // between (-heightFloor) and (+heightAmp). Falloff modulates the
+      // peak and pulls the rim down to -heightFloor.
+      const noise01 = n * 0.5 + 0.5;
+      const baseH = -heightFloor + noise01 * (heightAmp + heightFloor);
+      h = baseH * falloff - heightFloor * (1 - falloff);
+    }
     pos.setY(i, h);
 
     // Vertex color by elevation, smooth-blended so biome bands don't

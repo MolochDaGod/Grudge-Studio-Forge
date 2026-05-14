@@ -18,6 +18,10 @@ import {
 } from "@workspace/scene-schema";
 import { computeFramingPose } from "@/lib/framing";
 import {
+  recommendedCameraFar,
+  recommendedSnapMaxDistance,
+} from "@/lib/scaleHelpers";
+import {
   applyGroundSnap,
   DEFAULT_WALKABLE_SURFACES,
   getEntitySurfaceTag,
@@ -294,8 +298,11 @@ function SceneEditMode({
                     threeScene,
                     [o.position.x, o.position.y, o.position.z],
                     {
-                      originOffset: 50,
-                      maxDistance: 200,
+                      // Drop the probe from above the highest possible
+                      // peak and reach all the way to the deepest valley
+                      // so a 5km/+10km/-5m terrain snap still lands.
+                      originOffset: recommendedSnapMaxDistance() * 0.5,
+                      maxDistance: recommendedSnapMaxDistance(),
                       excludeEntityIds: [selectedId],
                     },
                   );
@@ -1270,7 +1277,12 @@ export function Viewport() {
               * precision for an editor camera. */}
             <Canvas
               shadows="soft"
-              camera={{ position: [8, 8, 12], fov: 45, near: 0.1, far: 5000 }}
+              camera={{
+                position: [8, 8, 12],
+                fov: 45,
+                near: 0.1,
+                far: recommendedCameraFar(),
+              }}
               onPointerMissed={
                 isPlaying
                   ? undefined

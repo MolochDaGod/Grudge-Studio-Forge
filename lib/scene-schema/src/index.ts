@@ -447,19 +447,27 @@ export interface SceneEntity {
 /** Procedural heightmap terrain knobs. Read by the `terrain` entity
  *  renderer in `EntityRenderer.tsx`. */
 export interface TerrainComponent {
-  /** Square side length in world meters. Typical RTS map: 800–2000m. */
+  /** Square side length in world meters. Defaults to 5000m (5×5 km
+   *  open-world scale); typical RTS-style map: 800–2000m. */
   size: number;
   /** Grid resolution (vertices per side − 1). Higher = smoother hills
-   *  but slower trimesh-collider bake. 96–192 is the sweet spot. */
+   *  but slower trimesh-collider bake. 96–192 is the sweet spot for
+   *  small maps; 256+ for the 5km default. */
   segments: number;
-  /** Peak elevation in world meters above mean sea level (= y=0). The
-   *  noise output `[-1..1]` is mapped onto `[-0.05·amp .. 1.0·amp]`
-   *  so the rim sinks just below 0 and frames the play area. */
+  /** Peak elevation in world meters above mean sea level (= y=0).
+   *  Noise output `[-1..1]` is mapped onto `[-heightFloor .. +heightAmp]`
+   *  with rim falloff so the edge sinks to `-heightFloor`. */
   heightAmp: number;
+  /** Floor depth in world meters BELOW sea level (positive number). The
+   *  rim of the map and the deepest valleys reach `-heightFloor`. Splits
+   *  out from `heightAmp` so floor and peak can be tuned independently
+   *  (e.g. shallow ocean + tall mountains). When omitted, falls back to
+   *  `heightAmp * 0.05` for backward-compat with pre-5km saved scenes. */
+  heightFloor?: number;
   /** Deterministic noise seed. Same seed → same landscape. */
   heightSeed: number;
-  /** Optional fbm frequency multiplier in 1/world-meter. Default 0.012
-   *  ≈ 80m feature size. Smaller = bigger features. */
+  /** Optional fbm frequency multiplier in 1/world-meter. Default 0.0012
+   *  for the 5km map ≈ 800m feature size. Smaller = bigger features. */
   noiseScale?: number;
 }
 

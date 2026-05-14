@@ -33,9 +33,14 @@
  */
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
+import { recommendedSnapMaxDistance } from "@/lib/scaleHelpers";
 
-const RAY_FROM_HEIGHT = 500;
-const RAY_MAX_DISTANCE = 1500;
+// Drop the snap ray from above the highest possible terrain peak and
+// reach the deepest valley so a 5km/+10km/-5m terrain still lands a hit.
+// Sourced from the central scaleHelpers so camera far / drag-snap /
+// terrain-snap stay in lockstep when the open-world defaults change.
+const RAY_FROM_HEIGHT = recommendedSnapMaxDistance() * 0.5;
+const RAY_MAX_DISTANCE = recommendedSnapMaxDistance();
 const RETRY_DELAY_MS = 250;
 const MAX_RETRY_ATTEMPTS = 24; // ~6s of patience for slow GLBs
 
