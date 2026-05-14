@@ -41,6 +41,11 @@ const PrefabPreviewSurface = lazy(() =>
     default: m.PrefabPreviewSurface,
   })),
 );
+const UIEditorSurface = lazy(() =>
+  import("@/editor/UIEditorSurface").then((m) => ({
+    default: m.UIEditorSurface,
+  })),
+);
 
 function SurfaceFallback({ label }: { label: string }) {
   return (
@@ -77,6 +82,12 @@ function renderTransientSurface(tab: ViewportTab) {
       return <AnimationSurface payload={tab.payload.data} />;
     case "convert":
       return <ConvertSurface payload={tab.payload.data} />;
+    case "ui-screen":
+      return (
+        <Suspense fallback={<SurfaceFallback label="Loading UI editor…" />}>
+          <UIEditorSurface payload={tab.payload.data} tabId={tab.id} />
+        </Suspense>
+      );
   }
 }
 

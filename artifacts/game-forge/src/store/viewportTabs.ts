@@ -26,7 +26,8 @@ export type ViewportTabKind =
   | "prefab"
   | "rigging"
   | "animation"
-  | "convert";
+  | "convert"
+  | "ui-screen";
 
 /** Payload for a model-viewer tab. The blob URL keeps a dropped file alive
  *  for the lifetime of the tab without re-uploading; `assetUrl` is set when
@@ -64,13 +65,26 @@ export interface ConvertTabPayload {
   files: { name: string; ext: string; blobUrl: string; size: number }[];
 }
 
+/** Payload for a 2D UI Screen editor tab. The screen itself lives in the
+ *  `useUIScreens` store keyed by project + screenId; this payload only
+ *  carries the lookup keys + a snapshot of the name for the tab title.
+ *  Renaming a screen via the inspector should also call `renameTab()`. */
+export interface UIScreenTabPayload {
+  screenId: string;
+  screenName: string;
+  /** `number` for a real DB project, `"global"` for screens authored
+   *  before any project is open. Mirrors `ProjectKey` in `store/uiScreens`. */
+  project: number | "global";
+}
+
 export type ViewportTabPayload =
   | { kind: "scene" }
   | { kind: "model"; data: ModelTabPayload }
   | { kind: "prefab"; data: PrefabTabPayload }
   | { kind: "rigging"; data: RiggingTabPayload }
   | { kind: "animation"; data: AnimationTabPayload }
-  | { kind: "convert"; data: ConvertTabPayload };
+  | { kind: "convert"; data: ConvertTabPayload }
+  | { kind: "ui-screen"; data: UIScreenTabPayload };
 
 export interface ViewportTab {
   id: string;
@@ -119,6 +133,8 @@ function defaultTitle(p: ViewportTabPayload): string {
       return p.data.files.length
         ? `Convert (${p.data.files.length})`
         : "Convert";
+    case "ui-screen":
+      return p.data.screenName || "UI Screen";
   }
 }
 
@@ -142,6 +158,8 @@ function defaultDedupeKey(p: ViewportTabPayload): string | null {
         : null;
     case "convert":
       return null;
+    case "ui-screen":
+      return `ui-screen:${String(p.data.project)}:${p.data.screenId}`;
   }
 }
 

@@ -5,6 +5,7 @@ import {
   Bone,
   Film,
   Wand2,
+  Layout,
   X,
   Plus,
 } from "lucide-react";
@@ -18,8 +19,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useEditor } from "@/store/editor";
+import { useUIScreens, type ProjectKey } from "@/store/uiScreens";
 import { classifyDroppedFile } from "@/lib/fileKind";
 import { openModelTabFromFile } from "@/lib/openModelTab";
 
@@ -32,6 +34,7 @@ const KIND_ICON = {
   rigging: Bone,
   animation: Film,
   convert: Wand2,
+  "ui-screen": Layout,
 } as const;
 
 function TabPill({
@@ -98,6 +101,38 @@ export function ViewportTabBar() {
   const openTab = useViewportTabs((s) => s.openTab);
   const pushLog = useEditor((s) => s.pushLog);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // AI tools (`ui_create_screen`) and any future programmatic openers fire
+  // `gameforge:openUIScreen` instead of importing this component, so the
+  // panel stays decoupled from the tab system.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const detail = (e as CustomEvent).detail as
+        | {
+            screenId: string;
+            screenName: string;
+            project: number | "global";
+          }
+        | undefined;
+      if (!detail) return;
+      openTab(
+        {
+          kind: "ui-screen",
+          data: {
+            screenId: detail.screenId,
+            screenName: detail.screenName,
+            project: detail.project,
+          },
+        },
+        {
+          dedupeKey: `ui-screen:${String(detail.project)}:${detail.screenId}`,
+        },
+      );
+    };
+    window.addEventListener("gameforge:openUIScreen", onOpen);
+    return () =>
+      window.removeEventListener("gameforge:openUIScreen", onOpen);
+  }, [openTab]);
 
   const handleOpenFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -168,6 +203,32 @@ export function ViewportTabBar() {
           >
             <Wand2 className="size-4 mr-2" />
             New Convert tab
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              const projectId = useEditor.getState().projectId;
+              const project: ProjectKey =
+                typeof projectId === "number" ? projectId : "global";
+              const screen = useUIScreens
+                .getState()
+                .createScreen(project, {});
+              openTab(
+                {
+                  kind: "ui-screen",
+                  data: {
+                    screenId: screen.id,
+                    screenName: screen.name,
+                    project,
+                  },
+                },
+                { dedupeKey: `ui-screen:${String(project)}:${screen.id}` },
+              );
+              pushLog("info", `Created UI screen "${screen.name}".`);
+            }}
+            data-testid="menu-open-ui-screen-tab"
+          >
+            <Layout className="size-4 mr-2" />
+            New UI Screen
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-[10px] uppercase tracking-wider opacity-60">

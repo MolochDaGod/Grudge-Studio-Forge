@@ -77,6 +77,11 @@ import {
   handlers as effectsToolHandlers,
   destructiveToolNames as effectsDestructiveTools,
 } from "@/ai/tools/effects";
+import {
+  defs as uiToolDefs,
+  handlers as uiToolHandlers,
+  destructiveToolNames as uiDestructiveTools,
+} from "@/ai/tools/ui";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -97,6 +102,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...materialsDestructiveTools,
   ...puterDestructiveTools,
   ...effectsDestructiveTools,
+  ...uiDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1105,6 +1111,15 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
   ...materialsToolDefs.map((def) => ({
     def,
     exec: materialsToolHandlers[def.name] as ToolExecutor,
+  })),
+
+  // ── 2D UI Editor tools ────────────────────────────────────────────
+  // Sourced from src/ai/tools/ui/. Drives the per-project UI screens
+  // store (HUD overlays / panels) so the model can build screens from
+  // a chat prompt the same way it builds 3D scenes.
+  ...uiToolDefs.map((def) => ({
+    def,
+    exec: uiToolHandlers[def.name] as ToolExecutor,
   })),
 
   // ── Puter cloud tools ─────────────────────────────────────────────

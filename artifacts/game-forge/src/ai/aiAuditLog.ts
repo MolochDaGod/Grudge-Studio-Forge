@@ -73,6 +73,15 @@ export const MUTATING_TOOLS = new Set<string>([
   "attach_behavior",
   "detach_behavior",
   "create_script_from_template",
+  // 2D UI Editor mutators (per-project HUD screens). All write to the
+  // useUIScreens store, surface in the AI audit log so the user can see
+  // the screen-edit history alongside scene edits.
+  "ui_create_screen",
+  "ui_rename_screen",
+  "ui_delete_screen",
+  "ui_add_widget",
+  "ui_update_widget",
+  "ui_remove_widget",
   // Layer mutators
   "set_layer",
   "set_layer_matrix",
