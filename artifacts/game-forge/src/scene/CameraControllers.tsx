@@ -442,12 +442,21 @@ export function ThirdPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
+    // Movement modifiers: Shift = sprint (1.6×), Alt = crouch (0.45×),
+    // Space = jump (one-shot upward velocity, only when grounded).
+    // Sprint wins over crouch when both held — running crouched feels
+    // janky and is a common source of stuck-state input bugs.
+    const wantSprint = !!k["Shift"];
+    const wantCrouch = !!(k["Alt"] || k["AltLeft"] || k["AltRight"]);
+    const wantJump = !!(k[" "] || k["Space"]);
+    const speedMul = wantSprint ? 1.6 : wantCrouch ? 0.45 : 1;
+
     // Per-race speed override: when the player entity carries a raceId,
     // pull baseStats.speed from the RACES catalog so picking the elf
     // actually feels swift and the dwarf actually feels stout. Falls
     // back to the env-level slider when no race is set.
     const raceSpeed = getRaceStats(player.raceId)?.speed;
-    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * speedMul;
     let vx = 0;
     let vz = 0;
     if (mx !== 0 || mz !== 0) {
@@ -467,6 +476,16 @@ export function ThirdPersonCameraController({
     // follows the body either way.
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
       moveBody(body, { x: vx, z: vz }, delta);
+      // Jump: apply upward velocity only when grounded. We approximate
+      // "grounded" with |vy| < 0.5 — cheap and avoids a per-frame
+      // raycast. moveBody preserves the body's existing y velocity, so
+      // overwriting it here right after is safe.
+      if (wantJump && body && "linvel" in body) {
+        const v = body.linvel();
+        if (Math.abs(v.y) < 0.5) {
+          body.setLinvel({ x: v.x, y: 6.5, z: v.z }, true);
+        }
+      }
       // Lock the character's facing to the camera yaw. The character GLB
       // points down -Z at rest (matching three.js' "forward = -Z"
       // convention) and our forward vector at yaw=0 is (sin0, cos0) =
@@ -486,7 +505,7 @@ export function ThirdPersonCameraController({
     const clips = getRaceClips(player.raceId);
     if (clips) {
       const isMoving = mx !== 0 || mz !== 0;
-      const isRunning = isMoving && !!k["Shift"];
+      const isRunning = isMoving && wantSprint;
       writeAgentClip(player.id, isRunning ? clips.run : isMoving ? clips.walk : clips.idle);
     }
 
@@ -636,9 +655,15 @@ export function FirstPersonCameraController({
     if (k["a"] || k["A"] || k["ArrowLeft"]) mx -= 1;
     if (k["d"] || k["D"] || k["ArrowRight"]) mx += 1;
 
+    // Movement modifiers — see matching block in the TPS controller.
+    const wantSprint = !!k["Shift"];
+    const wantCrouch = !!(k["Alt"] || k["AltLeft"] || k["AltRight"]);
+    const wantJump = !!(k[" "] || k["Space"]);
+    const speedMul = wantSprint ? 1.6 : wantCrouch ? 0.45 : 1;
+
     // Per-race speed override (see TPS controller above).
     const raceSpeed = getRaceStats(player.raceId)?.speed;
-    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * (k["Shift"] ? 1.6 : 1);
+    const speed = (raceSpeed ?? env.playerMoveSpeed ?? 6) * speedMul;
     let vx = 0;
     let vz = 0;
     if (mx !== 0 || mz !== 0) {
@@ -652,6 +677,13 @@ export function FirstPersonCameraController({
     }
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
       moveBody(body, { x: vx, z: vz }, delta);
+      // Jump (see TPS controller comment).
+      if (wantJump && body && "linvel" in body) {
+        const v = body.linvel();
+        if (Math.abs(v.y) < 0.5) {
+          body.setLinvel({ x: v.x, y: 6.5, z: v.z }, true);
+        }
+      }
       // FPS: same convention as the TPS path above — yaw alone aligns the
       // body's forward axis with the camera's look direction.
       rotateBody(body, yawRef.current);
@@ -664,7 +696,7 @@ export function FirstPersonCameraController({
     const clips = getRaceClips(player.raceId);
     if (clips) {
       const isMoving = mx !== 0 || mz !== 0;
-      const isRunning = isMoving && !!k["Shift"];
+      const isRunning = isMoving && wantSprint;
       const lin = body && "linvel" in body ? body.linvel() : { x: vx, y: 0, z: vz };
       writeAgentClip(
         player.id,
@@ -674,8 +706,9 @@ export function FirstPersonCameraController({
       );
     }
 
-    // Camera at "head" height
-    const headY = pos.y + 0.6;
+    // Camera at "head" height — lowered when crouching for that
+    // duck-behind-cover feel.
+    const headY = pos.y + (wantCrouch ? 0.2 : 0.6);
     camera.position.set(pos.x, headY, pos.z);
     // Build a forward vector from yaw + pitch
     const fx = Math.sin(yawRef.current) * Math.cos(pitchRef.current);
