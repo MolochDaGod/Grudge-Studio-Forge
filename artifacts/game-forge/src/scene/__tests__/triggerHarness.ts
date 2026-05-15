@@ -64,6 +64,13 @@ export function makePickupContext(): {
       sample: () => null,
     },
     events: { emit, on: noop },
+    stats: {
+      get: () => undefined,
+      getBase: () => undefined,
+      modify: () => undefined,
+      remove: () => false,
+      removeBySource: () => 0,
+    },
     state: {},
     races: {},
     // yuka is unused by the pickup behavior; cast to satisfy the interface.

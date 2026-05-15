@@ -1,9 +1,11 @@
 export * from "./layers";
 export * from "./materials";
 export * from "./inheritance";
+export * from "./stats";
 import type { LayerName } from "./layers";
 import { DEFAULT_SENSOR_LAYERS } from "./layers";
 import type { MaterialComponent } from "./materials";
+import type { StatsComponent } from "./stats";
 
 export type Vec3 = [number, number, number];
 
@@ -330,6 +332,11 @@ export interface SceneEntity {
    *  types. All fields optional — sensible per-type defaults are
    *  applied when unset. See {@link SoftBodyComponent}. */
   softBody?: SoftBodyComponent;
+  /** Per-entity RPG stats (8 primary attributes + level + xp). When set,
+   *  the play-mode {@link StatsEngine} builds a resolved stat block
+   *  (derived stats with diminishing returns) and exposes it through
+   *  `ctx.stats` in the script API. */
+  stats?: StatsComponent;
 }
 
 /** Tuning knobs for the lightweight verlet / particle simulation that

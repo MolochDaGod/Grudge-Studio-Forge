@@ -1,4 +1,5 @@
 import { createGameBus, EntityInboxes, EntityStates, TriggerInbox, type GameBus } from "./GameBus";
+import { StatsEngine } from "./StatsEngine";
 
 /**
  * Play session — module-level singleton. The HUD lives outside the R3F canvas
@@ -21,6 +22,10 @@ export interface PlaySession {
    *  RigidBody intersection events by EntityRenderer; consumed by
    *  scripts via `ctx.scene.onEnterTrigger` / `onExitTrigger`. */
   triggers: TriggerInbox;
+  /** Per-entity stats engine — resolves base attributes + runtime
+   *  modifiers into derived stats. Initialized from the scene's
+   *  entities at play-mode start. */
+  stats: StatsEngine;
   /** Set of entity ids that should be IGNORED by external systems that
    *  normally write to their rigid body (e.g. {@link PlayCameraController}).
    *
@@ -61,6 +66,7 @@ export function getPlaySession(): PlaySession {
       inboxes: new EntityInboxes(),
       states: new EntityStates(),
       triggers: new TriggerInbox(),
+      stats: new StatsEngine(),
       frozenBodies: new Set(),
       ragdolledBodies: new Set(),
       pendingTeleportFrame: new Map(),
@@ -76,6 +82,7 @@ export function resetPlaySession(): void {
   session.inboxes.reset();
   session.states.reset();
   session.triggers.reset();
+  session.stats.reset();
   session.frozenBodies.clear();
   session.ragdolledBodies.clear();
   session.pendingTeleportFrame.clear();

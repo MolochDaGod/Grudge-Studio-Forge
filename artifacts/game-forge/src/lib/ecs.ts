@@ -56,6 +56,10 @@ export interface ForgeEcsEntity {
   /** Has a script attached. */
   script?: true;
   scriptId?: number;
+  /** Has an RPG stats component. */
+  hasStats?: true;
+  /** Entity level from the stats component. */
+  statsLevel?: number;
 }
 
 /** Singleton world. We only ever instantiate one of these per page. */
@@ -104,6 +108,10 @@ function reflect(scene: SceneEntity): ForgeEcsEntity {
     ent.script = true;
     ent.scriptId = scene.scriptId;
   }
+  if (scene.stats) {
+    ent.hasStats = true;
+    if (scene.stats.level != null) ent.statsLevel = scene.stats.level;
+  }
   return ent;
 }
 
@@ -140,6 +148,8 @@ function reconcile(entities: readonly SceneEntity[]): void {
         "controller",
         "script",
         "scriptId",
+        "hasStats",
+        "statsLevel",
       ] as const;
       // reason: miniplex Entity is typed as a union of partials; we need
       // an indexable view to `delete` keys that the new patch dropped.
@@ -196,6 +206,10 @@ export type EcsFilter = {
   /** Match against `light` presence; optionally a specific lightKind. */
   hasLight?: boolean;
   lightKind?: "point" | "directional" | "spot";
+  /** Match against `hasStats` presence. */
+  hasStats?: boolean;
+  /** Minimum entity level (inclusive). */
+  minLevel?: number;
   /** Substring match on `name` (case-insensitive). */
   nameContains?: string;
   /** Inclusive bounds on world position; any axis omitted means "no bound". */
@@ -217,6 +231,8 @@ function matches(ent: ForgeEcsEntity, f: EcsFilter): boolean {
   if (f.bodyType && ent.bodyType !== f.bodyType) return false;
   if (f.hasLight != null && !!ent.light !== f.hasLight) return false;
   if (f.lightKind && ent.lightKind !== f.lightKind) return false;
+  if (f.hasStats != null && !!ent.hasStats !== f.hasStats) return false;
+  if (f.minLevel != null && (ent.statsLevel ?? 0) < f.minLevel) return false;
   if (f.nameContains) {
     if (!ent.name.toLowerCase().includes(f.nameContains.toLowerCase())) {
       return false;

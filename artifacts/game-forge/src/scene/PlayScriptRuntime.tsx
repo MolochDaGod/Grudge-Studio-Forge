@@ -72,7 +72,13 @@ export function PlayScriptRuntime({
   const keysRef = useKeyboardState(true);
   const { gl, scene: threeScene, camera } = useThree();
   const mouseRef = useMouseState(gl.domElement);
-  const session = useMemo(() => getPlaySession(), []);
+  const session = useMemo(() => {
+    const s = getPlaySession();
+    // Initialize the stats engine from the current scene's entities so
+    // scripts can read ctx.stats.get(id) from their very first frame.
+    s.stats.init(useEditor.getState().sceneData.entities);
+    return s;
+  }, []);
 
   const startedRef = useRef<Set<string>>(new Set());
   const elapsedRef = useRef(0);
@@ -192,6 +198,9 @@ export function PlayScriptRuntime({
   useFrame((state, delta) => {
     if (isPaused) return;
     elapsedRef.current += delta;
+
+    // Tick timed stat modifiers (duration countdown + expiry sweep).
+    session.stats.tick(delta);
 
     // ── Reconcile the agent map against the current scene ────────────
     // Spawn an actor for any entity that gained a `navAgent` since
@@ -702,6 +711,7 @@ export function PlayScriptRuntime({
         agentFor,
         navFindPath: navFindPathFn,
         navSample: navSampleFn,
+        statsEngine: session.stats,
       });
 
       // Run start() once — for either source. Both run on the same frame.

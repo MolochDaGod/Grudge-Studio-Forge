@@ -77,6 +77,11 @@ import {
   handlers as effectsToolHandlers,
   destructiveToolNames as effectsDestructiveTools,
 } from "@/ai/tools/effects";
+import {
+  defs as statsToolDefs,
+  handlers as statsToolHandlers,
+  destructiveToolNames as statsDestructiveTools,
+} from "@/ai/tools/stats";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -97,6 +102,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...materialsDestructiveTools,
   ...puterDestructiveTools,
   ...effectsDestructiveTools,
+  ...statsDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1121,6 +1127,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
   ...effectsToolDefs.map((def) => ({
     def,
     exec: effectsToolHandlers[def.name] as ToolExecutor,
+  })),
+
+  // ── Stats tools (RPG attributes / derived stats) ───────────────────
+  // Sourced from src/ai/tools/stats/. One-import-one-spread shape.
+  ...statsToolDefs.map((def) => ({
+    def,
+    exec: statsToolHandlers[def.name] as ToolExecutor,
   })),
 ];
 

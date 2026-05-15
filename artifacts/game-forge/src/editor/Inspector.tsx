@@ -25,6 +25,13 @@ import {
   type NavAgentComponent,
   resolveInheritedFields,
   indexEntitiesById,
+  ATTRIBUTES,
+  ATTRIBUTE_LABELS,
+  DERIVED_STATS,
+  DEFAULT_STATS,
+  resolveStats,
+  type Attribute,
+  type StatsComponent,
 } from "@workspace/scene-schema";
 import {
   Box,
@@ -39,6 +46,7 @@ import {
   Map as MapIcon,
   Bot,
   Wind as WindIcon,
+  Swords as SwordsIcon,
 } from "lucide-react";
 
 /** Inspector row for a tri-axis tag (Layer / Surface / Material kind)
@@ -1325,6 +1333,105 @@ export function Inspector() {
             </p>
           </div>
         </Section>
+
+        {/* ── Stats ─────────────────────────────────────────────── */}
+        {entity.stats ? (
+          <Section title="Stats" Icon={SwordsIcon}>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Level</Label>
+                <NumberInput
+                  value={entity.stats.level ?? 1}
+                  step={1}
+                  onChange={(n) =>
+                    updateEntity(entity.id, (d) => {
+                      if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                      d.stats.level = Math.max(1, Math.round(n));
+                    })
+                  }
+                  className="w-20"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">XP</Label>
+                <NumberInput
+                  value={entity.stats.xp ?? 0}
+                  step={10}
+                  onChange={(n) =>
+                    updateEntity(entity.id, (d) => {
+                      if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                      d.stats.xp = Math.max(0, Math.round(n));
+                    })
+                  }
+                  className="w-20"
+                />
+              </div>
+              <Separator />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Base Attributes</p>
+              {ATTRIBUTES.map((attr) => (
+                <div key={attr} className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono w-8 text-muted-foreground">{attr}</span>
+                  <Slider
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={[entity.stats!.base[attr] ?? 10]}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                        d.stats.base[attr] = v;
+                      })
+                    }
+                    className="flex-1"
+                  />
+                  <span className="text-[11px] font-mono w-6 text-right">
+                    {entity.stats!.base[attr] ?? 10}
+                  </span>
+                </div>
+              ))}
+              <Separator />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Derived Stats (preview)</p>
+              {(() => {
+                const resolved = resolveStats(entity.stats!);
+                return (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                    {DERIVED_STATS.map((s) => (
+                      <div key={s} className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground truncate">{s}</span>
+                        <span className="text-[10px] font-mono">{resolved.derived[s]}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-6 text-xs w-full"
+                onClick={() => {
+                  const s = useEditor.getState();
+                  s.cmdSetEntityStats(entity.id, null);
+                }}
+              >
+                Remove Stats
+              </Button>
+            </div>
+          </Section>
+        ) : (
+          <div className="px-3 py-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs w-full"
+              onClick={() => {
+                const s = useEditor.getState();
+                s.cmdSetEntityStats(entity.id, { ...DEFAULT_STATS });
+              }}
+            >
+              Add Stats Component
+            </Button>
+          </div>
+        )}
 
         <Section title="Script" Icon={Code2}>
           <div>

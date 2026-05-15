@@ -144,6 +144,49 @@ export interface MaterialRayFilter {
   kinds?: string[];
 }
 
+/** Script-facing stats API. Backed by the play-session
+ *  {@link StatsEngine}; available as `ctx.stats`. */
+export interface StatsContext {
+  /** Get the fully-resolved stat block (attributes + derived + level).
+   *  Returns `undefined` when the entity has no stats component. */
+  get: (id: string) => ResolvedStatsView | undefined;
+  /** Get just the base persisted component (no modifiers applied). */
+  getBase: (id: string) => StatsBaseView | undefined;
+  /** Add a runtime modifier. Returns the modifier id. */
+  modify: (
+    entityId: string,
+    mod: {
+      stat?: string;
+      attribute?: string;
+      flat?: number;
+      percent?: number;
+      duration?: number;
+      source?: string;
+      stackId?: string;
+      maxStacks?: number;
+    },
+  ) => string | undefined;
+  /** Remove a specific modifier by id. Returns true if found. */
+  remove: (entityId: string, modifierId: string) => boolean;
+  /** Remove all modifiers from a given source on an entity. */
+  removeBySource: (entityId: string, source: string) => number;
+}
+
+/** Resolved stats view exposed to scripts — mirrors ResolvedStats from
+ *  scene-schema but typed loosely so scripts don't need TS imports. */
+export interface ResolvedStatsView {
+  attributes: Record<string, number>;
+  derived: Record<string, number>;
+  level: number;
+  xp: number;
+}
+
+export interface StatsBaseView {
+  base: Record<string, number>;
+  level: number;
+  xp: number;
+}
+
 export interface ScriptContext {
   time: { delta: number; elapsed: number };
   input: {
@@ -299,6 +342,10 @@ export interface ScriptContext {
    *  catalog has been wired (older test harnesses) — behaviors fall
    *  back to their hardcoded constants in that case. */
   races: Record<string, RaceStats>;
+  /** Per-entity stats API — read resolved stats, apply runtime modifiers
+   *  (buffs/debuffs), and remove them by id or source. Available whenever
+   *  the session's StatsEngine has been initialized. */
+  stats: StatsContext;
   /** Per-entity persistent state bag. Survives across update calls (start to
    *  stop of play mode). */
   state: Record<string, unknown>;

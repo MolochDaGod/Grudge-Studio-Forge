@@ -1,7 +1,8 @@
 import * as YUKA from "yuka";
 import * as THREE from "three";
 import type { LayerName, NavAgentComponent, SurfaceKind } from "@workspace/scene-schema";
-import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle, type RaceStats } from "./csTranspile";
+import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptContext, type MouseState, type RaycastHit, type AgentHandle, type RaceStats, type StatsContext, type ResolvedStatsView, type StatsBaseView } from "./csTranspile";
+import type { StatsEngine } from "./StatsEngine";
 import { RACES } from "@/lib/races";
 import { loadBlazorRuntime } from "./blazorRuntime";
 import type { Script } from "@workspace/api-client-react";
@@ -151,6 +152,7 @@ export function makeContext(opts: {
   navSample: (
     position: [number, number, number],
   ) => { point: [number, number, number]; areaId: number } | null;
+  statsEngine: StatsEngine;
 }): ScriptContext {
   const fromId = opts.entityId;
   return {
@@ -193,10 +195,40 @@ export function makeContext(opts: {
         opts.bus.on(event, handler);
       },
     },
+    stats: buildStatsContext(opts.statsEngine),
     races: RACE_STATS,
     state: opts.states.get(fromId),
     yuka: YUKA,
     log: (...args: unknown[]) => opts.log("log", args.map((a) => stringify(a)).join(" ")),
+  };
+}
+
+/** Build the `ctx.stats` facade that scripts see. Delegates to the
+ *  session's StatsEngine for resolution + modifier management. */
+function buildStatsContext(engine: StatsEngine): StatsContext {
+  return {
+    get: (id) => {
+      const r = engine.get(id);
+      if (!r) return undefined;
+      return {
+        attributes: { ...r.attributes } as Record<string, number>,
+        derived: { ...r.derived } as Record<string, number>,
+        level: r.level,
+        xp: r.xp,
+      };
+    },
+    getBase: (id) => {
+      const b = engine.getBase(id);
+      if (!b) return undefined;
+      return {
+        base: { ...b.base } as Record<string, number>,
+        level: b.level ?? 1,
+        xp: b.xp ?? 0,
+      };
+    },
+    modify: (entityId, mod) => engine.modify(entityId, mod as Parameters<StatsEngine["modify"]>[1]),
+    remove: (entityId, modId) => engine.remove(entityId, modId),
+    removeBySource: (entityId, source) => engine.removeBySource(entityId, source),
   };
 }
 

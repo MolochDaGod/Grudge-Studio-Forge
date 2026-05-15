@@ -248,6 +248,8 @@ interface EditorState {
    *  side effects (clearing other controllers, retargeting the camera) in a
    *  single command. */
   cmdSetEntityController: (id: string, kind: ControllerKind) => void;
+  /** Undoable: set / clear the stats component on an entity. */
+  cmdSetEntityStats: (id: string, stats: import("@workspace/scene-schema").StatsComponent | null) => void;
   /** Undoable: toggle the hierarchy `collapsed` flag on an entity. */
   cmdToggleCollapsed: (id: string) => void;
 }
@@ -1147,6 +1149,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     const after: SceneEntity = { ...before, scriptId };
     const store = makeStoreLike(get);
     get().commandStack.push(patchEntityCommand(store, id, before, after, "Set script"));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityStats: (id, stats) => {
+    const before = get().sceneData.entities.find((e) => e.id === id);
+    if (!before) return;
+    const after: SceneEntity = { ...before, stats: stats ?? undefined };
+    if (JSON.stringify(before.stats ?? null) === JSON.stringify(stats)) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(patchEntityCommand(store, id, before, after, stats ? "Set stats" : "Remove stats"));
     set({ isDirty: true });
   },
 
