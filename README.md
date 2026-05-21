@@ -11,6 +11,7 @@ Three.js scene editor, physics engine & AI-assisted game builder — by [Grudge 
 - **Three.js + R3F** — full React Three Fiber pipeline with postprocessing (bloom, SSAO, DOF)
 - **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting — all configurable in-editor
 - **Dual AI Assistant** — Claude via Anthropic SSE streaming *or* Puter AI (user-pays, no server key needed). Client owns all tool definitions; server is a thin proxy
+- **Babylon.js Runtime** — engine-agnostic scene format; scenes designed in the Three.js editor can be loaded and played in Babylon.js via `@workspace/babylon-runtime`
 - **AI Storage** — AI can persist scene snapshots and import remote assets (GLB, textures, audio) into per-project R2 namespaces with SSRF protection
 - **Monaco Code Editor** — embedded TypeScript editor for custom scripts and behaviors
 - **Recast Navmesh** — client-side baking with server-persisted binary blobs for agent pathfinding (Yuka AI)
@@ -65,7 +66,8 @@ Grudge-Studio-Forge/                     pnpm monorepo
 │   ├── api-spec/                        API route type definitions
 │   ├── db/                              Drizzle ORM schema + idempotent migrations
 │   ├── desktop-bridge/                  IPC bridge (Electron ↔ renderer)
-│   └── object-storage-web/              R2/S3 upload via Uppy + presigned URLs
+│   ├── object-storage-web/              R2/S3 upload via Uppy + presigned URLs
+│   └── babylon-runtime/                 Babylon.js scene loader + standalone player
 ├── csharp/GameForgeRuntime/             Blazor WASM C# transpiler (experimental)
 └── scripts/                             Build, merge, and migration utilities
 ```
@@ -146,7 +148,7 @@ The AI assistant has 5 CF AI tools: `generate_texture`, `generate_skybox`, `gene
 
 | Layer | Tech |
 |---|---|
-| 3D Engine | Three.js 0.184, React Three Fiber 9, drei, three-mesh-bvh, three-bvh-csg |
+| 3D Engine | Three.js 0.184, React Three Fiber 9, drei, three-mesh-bvh, three-bvh-csg · Babylon.js 7 runtime target |
 | Physics | Rapier 3D 0.19 (WASM), @react-three/rapier |
 | AI Pathfinding | Yuka 0.7, recast-navigation 0.43 (WASM navmesh baking) |
 | State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
@@ -172,6 +174,9 @@ pnpm --filter @workspace/game-forge run dev
 
 # Run desktop app (Windows only)
 pnpm --filter @workspace/game-forge-desktop run dev
+
+# Run Babylon.js player (loads .gfscene.json via ?scene= param)
+pnpm --filter @workspace/babylon-runtime run dev
 
 # Typecheck everything
 pnpm run typecheck

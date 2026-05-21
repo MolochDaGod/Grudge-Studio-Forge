@@ -412,7 +412,7 @@ importers:
         version: 3.6.0(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@25.3.5)(jiti@2.6.1)(jsdom@29.1.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.1.5(@types/node@25.3.5)(jsdom@29.1.1)(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
       wouter:
         specifier: ^3.3.5
         version: 3.9.0(react@19.1.0)
@@ -773,6 +773,34 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
 
+  lib/babylon-runtime:
+    dependencies:
+      '@babylonjs/core':
+        specifier: ^7.52.5
+        version: 7.54.3
+      '@babylonjs/havok':
+        specifier: ^1.3.10
+        version: 1.3.12
+      '@babylonjs/loaders':
+        specifier: ^7.52.5
+        version: 7.54.3(@babylonjs/core@7.54.3)(babylonjs-gltf2interface@7.54.3)
+      '@workspace/scene-schema':
+        specifier: workspace:*
+        version: link:../scene-schema
+      babylonjs-gltf2interface:
+        specifier: ^7.52.5
+        version: 7.54.3
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+
   lib/db:
     dependencies:
       drizzle-orm:
@@ -833,7 +861,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@25.3.5)(jiti@2.6.1)(jsdom@29.1.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.1.5(@types/node@25.3.5)(jsdom@29.1.1)(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
 
   lib/scene-templates:
     dependencies:
@@ -843,7 +871,7 @@ importers:
     devDependencies:
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@25.3.5)(jiti@2.6.1)(jsdom@29.1.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)
+        version: 4.1.5(@types/node@25.3.5)(jsdom@29.1.1)(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
 
   scripts:
     devDependencies:
@@ -1148,6 +1176,18 @@ packages:
   '@babel/types@7.29.0':
     resolution: {integrity: sha512-LwdZHpScM4Qz8Xw2iKSzS+cfglZzJGvofQICy7W7v4caru4EaAmyUuO6BGrbyQ2mYV11W0U8j5mBhd14dd3B0A==}
     engines: {node: '>=6.9.0'}
+
+  '@babylonjs/core@7.54.3':
+    resolution: {integrity: sha512-P5ncXVd8GEUJLhwloP9V0oVwQYIrvZztguVeLlvd5Rx+9aQnenKjpV8auJ6SRsUlAmNZU4pFTKzwF6o2EUfhAw==}
+
+  '@babylonjs/havok@1.3.12':
+    resolution: {integrity: sha512-KR5Z7DBkVEgdvHLMDh2VWe/nHvUG8+MdLBiAE0iM19KIHAPqPRVITPAZKx4SQusK5nqm4ZXDcKv5OYtViIxLzA==}
+
+  '@babylonjs/loaders@7.54.3':
+    resolution: {integrity: sha512-RBPmOsaMTxi6Ga08ueLTm6Tnvx/l2nNQigucubvrngZ7muwn5/ubfcStckkI1c0qvhR1+/FFlD54do7gZ1pnsQ==}
+    peerDependencies:
+      '@babylonjs/core': ^7.0.0
+      babylonjs-gltf2interface: ^7.0.0
 
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
@@ -3521,6 +3561,9 @@ packages:
   '@types/draco3d@1.4.10':
     resolution: {integrity: sha512-AX22jp8Y7wwaBgAixaSvkoG4M/+PlAcm3Qs4OW8yT9DM4xUpWKeFhLueTAyZF39pviAdcDdeJoACapiAceqNcw==}
 
+  '@types/emscripten@1.41.5':
+    resolution: {integrity: sha512-cMQm7pxu6BxtHyqJ7mQZ2kXWV5SLmugybFdHCBbJ5eHzOo6VhBckEgAT3//rP5FwPHNPeEiq4SmQ5ucBwsOo4Q==}
+
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
@@ -3966,6 +4009,9 @@ packages:
     peerDependenciesMeta:
       react-native-b4a:
         optional: true
+
+  babylonjs-gltf2interface@7.54.3:
+    resolution: {integrity: sha512-ZAWYFyE+SOczfWT19O4e3YRkCZ5i57SiD2eK2kqc+Tow/t9X1S45xgSFNuHZff++dd5BlVIEQDSnFV+McFLSnQ==}
 
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
@@ -7208,6 +7254,7 @@ packages:
       '@vitest/ui': 4.1.5
       happy-dom: '*'
       jsdom: '*'
+      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -8064,6 +8111,17 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.27.1
       '@babel/helper-validator-identifier': 7.28.5
+
+  '@babylonjs/core@7.54.3': {}
+
+  '@babylonjs/havok@1.3.12':
+    dependencies:
+      '@types/emscripten': 1.41.5
+
+  '@babylonjs/loaders@7.54.3(@babylonjs/core@7.54.3)(babylonjs-gltf2interface@7.54.3)':
+    dependencies:
+      '@babylonjs/core': 7.54.3
+      babylonjs-gltf2interface: 7.54.3
 
   '@bramus/specificity@2.4.2':
     dependencies:
@@ -10392,6 +10450,8 @@ snapshots:
 
   '@types/draco3d@1.4.10': {}
 
+  '@types/emscripten@1.41.5': {}
+
   '@types/estree@1.0.8': {}
 
   '@types/express-serve-static-core@5.1.1':
@@ -10927,6 +10987,8 @@ snapshots:
       - debug
 
   b4a@1.8.1: {}
+
+  babylonjs-gltf2interface@7.54.3: {}
 
   balanced-match@1.0.2: {}
 
@@ -14292,7 +14354,7 @@ snapshots:
       tsx: 4.21.0
       yaml: 2.8.2
 
-  vitest@4.1.5(@types/node@25.3.5)(jiti@2.6.1)(jsdom@29.1.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2):
+  vitest@4.1.5(@types/node@25.3.5)(jsdom@29.1.1)(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2)):
     dependencies:
       '@vitest/expect': 4.1.5
       '@vitest/mocker': 4.1.5(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -14318,17 +14380,7 @@ snapshots:
       '@types/node': 25.3.5
       jsdom: 29.1.1
     transitivePeerDependencies:
-      - jiti
-      - less
-      - lightningcss
       - msw
-      - sass
-      - sass-embedded
-      - stylus
-      - sugarss
-      - terser
-      - tsx
-      - yaml
 
   w3c-xmlserializer@5.0.0:
     dependencies:
