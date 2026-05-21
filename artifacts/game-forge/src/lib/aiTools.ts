@@ -82,6 +82,11 @@ import {
   handlers as statsToolHandlers,
   destructiveToolNames as statsDestructiveTools,
 } from "@/ai/tools/stats";
+import {
+  defs as cfaiToolDefs,
+  handlers as cfaiToolHandlers,
+  destructiveToolNames as cfaiDestructiveTools,
+} from "@/ai/tools/cfai";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -103,6 +108,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...puterDestructiveTools,
   ...effectsDestructiveTools,
   ...statsDestructiveTools,
+  ...cfaiDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1134,6 +1140,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
   ...statsToolDefs.map((def) => ({
     def,
     exec: statsToolHandlers[def.name] as ToolExecutor,
+  })),
+
+  // ── Cloudflare Workers AI tools (texture gen / skybox / lore / vision) ─
+  // Sourced from src/ai/tools/cfai/. One-import-one-spread shape.
+  ...cfaiToolDefs.map((def) => ({
+    def,
+    exec: cfaiToolHandlers[def.name] as ToolExecutor,
   })),
 ];
 

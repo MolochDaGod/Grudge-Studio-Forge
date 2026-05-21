@@ -1,0 +1,46 @@
+###############################################################################
+# Grudge Studio Forge — Production Docker Compose
+#
+# Runs the api-server + Postgres on your VPS.
+# Game-forge frontend deploys separately to Vercel (static build).
+#
+# Usage:
+#   cp .env.example .env   # fill in real values
+#   docker compose up -d
+###############################################################################
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grudge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grudge_local}
+      POSTGRES_DB: grudge_forge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grudge -d grudge_forge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://grudge:${POSTGRES_PASSWORD:-grudge_local}@db:5432/grudge_forge
+      PORT: "8080"
+      NODE_ENV: production
+      CF_AI_API_TOKEN: ${CF_AI_API_TOKEN:-}
+
+volumes:
+  pgdata:

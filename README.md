@@ -104,7 +104,11 @@ All routes live under `/api`. The server is session-less — auth is Puter token
 | `/api/polyhaven/textures` | GET | Poly Haven CC0 textures (cached) |
 | `/api/polyhaven/hdris` | GET | Poly Haven CC0 HDRIs (cached) |
 | `/api/polyhaven/models` | GET | Poly Haven CC0 models (cached) |
-| `/api/polyhaven/files/:slug` | GET | Resolve download URLs for a Poly Haven asset |
+|| `/api/polyhaven/files/:slug` | GET | Resolve download URLs for a Poly Haven asset |
+| `/api/cf-ai/models` | GET | List available CF Workers AI models + config status |
+| `/api/cf-ai/text-to-image` | POST | Generate image via CF AI (FLUX/Phoenix/SDXL), auto-upload to R2 |
+| `/api/cf-ai/generate-text` | POST | Generate text via CF AI (Llama 3.1 8B) |
+| `/api/cf-ai/image-to-text` | POST | Describe image via CF AI (LLaVA 1.5 7B) |
 
 ## AI System
 
@@ -118,9 +122,25 @@ The AI assistant uses a **client-driven tool loop**:
 
 Tool **definitions** (JSON schemas) live entirely on the client — adding a new editor capability never requires a server change.
 
-**Dual provider:** pass `?provider=puter` + `X-Puter-Token` header to use the user's Puter AI credits instead of the server's Anthropic key.
+### AI Providers
 
-**Rate limiting:** 20 requests/IP/minute sliding window on the Anthropic path. Model allowlist: `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`. Max 8192 tokens, 64 messages per turn.
+| Provider | Endpoint | Auth | Use Case |
+|---|---|---|---|
+| **Anthropic Claude** | `POST /api/ai/chat` | Server-side `ANTHROPIC_API_KEY` | Primary AI assistant (SSE streaming, tool loop) |
+| **Puter AI** | `POST /api/ai/chat?provider=puter` | Client-side `X-Puter-Token` | User-pays, no server key needed |
+| **Cloudflare Workers AI** | `POST /api/cf-ai/*` | Server-side `CF_AI_API_TOKEN` | Image generation, text gen, vision |
+
+**Anthropic rate limiting:** 20 requests/IP/minute sliding window. Model allowlist: `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`. Max 8192 tokens, 64 messages per turn.
+
+### Cloudflare Workers AI
+
+The Forge integrates Cloudflare's serverless AI models for asset generation directly inside the editor:
+
+- **Text-to-Image** — FLUX.2 Klein 4B (fast), Phoenix 1.0, Lucid Origin, Stable Diffusion XL. Generated images auto-upload to R2 for immediate use as textures/skyboxes.
+- **Text Generation** — Llama 3.1 8B Instruct for lore, NPC dialogue, item descriptions, quest text.
+- **Image-to-Text** — LLaVA 1.5 7B for asset labelling and scene description.
+
+The AI assistant has 5 CF AI tools: `generate_texture`, `generate_skybox`, `generate_lore`, `describe_scene`, `list_cf_ai_models`. Rate limited to 10 req/min/IP.
 
 ## Tech Stack
 
@@ -130,7 +150,7 @@ Tool **definitions** (JSON schemas) live entirely on the client — adding a new
 | Physics | Rapier 3D 0.19 (WASM), @react-three/rapier |
 | AI Pathfinding | Yuka 0.7, recast-navigation 0.43 (WASM navmesh baking) |
 | State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
-| AI | Anthropic Claude SDK (SSE streaming) + Puter AI REST |
+| AI | Anthropic Claude SDK (SSE streaming) + Puter AI REST + Cloudflare Workers AI (image gen, text gen, vision) |
 | UI | Radix UI, Tailwind CSS 4, shadcn/ui, cmdk, Framer Motion, React Flow |
 | Code Editor | Monaco Editor (TypeScript) |
 | Backend | Express 5, Drizzle ORM, PostgreSQL, Pino logger |
@@ -189,6 +209,12 @@ If these are not set, the Anthropic path will fail on boot. Use `?provider=puter
 | `OBJECT_STORAGE_SECRET` | R2 S3 secret access key |
 | `R2_BUCKET_ASSETS` | R2 bucket name (e.g. `grudge-assets`) |
 
+**Cloudflare Workers AI (optional — enables image/text/vision generation):**
+
+| Variable | Purpose |
+|---|---|
+| `CF_AI_API_TOKEN` | Cloudflare API token with Workers AI Read + Edit permissions |
+
 **Optional:**
 
 | Variable | Purpose |
@@ -219,6 +245,16 @@ Dry-run validation runs in a temporary schema with seeded production data. See [
 | api-server | Railway / VPS | `forge-api.grudge-studio.com` |
 | game-forge-desktop | GitHub Releases | `.exe` installer (auto-updates) |
 | player | Embedded in editor | Single-file HTML export |
+
+### CI / CD
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci.yml` | push/PR to `main` | Typecheck, test, migration dry-run |
+| `deploy-vercel.yml` | push to `main` | Build & deploy editor SPA to Vercel production |
+| `release.yml` | tag `v*` | Build Windows installer, publish to GitHub Releases |
+
+Vercel deployment requires `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets.
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment architecture, CI gates, and post-merge enforcement.
 

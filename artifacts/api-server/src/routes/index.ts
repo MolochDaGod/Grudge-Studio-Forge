@@ -14,6 +14,7 @@ import templatesRouter from "./templates";
 import aiRouter from "./ai";
 import navmeshRouter from "./navmesh";
 import puterRouter from "./puter";
+import cfAiRouter from "./cfAi";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(templatesRouter);
 router.use(aiRouter);
 router.use(navmeshRouter);
 router.use(puterRouter);
+router.use(cfAiRouter);
 
 export default router;
