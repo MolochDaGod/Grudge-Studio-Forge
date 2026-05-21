@@ -1,21 +1,17 @@
-import { File } from "@google-cloud/storage";
+/**
+ * Object ACL (Access Control List) policy layer.
+ *
+ * Storage-agnostic — operates on plain key/metadata objects rather than
+ * importing any cloud SDK directly. ACL policies are stored as JSON in
+ * R2 custom metadata under the key below.
+ */
 
-const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
+const ACL_POLICY_METADATA_KEY = "custom-acl-policy";
 
-// Can be flexibly defined according to the use case.
-//
-// Examples:
-// - USER_LIST: the users from a list stored in the database;
-// - EMAIL_DOMAIN: the users whose email is in a specific domain;
-// - GROUP_MEMBER: the users who are members of a specific group;
-// - SUBSCRIBER: the users who are subscribers of a specific service / content
-//   creator.
 export enum ObjectAccessGroupType {}
 
 export interface ObjectAccessGroup {
   type: ObjectAccessGroupType;
-  // The logic id that identifies qualified group members. Format depends on the
-  // ObjectAccessGroupType — e.g. a user-list DB id, an email domain, a group id.
   id: string;
 }
 
@@ -29,12 +25,13 @@ export interface ObjectAclRule {
   permission: ObjectPermission;
 }
 
-// Stored as object custom metadata under "custom:aclPolicy" (JSON string).
 export interface ObjectAclPolicy {
   owner: string;
   visibility: "public" | "private";
   aclRules?: Array<ObjectAclRule>;
 }
+
+export const ACL_METADATA_KEY = ACL_POLICY_METADATA_KEY;
 
 function isPermissionAllowed(
   requested: ObjectPermission,
@@ -59,54 +56,42 @@ function createObjectAccessGroup(
   group: ObjectAccessGroup,
 ): BaseObjectAccessGroup {
   switch (group.type) {
-    // Implement per access group type, e.g.:
-    // case "USER_LIST":
-    //   return new UserListAccessGroup(group.id);
     default:
       throw new Error(`Unknown access group type: ${group.type}`);
   }
 }
 
-export async function setObjectAclPolicy(
-  objectFile: File,
-  aclPolicy: ObjectAclPolicy,
-): Promise<void> {
-  const [exists] = await objectFile.exists();
-  if (!exists) {
-    throw new Error(`Object not found: ${objectFile.name}`);
-  }
-
-  await objectFile.setMetadata({
-    metadata: {
-      [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy),
-    },
-  });
-}
-
-export async function getObjectAclPolicy(
-  objectFile: File,
-): Promise<ObjectAclPolicy | null> {
-  const [metadata] = await objectFile.getMetadata();
-  const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (!aclPolicy) {
+/** Parse an ACL policy from R2 custom metadata. */
+export function parseAclPolicy(
+  metadata: Record<string, string> | undefined,
+): ObjectAclPolicy | null {
+  if (!metadata) return null;
+  const raw = metadata[ACL_POLICY_METADATA_KEY];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
     return null;
   }
-  return JSON.parse(aclPolicy as string);
+}
+
+/** Serialize an ACL policy into R2-compatible custom metadata entries. */
+export function serializeAclPolicy(
+  policy: ObjectAclPolicy,
+): Record<string, string> {
+  return { [ACL_POLICY_METADATA_KEY]: JSON.stringify(policy) };
 }
 
 export async function canAccessObject({
   userId,
-  objectFile,
+  aclPolicy,
   requestedPermission,
 }: {
   userId?: string;
-  objectFile: File;
+  aclPolicy: ObjectAclPolicy | null;
   requestedPermission: ObjectPermission;
 }): Promise<boolean> {
-  const aclPolicy = await getObjectAclPolicy(objectFile);
-  if (!aclPolicy) {
-    return false;
-  }
+  if (!aclPolicy) return false;
 
   if (
     aclPolicy.visibility === "public" &&
@@ -115,13 +100,8 @@ export async function canAccessObject({
     return true;
   }
 
-  if (!userId) {
-    return false;
-  }
-
-  if (aclPolicy.owner === userId) {
-    return true;
-  }
+  if (!userId) return false;
+  if (aclPolicy.owner === userId) return true;
 
   for (const rule of aclPolicy.aclRules || []) {
     const accessGroup = createObjectAccessGroup(rule.group);

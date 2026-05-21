@@ -1,10 +1,8 @@
 /**
  * Default provider — POST /api/ai/chat (no provider qs param).
  *
- * The server proxies Anthropic via the Replit AI integration, streams
- * SSE events back, and we yield them through unchanged. This is the
- * historical path; nothing about the SSE shape changed when the Puter
- * provider was added.
+ * The server proxies Anthropic via the Grudge API server, streams
+ * SSE events back, and we yield them through unchanged.
  */
 import type { AIProvider, ProviderEvent, ProviderRequest } from "./types";
 import { readSSE } from "./sse";

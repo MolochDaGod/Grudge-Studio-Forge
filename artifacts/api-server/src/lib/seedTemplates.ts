@@ -15,9 +15,7 @@
  * 24-entity scenes adds latency we can avoid).
  *
  * Storage backend: Grudge Studio's Cloudflare R2 bucket via
- * {@link R2StorageService} (S3-compatible). We deliberately do NOT use
- * Replit's managed object storage for templates — they live where the
- * user owns the infrastructure.
+ * {@link R2StorageService} (S3-compatible).
  */
 import {
   SCENE_TEMPLATES,

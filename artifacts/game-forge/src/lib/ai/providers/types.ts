@@ -15,7 +15,7 @@
  *   error        — fatal error mid-stream
  *
  * Two providers ship in this repo:
- *   - serverAnthropicProvider  — POST /api/ai/chat (default; Replit AI proxy)
+ *   - serverAnthropicProvider  — POST /api/ai/chat (default; Grudge API server)
  *   - puterProvider            — POST /api/ai/chat?provider=puter (uses
  *                                puter.ai.chat server-side via the user's
  *                                forwarded `X-Puter-Token`)
@@ -105,14 +105,14 @@ export const MODELS: ModelOption[] = [
   {
     id: "server:claude-sonnet-4-6",
     label: "Claude Sonnet 4.6",
-    hint: "Default · uses Replit AI proxy",
+    hint: "Default · Grudge Studio AI",
     provider: "server-anthropic",
     modelId: "claude-sonnet-4-6",
   },
   {
     id: "server:claude-haiku-4-5",
     label: "Claude Haiku 4.5",
-    hint: "Faster · uses Replit AI proxy",
+    hint: "Faster · Grudge Studio AI",
     provider: "server-anthropic",
     modelId: "claude-haiku-4-5",
   },

@@ -111,7 +111,7 @@
  *
  * Failure semantics: any error from the migration itself (DDL,
  * connection, the initial `CREATE SCHEMA`, or any `--seed` step) exits
- * non-zero. The `.replit` `migrate-dryrun` validation and the
+ * non-zero. The CI `migrate-dryrun` validation and the
  * `scripts/post-merge.sh` enforcement layer both rely on the exit code.
  *
  * Cleanup (`DROP SCHEMA … CASCADE`) failures are intentionally
@@ -153,9 +153,9 @@ const DEFAULT_SEED_ROWS = 100;
  * the new instance is killed before it ever serves traffic and the
  * deploy stalls.
  *
- * 30s is comfortably under the default Replit Autoscale startup probe
- * timeout but big enough that small index builds against the seeded
- * sample don't false-positive. Override with `--max-statement-ms=<N>`.
+ * 30s is comfortably under a typical deployment health-probe timeout
+ * but big enough that small index builds against the seeded sample
+ * don't false-positive. Override with `--max-statement-ms=<N>`.
  */
 const DEFAULT_MAX_STATEMENT_MS = 30_000;
 

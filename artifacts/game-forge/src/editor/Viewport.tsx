@@ -667,12 +667,11 @@ const VIEWPORT_PRIMITIVES: { type: EntityType; label: string; Icon: typeof BoxIc
 
 /**
  * Probe whether the browser tab can actually acquire a WebGL context BEFORE
- * we hand off to R3F. Without this, a momentary GPU failure (Replit iframe
- * sandbox throttling, the "too many active WebGL contexts" limit some
- * browsers enforce, etc.) throws synchronously inside `new THREE.WebGLRenderer`
- * and the @replit/vite-plugin-runtime-error-modal overlays the entire app —
- * the user can't dismiss it without reloading. A tiny probe + graceful
- * fallback keeps the editor shell usable and lets the user retry.
+ * we hand off to R3F. Without this, a momentary GPU failure (the "too many
+ * active WebGL contexts" limit some browsers enforce, etc.) throws
+ * synchronously inside `new THREE.WebGLRenderer` and overlays the entire
+ * app. A tiny probe + graceful fallback keeps the editor shell usable and
+ * lets the user retry.
  */
 function probeWebGL(): { ok: true } | { ok: false; reason: string } {
   if (typeof document === "undefined") return { ok: false, reason: "No document" };

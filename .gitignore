@@ -57,3 +57,6 @@ attached_assets/*.fbx
 .cache/
 .local/
 .replit-artifact/
+
+.vercel
+.env*.local

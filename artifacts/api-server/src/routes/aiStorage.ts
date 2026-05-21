@@ -43,8 +43,8 @@ const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
  *  `/api/scripts`, `/api/scenes`), these routes trust the client-supplied
  *  `projectId`. The whole app is currently single-tenant
  *  localStorage-pseudo-auth — there is no per-user session a server-side
- *  ownership check could attach to. When real auth lands (Clerk / Replit
- *  Auth), add a `project_owner_id` join here and reject mismatches; the
+ *  ownership check could attach to. When real auth lands (Grudge Auth /
+ *  Puter), add a `project_owner_id` join here and reject mismatches; the
  *  per-prefix key layout already supports that without a key migration. */
 const SAFE_PROJECT_ID = /^[a-zA-Z0-9_-]{1,64}$/;
 

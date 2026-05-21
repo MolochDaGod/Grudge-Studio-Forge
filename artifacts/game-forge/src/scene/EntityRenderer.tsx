@@ -919,7 +919,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     // `[x, y, z]`. Passing `enabledRotations={undefined}` keeps the key on
     // the props object, so it tries to iterate `undefined` and crashes
     // every render with "undefined is not iterable" inside CanvasImpl,
-    // which Replit's runtime-error overlay was eating the stack of.
+    // which would crash every render with "undefined is not iterable".
     const isPlayerControlled =
       !!entity.controllerKind && entity.controllerKind !== "none";
     const playerRotationLockProps: { enabledRotations?: [boolean, boolean, boolean] } =
