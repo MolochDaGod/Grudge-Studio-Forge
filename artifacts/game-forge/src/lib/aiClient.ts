@@ -92,7 +92,23 @@ export interface RunHandlers {
   model?: ModelOption;
 }
 
-const MAX_TURNS = 8;
+const MAX_TURNS = 15;
+
+/** Turns at which the AI enters "cooldown" mode — the system prompt is
+ *  augmented to instruct the model to wrap up, summarise changes, update
+ *  game info, and run a consistency check against the current project
+ *  state (README, scene data, AI tool registry). */
+const COOLDOWN_TURN = 14;
+
+const COOLDOWN_SYSTEM_SUFFIX = `
+
+--- COOLDOWN PHASE ---
+You are running low on remaining tool turns. Use this and the next turn to:
+1. Finalise any in-progress changes — do NOT start new features.
+2. Update the project's game info (scene name, entity counts, environment settings) via get_scene_summary so it reflects the current state.
+3. Review your changes for consistency — verify names, positions, and references are correct by calling list_entities.
+4. Provide a concise summary of everything you changed this session.
+Do NOT begin new multi-step tasks. Focus on verification and cleanup.`;
 
 /** Sentinel error thrown internally when the caller aborts mid-stream. We
  *  swallow this in runConversation so the caller's onError isn't fired with
@@ -119,6 +135,11 @@ export async function runConversation(
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     if (signal?.aborted) return transcript;
 
+    // Cooldown: augment the system prompt on turns 14+ so the AI
+    // winds down gracefully instead of starting new work.
+    const turnSystem =
+      turn >= COOLDOWN_TURN ? system + COOLDOWN_SYSTEM_SUFFIX : system;
+
     const assistantBlocks: ContentBlock[] = [];
     let stopReason: string | null = null;
     let aborted = false;
@@ -127,7 +148,7 @@ export async function runConversation(
       const events = provider.streamTurn({
         messages: transcript,
         tools,
-        system,
+        system: turnSystem,
         model: model.modelId,
         signal,
       });

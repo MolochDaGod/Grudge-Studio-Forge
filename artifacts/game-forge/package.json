@@ -62,6 +62,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "framer-motion": "catalog:",
+    "happy-dom": "^20.9.0",
     "jsdom": "^29.1.1",
     "lucide-react": "catalog:",
     "quickhull3d": "^3.1.2",
