@@ -15,7 +15,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Sparkles,
   Send,
   X,
   Loader2,
@@ -31,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AIIcon3D } from "@/editor/AIIcon3D";
 import { useEditor } from "@/store/editor";
 import { useToast } from "@/hooks/use-toast";
 import { runConversation, type ChatMessage } from "@/lib/aiClient";
@@ -550,7 +550,7 @@ export function AIWorkerPanel({
     >
       <div className="h-10 px-3 flex items-center justify-between border-b border-border bg-sidebar shrink-0">
         <div className="flex items-center gap-2">
-          <Sparkles className="size-4 text-primary" />
+          <AIIcon3D size={18} active={streaming} />
           <span className="font-heading text-[11px] uppercase tracking-[0.22em] brand-gold">
             AI Worker
           </span>

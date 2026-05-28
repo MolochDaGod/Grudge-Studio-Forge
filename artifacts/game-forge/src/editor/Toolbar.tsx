@@ -24,7 +24,7 @@ import {
   Upload,
   MoreVertical,
   FileStack,
-  Sparkles as AISparkles,
+  Sparkles as AISparklesFallback,
   Gauge,
   Activity,
   Globe,
@@ -84,6 +84,7 @@ import { InstallAppButton } from "@/editor/InstallAppButton";
 import { ToolsPanel } from "@/editor/ToolsPanel";
 import { Wrench } from "lucide-react";
 import { UserMenu } from "@/editor/UserMenu";
+import { AIIcon3D } from "@/editor/AIIcon3D";
 import { useAuth } from "@/store/auth";
 import { cloud, path as cloudPath } from "@/lib/cloud/puterCloud";
 import { useToast } from "@/hooks/use-toast";
@@ -645,7 +646,7 @@ export function Toolbar({
             className={aiWorkerOpen ? "" : "text-primary hover:text-primary"}
             data-testid="button-toggle-ai-worker"
           >
-            <AISparkles className="size-4 mr-1.5" />
+            <AIIcon3D size={18} active={aiWorkerOpen} className="mr-1.5" />
             AI Worker
           </Button>
         </TooltipTrigger>
