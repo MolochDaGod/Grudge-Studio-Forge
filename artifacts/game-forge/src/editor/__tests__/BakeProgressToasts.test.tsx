@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+// @vitest-environment happy-dom
 /**
  * Render coverage for BakeProgressToasts. Locks down: running spinner,
  * warning rows, success/error summary, dismiss button, and the

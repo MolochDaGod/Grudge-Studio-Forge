@@ -132,7 +132,16 @@ Tool **definitions** (JSON schemas) live entirely on the client — adding a new
 | **Puter AI** | `POST /api/ai/chat?provider=puter` | Client-side `X-Puter-Token` | User-pays, no server key needed |
 | **Cloudflare Workers AI** | `POST /api/cf-ai/*` | Server-side `CF_AI_API_TOKEN` | Image generation, text gen, vision |
 
-**Anthropic rate limiting:** 20 requests/IP/minute sliding window. Model allowlist: `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`. Max 8192 tokens, 64 messages per turn.
+**Anthropic rate limiting:** 20 requests/IP/minute sliding window. Model allowlist: `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-haiku-4-5`. Max 15360 tokens, 64 messages per turn, 15-turn tool loop with cooldown at turns 14–15.
+
+### Cooldown Phase (Turns 14–15)
+
+The AI tool loop supports up to 15 turns per conversation. At turn 14, the system enters a **cooldown phase** where the AI is instructed to:
+
+1. Finalise in-progress changes — no new features
+2. Update game info (scene summary, entity counts, environment settings)
+3. Run a consistency check (verify names, positions, references)
+4. Provide a session summary of all changes made
 
 ### Cloudflare Workers AI
 
@@ -196,14 +205,14 @@ The API server reads these from environment (or `.env`):
 | `PORT` | Server listen port (default 8080) |
 | `DATABASE_URL` | PostgreSQL connection string (shared Grudge DB) |
 
-**AI (one or both):**
+**AI (optional — one or both):**
 
 | Variable | Purpose |
 |---|---|
-| `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` | Anthropic API base URL (Replit AI Integrations) |
-| `AI_INTEGRATIONS_ANTHROPIC_API_KEY` | Anthropic API key (Replit AI Integrations proxy token) |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude AI assistant |
+| `CF_AI_API_TOKEN` | Cloudflare Workers AI (image gen, text gen, vision) |
 
-If these are not set, the Anthropic path will fail on boot. Use `?provider=puter` for AI without a server key.
+If neither is set, the AI assistant falls back to Puter AI (`?provider=puter`), which requires no server key.
 
 **R2 Storage (required for templates, AI storage, navmesh, asset uploads):**
 
@@ -230,42 +239,34 @@ If these are not set, the Anthropic path will fail on boot. Use `?provider=puter
 | `PUTER_API_BASE` | Puter API base URL (default `https://api.puter.com`) |
 | `ENABLE_PUTER_CLOUD` | Enable Puter cloud storage features (`true`/`false`) |
 | `GRUDGE_AUTH_URL` | URL for the wider Grudge auth page (id.grudge-studio.com) |
-| `PUBLIC_OBJECT_SEARCH_PATHS` | Comma-separated Replit Object Storage public paths |
-| `PRIVATE_OBJECT_DIR` | Replit Object Storage private uploads dir |
 
 ## DB Migrations
 
 The Forge tables (`forge_*`) live in a shared Grudge Postgres database alongside ~65 other tables. Migrations are **idempotent** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN IF NOT EXISTS`) and run:
 
 - **On boot** — before `app.listen()`, fatal on failure
-- **On merge** — via `scripts/post-merge.sh` as a merge-blocking gate
+- **In CI** — via `migrate:dryrun` in a temporary schema with seeded production data
 
-Dry-run validation runs in a temporary schema with seeded production data. See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full migration strategy.
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full migration strategy.
 
 ## Deployment
 
 | Artifact | Target | URL |
 |---|---|---|
-| game-forge (editor SPA) | Vercel | `forge.grudge-studio.com` |
-| api-server | Railway / VPS | `forge-api.grudge-studio.com` |
-| game-forge-desktop | GitHub Releases | `.exe` installer (auto-updates) |
+| game-forge (editor SPA) | Vercel (native GitHub integration) | `forge.grudge-studio.com` |
+| api-server | Railway (Docker) | `forge-api.grudge-studio.com` |
+| game-forge-desktop | Local build / future R2 hosting | — |
 | player | Embedded in editor | Single-file HTML export |
 
-### CI / CD
+### CI
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci.yml` | push/PR to `main` | Typecheck, test, migration dry-run |
-| `deploy-vercel.yml` | push to `main` | Build & deploy editor SPA to Vercel production |
-| `release.yml` | tag `v*` | Build Windows installer, publish to GitHub Releases |
 
-Vercel deployment requires `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets.
+Vercel and Railway auto-deploy on push via their native GitHub integrations — no Actions-based deploy workflows.
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment architecture, CI gates, and post-merge enforcement.
-
-## Downloads
-
-Get the latest Windows installer from [GitHub Releases](https://github.com/MolochDaGod/Grudge-Studio-Forge/releases).
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment architecture and environment variables.
 
 ## Part of Grudge Studio
 

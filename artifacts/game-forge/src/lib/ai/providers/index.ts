@@ -5,10 +5,12 @@
 import type { AIProvider } from "./types";
 import { serverAnthropicProvider } from "./serverAnthropicProvider";
 import { puterProvider } from "./puterProvider";
+import { ollamaProvider } from "./ollamaProvider";
 
 const providers: Record<string, AIProvider> = {
   "server-anthropic": serverAnthropicProvider,
   puter: puterProvider,
+  ollama: ollamaProvider,
 };
 
 export function getProvider(id: string): AIProvider {

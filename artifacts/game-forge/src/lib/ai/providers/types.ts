@@ -94,7 +94,7 @@ export interface ModelOption {
   label: string;
   /** Short hint shown under the picker option. */
   hint?: string;
-  provider: "server-anthropic" | "puter";
+  provider: "server-anthropic" | "puter" | "ollama";
   /** Model id passed through to the provider. */
   modelId: string;
   /** True iff Puter sign-in is required (not just guest). */
@@ -171,6 +171,35 @@ export const MODELS: ModelOption[] = [
     provider: "puter",
     modelId: "deepseek-chat",
     requiresPuterAuth: true,
+  },
+  // ── Ollama (local, offline) ──────────────────────────────────────
+  {
+    id: "ollama:qwen2.5-coder:7b",
+    label: "Qwen 2.5 Coder 7B",
+    hint: "Local · Best for Three.js + code gen",
+    provider: "ollama",
+    modelId: "qwen2.5-coder:7b",
+  },
+  {
+    id: "ollama:llama3.2",
+    label: "Llama 3.2 3B",
+    hint: "Local · Fast general-purpose",
+    provider: "ollama",
+    modelId: "llama3.2",
+  },
+  {
+    id: "ollama:deepseek-coder-v2:16b",
+    label: "DeepSeek Coder v2 16B",
+    hint: "Local · Strong code generation",
+    provider: "ollama",
+    modelId: "deepseek-coder-v2:16b",
+  },
+  {
+    id: "ollama:codellama:13b",
+    label: "Code Llama 13B",
+    hint: "Local · Code-focused",
+    provider: "ollama",
+    modelId: "codellama:13b",
   },
 ];
 

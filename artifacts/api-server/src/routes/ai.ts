@@ -50,7 +50,7 @@ const ALLOWED_MODELS = new Set([
   "claude-haiku-4-5",
 ]);
 const DEFAULT_MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS_CAP = 8192;
+const MAX_TOKENS_CAP = 15360;
 const MAX_MESSAGES = 64;
 
 // Simple per-IP sliding-window rate limiter. The endpoint proxies a paid
