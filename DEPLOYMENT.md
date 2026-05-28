@@ -196,6 +196,65 @@ INFO  Server listening       port=8080
 If you see `Fatal error during boot`, check `DATABASE_URL` and R2 credentials
 before assuming code is broken.
 
+## Offline Mode (Ollama)
+
+The Forge can run fully offline with local AI via Ollama. A 1-click setup
+script handles everything:
+
+**Windows:**
+```powershell
+pwsh -File scripts/setup-offline.ps1
+```
+
+**macOS / Linux:**
+```bash
+bash scripts/setup-offline.sh
+```
+
+The script:
+1. Installs Ollama if not found
+2. Pulls `qwen2.5-coder:7b` (best for Three.js/code) and `llama3.2` (fast general)
+3. Installs pnpm dependencies
+4. Starts the API server + editor dev server
+5. Opens the browser to `http://localhost:5173`
+
+In the editor, select any model with a "Local" hint in the AI model picker.
+Ollama models connect directly to `localhost:11434` — no server proxy needed.
+
+### Deployment Modes
+
+| Mode | AI | Storage | Backend | Use Case |
+| --- | --- | --- | --- | --- |
+| **Offline** | Ollama (local) | Local filesystem | Local Express | Development, no internet |
+| **Online** | Claude + Puter + CF AI | Cloudflare R2 | Railway | Production at forge.grudge-studio.com |
+| **Hybrid** | Ollama + Claude | Cloudflare R2 | Local Express | Dev with cloud storage |
+
+## Asset Conversion
+
+The Forge supports browser-side asset conversion (no desktop app needed):
+
+| Input | Output | Engine |
+| --- | --- | --- |
+| FBX | GLB | assimpjs WASM |
+| OBJ (+MTL) | GLB | assimpjs WASM |
+| STL | GLB | assimpjs WASM |
+| GLTF | GLB | three.js |
+| ZIP | GLB[] | fflate extract + assimpjs |
+| PNG/JPG/WebP | passthrough | direct R2 upload |
+| JSON | passthrough | direct R2 upload |
+
+The desktop app additionally supports GLB → OBJ/STL/FBX export and
+glTF-Transform optimization (Draco, dedup, prune).
+
+## AI Providers
+
+| Provider | Models | Auth | Offline? |
+| --- | --- | --- | --- |
+| **Ollama** | qwen2.5-coder:7b, llama3.2, codellama:13b, deepseek-coder-v2:16b | None (local) | Yes |
+| **Anthropic Claude** | claude-sonnet-4-6, claude-haiku-4-5 | Server-side API key | No |
+| **Puter AI** | Claude 3.5/3.7, GPT-4o, Gemini 2.0, Llama 3.3, DeepSeek | Client Puter token | No |
+| **Cloudflare Workers AI** | FLUX, Phoenix, SDXL, Llama 3.1, LLaVA | Server-side CF token | No |
+
 ## Desktop App
 
 The Electron desktop app (`artifacts/game-forge-desktop`) is currently built
