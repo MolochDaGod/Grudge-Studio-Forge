@@ -55,6 +55,7 @@ export function withIdScope<T>(scope: string, fn: () => NotPromise<T>): T {
 export const ASSETS = {
   character: "builtin:character",
   rifle: "builtin:rifle",
+  forgeScene: "builtin:forge-scene",
 } as const;
 
 interface BuildOpts {
@@ -1063,4 +1064,174 @@ export function winterBaseDeathmatchScene(): SceneData {
       { pos: [0, 6, -8], color: "#cfe6ff", intensity: 10, distance: 26 },
     ],
   });
+}
+
+// ─── Forge Dungeon Interior (Prefab Template) ────────────────────────────────
+//
+// 822-mesh dungeon interior from forge-scene.glb, structured as a proper
+// parent-child prefab with editable layers:
+//   • Root "Dungeon Interior" (empty) — move/rotate the whole dungeon
+//     • Structure (model) — the full 822-mesh GLB (doors, walls, floors)
+//     • Props (empty) — group for rubble, blood splats, debris
+//     • Lighting (empty) — group for torch/brazier lights
+//     • Spawn Points (empty) — group for player/enemy spawn markers
+//     • Collision (plane) — invisible walkable floor
+//
+// The GLB itself contains the full dungeon structure (Dungeons_0_3 with 286
+// child groups covering doors, props, rubble, blood splats). The prefab wraps
+// it with editor-friendly layers so individual rooms, props, and effects can
+// be toggled, moved, or replaced without losing the parent relationship.
+
+export function forgeDungeonInteriorScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // ── Root — the prefab parent everything attaches to
+  const rootId = id();
+  entities.push({
+    id: rootId,
+    name: "Dungeon Interior",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+
+  // ── Structure — the full dungeon GLB model
+  entities.push({
+    id: id(),
+    name: "Structure",
+    type: "model",
+    model: { url: ASSETS.forgeScene },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: rootId,
+  });
+
+  // ── Props layer — group for user-placed decorative items
+  const propsId = id();
+  entities.push({
+    id: propsId,
+    name: "Props",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: rootId,
+  });
+
+  // Sample props: a few crates and barrels scattered in the dungeon
+  const propPositions: [string, [number, number, number]][] = [
+    ["Crate A", [3, 0.4, 2]],
+    ["Crate B", [-2, 0.4, 5]],
+    ["Barrel A", [6, 0.5, -1]],
+    ["Barrel B", [-4, 0.5, -3]],
+  ];
+  for (const [name, pos] of propPositions) {
+    entities.push(
+      ent({
+        name,
+        type: name.startsWith("Barrel") ? "cylinder" : "box",
+        position: pos,
+        scale: name.startsWith("Barrel") ? [0.4, 0.8, 0.4] : [0.7, 0.7, 0.7],
+        color: name.startsWith("Barrel") ? "#5e3a1a" : "#7a5e2e",
+        roughness: 0.85,
+        fixed: true,
+        parentId: propsId,
+      }),
+    );
+  }
+
+  // ── Lighting layer — torch and ambient lights for the dungeon
+  const lightingId = id();
+  entities.push({
+    id: lightingId,
+    name: "Lighting",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: rootId,
+  });
+
+  const torchPositions: [string, [number, number, number]][] = [
+    ["Torch Entry", [0, 3, 0]],
+    ["Torch Hall A", [5, 3, 4]],
+    ["Torch Hall B", [-5, 3, 4]],
+    ["Torch Chamber", [0, 3.5, 8]],
+    ["Torch Deep", [3, 3, -6]],
+    ["Torch Alcove", [-3, 3, -6]],
+  ];
+  for (const [name, pos] of torchPositions) {
+    entities.push(
+      ent({
+        name,
+        type: "light",
+        position: pos,
+        light: { kind: "point", color: "#ff8a3d", intensity: 8, distance: 12 },
+        parentId: lightingId,
+      }),
+    );
+  }
+
+  // ── Spawn Points layer
+  const spawnsId = id();
+  entities.push({
+    id: spawnsId,
+    name: "Spawn Points",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: rootId,
+  });
+
+  const spawnPositions: [string, [number, number, number]][] = [
+    ["Spawn_Entry", [0, 0, -2]],
+    ["Spawn_Hall", [0, 0, 5]],
+    ["Spawn_Chamber", [4, 0, 8]],
+    ["Spawn_Deep", [-4, 0, -8]],
+  ];
+  for (const [name, pos] of spawnPositions) {
+    entities.push({
+      id: id(),
+      name,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: spawnsId,
+    });
+  }
+
+  // ── Collision floor (invisible, fixed physics body)
+  entities.push(
+    ent({
+      name: "Collision Floor",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [100, 100, 1],
+      color: "#1a1a1a",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+      parentId: rootId,
+    }),
+  );
+
+  // ── Player at entry
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: ASSETS.character },
+    transform: { position: [0, 0, -2], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    controllerKind: "thirdPerson",
+    parentId: null,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#0a0808",
+      groundColor: "#1a1210",
+      ambientIntensity: 0.2,
+      sunIntensity: 0.15,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      playerMoveSpeed: 4,
+    },
+  };
 }

@@ -34,13 +34,14 @@ import {
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
   rpgVillageScene,
+  forgeDungeonInteriorScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260508.1";
+export const TEMPLATES_VERSION = "20260528.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -83,6 +84,13 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "Small desert-town village with one of each race (warrior, dwarf, frost-dwarf, elf, orc, skeleton). Great starting point for an RPG-style game.",
     build: rpgVillageScene,
   },
+  {
+    key: "forge-dungeon",
+    label: "Dungeon Interior (Prefab)",
+    description:
+      "822-mesh dungeon interior with doors, props, blood splats, rubble, and structural rooms. Full parent-child hierarchy — editable layers for Structure, Props, Effects, and Lighting.",
+    build: forgeDungeonInteriorScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -108,5 +116,6 @@ export {
   encampmentDeathmatchScene,
   fortRoyaleDeathmatchScene,
   rpgVillageScene,
+  forgeDungeonInteriorScene,
   withIdScope,
 } from "./builders.js";
