@@ -63,7 +63,46 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "anim-swimming": ensureBaseUrl("builtin/anim-swimming.glb"),
   // Props
   "prop-survivors-tent": ensureBaseUrl("builtin/prop-survivors-tent.glb"),
+  // Modern-era characters (shooters / post-apocalyptic)
+  "char-bandit": ensureBaseUrl("builtin/char-bandit.glb"),
+  "char-ncr-ranger": ensureBaseUrl("builtin/char-ncr-ranger.glb"),
+  // Grudge 6-race locomotion pack (12 clips)
+  "loco-idle": ensureBaseUrl("builtin/loco-idle.glb"),
+  "loco-walking": ensureBaseUrl("builtin/loco-walking.glb"),
+  "loco-running": ensureBaseUrl("builtin/loco-running.glb"),
+  "loco-jump": ensureBaseUrl("builtin/loco-jump.glb"),
+  "loco-left-strafe": ensureBaseUrl("builtin/loco-left-strafe.glb"),
+  "loco-right-strafe": ensureBaseUrl("builtin/loco-right-strafe.glb"),
+  "loco-left-strafe-walking": ensureBaseUrl("builtin/loco-left-strafe-walking.glb"),
+  "loco-right-strafe-walking": ensureBaseUrl("builtin/loco-right-strafe-walking.glb"),
+  "loco-left-turn": ensureBaseUrl("builtin/loco-left-turn.glb"),
+  "loco-right-turn": ensureBaseUrl("builtin/loco-right-turn.glb"),
+  "loco-left-turn-90": ensureBaseUrl("builtin/loco-left-turn-90.glb"),
+  "loco-right-turn-90": ensureBaseUrl("builtin/loco-right-turn-90.glb"),
+  // Stylized nature packs
+  "nature-tree-pack": ensureBaseUrl("builtin/nature-tree-pack.glb"),
+  "nature-tropical-pack": ensureBaseUrl("builtin/nature-tropical-pack.glb"),
+  "nature-autumn-trees": ensureBaseUrl("builtin/nature-autumn-trees.glb"),
+  "nature-tree": ensureBaseUrl("builtin/nature-tree.glb"),
+  "nature-icicles": ensureBaseUrl("builtin/nature-icicles.glb"),
+  // Stylized characters/creatures
+  "char-wolf": ensureBaseUrl("builtin/char-wolf.glb"),
+  "char-shark": ensureBaseUrl("builtin/char-shark.glb"),
+  "anim-combat-demo": ensureBaseUrl("builtin/anim-combat-demo.glb"),
+  // Stylized buildings
+  "bldg-woodcutter-hut": ensureBaseUrl("builtin/bldg-woodcutter-hut.glb"),
+  "bldg-tavern": ensureBaseUrl("builtin/bldg-tavern.glb"),
+  // Stylized props/items
+  "prop-crystal-gems": ensureBaseUrl("builtin/prop-crystal-gems.glb"),
+  "prop-medieval": ensureBaseUrl("builtin/prop-medieval.glb"),
+  "prop-survival-items": ensureBaseUrl("builtin/prop-survival-items.glb"),
+  "prop-toon-weapons": ensureBaseUrl("builtin/prop-toon-weapons.glb"),
+  "mat-sand-procedural": ensureBaseUrl("builtin/mat-sand-procedural.glb"),
+  // Stylized VFX
+  "vfx-stylized-fire": ensureBaseUrl("builtin/vfx-stylized-fire.glb"),
+  "vfx-stylized-fire-tornado": ensureBaseUrl("builtin/vfx-stylized-fire-tornado.glb"),
   // Maps
+  "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
