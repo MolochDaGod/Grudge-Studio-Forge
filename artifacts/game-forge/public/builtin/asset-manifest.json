@@ -1,0 +1,44 @@
+{
+  "version": "2026-05-29",
+  "description": "Grudge Forge builtin asset manifest — categorized GLB models for the editor",
+  "categories": {
+    "characters": {
+      "description": "Playable characters, NPCs, enemies, monsters, animals",
+      "assets": [
+        { "key": "char-lava-sancho", "file": "char-lava-sancho.glb", "size_mb": 9.6, "builtin": true, "tags": ["character", "boss", "fire", "lava"], "usage": "Fire-themed boss character. Use as a dungeon boss or elite enemy with fire VFX." },
+        { "key": "char-boss-orc", "file": "char-boss-orc.glb", "size_mb": 2.1, "builtin": true, "tags": ["character", "orc", "boss", "minion"], "usage": "Orc boss minion. Great for enemy waves or patrol groups." },
+        { "key": "char-distortus-rex", "file": "char-distortus-rex.glb", "size_mb": 5.5, "builtin": true, "tags": ["character", "monster", "rex", "boss"], "usage": "Large monster boss. Use as a world boss or dungeon final encounter." },
+        { "key": "char-crow", "file": "char-crow.glb", "size_mb": 5.1, "builtin": true, "tags": ["animal", "bird", "crow", "ambient"], "usage": "Ambient wildlife. Scatter in forests/towns for atmosphere. Can patrol waypoints." },
+        { "key": "black-bear", "file": null, "source": "black_bear_from_cotw_game_1777413077406.glb", "size_mb": 31.1, "builtin": false, "tags": ["animal", "bear", "hostile"], "usage": "High-detail bear. Too large for builtin — upload to R2 for individual projects." },
+        { "key": "enemy1", "file": null, "source": "enemy1_1777416340685.glb", "size_mb": 20.9, "builtin": false, "tags": ["character", "enemy", "humanoid"], "usage": "Detailed enemy model. Upload to R2 — good for hero enemies or cutscene characters." }
+      ]
+    },
+    "vfx": {
+      "description": "Visual effects, particles, explosions, elemental animations",
+      "assets": [
+        { "key": "vfx-fire-hurricane", "file": "vfx-fire-hurricane.glb", "size_mb": 1.0, "builtin": true, "tags": ["vfx", "fire", "hurricane", "spell"], "usage": "Animated fire tornado VFX. Attach to spell casts or environmental hazards." },
+        { "key": "vfx-explosion-a", "file": "vfx-explosion-a.glb", "size_mb": 1.4, "builtin": true, "tags": ["vfx", "explosion", "combat"], "usage": "Explosion effect variant A. Spawn on projectile impact or death events." },
+        { "key": "vfx-explosion-b", "file": "vfx-explosion-b.glb", "size_mb": 1.4, "builtin": true, "tags": ["vfx", "explosion", "combat"], "usage": "Explosion effect variant B. Different animation timing from A." },
+        { "key": "vfx-fire-anim", "file": "vfx-fire-anim.glb", "size_mb": 8.4, "builtin": true, "tags": ["vfx", "fire", "animation", "campfire"], "usage": "Animated fire effect. Use for campfires, torches, burning objects." },
+        { "key": "vfx-freeze", "file": "vfx-freeze.glb", "size_mb": 0.5, "builtin": true, "tags": ["vfx", "ice", "freeze", "spell"], "usage": "Ice/freeze effect. Attach to frost spells or frozen status indicators." },
+        { "key": "floor-smashed", "file": null, "source": "floor_smashedexploded_1777430865843.glb", "size_mb": 19.9, "builtin": false, "tags": ["vfx", "destruction", "floor", "impact"], "usage": "Smashed/exploded floor effect. Upload to R2 for destruction sequences." }
+      ]
+    },
+    "maps": {
+      "description": "Complete environment maps and level geometry",
+      "assets": [
+        { "key": "map-chinese-market", "file": "map-chinese-market.glb", "size_mb": 13.0, "builtin": true, "tags": ["map", "market", "town", "asian"], "usage": "Chinese market town environment. Good for RPG town hub or trading post." },
+        { "key": "map-encampment", "file": null, "source": "chicken_gun_fruzer_-_encampment_1777399255724.glb", "size_mb": 30.7, "builtin": false, "tags": ["map", "encampment", "outdoor", "camp"], "usage": "Forest encampment. Already used as builtin map-encampment (scaled copy)." },
+        { "key": "map-mistytown", "file": null, "source": "chicken_gun_mistytown_1777399258873.glb", "size_mb": 19.6, "builtin": false, "tags": ["map", "town", "misty", "atmosphere"], "usage": "Atmospheric misty town. Upload to R2 for horror/mystery game modes." },
+        { "key": "map-town2f", "file": null, "source": "chicken_gun_town2f_reupload_1777399223990.glb", "size_mb": 50.4, "builtin": false, "tags": ["map", "town", "large", "urban"], "usage": "Large urban town map. Upload to R2 — best for open-world or large deathmatch." }
+      ]
+    },
+    "props": {
+      "description": "Items, weapons, pickups, environmental props",
+      "assets": [
+        { "key": "ammo-set", "file": null, "source": "free_ammo_set_ver.2_ultra_1777438244438.glb", "size_mb": 70.0, "builtin": false, "tags": ["props", "ammo", "weapons", "items", "pickup"], "usage": "Ultra-detailed ammo/weapon set. Upload individual pieces to R2 after extraction." },
+        { "key": "crystals", "file": null, "source": "crystals-of-x_viii_1777615609472.glb", "size_mb": 27.0, "builtin": false, "tags": ["props", "crystals", "gems", "harvestable", "resource"], "usage": "Crystal resource nodes. Upload to R2 for mining/harvesting gameplay." }
+      ]
+    }
+  }
+}

@@ -42,6 +42,19 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
   "forge-scene": ensureBaseUrl("builtin/forge-scene.glb"),
+  // Characters / monsters
+  "char-lava-sancho": ensureBaseUrl("builtin/char-lava-sancho.glb"),
+  "char-boss-orc": ensureBaseUrl("builtin/char-boss-orc.glb"),
+  "char-distortus-rex": ensureBaseUrl("builtin/char-distortus-rex.glb"),
+  "char-crow": ensureBaseUrl("builtin/char-crow.glb"),
+  // VFX / effects
+  "vfx-fire-hurricane": ensureBaseUrl("builtin/vfx-fire-hurricane.glb"),
+  "vfx-explosion-a": ensureBaseUrl("builtin/vfx-explosion-a.glb"),
+  "vfx-explosion-b": ensureBaseUrl("builtin/vfx-explosion-b.glb"),
+  "vfx-fire-anim": ensureBaseUrl("builtin/vfx-fire-anim.glb"),
+  "vfx-freeze": ensureBaseUrl("builtin/vfx-freeze.glb"),
+  // Maps
+  "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key
