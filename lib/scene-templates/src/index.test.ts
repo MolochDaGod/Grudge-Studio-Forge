@@ -3,12 +3,13 @@ import { describe, expect, it } from "vitest";
 import { SCENE_TEMPLATES, TEMPLATES_VERSION } from "./index.js";
 
 describe("scene-templates manifest", () => {
-  it("ships the curated deathmatch maps plus the RPG village starter", () => {
+  it("ships the curated starter templates", () => {
     expect(SCENE_TEMPLATES.map((t) => t.key)).toEqual([
       "dm-cyberpunk",
       "dm-fort-royale",
       "dm-encampment",
       "rpg-village",
+      "forge-dungeon",
     ]);
   });
 
