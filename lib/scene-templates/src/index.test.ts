@@ -10,6 +10,7 @@ describe("scene-templates manifest", () => {
       "dm-encampment",
       "rpg-village",
       "forge-dungeon",
+      "survival-camp",
     ]);
   });
 

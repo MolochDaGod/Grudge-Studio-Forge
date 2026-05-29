@@ -35,13 +35,14 @@ import {
   fortRoyaleDeathmatchScene,
   rpgVillageScene,
   forgeDungeonInteriorScene,
+  survivalCampDemoScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260528.1";
+export const TEMPLATES_VERSION = "20260529.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -91,6 +92,13 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "822-mesh dungeon interior with doors, props, blood splats, rubble, and structural rooms. Full parent-child hierarchy — editable layers for Structure, Props, Effects, and Lighting.",
     build: forgeDungeonInteriorScene,
   },
+  {
+    key: "survival-camp",
+    label: "Survival Camp (New Assets Demo)",
+    description:
+      "Forest camp with Survivor Male player, 4 skeleton enemies (sword + axe), campfire VFX, tent prop, ambient crow, and freeze VFX at spawn points. Showcases all new builtin assets with combat.",
+    build: survivalCampDemoScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -117,5 +125,6 @@ export {
   fortRoyaleDeathmatchScene,
   rpgVillageScene,
   forgeDungeonInteriorScene,
+  survivalCampDemoScene,
   withIdScope,
 } from "./builders.js";

@@ -1235,3 +1235,207 @@ export function forgeDungeonInteriorScene(): SceneData {
     },
   };
 }
+
+// ─── Survival Camp Demo ─────────────────────────────────────────────────────
+//
+// Showcases the survivor character, skeleton enemies with weapons,
+// animated fire VFX, a camp tent prop, and the weapon equip system.
+// Player is the Survivor Male with a parented rifle; 4 skeleton
+// enemies patrol the perimeter with seek + health behaviors.
+// The tent sits at center camp with a fire animation beside it.
+// Ambient crow patrols the sky. VFX explosions at spawn points.
+
+export function survivalCampDemoScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // Map — use the encampment (forest camp mood)
+  entities.push({
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: "builtin:map-encampment" },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [0.5, 0.5, 0.5] },
+    parentId: null,
+  });
+
+  // Invisible collision ground
+  entities.push(
+    ent({
+      name: "Ground",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [200, 200, 1],
+      color: "#2a2418",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+    }),
+  );
+
+  // ── Camp center: tent + campfire ──
+  const campId = id();
+  entities.push({
+    id: campId,
+    name: "Camp",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+
+  // Survivor tent
+  entities.push({
+    id: id(),
+    name: "Tent",
+    type: "model",
+    model: { url: "builtin:prop-survivors-tent" },
+    transform: { position: [3, 0, 0], rotation: [0, -Math.PI / 4, 0], scale: [1.2, 1.2, 1.2] },
+    parentId: campId,
+  });
+
+  // Campfire (animated fire VFX)
+  entities.push({
+    id: id(),
+    name: "Campfire",
+    type: "model",
+    model: { url: "builtin:vfx-fire-anim" },
+    transform: { position: [0, 0, 2], rotation: [0, 0, 0], scale: [0.3, 0.3, 0.3] },
+    parentId: campId,
+  });
+
+  // Campfire light
+  entities.push(
+    ent({
+      name: "Campfire Light",
+      type: "light",
+      position: [0, 2, 2],
+      light: { kind: "point", color: "#ff8a3d", intensity: 12, distance: 18 },
+      parentId: campId,
+    }),
+  );
+
+  // ── Player: Survivor Male with weapon ──
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: "builtin:char-survivor-male" },
+    transform: { position: [0, 0, -3], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    parentId: null,
+  });
+
+  // Player weapon (rifle parented to right hand)
+  entities.push({
+    id: id(),
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: { position: [0.32, 1.25, 0.25], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    parentId: playerId,
+  });
+
+  // ── Skeleton enemies (4 around the perimeter) ──
+  const SKELETONS: { name: string; model: string; pos: [number, number, number]; angle: number }[] = [
+    { name: "Skeleton Swordsman 1", model: "builtin:char-skeleton-sword", pos: [12, 0, 8], angle: Math.PI },
+    { name: "Skeleton Swordsman 2", model: "builtin:char-skeleton-sword", pos: [-10, 0, 6], angle: 0 },
+    { name: "Skeleton Axeman 1",    model: "builtin:char-skeleton-axe",   pos: [8, 0, -10], angle: Math.PI / 2 },
+    { name: "Skeleton Axeman 2",    model: "builtin:char-skeleton-axe",   pos: [-8, 0, -12], angle: -Math.PI / 4 },
+  ];
+  for (const sk of SKELETONS) {
+    entities.push({
+      id: id(),
+      name: sk.name,
+      type: "model",
+      model: { url: sk.model, tint: "#aaffaa" },
+      transform: { position: sk.pos, rotation: [0, sk.angle, 0], scale: [1, 1, 1] },
+      physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
+      behavior: "enemy-deathmatch",
+      parentId: null,
+    });
+  }
+
+  // ── Ambient crow (patrols overhead) ──
+  entities.push({
+    id: id(),
+    name: "Crow",
+    type: "model",
+    model: { url: "builtin:char-crow" },
+    transform: { position: [5, 6, 5], rotation: [0, 0, 0], scale: [0.5, 0.5, 0.5] },
+    parentId: null,
+  });
+
+  // ── VFX markers at spawn points ──
+  const SPAWNS: [string, [number, number, number]][] = [
+    ["Spawn_Camp", [-2, 0, -4]],
+    ["Spawn_East", [14, 0, 0]],
+    ["Spawn_West", [-14, 0, 0]],
+    ["Spawn_North", [0, 0, 14]],
+  ];
+  for (const [name, pos] of SPAWNS) {
+    entities.push({
+      id: id(),
+      name,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      parentId: null,
+    });
+    // VFX freeze effect at each spawn (visual marker)
+    entities.push({
+      id: id(),
+      name: `${name} VFX`,
+      type: "model",
+      model: { url: "builtin:vfx-freeze" },
+      transform: { position: [pos[0], pos[1] + 0.5, pos[2]], rotation: [0, 0, 0], scale: [0.4, 0.4, 0.4] },
+      parentId: null,
+    });
+  }
+
+  // ── Atmosphere lights ──
+  entities.push(
+    ent({
+      name: "Moon Light",
+      type: "light",
+      position: [0, 20, 0],
+      light: { kind: "directional", color: "#b8c8e0", intensity: 2 },
+    }),
+  );
+  entities.push(
+    ent({
+      name: "Rim Light East",
+      type: "light",
+      position: [15, 5, 0],
+      light: { kind: "point", color: "#4488ff", intensity: 8, distance: 25 },
+    }),
+  );
+
+  // ── Hidden game manager ──
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: null,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#0c1018",
+      groundColor: "#1a1410",
+      ambientIntensity: 0.25,
+      sunIntensity: 0.4,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      playerMoveSpeed: 5,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+      respawnDelay: 5,
+    },
+  };
+}
