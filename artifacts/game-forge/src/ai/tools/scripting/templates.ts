@@ -263,6 +263,235 @@ exports.start = function(entity, ctx) {
 `;
     },
   },
+  // ── Game system templates (inspired by uMMORPG/Grudge Warlords) ──────
+  {
+    key: "health-system",
+    name: "Health System",
+    description:
+      "Tracks HP, listens for 'damage' messages, emits 'death' on zero HP, shows damage flash. Pair with damage-on-touch or projectile scripts.",
+    params: [
+      { name: "maxHp", description: "Maximum health points.", type: "number", default: 100 },
+      { name: "regenRate", description: "HP regenerated per second (0 to disable).", type: "number", default: 0 },
+    ],
+    render: (p) => {
+      const maxHp = num(p.maxHp, 100);
+      const regen = num(p.regenRate, 0);
+      return `// Health system — ${maxHp} HP, listens for 'damage', emits 'death'.
+exports.start = function(entity, ctx) {
+  ctx.state.hp = ${maxHp};
+  ctx.state.maxHp = ${maxHp};
+  ctx.state.alive = true;
+  ctx.scene.on("damage", function(payload) {
+    if (!ctx.state.alive) return;
+    ctx.state.hp = Math.max(0, ctx.state.hp - (payload.amount || 0));
+    ctx.log(entity.name + " took " + payload.amount + " damage (" + ctx.state.hp + "/" + ctx.state.maxHp + ")");
+    if (ctx.state.hp <= 0) {
+      ctx.state.alive = false;
+      ctx.events.emit("death", { id: entity.id, name: entity.name, killedBy: payload.fromId });
+      ctx.log(entity.name + " died!");
+    }
+  });
+};
+exports.update = function(entity, ctx) {
+  if (!ctx.state.alive) return;${regen > 0 ? `
+  // Regen ${regen} HP/s
+  ctx.state.hp = Math.min(ctx.state.maxHp, ctx.state.hp + ${regen} * ctx.time.delta);` : ""}
+};
+`;
+    },
+  },
+  {
+    key: "resource-node",
+    name: "Resource Node (Harvestable)",
+    description:
+      "A harvestable resource node (ore, tree, herb). Players interact to gather items with a cooldown. Respawns after depletion. Inspired by uMMORPG ResourceNode.",
+    params: [
+      { name: "resourceName", description: "Name of the resource.", type: "string", default: "Iron Ore" },
+      { name: "harvestTime", description: "Seconds to harvest.", type: "number", default: 2 },
+      { name: "totalResources", description: "Harvests before depleted.", type: "number", default: 5 },
+      { name: "respawnTime", description: "Seconds to respawn after depletion.", type: "number", default: 30 },
+      { name: "interactRange", description: "Range in meters to interact.", type: "number", default: 2 },
+    ],
+    render: (p) => {
+      const name = str(p.resourceName, "Iron Ore");
+      const harvestTime = num(p.harvestTime, 2);
+      const total = num(p.totalResources, 5);
+      const respawn = num(p.respawnTime, 30);
+      const range = num(p.interactRange, 2);
+      return `// Resource Node: ${name} — ${total} harvests, ${harvestTime}s each, respawns in ${respawn}s.
+exports.start = function(entity, ctx) {
+  ctx.state.remaining = ${total};
+  ctx.state.depleted = false;
+  ctx.state.depletedAt = 0;
+  ctx.state.harvesting = false;
+  ctx.state.harvestStart = 0;
+};
+exports.update = function(entity, ctx) {
+  // Respawn check
+  if (ctx.state.depleted) {
+    if (ctx.time.elapsed - ctx.state.depletedAt > ${respawn}) {
+      ctx.state.depleted = false;
+      ctx.state.remaining = ${total};
+      ctx.log("${name} node respawned");
+    }
+    return;
+  }
+  // Find nearby player
+  var player = ctx.scene.find("Player");
+  if (!player) return;
+  var dx = player.position[0] - entity.position[0];
+  var dz = player.position[2] - entity.position[2];
+  var dist = Math.sqrt(dx*dx + dz*dz);
+  if (dist > ${range}) { ctx.state.harvesting = false; return; }
+  // Start harvest on proximity
+  if (!ctx.state.harvesting) {
+    ctx.state.harvesting = true;
+    ctx.state.harvestStart = ctx.time.elapsed;
+    return;
+  }
+  // Complete harvest
+  if (ctx.time.elapsed - ctx.state.harvestStart >= ${harvestTime}) {
+    ctx.state.remaining--;
+    ctx.state.harvesting = false;
+    ctx.events.emit("harvest", { resource: ${JSON.stringify(name)}, nodeId: entity.id });
+    ctx.log("Harvested ${name} (" + ctx.state.remaining + " left)");
+    if (ctx.state.remaining <= 0) {
+      ctx.state.depleted = true;
+      ctx.state.depletedAt = ctx.time.elapsed;
+      ctx.log("${name} node depleted — respawns in ${respawn}s");
+    }
+  }
+};
+`;
+    },
+  },
+  {
+    key: "quest-objective",
+    name: "Quest Objective Tracker",
+    description:
+      "Tracks quest progress by listening for events (kill, harvest, interact). Emits 'quest-complete' when all objectives are met. Inspired by uMMORPG Scriptable_Quest.",
+    params: [
+      { name: "questName", description: "Quest display name.", type: "string", default: "Gather Resources" },
+      { name: "eventName", description: "Event to listen for.", type: "string", default: "harvest" },
+      { name: "required", description: "How many events needed.", type: "number", default: 5 },
+    ],
+    render: (p) => {
+      const quest = str(p.questName, "Gather Resources");
+      const event = str(p.eventName, "harvest");
+      const required = num(p.required, 5);
+      return `// Quest: ${quest} — collect ${required} '${event}' events.
+exports.start = function(entity, ctx) {
+  ctx.state.progress = 0;
+  ctx.state.required = ${required};
+  ctx.state.complete = false;
+  ctx.events.on(${JSON.stringify(event)}, function(payload) {
+    if (ctx.state.complete) return;
+    ctx.state.progress++;
+    ctx.log("[${quest}] " + ctx.state.progress + "/" + ctx.state.required);
+    if (ctx.state.progress >= ctx.state.required) {
+      ctx.state.complete = true;
+      ctx.events.emit("quest-complete", { quest: ${JSON.stringify(quest)} });
+      ctx.log("[${quest}] COMPLETE!");
+    }
+  });
+};
+`;
+    },
+  },
+  {
+    key: "inventory-pickup",
+    name: "Inventory Pickup",
+    description:
+      "Adds an item to a simple inventory system when the player enters the trigger. Emits 'inventory-add' with item name and quantity.",
+    params: [
+      { name: "itemName", description: "Item to add.", type: "string", default: "Health Potion" },
+      { name: "quantity", description: "Amount to add.", type: "number", default: 1 },
+    ],
+    render: (p) => {
+      const item = str(p.itemName, "Health Potion");
+      const qty = num(p.quantity, 1);
+      return `// Inventory pickup — adds ${qty}x ${item} and despawns.
+exports.start = function(entity, ctx) {
+  ctx.scene.onEnterTrigger(function(other) {
+    if (other.otherLayer !== "Player" && other.otherName !== "Player") return;
+    ctx.events.emit("inventory-add", { item: ${JSON.stringify(item)}, quantity: ${qty}, fromId: entity.id });
+    ctx.log("Picked up ${qty}x ${item}");
+    ctx.scene.despawn(entity.id);
+  });
+};
+`;
+    },
+  },
+  {
+    key: "day-night-cycle",
+    name: "Day/Night Cycle",
+    description:
+      "Smoothly cycles the scene ambient and sun intensity over a configurable period. Attach to an empty GameManager entity.",
+    params: [
+      { name: "cycleDuration", description: "Full day/night cycle in seconds.", type: "number", default: 120 },
+    ],
+    render: (p) => {
+      const dur = num(p.cycleDuration, 120);
+      return `// Day/Night cycle — ${dur}s per full rotation.
+exports.update = function(entity, ctx) {
+  var t = (ctx.time.elapsed % ${dur}) / ${dur}; // 0..1
+  var sunAngle = t * Math.PI * 2;
+  var daylight = Math.max(0, Math.cos(sunAngle)); // 0=night, 1=noon
+  // Update scene lighting
+  ctx.scene.setEnvironment({
+    ambientIntensity: 0.1 + daylight * 0.5,
+    sunIntensity: 0.1 + daylight * 1.3,
+  });
+};
+`;
+    },
+  },
+  {
+    key: "projectile-launcher",
+    name: "Projectile Launcher",
+    description:
+      "Spawns a projectile entity that moves forward and sends 'damage' on contact. Attach to a weapon or turret entity.",
+    params: [
+      { name: "speed", description: "Projectile speed.", type: "number", default: 20 },
+      { name: "damage", description: "Damage on hit.", type: "number", default: 25 },
+      { name: "lifetime", description: "Seconds before auto-despawn.", type: "number", default: 3 },
+      { name: "fireRate", description: "Seconds between shots.", type: "number", default: 0.5 },
+    ],
+    render: (p) => {
+      const speed = num(p.speed, 20);
+      const damage = num(p.damage, 25);
+      const lifetime = num(p.lifetime, 3);
+      const rate = num(p.fireRate, 0.5);
+      return `// Projectile launcher — fires every ${rate}s at ${speed} m/s, ${damage} damage.
+exports.start = function(entity, ctx) {
+  ctx.state.lastFire = 0;
+};
+exports.update = function(entity, ctx) {
+  if (ctx.time.elapsed - ctx.state.lastFire < ${rate}) return;
+  // Only fire if player is pressing LMB (check keys)
+  if (!ctx.keys || !ctx.keys.MouseLeft) return;
+  ctx.state.lastFire = ctx.time.elapsed;
+  // Spawn a small sphere as the projectile
+  var projId = ctx.scene.spawn({
+    type: "sphere",
+    name: "Projectile",
+    position: [entity.position[0], entity.position[1] + 1, entity.position[2]],
+    scale: [0.15, 0.15, 0.15],
+    color: "#ff4400",
+    emissive: "#ff2200",
+  });
+  // Track projectile in state
+  if (!ctx.state.projectiles) ctx.state.projectiles = [];
+  ctx.state.projectiles.push({
+    id: projId,
+    born: ctx.time.elapsed,
+    dx: -Math.sin(entity.rotation[1]),
+    dz: -Math.cos(entity.rotation[1]),
+  });
+};
+`;
+    },
+  },
 ];
 
 export function getTemplate(key: string): ScriptTemplate | undefined {

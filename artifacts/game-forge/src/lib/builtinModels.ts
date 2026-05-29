@@ -41,6 +41,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
+  "forge-scene": ensureBaseUrl("builtin/forge-scene.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key

@@ -8,13 +8,36 @@ import { ensureThreeDevtools } from "@/lib/threeDevtools";
 ensureThreeDevtools();
 
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import { Router, Route, Switch } from "wouter";
+import { lazy, Suspense } from "react";
+import { LandingPage } from "@/pages/LandingPage";
 import { schedulePrefetchViewport } from "@/lib/prefetch";
 import { registerPwa } from "@/lib/pwa";
 import "./index.css";
 
+const App = lazy(() => import("./App"));
+
+function Root() {
+  return (
+    <Router>
+      <Switch>
+        <Route path="/" component={LandingPage} />
+        <Route>
+          <Suspense fallback={
+            <div className="h-screen w-screen flex items-center justify-center bg-[#050608] text-white/30 text-sm">
+              Loading editor…
+            </div>
+          }>
+            <App />
+          </Suspense>
+        </Route>
+      </Switch>
+    </Router>
+  );
+}
+
 registerPwa();
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<Root />);
 
 // Warm the heavy 3D viewport chunk in the background once the editor
 // shell has had a chance to paint. The actual import happens on the next

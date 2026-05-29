@@ -6,6 +6,7 @@ import { LayersPanel } from "./LayersPanel";
 import { useEditor } from "@/store/editor";
 import { Terminal, Boxes, Code2, Package, Loader2, Network, Layers as LayersIcon } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { AIInlinePrompt } from "./AIInlinePrompt";
 
 /**
  * Monaco's editor is the second-heaviest dependency in the bundle (and the
@@ -62,27 +63,37 @@ export function BottomPanel() {
         </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
-        <TabsContent value="console" className="m-0 h-full">
-          <Console />
+        <TabsContent value="console" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0"><Console /></div>
+          <AIInlinePrompt tabContext="console" />
         </TabsContent>
-        <TabsContent value="assets" className="m-0 h-full">
-          <AssetBrowser />
+        <TabsContent value="assets" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0"><AssetBrowser /></div>
+          <AIInlinePrompt tabContext="assets" />
         </TabsContent>
-        <TabsContent value="scripts" className="m-0 h-full">
-          <Suspense fallback={<ScriptEditorFallback />}>
-            <ScriptEditor />
-          </Suspense>
+        <TabsContent value="scripts" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0">
+            <Suspense fallback={<ScriptEditorFallback />}>
+              <ScriptEditor />
+            </Suspense>
+          </div>
+          <AIInlinePrompt tabContext="scripts" />
         </TabsContent>
-        <TabsContent value="prefabs" className="m-0 h-full">
-          <PrefabsPanel />
+        <TabsContent value="prefabs" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0"><PrefabsPanel /></div>
+          <AIInlinePrompt tabContext="prefabs" />
         </TabsContent>
-        <TabsContent value="nodes" className="m-0 h-full">
-          <Suspense fallback={<ScriptEditorFallback />}>
-            <NodesPanel />
-          </Suspense>
+        <TabsContent value="nodes" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0">
+            <Suspense fallback={<ScriptEditorFallback />}>
+              <NodesPanel />
+            </Suspense>
+          </div>
+          <AIInlinePrompt tabContext="nodes" />
         </TabsContent>
-        <TabsContent value="layers" className="m-0 h-full">
-          <LayersPanel />
+        <TabsContent value="layers" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0"><LayersPanel /></div>
+          <AIInlinePrompt tabContext="layers" />
         </TabsContent>
       </div>
     </Tabs>
