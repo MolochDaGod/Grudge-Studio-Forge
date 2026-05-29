@@ -492,6 +492,150 @@ exports.update = function(entity, ctx) {
 `;
     },
   },
+  // ── Weapon system templates (bone attachment + combat) ──────────────
+  {
+    key: "weapon-equip",
+    name: "Weapon Equip System",
+    description:
+      "Equips a weapon to a character using the bone attachment system. Listens for 'equip-weapon' events to swap weapons at runtime. The weapon entity is parented to the correct hand bone (R_hand_container for main hand, L_shield_container for shields). Emits 'weapon-equipped' when complete.",
+    params: [
+      { name: "weaponName", description: "Name of the initial weapon entity to find.", type: "string", default: "Sword" },
+      { name: "attackDamage", description: "Base damage per hit.", type: "number", default: 10 },
+      { name: "attackSpeed", description: "Attacks per second.", type: "number", default: 1.2 },
+      { name: "attackRange", description: "Melee range in meters.", type: "number", default: 2.0 },
+    ],
+    render: (p) => {
+      const weapon = str(p.weaponName, "Sword");
+      const damage = num(p.attackDamage, 10);
+      const speed = num(p.attackSpeed, 1.2);
+      const range = num(p.attackRange, 2.0);
+      return `// Weapon Equip System — manages equipped weapon + melee combat.
+// Bone targets: R_hand_container (main), L_hand_container (off-hand),
+//               L_shield_container (shields), Back_container (sheathed 2H).
+//
+// Events:
+//   'equip-weapon' { weaponId, slot } — swap to a different weapon
+//   'weapon-equipped' { weaponName, damage, speed } — notifies HUD/AI
+//   'attack-hit' { targetId, damage, weaponName } — on successful melee hit
+
+exports.start = function(entity, ctx) {
+  // Initial weapon state
+  ctx.state.weaponName = ${JSON.stringify(weapon)};
+  ctx.state.damage = ${damage};
+  ctx.state.attackSpeed = ${speed};
+  ctx.state.attackRange = ${range};
+  ctx.state.lastAttack = 0;
+  ctx.state.isAttacking = false;
+  ctx.state.attackPhase = 0; // 0=ready, 1=windup, 2=active, 3=recovery
+
+  ctx.log("Equipped " + ctx.state.weaponName + " (" + ctx.state.damage + " dmg, " + ctx.state.attackSpeed + " aps)");
+  ctx.events.emit("weapon-equipped", {
+    weaponName: ctx.state.weaponName,
+    damage: ctx.state.damage,
+    speed: ctx.state.attackSpeed,
+  });
+
+  // Listen for weapon swap events
+  ctx.events.on("equip-weapon", function(payload) {
+    ctx.state.weaponName = payload.weaponName || ctx.state.weaponName;
+    ctx.state.damage = payload.damage || ctx.state.damage;
+    ctx.state.attackSpeed = payload.attackSpeed || ctx.state.attackSpeed;
+    ctx.log("Swapped to " + ctx.state.weaponName);
+    ctx.events.emit("weapon-equipped", {
+      weaponName: ctx.state.weaponName,
+      damage: ctx.state.damage,
+      speed: ctx.state.attackSpeed,
+    });
+  });
+};
+
+exports.update = function(entity, ctx) {
+  var cooldown = 1.0 / ctx.state.attackSpeed;
+
+  // Attack on LMB
+  if (ctx.keys && ctx.keys.MouseLeft && !ctx.state.isAttacking) {
+    if (ctx.time.elapsed - ctx.state.lastAttack >= cooldown) {
+      ctx.state.isAttacking = true;
+      ctx.state.attackPhase = 1; // windup
+      ctx.state.lastAttack = ctx.time.elapsed;
+      ctx.log(ctx.state.weaponName + " attack!");
+    }
+  }
+
+  // Attack phases: windup (0.1s) → active (0.2s) → recovery (0.2s)
+  if (ctx.state.isAttacking) {
+    var elapsed = ctx.time.elapsed - ctx.state.lastAttack;
+    if (elapsed < 0.1) {
+      ctx.state.attackPhase = 1; // windup
+    } else if (elapsed < 0.3) {
+      if (ctx.state.attackPhase === 1) {
+        ctx.state.attackPhase = 2; // active — check for hits
+        // Find enemies in range
+        var enemies = ctx.scene.findAll("Enemy");
+        for (var i = 0; i < enemies.length; i++) {
+          var e = enemies[i];
+          var dx = e.position[0] - entity.position[0];
+          var dz = e.position[2] - entity.position[2];
+          var dist = Math.sqrt(dx*dx + dz*dz);
+          if (dist <= ${range}) {
+            ctx.scene.send(e.id, "damage", {
+              amount: ctx.state.damage,
+              fromId: entity.id,
+              weaponName: ctx.state.weaponName,
+            });
+            ctx.events.emit("attack-hit", {
+              targetId: e.id,
+              damage: ctx.state.damage,
+              weaponName: ctx.state.weaponName,
+            });
+            ctx.log("Hit " + e.name + " for " + ctx.state.damage + " with " + ctx.state.weaponName);
+          }
+        }
+      }
+    } else if (elapsed < 0.5) {
+      ctx.state.attackPhase = 3; // recovery
+    } else {
+      ctx.state.isAttacking = false;
+      ctx.state.attackPhase = 0;
+    }
+  }
+};
+`;
+    },
+  },
+  {
+    key: "weapon-pickup-swap",
+    name: "Weapon Pickup & Swap",
+    description:
+      "A pickup that swaps the player's current weapon when they enter the trigger zone. Emits 'equip-weapon' to the player, then despawns. Place on a Trigger-layer entity with a weapon model child.",
+    params: [
+      { name: "weaponName", description: "Weapon name to equip.", type: "string", default: "Broad Sword" },
+      { name: "damage", description: "New weapon damage.", type: "number", default: 14 },
+      { name: "speed", description: "New attack speed.", type: "number", default: 1.0 },
+    ],
+    render: (p) => {
+      const weapon = str(p.weaponName, "Broad Sword");
+      const damage = num(p.damage, 14);
+      const speed = num(p.speed, 1.0);
+      return `// Weapon Pickup — player walks over to swap weapons.
+// Place on a Trigger-layer entity. Add a weapon model as a child
+// so the player can see what they're picking up.
+exports.start = function(entity, ctx) {
+  ctx.scene.onEnterTrigger(function(other) {
+    if (other.otherName !== "Player" && other.otherLayer !== "Player") return;
+    // Send equip event to the player
+    ctx.scene.send(other.otherId, "equip-weapon", {
+      weaponName: ${JSON.stringify(weapon)},
+      damage: ${damage},
+      attackSpeed: ${speed},
+    });
+    ctx.log("Player picked up ${weapon}!");
+    ctx.scene.despawn(entity.id);
+  });
+};
+`;
+    },
+  },
 ];
 
 export function getTemplate(key: string): ScriptTemplate | undefined {
