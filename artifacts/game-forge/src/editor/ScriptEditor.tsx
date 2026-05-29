@@ -102,8 +102,41 @@ export function ScriptEditor() {
     );
   }
 
+  // Handle entity drops from the Hierarchy — create a script for the dropped entity
+  const handleEntityDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const entityId = e.dataTransfer.getData("text/entity-id");
+    if (!entityId || !projectId) return;
+    const entity = useEditor.getState().sceneData.entities.find((en) => en.id === entityId);
+    if (!entity) return;
+    // Create a new script named after the entity
+    const res = await createScript.mutateAsync({
+      data: {
+        projectId,
+        name: `${entity.name} Script`,
+        language: "js",
+        code: `// Script for "${entity.name}" (${entity.type})\n// This script was auto-created by dropping the entity onto the Scripts tab.\n\nexports.start = function(entity, ctx) {\n  ctx.log("${entity.name} script started");\n};\n\nexports.update = function(entity, ctx) {\n  // Your logic here — runs every frame\n};\n`,
+      },
+    });
+    qc.invalidateQueries({ queryKey: getListScriptsQueryKey(projectId) });
+    qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+    // Attach the script to the entity
+    useEditor.getState().setEntityScript(entityId, res.id);
+    setActiveId(res.id);
+    pushLog("info", `Created & attached script "${entity.name} Script" to ${entity.name}`);
+  };
+
   return (
-    <div className="grid grid-cols-[200px_1fr] h-full">
+    <div
+      className="grid grid-cols-[200px_1fr] h-full"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("text/entity-id")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDrop={handleEntityDrop}
+    >
       {/* Script list */}
       <div className="border-r border-border flex flex-col bg-card/40">
         <div className="p-2 border-b border-border flex gap-1">

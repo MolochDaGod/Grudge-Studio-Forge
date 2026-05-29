@@ -30,6 +30,7 @@ import {
 } from "./nodes/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { generateGraphFromPrompt } from "./nodes/aiGraphGen";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -141,8 +142,14 @@ function NodesPanelInner() {
 
   const handleAiGenerate = useCallback(() => {
     if (!aiPrompt.trim()) return;
-    log("info", `[AI Nodes] Prompt-to-graph wires up next turn (queued: "${aiPrompt}").`);
-  }, [aiPrompt, log]);
+    const result = generateGraphFromPrompt(aiPrompt);
+    // Merge generated nodes/edges into the current graph
+    const cur = useNodeGraph.getState().graphs[kind];
+    setNodes([...cur.nodes, ...result.nodes.filter((n) => n.data.kind !== "sceneOutput")]);
+    setEdges([...cur.edges, ...result.edges]);
+    log("info", `[AI Nodes] ${result.description}`);
+    setAiPrompt("");
+  }, [aiPrompt, kind, setNodes, setEdges, log]);
 
   const palette = useMemo(() => {
     if (kind === "scene") return SCENE_PALETTE;
@@ -223,7 +230,40 @@ function NodesPanelInner() {
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 bg-[#0c0c0c]">
+      <div
+        className="flex-1 min-h-0 bg-[#0c0c0c]"
+        onDragOver={(e) => {
+          // Accept drops from AssetBrowser (model URLs) and Hierarchy (entity IDs)
+          if (e.dataTransfer.types.includes("text/asset-url") || e.dataTransfer.types.includes("text/entity-id")) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const assetUrl = e.dataTransfer.getData("text/asset-url");
+          const entityId = e.dataTransfer.getData("text/entity-id");
+          if (assetUrl) {
+            // Dropped a model/asset from the Asset Browser → create a mesh node
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            addNode("mesh", { x, y });
+            log("info", `[Nodes] Dropped asset → new Mesh node`);
+          } else if (entityId) {
+            // Dropped an entity from Hierarchy → create a transform node at its position
+            const entity = useEditor.getState().sceneData.entities.find((en) => en.id === entityId);
+            if (entity) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              addNode("transform", {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+              });
+              log("info", `[Nodes] Dropped "${entity.name}" → new Transform node`);
+            }
+          }
+        }}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
