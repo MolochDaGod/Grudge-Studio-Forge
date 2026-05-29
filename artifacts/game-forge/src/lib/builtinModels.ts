@@ -53,6 +53,16 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "vfx-explosion-b": ensureBaseUrl("builtin/vfx-explosion-b.glb"),
   "vfx-fire-anim": ensureBaseUrl("builtin/vfx-fire-anim.glb"),
   "vfx-freeze": ensureBaseUrl("builtin/vfx-freeze.glb"),
+  // Survivor / skeleton characters
+  "char-survivor-male": ensureBaseUrl("builtin/char-survivor-male.glb"),
+  "char-skeleton-axe": ensureBaseUrl("builtin/char-skeleton-axe.glb"),
+  "char-skeleton-sword": ensureBaseUrl("builtin/char-skeleton-sword.glb"),
+  // Animations (standalone clips)
+  "anim-sweep-fall": ensureBaseUrl("builtin/anim-sweep-fall.glb"),
+  "anim-swimming-to-edge": ensureBaseUrl("builtin/anim-swimming-to-edge.glb"),
+  "anim-swimming": ensureBaseUrl("builtin/anim-swimming.glb"),
+  // Props
+  "prop-survivors-tent": ensureBaseUrl("builtin/prop-survivors-tent.glb"),
   // Maps
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
