@@ -25,6 +25,13 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 > Releases, or deploy workflows. All deployment goes through Vercel, Railway,
 > and Cloudflare.
 
+> **⚠️ Replit is deprecated.** The old `grudge-studio-forge.replit.app` deployment
+> is no longer maintained. Its Object Storage references are broken (GLTF
+> `scene.bin` buffer loads fail). Do NOT use it. All traffic should go to
+> `forge.grudge-studio.com` (Vercel) with the API at `forge-api.grudge-studio.com`
+> (Railway). Any scenes saved on Replit that reference `/api/storage/objects/`
+> paths need their models re-uploaded as `.glb` files through the editor.
+
 ## Frontend — Vercel
 
 The editor SPA (`artifacts/game-forge`) deploys to Vercel via their **native

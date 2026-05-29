@@ -12,7 +12,7 @@
  * that knows its contract, but for S3-style reads/writes from this
  * service we go to native R2 directly.
  *
- * Required env vars (Replit secrets):
+ * Required env vars:
  *   CF_ACCOUNT_ID            Cloudflare account ID (used to build the
  *                            native R2 S3 endpoint).
  *   R2_BUCKET_ASSETS         R2 bucket name (e.g. "grudge-assets").
@@ -27,9 +27,8 @@
  *
  * What this does NOT replace:
  *   - User-uploaded asset signing (`getObjectEntityUploadURL`,
- *     ACL/permission flows in `objectStorage.ts`). Those are tied to
- *     Replit's auth model and a deeper migration; not in scope for the
- *     "stop putting maps on Replit" complaint.
+ *     ACL/permission flows in `objectStorage.ts`). Those use a legacy
+ *     storage adapter; new uploads go through R2 presigned URLs.
  */
 
 import {
