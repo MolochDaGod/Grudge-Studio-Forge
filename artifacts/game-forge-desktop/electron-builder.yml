@@ -1,5 +1,5 @@
-appId: com.grudge.gameforge
-productName: Grudge GameForge
+appId: com.grudge.forge
+productName: Grudge Forge
 copyright: Copyright © 2026 Grudge
 
 directories:
@@ -22,7 +22,7 @@ win:
       arch:
         - x64
   icon: build/icon.ico
-  artifactName: GrudgeGameForge-Setup-${version}.${ext}
+  artifactName: GrudgeForge-Setup-${version}.${ext}
   # Authenticode code signing.
   #
   # electron-builder picks up the certificate from environment variables
@@ -48,7 +48,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Grudge GameForge
+  shortcutName: Grudge Forge
 
 # Auto-updater feed. Override the owner/repo via env or before publishing.
 # `publish` is consumed by both electron-builder (during release) and

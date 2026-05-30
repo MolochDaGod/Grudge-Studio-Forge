@@ -37,7 +37,7 @@ async function createMainWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: "Grudge GameForge",
+    title: "Grudge Forge",
     backgroundColor: "#0a0a0a",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -156,7 +156,7 @@ function buildMenu() {
               await dialog.showMessageBox(mainWindow, {
                 type: "info",
                 title: "Up to date",
-                message: `You're on Grudge GameForge ${app.getVersion()}.`,
+                message: `You're on Grudge Forge ${app.getVersion()}.`,
               });
             }
           },
@@ -169,15 +169,15 @@ function buildMenu() {
         },
         { type: "separator" },
         {
-          label: "About Grudge GameForge",
+          label: "About Grudge Forge",
           click: async () => {
             if (!mainWindow) return;
             await dialog.showMessageBox(mainWindow, {
               type: "info",
               title: "About",
-              message: `Grudge GameForge ${app.getVersion()}`,
+              message: `Grudge Forge ${app.getVersion()}`,
               detail:
-                "Native Windows build of Grudge GameForge. Built on Electron with on-disk 3D tools.",
+                "Native Windows build of Grudge Forge. Built on Electron with on-disk 3D tools.",
             });
           },
         },
@@ -222,7 +222,7 @@ async function bootstrap() {
 }
 
 app.whenReady().then(bootstrap).catch((err) => {
-  console.error("Failed to start GameForge:", err);
+  console.error("Failed to start Grudge Forge:", err);
   app.exit(1);
 });
 

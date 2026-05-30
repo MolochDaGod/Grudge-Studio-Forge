@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Native Windows desktop wrapper for Grudge GameForge with on-disk 3D tools.",
+  "description": "Native Windows desktop wrapper for Grudge Forge with on-disk 3D tools.",
   "main": "dist/main/main.js",
   "scripts": {
     "build:renderer": "cross-env PORT=24426 BASE_PATH=./ pnpm --filter @workspace/game-forge run build",
@@ -43,7 +43,7 @@
     "yauzl": "^3.2.0"
   },
   "build": {
-    "appId": "com.grudge.gameforge",
-    "productName": "Grudge GameForge"
+    "appId": "com.grudge.forge",
+    "productName": "Grudge Forge"
   }
 }

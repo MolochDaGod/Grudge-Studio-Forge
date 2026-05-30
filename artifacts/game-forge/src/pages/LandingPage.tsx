@@ -77,10 +77,10 @@ const AI_PROVIDERS = [
 ];
 
 const STATS = [
-  { value: "822", label: "Meshes in dungeon prefab" },
+  { value: "100+", label: "Builtin 3D models" },
   { value: "15K", label: "Token response cap" },
   { value: "13", label: "AI models available" },
-  { value: "22", label: "Animation clips" },
+  { value: "7", label: "Scene templates" },
 ];
 
 export function LandingPage() {
