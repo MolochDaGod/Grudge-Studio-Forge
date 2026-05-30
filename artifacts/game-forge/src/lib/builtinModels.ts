@@ -121,6 +121,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   // Maps
   "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
+  "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key

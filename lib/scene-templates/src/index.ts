@@ -36,13 +36,14 @@ import {
   rpgVillageScene,
   forgeDungeonInteriorScene,
   survivalCampDemoScene,
+  citySandboxScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260529.1";
+export const TEMPLATES_VERSION = "20260530.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -99,6 +100,13 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "Forest camp with Survivor Male player, 4 skeleton enemies (sword + axe), campfire VFX, tent prop, ambient crow, and freeze VFX at spawn points. Showcases all new builtin assets with combat.",
     build: survivalCampDemoScene,
   },
+  {
+    key: "city-sandbox",
+    label: "City Sandbox (Open World)",
+    description:
+      "GTA-style low-poly city with buildings, shops, farms, airport, mountains, vehicles, and weapons. 7009 nodes, 46 materials. Third-person player with daytime lighting — great for open-world or sandbox games.",
+    build: citySandboxScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -126,5 +134,6 @@ export {
   rpgVillageScene,
   forgeDungeonInteriorScene,
   survivalCampDemoScene,
+  citySandboxScene,
   withIdScope,
 } from "./builders.js";

@@ -11,6 +11,7 @@ describe("scene-templates manifest", () => {
       "rpg-village",
       "forge-dungeon",
       "survival-camp",
+      "city-sandbox",
     ]);
   });
 

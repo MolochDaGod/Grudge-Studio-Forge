@@ -1439,3 +1439,122 @@ export function survivalCampDemoScene(): SceneData {
     },
   };
 }
+
+// ─── City Sandbox (Dude Theft Wars map) ─────────────────────────────────────
+//
+// GTA-style low-poly city sandbox: 7009 nodes, 3105 meshes, 46 materials.
+// The map includes buildings, interiors, shops, farms, airports, mountains,
+// roads, vehicles, weapons, billboards, dumpsters, and environmental props.
+// Draco-compressed from 71 MB → 10 MB.
+//
+// Template spawns a third-person player with a rifle on the map center,
+// with a large collision ground plane and warm daytime lighting.
+// No enemies by default — this is a sandbox / exploration starter.
+
+export function citySandboxScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  // ── City map model ──
+  entities.push({
+    id: id(),
+    name: "City Map",
+    type: "model",
+    model: { url: "builtin:map-dude-theft-city" },
+    transform: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      // The map is authored at a very large scale (coords in the 10000s);
+      // scale it down so it fits the default Rapier world and camera.
+      scale: [0.01, 0.01, 0.01],
+    },
+    parentId: null,
+  });
+
+  // ── Collision ground ──
+  entities.push(
+    ent({
+      name: "Ground",
+      type: "plane",
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [500, 500, 1],
+      color: "#2a2a2a",
+      roughness: 1,
+      metalness: 0,
+      fixed: true,
+    }),
+  );
+
+  // ── Player (third-person with rifle) ──
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: ASSETS.character },
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    parentId: null,
+  });
+
+  entities.push({
+    id: id(),
+    name: "Rifle",
+    type: "model",
+    model: { url: ASSETS.rifle },
+    transform: { position: [0.32, 1.25, 0.25], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    parentId: playerId,
+  });
+
+  // ── Spawn points (four corners of the city) ──
+  const citySpawns: [string, [number, number, number]][] = [
+    ["Spawn_Center", [0, 0, 0]],
+    ["Spawn_North", [0, 0, 40]],
+    ["Spawn_South", [0, 0, -40]],
+    ["Spawn_East", [40, 0, 0]],
+    ["Spawn_West", [-40, 0, 0]],
+  ];
+  for (const [name, pos] of citySpawns) {
+    entities.push({
+      id: id(),
+      name,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      parentId: null,
+    });
+  }
+
+  // ── Daytime lighting ──
+  entities.push(
+    ent({
+      name: "Sun",
+      type: "light",
+      position: [50, 60, 30],
+      light: { kind: "directional", color: "#fff5e0", intensity: 3 },
+    }),
+  );
+  entities.push(
+    ent({
+      name: "Fill Light",
+      type: "light",
+      position: [-20, 15, -20],
+      light: { kind: "point", color: "#88aaff", intensity: 6, distance: 80 },
+    }),
+  );
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#87CEEB",
+      groundColor: "#4a7a4a",
+      ambientIntensity: 0.7,
+      sunIntensity: 1.2,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      playerMoveSpeed: 8,
+    },
+  };
+}
