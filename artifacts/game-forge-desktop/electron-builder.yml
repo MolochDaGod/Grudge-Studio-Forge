@@ -55,6 +55,6 @@ nsis:
 # electron-updater (at runtime to fetch update manifests).
 publish:
   - provider: github
-    owner: ${env.GH_OWNER}
-    repo: ${env.GH_REPO}
+    owner: MolochDaGod
+    repo: Grudge-Studio-Forge
     releaseType: release

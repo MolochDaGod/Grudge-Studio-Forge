@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useEditor } from "@/store/editor";
 import type { GameBus } from "@/scene/GameBus";
+import { RPGUnitFrame, RPGBar, RPGNotification, RPGActionSlot } from "@/ui/rpg";
+import { UI } from "@/lib/uiAssets";
 
 /**
  * Deathmatch HUD overlay (DOM, positioned over the canvas).
@@ -270,23 +272,14 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         })}
       </div>
 
-      {/* Health bar — top left */}
-      <div className="absolute left-4 top-4 w-56 rounded bg-black/55 px-3 py-2 text-white shadow">
-        <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/70">
-          <span>Health</span>
-          <span>
-            {playerHealth} / {playerMaxHealth}
-          </span>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded bg-white/15">
-          <div
-            className="h-full transition-all"
-            style={{
-              width: `${healthPct * 100}%`,
-              background: healthPct > 0.5 ? "#34d399" : healthPct > 0.2 ? "#fbbf24" : "#ef4444",
-            }}
-          />
-        </div>
+      {/* Health bar — top left (RPG unit frame) */}
+      <div className="absolute left-4 top-4 w-64">
+        <RPGUnitFrame
+          hp={playerHealth}
+          hpMax={playerMaxHealth}
+          name="Player"
+          level={1}
+        />
       </div>
 
       {/* Kill feed — top right (newest first, fades out) */}
@@ -295,15 +288,18 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           const age = Math.min(1, (Date.now() - entry.ts) / FEED_TTL_MS);
           const opacity = i === 0 ? 1 : Math.max(0.2, 1 - age);
           return (
-            <div
+            <RPGNotification
               key={entry.id}
-              className="rounded bg-black/55 px-2 py-1 text-right text-[11px] text-white shadow"
-              style={{ opacity }}
+              glow={entry.mine}
+              className="text-right"
             >
-              <span className={entry.mine ? "text-emerald-300" : "text-red-300"}>
+              <span
+                className={entry.mine ? "text-emerald-300" : "text-red-300"}
+                style={{ opacity }}
+              >
                 {entry.text}
               </span>
-            </div>
+            </RPGNotification>
           );
         })}
       </div>
@@ -354,20 +350,26 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         </div>
       )}
 
-      {/* Scoreboard — top center */}
-      <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded bg-black/55 px-4 py-2 text-white shadow">
-        <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-white/70">
-          Deathmatch — first to {scoreLimit}
-        </div>
-        <div className="flex items-baseline gap-3 text-center">
-          <div>
-            <div className="text-[9px] uppercase text-emerald-300">You</div>
-            <div className="text-2xl font-bold tabular-nums text-emerald-300">{playerScore}</div>
-          </div>
-          <div className="text-white/40">vs</div>
-          <div>
-            <div className="text-[9px] uppercase text-red-300">Enemies</div>
-            <div className="text-2xl font-bold tabular-nums text-red-300">{enemyScore}</div>
+      {/* Scoreboard — top center (RPG textured frame) */}
+      <div className="absolute left-1/2 top-4 -translate-x-1/2">
+        <div className="relative px-5 py-2 text-white" style={{ fontFamily: "'Rajdhani', sans-serif" }}>
+          <img src={UI.general.background} alt="" draggable={false} className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill', pointerEvents: 'none' }} />
+          <img src={UI.general.borderDecoration} alt="" draggable={false} className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill', pointerEvents: 'none', opacity: 0.5 }} />
+          <div className="relative z-10">
+            <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-amber-200/70">
+              Deathmatch — first to {scoreLimit}
+            </div>
+            <div className="flex items-baseline gap-3 text-center">
+              <div>
+                <div className="text-[9px] uppercase text-emerald-300">You</div>
+                <div className="text-2xl font-bold tabular-nums text-emerald-300">{playerScore}</div>
+              </div>
+              <div className="text-white/40">vs</div>
+              <div>
+                <div className="text-[9px] uppercase text-red-300">Enemies</div>
+                <div className="text-2xl font-bold tabular-nums text-red-300">{enemyScore}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

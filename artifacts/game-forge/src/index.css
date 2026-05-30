@@ -2,6 +2,13 @@
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
 
+/* ── RPG UI font (craftpix.net RPG & MMO Game UI pack) ──────────────── */
+@font-face { font-family: 'Rajdhani'; src: url('/ui/rpg-mmo/Fonts/Rajdhani Light.ttf') format('truetype'); font-weight: 300; font-display: swap; }
+@font-face { font-family: 'Rajdhani'; src: url('/ui/rpg-mmo/Fonts/Rajdhani Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Rajdhani'; src: url('/ui/rpg-mmo/Fonts/Rajdhani Medium.ttf') format('truetype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Rajdhani'; src: url('/ui/rpg-mmo/Fonts/Rajdhani SemiBold.ttf') format('truetype'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Rajdhani'; src: url('/ui/rpg-mmo/Fonts/Rajdhani Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

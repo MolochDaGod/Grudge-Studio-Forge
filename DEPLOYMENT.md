@@ -9,7 +9,7 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 | --- | --- | --- |
 | `artifacts/game-forge` | **Vercel** (static SPA) | `forge.grudge-studio.com` |
 | `artifacts/api-server` | **Railway** (Docker) | `forge-api.grudge-studio.com` |
-| `artifacts/game-forge-desktop` | Local build / future R2 hosting | N/A |
+| `artifacts/game-forge-desktop` | **GitHub Releases** (NSIS `.exe` via CI) | GitHub Releases page |
 | `artifacts/mockup-sandbox` | **Not deployed** (dev-only) | — |
 
 ## Platform roles
@@ -21,8 +21,8 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 | **Railway** | API server hosting (Docker), managed PostgreSQL or external DB |
 | **Cloudflare** | DNS (`grudge-studio.com`), R2 object storage, Workers AI |
 
-> GitHub is used **only** for repo hosting and CI checks — not for Pages,
-> Releases, or deploy workflows. All deployment goes through Vercel, Railway,
+> GitHub is used for repo hosting, CI checks, and **GitHub Releases** for
+> the Windows desktop installer. Web deployment goes through Vercel, Railway,
 > and Cloudflare.
 
 > **⚠️ Replit is deprecated.** The old `grudge-studio-forge.replit.app` deployment
@@ -262,13 +262,30 @@ glTF-Transform optimization (Draco, dedup, prune).
 | **Puter AI** | Claude 3.5/3.7, GPT-4o, Gemini 2.0, Llama 3.3, DeepSeek | Client Puter token | No |
 | **Cloudflare Workers AI** | FLUX, Phoenix, SDXL, Llama 3.1, LLaVA | Server-side CF token | No |
 
-## Desktop App
+## Desktop App — GitHub Releases
 
-The Electron desktop app (`artifacts/game-forge-desktop`) is currently built
-locally. It wraps the same editor SPA with native features (FBX import via
-glTF-Transform, auto-updater).
+The Electron desktop app (`artifacts/game-forge-desktop`) is built and
+published via GitHub Actions (`release.yml`). Pushing a `v*` tag triggers a
+Windows build on `windows-latest`, which packages an NSIS installer and
+uploads it as a **draft** GitHub Release with `latest.yml` for auto-updates.
 
-Build locally:
+### Cutting a release
+
+```bash
+# 1. Bump version in artifacts/game-forge-desktop/package.json
+# 2. Commit + tag:
+git add -A && git commit -m "release: v0.1.0"
+git tag v0.1.0 -m "v0.1.0"
+git push origin main --follow-tags
+```
+
+The workflow builds the installer and uploads it as a draft. Then:
+
+```bash
+gh release edit v0.1.0 --draft=false   # publish when ready
+```
+
+### Local build (dev/testing)
 
 ```bash
 pnpm --filter @workspace/game-forge-desktop run build:win
@@ -276,5 +293,8 @@ pnpm --filter @workspace/game-forge-desktop run build:win
 
 The resulting `.exe` installer is in `artifacts/game-forge-desktop/dist/installer/`.
 
-Future: host installers on Cloudflare R2 for direct download from
-`forge.grudge-studio.com/download`.
+### Auto-updates
+
+Installed clients check GitHub Releases for `latest.yml` on launch and when
+the user clicks **Help → Check for Updates**. The publish config in
+`electron-builder.yml` points to `MolochDaGod/Grudge-Studio-Forge`.

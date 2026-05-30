@@ -1,0 +1,52 @@
+name: Release — Windows Desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0)"
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-win:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Typecheck libs first (mirrors Dockerfile build stage)
+      - name: Typecheck libs
+        run: pnpm run typecheck:libs
+
+      # Build the renderer SPA + Electron main process + NSIS installer.
+      # electron-builder reads electron-builder.yml which has
+      # publish.provider = github, so it auto-uploads the .exe,
+      # .blockmap, and latest.yml to a draft GitHub Release.
+      - name: Build & Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing (optional — omit secrets for unsigned builds):
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_SUBJECT_NAME: ${{ secrets.WIN_CSC_SUBJECT_NAME }}
+        run: pnpm --filter @workspace/game-forge-desktop run release

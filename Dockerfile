@@ -36,6 +36,6 @@ ENV PORT=8080
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s \
-  CMD node -e "fetch('http://localhost:8080/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:8080/api/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 CMD ["node", "--enable-source-maps", "dist/index.mjs"]

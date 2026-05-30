@@ -179,7 +179,7 @@ export function LandingPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/5 mb-6">
             <Zap className="w-3 h-3 text-amber-400" />
             <span className="text-[10px] text-amber-400/80 tracking-wider uppercase font-semibold">
-              v0.2.0 · Offline AI · Asset Pipeline
+              v0.1.0 · Offline AI · Asset Pipeline
             </span>
           </div>
 
@@ -413,7 +413,7 @@ export function LandingPage() {
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <span style={{ fontFamily: FONTS.display }} className="text-[9px] text-white/15 tracking-[3px]">
-              GRUDGE FORGE v0.2.0
+              GRUDGE FORGE v0.1.0
             </span>
             <span className="text-[9px] text-white/10">·</span>
             <span className="text-[9px] text-white/10">© Grudge Studio</span>

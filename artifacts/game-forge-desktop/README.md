@@ -59,8 +59,8 @@ the main + preload TS to `dist/main/`, then launches Electron with
 `GAMEFORGE_DEV_URL=http://localhost:24426/` so the BrowserWindow
 loads the Vite-served renderer (full HMR).
 
-You can also run the dev server in the Replit workspace and open
-the Electron shell on a Windows machine over your LAN by setting
+You can also run the dev server on any host and open the Electron
+shell on a separate Windows machine over your LAN by setting
 `GAMEFORGE_DEV_URL` to the LAN URL when launching `electron .`.
 
 ## Building the Windows installer
@@ -167,16 +167,14 @@ Configured in `electron-builder.yml` against GitHub Releases:
 ```yaml
 publish:
   - provider: github
-    owner: ${env.GH_OWNER}
-    repo:  ${env.GH_REPO}
+    owner: MolochDaGod
+    repo: Grudge-Studio-Forge
     releaseType: release
 ```
 
 To publish a release that triggers updates for installed clients:
 
 ```bash
-export GH_OWNER=your-org
-export GH_REPO=grudge-gameforge
 export GH_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxx  # repo:public_repo / repo scope
 pnpm --filter @workspace/game-forge-desktop run release
 ```
