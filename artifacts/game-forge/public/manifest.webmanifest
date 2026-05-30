@@ -1,7 +1,7 @@
 {
-  "name": "Grudge Studio Forge",
-  "short_name": "Studio Forge",
-  "description": "Browser-based 3D game editor with multi-viewport tabs, physics, scripting, three.js devtools integration, and the Grudge Studio asset library.",
+  "name": "Grudge Forge",
+  "short_name": "Grudge Forge",
+  "description": "Browser-based 3D game editor with physics, AI scripting, RPG UI, vehicle assets, and the Grudge Studio asset library.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

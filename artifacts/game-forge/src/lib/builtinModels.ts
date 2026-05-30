@@ -122,6 +122,14 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
+  // Vehicles (Realistic Car Pack — OBJ→GLB conversion)
+  "vehicle-cop": ensureBaseUrl("builtin/vehicle-cop.glb"),
+  "vehicle-sedan": ensureBaseUrl("builtin/vehicle-sedan.glb"),
+  "vehicle-sedan-2": ensureBaseUrl("builtin/vehicle-sedan-2.glb"),
+  "vehicle-sports": ensureBaseUrl("builtin/vehicle-sports.glb"),
+  "vehicle-sports-2": ensureBaseUrl("builtin/vehicle-sports-2.glb"),
+  "vehicle-suv": ensureBaseUrl("builtin/vehicle-suv.glb"),
+  "vehicle-taxi": ensureBaseUrl("builtin/vehicle-taxi.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
   // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key
