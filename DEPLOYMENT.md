@@ -1,6 +1,6 @@
 # Deployment
 
-How Grudge GameForge gets from this repo onto its public URLs. Read this before
+How Grudge Forge gets from this repo onto its public URLs. Read this before
 changing the Dockerfile, api-server build, CI workflow, or database migrations.
 
 ## What deploys where
@@ -16,7 +16,7 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 
 | Platform | Responsibility |
 | --- | --- |
-| **GitHub** | Repo hosting, CI checks (typecheck + test via Actions) |
+| **GitHub** | Repo hosting, CI checks (typecheck + test), GitHub Releases (desktop `.exe`) |
 | **Vercel** | Frontend SPA hosting, auto-deploy on push via native GitHub integration |
 | **Railway** | API server hosting (Docker), managed PostgreSQL or external DB |
 | **Cloudflare** | DNS (`grudge-studio.com`), R2 object storage, Workers AI |
@@ -115,7 +115,7 @@ Set these in the Railway service variables:
 | Variable | Purpose |
 | --- | --- |
 | `PUTER_SITE_ORIGIN` | Default `https://puter.com` |
-| `PUTER_BASE_PATH` | Default `/grudge-gameforge` |
+| `PUTER_BASE_PATH` | Default `/grudge-forge` |
 | `PUTER_API_BASE` | Default `https://api.puter.com` |
 
 ### Custom domain
@@ -157,13 +157,18 @@ Optional: set `OBJECT_STORAGE_PUBLIC_URL` to a public R2 CDN URL (e.g.
 
 ## CI — GitHub Actions
 
-A single workflow (`ci.yml`) runs on push/PR to `main`:
+Two workflows run via GitHub Actions:
 
+**`ci.yml`** — runs on push/PR to `main` (check-only, does not deploy):
 1. **Typecheck** — `pnpm run typecheck` (all workspace packages)
-2. **Test** — `pnpm run test` (all workspace packages in parallel)
+2. **Test** — `pnpm run test` (365 tests across 3 packages)
 3. **Migration dry-run** — `pnpm --filter @workspace/db run migrate:dryrun -- --seed` (only if `DATABASE_URL` secret is set)
 
-This is a check-only workflow — it does not deploy anything.
+**`release.yml`** — runs on `v*` tag push (Windows desktop build):
+1. Typechecks libs
+2. Builds renderer SPA + Electron main process
+3. Packages NSIS installer via electron-builder
+4. Uploads `.exe` + `latest.yml` as a **draft** GitHub Release
 
 ## DB Migrations
 
@@ -196,7 +201,7 @@ A clean api-server boot logs:
 
 ```
 INFO  DB migrations applied
-INFO  Scene templates ready  count=9
+INFO  Scene templates ready  count=7
 INFO  Server listening       port=8080
 ```
 

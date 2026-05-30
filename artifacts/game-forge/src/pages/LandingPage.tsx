@@ -1,8 +1,8 @@
 /**
  * forge.grudge-studio.com landing page.
  *
- * Dark cinematic design showcasing the Forge editor's capabilities.
- * Serves as the info/advert page before users launch the editor.
+ * Dark cinematic design showcasing Grudge Forge's capabilities.
+ * Serves as the public-facing page before users launch the editor.
  */
 import { useLocation } from "wouter";
 import { useEffect, useState } from "react";
