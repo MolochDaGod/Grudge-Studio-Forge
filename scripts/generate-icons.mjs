@@ -1,61 +1,61 @@
-#!/usr/bin/env node
-/**
- * Generate favicon.ico, PWA icons, and OG image from a source logo PNG.
- *
- * Usage:
- *   node scripts/generate-icons.mjs <source-logo.png>
- *
- * Outputs (written to artifacts/game-forge/public/):
- *   favicon.ico          32px PNG renamed (browsers accept PNG in .ico)
- *   logo.png             ~1200×630 OG image (logo centered on dark bg)
- *   pwa-192.png          192×192 PWA icon
- *   pwa-512.png          512×512 PWA icon
- *   pwa-512-maskable.png 512×512 with safe-zone padding
- *
- * Requires: npx sharp-cli (auto-installed on first run)
- */
-import { execSync } from "child_process";
-import { existsSync, copyFileSync, rmSync } from "fs";
+import sharp from "sharp";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const OUT = resolve(__dirname, "..", "artifacts", "game-forge", "public");
-const src = process.argv[2];
+const SRC = resolve(__dirname, "../artifacts/game-forge/public/bossgrudge-source.png");
+const OUT = resolve(__dirname, "../artifacts/game-forge/public");
+const BG = { r: 10, g: 10, b: 15, alpha: 1 };
 
-if (!src || !existsSync(src)) {
-  console.error("Usage: node scripts/generate-icons.mjs <source-logo.png>");
-  console.error("  The source should be a square PNG, ideally 1024×1024+.");
-  process.exit(1);
+async function generate() {
+  const meta = await sharp(SRC).metadata();
+  console.log(`Source: ${meta.width}x${meta.height}`);
+
+  // favicon.ico (32x32 PNG — all modern browsers accept it)
+  await sharp(SRC).resize(32, 32, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "favicon.ico"));
+  console.log("+ favicon.ico (32x32)");
+
+  // favicon-16.png
+  await sharp(SRC).resize(16, 16, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "favicon-16.png"));
+  console.log("+ favicon-16.png");
+
+  // favicon-32.png
+  await sharp(SRC).resize(32, 32, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "favicon-32.png"));
+  console.log("+ favicon-32.png");
+
+  // apple-touch-icon.png (180x180)
+  await sharp(SRC).resize(180, 180, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "apple-touch-icon.png"));
+  console.log("+ apple-touch-icon.png (180x180)");
+
+  // pwa-192.png
+  await sharp(SRC).resize(192, 192, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "pwa-192.png"));
+  console.log("+ pwa-192.png");
+
+  // pwa-512.png
+  await sharp(SRC).resize(512, 512, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "pwa-512.png"));
+  console.log("+ pwa-512.png");
+
+  // pwa-512-maskable.png (10% safe zone padding)
+  const inner = Math.round(512 * 0.8);
+  const pad = Math.round((512 - inner) / 2);
+  const innerBuf = await sharp(SRC).resize(inner, inner, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  await sharp({ create: { width: 512, height: 512, channels: 4, background: BG } })
+    .composite([{ input: innerBuf, left: pad, top: pad }])
+    .png().toFile(resolve(OUT, "pwa-512-maskable.png"));
+  console.log("+ pwa-512-maskable.png (maskable)");
+
+  // logo.png (512x512)
+  await sharp(SRC).resize(512, 512, { fit: "contain", background: BG }).png().toFile(resolve(OUT, "logo.png"));
+  console.log("+ logo.png (512x512)");
+
+  // opengraph.jpg (1200x630, logo centered)
+  const logoBuf = await sharp(SRC).resize(400, 400, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+  await sharp({ create: { width: 1200, height: 630, channels: 4, background: { r: 5, g: 6, b: 8, alpha: 1 } } })
+    .composite([{ input: logoBuf, left: 400, top: 115 }])
+    .jpeg({ quality: 90 }).toFile(resolve(OUT, "opengraph.jpg"));
+  console.log("+ opengraph.jpg (1200x630)");
+
+  console.log("\nDone — all icons generated from bossgrudge.");
 }
 
-function run(cmd) {
-  execSync(cmd, { stdio: "pipe" });
-}
-
-console.log(`Generating icons from: ${src}\n`);
-
-// PWA 192×192
-run(`npx --yes sharp-cli -i "${src}" -o "${resolve(OUT, "pwa-192.png")}" resize 192 192`);
-console.log("  ✓ pwa-192.png");
-
-// PWA 512×512
-run(`npx --yes sharp-cli -i "${src}" -o "${resolve(OUT, "pwa-512.png")}" resize 512 512`);
-console.log("  ✓ pwa-512.png");
-
-// PWA 512 maskable — same as 512 (manual padding can be done in an image editor)
-run(`npx --yes sharp-cli -i "${src}" -o "${resolve(OUT, "pwa-512-maskable.png")}" resize 512 512`);
-console.log("  ✓ pwa-512-maskable.png");
-
-// OG image — 1200×1200 square (social platforms crop as needed)
-run(`npx --yes sharp-cli -i "${src}" -o "${resolve(OUT, "logo.png")}" resize 1200 1200`);
-console.log("  ✓ logo.png (OG image)");
-
-// Favicon — 32px PNG renamed to .ico (browsers accept PNG inside .ico)
-const tmpIco = resolve(OUT, "_tmp_ico.png");
-run(`npx --yes sharp-cli -i "${src}" -o "${tmpIco}" resize 32 32`);
-copyFileSync(tmpIco, resolve(OUT, "favicon.ico"));
-rmSync(tmpIco, { force: true });
-console.log("  ✓ favicon.ico (32px)");
-
-console.log("\nDone! All icons written to artifacts/game-forge/public/");
+generate().catch(e => { console.error(e); process.exit(1); });
