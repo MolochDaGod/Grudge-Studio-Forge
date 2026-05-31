@@ -383,6 +383,140 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── Download & Access ── */}
+      <section className="relative py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <h2
+            style={{ fontFamily: FONTS.display }}
+            className="text-2xl md:text-3xl font-bold text-center mb-3 tracking-wide"
+          >
+            Get Grudge Forge
+          </h2>
+          <p className="text-white/30 text-center text-sm mb-12 max-w-lg mx-auto">
+            Choose your way in — browser, desktop, or source code.
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Web Editor */}
+            <div
+              className="group p-6 rounded-xl border border-amber-500/15 hover:border-amber-500/30 transition-all duration-300 hover:-translate-y-1 text-center"
+              style={{ background: "linear-gradient(180deg, rgba(246,201,69,0.04), rgba(8,10,18,0.6))" }}
+            >
+              <div className="w-12 h-12 mx-auto rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+                <Globe className="w-6 h-6 text-amber-400" />
+              </div>
+              <h3 style={{ fontFamily: FONTS.display }} className="text-sm font-bold text-white/80 mb-1 tracking-wider">
+                Web Editor
+              </h3>
+              <p className="text-[11px] text-white/30 mb-5 leading-relaxed">
+                Launch instantly in your browser. No install. Sign in with Puter for cloud save.
+              </p>
+              <button
+                onClick={() => setLocation("/editor")}
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-xs font-bold tracking-wider transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_24px_-8px_rgba(246,201,69,0.35)]"
+                style={{
+                  fontFamily: FONTS.display,
+                  background: "linear-gradient(180deg, #f6c945, #c89a15)",
+                  color: "#1a1400",
+                }}
+              >
+                Open Editor
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Desktop App */}
+            <div
+              className="group p-6 rounded-xl border border-white/[0.06] hover:border-white/[0.15] transition-all duration-300 hover:-translate-y-1 text-center"
+              style={{ background: "linear-gradient(180deg, rgba(14,18,28,0.6), rgba(8,10,18,0.6))" }}
+            >
+              <div className="w-12 h-12 mx-auto rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-4">
+                <Download className="w-6 h-6 text-blue-400" />
+              </div>
+              <h3 style={{ fontFamily: FONTS.display }} className="text-sm font-bold text-white/80 mb-1 tracking-wider">
+                Desktop App
+              </h3>
+              <p className="text-[11px] text-white/30 mb-5 leading-relaxed">
+                Windows installer with Ollama offline AI, FBX import, glTF tools, and auto-updates.
+              </p>
+              <a
+                href="https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/latest"
+                target="_blank"
+                rel="noopener"
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-xs font-semibold border border-white/[0.1] hover:border-white/[0.2] text-white/60 hover:text-white/90 transition-all hover:-translate-y-0.5"
+                style={{ background: "rgba(255,255,255,0.03)" }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download .exe
+              </a>
+              <div className="mt-2">
+                <span className="text-[9px] text-white/15">Windows 10+ · v0.3.1</span>
+              </div>
+            </div>
+
+            {/* Source Code */}
+            <div
+              className="group p-6 rounded-xl border border-white/[0.06] hover:border-white/[0.15] transition-all duration-300 hover:-translate-y-1 text-center"
+              style={{ background: "linear-gradient(180deg, rgba(14,18,28,0.6), rgba(8,10,18,0.6))" }}
+            >
+              <div className="w-12 h-12 mx-auto rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
+                <Code2 className="w-6 h-6 text-emerald-400" />
+              </div>
+              <h3 style={{ fontFamily: FONTS.display }} className="text-sm font-bold text-white/80 mb-1 tracking-wider">
+                Source Code
+              </h3>
+              <p className="text-[11px] text-white/30 mb-5 leading-relaxed">
+                Clone the monorepo. Full pnpm workspace with 14 packages. MIT licensed.
+              </p>
+              <a
+                href="https://github.com/MolochDaGod/Grudge-Studio-Forge"
+                target="_blank"
+                rel="noopener"
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-lg text-xs font-semibold border border-white/[0.1] hover:border-white/[0.2] text-white/60 hover:text-white/90 transition-all hover:-translate-y-0.5"
+                style={{ background: "rgba(255,255,255,0.03)" }}
+              >
+                Clone from GitHub
+              </a>
+              <div className="mt-2">
+                <code className="text-[9px] text-white/15" style={{ fontFamily: FONTS.mono }}>
+                  pnpm install && pnpm run dev
+                </code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── System Requirements ── */}
+      <section className="relative py-12 px-6 border-y border-white/[0.04]" style={{ background: "rgba(255,255,255,0.008)" }}>
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+              <h3 style={{ fontFamily: FONTS.display }} className="text-xs font-bold text-white/50 tracking-wider mb-3 uppercase">
+                Web Editor
+              </h3>
+              <ul className="space-y-1.5 text-[11px] text-white/30">
+                <li>• Chrome, Edge, or Firefox (latest)</li>
+                <li>• WebGL 2.0 + WebAssembly support</li>
+                <li>• 2 GB RAM minimum (4 GB recommended)</li>
+                <li>• No install required</li>
+              </ul>
+            </div>
+            <div>
+              <h3 style={{ fontFamily: FONTS.display }} className="text-xs font-bold text-white/50 tracking-wider mb-3 uppercase">
+                Desktop App
+              </h3>
+              <ul className="space-y-1.5 text-[11px] text-white/30">
+                <li>• Windows 10 or later (64-bit)</li>
+                <li>• 4 GB RAM (8 GB for offline AI)</li>
+                <li>• ~500 MB disk (+ Ollama models)</li>
+                <li>• GPU with DirectX 11+ recommended</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ── */}
       <section className="relative py-20 px-6 text-center">
         <h2

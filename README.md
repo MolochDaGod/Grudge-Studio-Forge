@@ -93,8 +93,11 @@ pnpm run test         # 365 tests
 | Artifact | Target | URL |
 |---|---|---|
 | game-forge (SPA) | Vercel | `forge.grudge-studio.com` |
-| api-server | Railway (Docker) | `forge-api.grudge-studio.com` |
-| game-forge-desktop | Local build | `.exe` installer |
+| game-forge-desktop | GitHub Releases | `.exe` installer |
+
+**Backend**: Puter KV + FS (user-pays, $0 infra cost). No api-server or database needed.
+**AI**: Puter AI (9 free models, client-side) + Ollama (offline, local).
+**Builtin assets**: Static R2 CDN at `assets.grudge-studio.com`.
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full deployment guide including offline/online/hybrid modes.
 

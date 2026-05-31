@@ -102,34 +102,21 @@ export interface ModelOption {
 }
 
 export const MODELS: ModelOption[] = [
+  // ── Puter AI (free, client-side, default) ────────────────────────
   {
-    id: "server:claude-sonnet-4-6",
-    label: "Claude Sonnet 4.6",
-    hint: "Default · Grudge Studio AI",
-    provider: "server-anthropic",
-    modelId: "claude-sonnet-4-6",
-  },
-  {
-    id: "server:claude-haiku-4-5",
-    label: "Claude Haiku 4.5",
-    hint: "Faster · Grudge Studio AI",
-    provider: "server-anthropic",
-    modelId: "claude-haiku-4-5",
-  },
-  {
-    id: "puter:claude-3-5-sonnet",
-    label: "Claude 3.5 Sonnet (Puter)",
-    hint: "Free via Puter — sign in required",
+    id: "puter:claude-3-7-sonnet",
+    label: "Claude 3.7 Sonnet",
+    hint: "Default · Free via Puter",
     provider: "puter",
-    modelId: "claude-3-5-sonnet",
+    modelId: "claude-3-7-sonnet",
     requiresPuterAuth: true,
   },
   {
-    id: "puter:claude-3-7-sonnet",
-    label: "Claude 3.7 Sonnet (Puter)",
-    hint: "Free via Puter — sign in required",
+    id: "puter:claude-3-5-sonnet",
+    label: "Claude 3.5 Sonnet",
+    hint: "Free via Puter",
     provider: "puter",
-    modelId: "claude-3-7-sonnet",
+    modelId: "claude-3-5-sonnet",
     requiresPuterAuth: true,
   },
   {

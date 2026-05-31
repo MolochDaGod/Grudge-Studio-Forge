@@ -117,6 +117,16 @@ export default defineConfig({
         import.meta.dirname,
         "src/lib/rapierShim.ts",
       ),
+      /**
+       * Redirect all imports of `@workspace/api-client-react` to the
+       * Puter-backed data layer. This replaces the Express+PostgreSQL
+       * api-server with Puter KV + FS — zero import changes needed in
+       * the 20+ consuming files.
+       */
+      "@workspace/api-client-react": path.resolve(
+        import.meta.dirname,
+        "src/lib/cloud/dataLayer.ts",
+      ),
     },
     dedupe: ["react", "react-dom", "three"],
   },
@@ -246,18 +256,8 @@ export default defineConfig({
     fs: {
       strict: true,
     },
-    /**
-     * Forward `/api` to the api-server during local development so
-     * `fetch("/api/...")` from the browser reaches the Express app
-     * instead of Vite's SPA fallback. Production builds are served
-     * behind the real proxy, so this dev-only forwarder has no effect.
-     */
-    proxy: {
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-      },
-    },
+    // API proxy removed — data layer uses Puter KV+FS directly.
+    // Grudge catalogs and builtin assets are fetched via direct URLs.
   },
   preview: {
     port,
