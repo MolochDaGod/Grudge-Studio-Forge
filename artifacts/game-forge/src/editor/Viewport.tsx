@@ -1395,7 +1395,47 @@ export function Viewport() {
                     infiniteGrid
                     position={[0, -0.02, 0]}
                   />
-                  <OrbitControls makeDefault />
+                  {/* Editor-standard navigation.
+                    *
+                    * The viewport is wrapped in a Radix <ContextMenu>, so
+                    * RIGHT-click is reserved for the menu — OrbitControls'
+                    * default RIGHT=pan can never fire. With bare defaults the
+                    * only navigation left was LEFT-drag (which always ORBITS,
+                    * i.e. changes the look direction) and a wheel that dollies
+                    * toward an arbitrary pivot. That's why the camera felt
+                    * "stuck" and you couldn't move without re-aiming.
+                    *
+                    * Fixes:
+                    *  - MIDDLE-drag = PAN: translate the view WITHOUT rotating
+                    *    (the "move without changing what I look at" case).
+                    *  - zoomToCursor: the wheel dollies toward the cursor, like
+                    *    every editor, instead of toward a stale orbit pivot.
+                    *  - screenSpacePanning: pan parallel to the screen so the
+                    *    look direction is preserved.
+                    *  - damping: smooth, non-jerky motion.
+                    * LEFT stays orbit (and still selects on click); RIGHT stays
+                    * the context menu. */}
+                  <OrbitControls
+                    makeDefault
+                    enableDamping
+                    dampingFactor={0.12}
+                    screenSpacePanning
+                    zoomToCursor
+                    panSpeed={1}
+                    rotateSpeed={0.7}
+                    zoomSpeed={1}
+                    minDistance={0.3}
+                    maxDistance={3000}
+                    mouseButtons={{
+                      LEFT: THREE.MOUSE.ROTATE,
+                      MIDDLE: THREE.MOUSE.PAN,
+                      RIGHT: THREE.MOUSE.PAN,
+                    }}
+                    touches={{
+                      ONE: THREE.TOUCH.ROTATE,
+                      TWO: THREE.TOUCH.DOLLY_PAN,
+                    }}
+                  />
                   <FocusCameraController />
                   {/* Captures the live THREE.Scene out of the R3F
                     * tree into the parent component's ref so the
