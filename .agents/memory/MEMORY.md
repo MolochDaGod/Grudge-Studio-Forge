@@ -1,1 +1,2 @@
 - [Web asset pipeline](web-asset-pipeline.md) — FBXLoader needs fflate as a direct game-forge dep; R2 env-var fallbacks are intentional; one shared GLTFExporter path for obj/fbx/stl.
+- [builtin:character faces +Z](character-facing-yaw.md) — bundled char GLB faces +Z like race rigs; per-player yawOffset (not global registry) or enemies sharing the model flip backward.

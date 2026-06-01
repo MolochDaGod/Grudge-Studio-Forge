@@ -53,7 +53,7 @@ import {
  *  entity (vertex-colored heightfield, deterministic seed) instead of
  *  the fort-royale GLB, so the RTS map has actual hills + a horizon
  *  for the SC1-style overhead camera. */
-export const TEMPLATES_VERSION = "20260514.4";
+export const TEMPLATES_VERSION = "20260601.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */

@@ -37,4 +37,29 @@ describe("scene-templates manifest", () => {
   it("TEMPLATES_VERSION matches the yyyymmdd.n format", () => {
     expect(TEMPLATES_VERSION).toMatch(/^\d{8}\.\d+$/);
   });
+
+  // Regression guard: the bundled `builtin:character` GLB faces +Z, while
+  // the third-person camera sits on +Z, so a third-person player using it
+  // MUST carry a per-entity `model.yawOffset = Math.PI` or it looks into
+  // the camera (and moonwalks in play mode). Enemies share the same model
+  // but hand-author a compensating yaw, so they must NOT get the offset.
+  it("third-person builtin:character players carry a yawOffset half-turn; enemies don't", () => {
+    let sawPlayer = false;
+    let sawEnemy = false;
+    for (const entry of SCENE_TEMPLATES) {
+      for (const e of entry.build().entities) {
+        if (e.model?.url !== "builtin:character") continue;
+        if (e.controllerKind === "thirdPerson") {
+          sawPlayer = true;
+          expect(e.model.yawOffset).toBe(Math.PI);
+        }
+        if (e.behavior?.startsWith("enemy")) {
+          sawEnemy = true;
+          expect(e.model.yawOffset).toBeUndefined();
+        }
+      }
+    }
+    expect(sawPlayer).toBe(true);
+    expect(sawEnemy).toBe(true);
+  });
 });

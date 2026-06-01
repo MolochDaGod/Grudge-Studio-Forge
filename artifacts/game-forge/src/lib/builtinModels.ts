@@ -132,16 +132,16 @@ export function isRaceVariantModel(url: string): boolean {
  *  same direction as the physics body's "forward". The toon-rts character
  *  GLBs (the six `race:*` keys below) were authored facing +Z, while
  *  three.js' convention — and our physics yaw + camera forward — assume
- *  -Z, so they need a half-turn to look the right way. The original
- *  `builtin:character` rig already faces -Z, so it is intentionally
- *  absent from this map (its effective offset is 0). EntityRenderer's
- *  resolution order is: `entity.model.yawOffset` ?? this map ?? 0.
- *
- *  Note (task #121): an attempt to remove these offsets was tested by
- *  the user and the bug remained, proving the +π is NOT the cause of
- *  the "player facing camera" regression. The real culprit is somewhere
- *  else in the spawn pipeline — see the live investigation in
- *  EntityRenderer / Hierarchy / scene-templates. */
+ *  -Z, so they need a half-turn to look the right way. The bundled
+ *  `builtin:character` rig ALSO faces +Z natively, but it is deliberately
+ *  kept OUT of this registry: the deathmatch templates use it for both
+ *  the player AND the enemies, and those enemies hand-author a
+ *  compensating yaw (`angle + Math.PI`) tuned to the raw +Z facing. A
+ *  global registry offset here would flip every enemy the wrong way.
+ *  Instead, only the player entities that use `builtin:character` carry a
+ *  per-entity `model.yawOffset = Math.PI` in the scene-template builders,
+ *  so the half-turn is scoped to the player. EntityRenderer's resolution
+ *  order is: `entity.model.yawOffset` ?? this map ?? 0. */
 export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
   "race:warrior": Math.PI,
   "race:dwarf": Math.PI,

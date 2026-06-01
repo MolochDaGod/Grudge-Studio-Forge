@@ -195,7 +195,13 @@ export function tpsZombieDemoScene(): SceneData {
     id: playerId,
     name: "Player",
     type: "model",
-    model: { url: ASSETS.character },
+    // `builtin:character` is authored facing +Z; the third-person camera
+    // sits on +Z (see `cameraStart`), so without a half-turn the avatar
+    // looks straight into the camera (and moonwalks backward in play
+    // mode). Enemies share this model but hand-author their own
+    // compensating yaw, so we turn ONLY the player via a per-entity
+    // yawOffset rather than a global registry offset.
+    model: { url: ASSETS.character, yawOffset: Math.PI },
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "thirdPerson",
@@ -980,7 +986,13 @@ function buildDeathmatch(opts: {
     id: playerId,
     name: "Player",
     type: "model",
-    model: { url: ASSETS.character },
+    // `builtin:character` is authored facing +Z; the third-person camera
+    // sits on +Z (see `cameraStart`), so without a half-turn the avatar
+    // looks straight into the camera (and moonwalks backward in play
+    // mode). Enemies share this model but hand-author their own
+    // compensating yaw, so we turn ONLY the player via a per-entity
+    // yawOffset rather than a global registry offset.
+    model: { url: ASSETS.character, yawOffset: Math.PI },
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
     physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
     controllerKind: "thirdPerson",
