@@ -167,7 +167,7 @@ async function convertToGlb(
             const sExt = getExtension(sName);
             if (IMAGE_EXTENSIONS.has(sExt)) {
               const url = URL.createObjectURL(
-                new Blob([sBuf], { type: mimeForExt(sExt) }),
+                new Blob([toArrayBuffer(sBuf)], { type: mimeForExt(sExt) }),
               );
               blobUrls.set(sName.split("/").pop()!.toLowerCase(), url);
               createdUrls.push(url);

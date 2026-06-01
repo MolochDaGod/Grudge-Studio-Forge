@@ -112,6 +112,10 @@ interface EditorState {
   setRenderQuality: (q: "high" | "perf") => void;
   setShowStats: (v: boolean) => void;
 
+  /** Active Grudge World Sector id, or null if none is selected. */
+  activeSectorId: string | null;
+  setActiveSector: (id: string | null) => void;
+
   setProject: (projectId: number | null) => void;
   loadScene: (sceneId: number, name: string, data: SceneData) => void;
   setSceneName: (name: string) => void;
@@ -358,6 +362,9 @@ export const useEditor = create<EditorState>((set, get) => ({
   showStats: false,
   setRenderQuality: (q) => set({ renderQuality: q }),
   setShowStats: (v) => set({ showStats: v }),
+
+  activeSectorId: null,
+  setActiveSector: (id) => set({ activeSectorId: id }),
 
   setProject: (projectId) => {
     // Switching project must reset undo history (commands captured against the

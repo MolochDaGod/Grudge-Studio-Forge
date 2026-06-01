@@ -18,6 +18,7 @@ export type HotkeyCategory =
   | "Edit"
   | "Playback"
   | "Scene"
+  | "Panel"
   | "View"
   | "Misc";
 

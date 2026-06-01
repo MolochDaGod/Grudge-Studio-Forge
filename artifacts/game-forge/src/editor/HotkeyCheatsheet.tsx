@@ -19,6 +19,7 @@ const CATEGORY_ORDER: HotkeyCategory[] = [
   "Edit",
   "Scene",
   "Playback",
+  "Panel",
   "View",
   "Misc",
 ];

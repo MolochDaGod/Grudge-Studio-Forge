@@ -218,6 +218,72 @@ export function buildEditorHotkeys(deps: EditorHotkeyDeps): Hotkey[] {
       },
     },
 
+    // --- Bottom panel tab shortcuts
+    {
+      id: "panel.console",
+      label: "Ctrl+`",
+      description: "Focus Console tab",
+      category: "Panel",
+      key: "`",
+      ctrlOrMeta: true,
+      action: () => {
+        get().setBottomTab("console");
+        return true;
+      },
+    },
+    {
+      id: "panel.scripts",
+      label: "Ctrl+Shift+S",
+      description: "Focus Scripts tab",
+      category: "Panel",
+      key: "s",
+      ctrlOrMeta: true,
+      shift: true,
+      action: () => {
+        get().setBottomTab("scripts");
+        return true;
+      },
+    },
+    {
+      id: "panel.nodes",
+      label: "Ctrl+Shift+N",
+      description: "Focus Nodes tab",
+      category: "Panel",
+      key: "n",
+      ctrlOrMeta: true,
+      shift: true,
+      action: () => {
+        get().setBottomTab("nodes");
+        return true;
+      },
+    },
+    {
+      id: "panel.library",
+      label: "Ctrl+Shift+A",
+      description: "Focus Library (Assets) tab",
+      category: "Panel",
+      key: "a",
+      ctrlOrMeta: true,
+      shift: true,
+      action: () => {
+        get().setBottomTab("assets");
+        return true;
+      },
+    },
+    {
+      id: "panel.physics",
+      label: "Ctrl+Shift+L",
+      description: "Focus Physics (Layers) tab",
+      category: "Panel",
+      key: "l",
+      ctrlOrMeta: true,
+      shift: true,
+      action: () => {
+        get().setBottomTab("layers");
+        return true;
+      },
+    },
+
     // --- View / cheatsheet
     {
       id: "view.cheatsheet",

@@ -23,6 +23,7 @@ import {
 import type { SceneEntity, EntityType, ControllerKind, Vec3, SceneData } from "@/scene/types";
 import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
 type Environment = SceneData["environment"];
+import { getSectorById, BIOME_LABELS } from "@/lib/worldSectors";
 import {
   listTunableParams,
   setTunableParam,
@@ -1201,6 +1202,23 @@ export function buildSystemPrompt(): string {
     `- environment.cameraMode: ${env.cameraMode ?? "editor"}  gravity: ${JSON.stringify(env.gravity ?? DEFAULT_GRAVITY)}`,
     `- selectedId: ${s.selectedId ?? "(none)"}`,
     `- builtin models available: ${Object.keys(BUILTIN_MODELS).join(", ")}`,
+    (() => {
+      const sectorId = s.activeSectorId;
+      if (!sectorId) return `- worldSector: (none — no sector selected)`;
+      const sector = getSectorById(sectorId);
+      if (!sector) return `- worldSector: ${sectorId} (unknown)`;
+      const safeNote = sector.isSafeZone ? " [SAFE ZONE — no PvP]" : "";
+      const pvpNote = sector.isContested ? " [CONTESTED — active PvP]" : "";
+      return [
+        `- worldSector: "${sector.name}" (${sector.id})${safeNote}${pvpNote}`,
+        `  biome: ${BIOME_LABELS[sector.biome]}  difficulty: ${sector.difficultyMin}–${sector.difficultyMax}`,
+        `  lore: "${sector.lore}"`,
+        `  hazards: ${sector.hazards.length ? sector.hazards.join(", ") : "none"}`,
+        `  resources: ${sector.resources.join(", ")}`,
+        `  ambientFx: ${sector.ambientFx.join(", ")}`,
+        `  palette: deep=${sector.colors.deep} mid=${sector.colors.mid} accent=${sector.colors.accent}${sector.colors.glow ? ` glow=${sector.colors.glow}` : ""}`,
+      ].join("\n");
+    })(),
     ``,
     `WORKING STYLE:`,
     `- Take initiative. If the user asks for a "playable scene", combine multiple tools (generate_map → add_model_entity for player → set_player → maybe set_environment).`,

@@ -629,7 +629,8 @@ export function Inspector() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__auto">Auto (first player)</SelectItem>
-                  {entities.map((e) => (
+{
+  entities.filter((e) => !!e.id).map((e) => (
                     <SelectItem key={e.id} value={e.id}>
                       {e.name}
                     </SelectItem>

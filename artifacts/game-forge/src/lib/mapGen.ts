@@ -5,13 +5,21 @@
  *
  * Reproducible output: every generator takes a numeric `seed`. Same seed
  * + same options → identical map.
+ *
+ * When `sectorId` is provided the generators use the matching biome's
+ * asset table (`lib/sectorAssets.ts`) to place real GLB models — trees,
+ * structures, harvestables, monsters, and ambient VFX — instead of (or
+ * alongside) the fallback primitive geometry.
  */
 
 import { nanoid } from "nanoid";
 import type { SceneEntity, Vec3 } from "@/scene/types";
 import { DEFAULT_TRANSFORM } from "@/scene/types";
+import { getSectorById } from "@/lib/worldSectors";
+import { SECTOR_ASSETS, pick } from "@/lib/sectorAssets";
+import type { BiomeAssets } from "@/lib/sectorAssets";
 
-export type MapKind = "cityGrid" | "openArena" | "dungeonRooms" | "maze";
+export type MapKind = "cityGrid" | "openArena" | "dungeonRooms" | "maze" | "openWorld";
 
 export interface MapGenOptions {
   kind: MapKind;
@@ -20,6 +28,9 @@ export interface MapGenOptions {
   /** Density tuning, 0..1. Meaning depends on the generator. */
   density: number;
   seed: number;
+  /** Optional Grudge world sector id. When set, generators replace primitive
+   *  geometry with biome-appropriate GLB models from sectorAssets. */
+  sectorId?: string;
 }
 
 /* ---------------- PRNG (mulberry32, deterministic and tiny) ------------- */
@@ -47,6 +58,35 @@ function entity(
   } as SceneEntity;
 }
 
+/** Resolve BiomeAssets for an optional sector id. Returns null when none. */
+function resolveAssets(sectorId?: string): BiomeAssets | null {
+  if (!sectorId) return null;
+  const sector = getSectorById(sectorId);
+  if (!sector) return null;
+  return SECTOR_ASSETS[sector.biome] ?? null;
+}
+
+/** Create a static model entity using a builtin GLB key. */
+function modelEntity(
+  name: string,
+  key: string,
+  pos: Vec3,
+  yaw: number,
+  scale: number,
+  parentId: string,
+  opts?: { behavior?: SceneEntity["behavior"]; layer?: SceneEntity["layer"] },
+): SceneEntity {
+  return entity({
+    name,
+    type: "model",
+    parentId,
+    transform: { position: pos, rotation: [0, yaw, 0], scale: [scale, scale, scale] },
+    model: { url: `builtin:${key}` },
+    physics: { bodyType: "fixed", colliderType: "cuboid" },
+    ...(opts ?? {}),
+  });
+}
+
 /* ---------------- Generators -------------------------------------------- */
 
 export function generateMap(opts: MapGenOptions): SceneEntity[] {
@@ -59,6 +99,8 @@ export function generateMap(opts: MapGenOptions): SceneEntity[] {
       return dungeonRooms(opts);
     case "maze":
       return maze(opts);
+    case "openWorld":
+      return openWorld(opts);
   }
 }
 

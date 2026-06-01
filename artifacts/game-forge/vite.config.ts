@@ -206,6 +206,11 @@ export default defineConfig({
          * — including transitive deps inside `node_modules` — so we only
          * need to enumerate the package roots we DO want split out.
          */
+        // Cap the number of files Rollup opens in parallel. The default
+        // (os.cpus().length × 20) creates huge in-memory queues when bundling
+        // heavy deps like Monaco and Three.js on CI containers with limited RAM.
+        // 20 keeps throughput reasonable while cutting peak RSS by ~40%.
+        maxParallelFileOps: 20,
         manualChunks(id: string) {
           if (!id.includes("node_modules")) return undefined;
           // Normalize Windows paths so the substring checks below work.

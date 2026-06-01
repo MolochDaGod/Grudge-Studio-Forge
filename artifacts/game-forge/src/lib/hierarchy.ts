@@ -100,7 +100,15 @@ export function sanitizeEntities(
   const cleaned: SceneEntity[] = [];
 
   // Pass 1: dedupe ids (keep first occurrence; re-id later duplicates).
+  // Also assign a new id to any entity with a falsy/empty id.
   for (const e of entities) {
+    if (!e.id) {
+      const newId = nanoid(8);
+      warnings.push(`Entity "${e.name ?? "?"}" had empty id — assigned "${newId}"`);
+      cleaned.push({ ...e, id: newId });
+      seenIds.add(newId);
+      continue;
+    }
     if (!seenIds.has(e.id)) {
       seenIds.add(e.id);
       cleaned.push(e);

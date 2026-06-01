@@ -305,7 +305,7 @@ export function MenuBar({
               Show Console
             </MenubarItem>
             <MenubarItem onSelect={() => openAssets("project")}>
-              Show Asset Browser
+  Show Library
             </MenubarItem>
             <MenubarItem onSelect={() => useEditor.getState().setBottomTab("scripts")}>
               Show Script Editor
@@ -313,6 +313,9 @@ export function MenuBar({
             <MenubarItem onSelect={() => useEditor.getState().setBottomTab("nodes")}>
               Show Node Graph
             </MenubarItem>
+  < MenubarItem onSelect = {() => useEditor.getState().setBottomTab("layers")}>
+    Show Physics Settings
+      </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 
