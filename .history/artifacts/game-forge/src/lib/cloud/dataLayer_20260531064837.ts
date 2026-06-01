@@ -463,8 +463,6 @@ export { listScripts } from "./puterDataProvider";
 export {
   getGetPublicObjectUrl,
   getGetStorageObjectUrl,
-  getGetTemplateUrl,
-  getGetTemplateQueryKey,
   getListProjectsQueryKey,
   getListScenesQueryKey,
   getListScriptsQueryKey,
