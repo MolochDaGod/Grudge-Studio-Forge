@@ -74,14 +74,22 @@ function usePreparedModel(payload: ModelTabPayload): {
           return;
         }
 
-        if (ext === "obj") {
-          // Lazy-load the converter so heavy three.js loaders don't enter
-          // the bundle for users who never open a model tab.
-          const [{ objToGlb }, text] = await Promise.all([
-            import("@/lib/converters"),
-            fetch(sourceUrl).then((r) => r.text()),
-          ]);
-          const file = await objToGlb(text, payload.name);
+        if (ext === "obj" || ext === "fbx" || ext === "stl") {
+          // Lazy-load the converters so heavy three.js loaders don't enter
+          // the bundle for users who never open a model tab. OBJ is text;
+          // FBX/STL are binary.
+          const conv = await import("@/lib/converters");
+          let file: File;
+          if (ext === "obj") {
+            const text = await fetch(sourceUrl).then((r) => r.text());
+            file = await conv.objToGlb(text, payload.name);
+          } else {
+            const buf = await fetch(sourceUrl).then((r) => r.arrayBuffer());
+            file =
+              ext === "fbx"
+                ? await conv.fbxToGlb(buf, payload.name)
+                : await conv.stlToGlb(buf, payload.name);
+          }
           const url = URL.createObjectURL(file);
           owned = url;
           if (!cancelled) {
@@ -93,7 +101,7 @@ function usePreparedModel(payload: ModelTabPayload): {
           return;
         }
 
-        // .fbx, .zip, .asset, .prefab — we can OPEN the tab and present a
+        // .zip, .asset, .prefab — we can OPEN the tab and present a
         // friendly "transcode pending" placeholder, but we don't try to
         // crash the viewer trying to load them as glTF.
         if (!cancelled) {

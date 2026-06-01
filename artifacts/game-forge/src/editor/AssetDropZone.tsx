@@ -4,10 +4,10 @@ import { useCreateAsset, getListAssetsQueryKey, getGetProjectSummaryQueryKey } f
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
 import { inspectGlb, type GlbInfo } from "@/lib/glbInspect";
-import { classifyDroppedFile } from "@/lib/fileKind";
+import { classifyDroppedFile, isModelKind } from "@/lib/fileKind";
 import { GlbInspectorDialog, type InspectorPayload } from "./GlbInspectorDialog";
 import type { SceneData } from "@/scene/types";
-import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2 } from "lucide-react";
+import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2, FileArchive } from "lucide-react";
 
 /**
  * Full-document drag-and-drop overlay. Accepts:
@@ -135,14 +135,22 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
               assetId: asset?.id,
             });
           }
-        } else if (kind === "obj") {
+        } else if (kind === "obj" || kind === "fbx" || kind === "stl") {
+          const up = kind.toUpperCase();
           setBusy(`Converting ${file.name} → GLB…`);
-          pushLog("info", `Converting OBJ → GLB in-browser…`);
-          const text = await file.text();
-          // Lazy-load the three.js-based converter only when an OBJ is
-          // actually dropped — keeps three out of the initial bundle.
-          const { objToGlb } = await import("@/lib/converters");
-          const glbFile = await objToGlb(text, file.name);
+          pushLog("info", `Converting ${up} → GLB in-browser…`);
+          // Lazy-load the three.js-based converters only when a model that
+          // needs transcoding is actually dropped — keeps three out of the
+          // initial bundle.
+          const { objToGlb, fbxToGlb, stlToGlb } = await import("@/lib/converters");
+          let glbFile: File;
+          if (kind === "obj") {
+            glbFile = await objToGlb(await file.text(), file.name);
+          } else if (kind === "fbx") {
+            glbFile = await fbxToGlb(await file.arrayBuffer(), file.name);
+          } else {
+            glbFile = await stlToGlb(await file.arrayBuffer(), file.name);
+          }
           let info: GlbInfo | undefined;
           try {
             info = inspectGlb(await glbFile.arrayBuffer());
@@ -172,6 +180,29 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
           const url = `/api/storage${res.objectPath}`;
           await recordAsset(file.name, url, assetType);
           pushLog("info", `Uploaded ${kind} "${file.name}"`);
+        } else if (kind === "zip") {
+          setBusy(`Extracting ${file.name}…`);
+          pushLog("info", `Extracting asset pack "${file.name}"…`);
+          const { extractZipAssets } = await import("@/lib/zipImport");
+          const { entries, skipped } = await extractZipAssets(file);
+          if (entries.length === 0) {
+            pushLog(
+              "warn",
+              `No importable assets found in "${file.name}" (${skipped.length} skipped).`,
+            );
+            return;
+          }
+          // Route each extracted entry through the same import path as a
+          // directly-dropped file. Never auto-open the inspector for pack
+          // contents — a 50-asset pack shouldn't spawn 50 dialogs.
+          for (const entry of entries) {
+            await routeRef.current(entry.file, { openInspector: false });
+          }
+          pushLog(
+            "info",
+            `Imported ${entries.length} asset(s) from "${file.name}"` +
+              (skipped.length ? ` (${skipped.length} skipped).` : "."),
+          );
         }
       } catch (err) {
         pushLog("error", `Import failed: ${(err as Error).message}`);
@@ -181,6 +212,11 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
     },
     [projectId, importSceneJson, pushLog, uploadFile, recordAsset],
   );
+
+  // Stable self-reference so the ZIP branch can re-route extracted entries
+  // through `route` without making `route` depend on itself.
+  const routeRef = useRef(route);
+  routeRef.current = route;
 
   const onAddToScene = useCallback(
     (p: InspectorPayload) => {
@@ -226,7 +262,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
       let inspectorAssigned = !single;
       for (const f of files) {
         const kind = classifyDroppedFile(f);
-        const isModel = kind === "glb" || kind === "gltf" || kind === "obj";
+        const isModel = isModelKind(kind);
         const open = single || (isModel && !inspectorAssigned);
         if (open && isModel) inspectorAssigned = true;
         await route(f, { openInspector: open });
@@ -262,13 +298,16 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex gap-4 justify-center text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <FileBox className="size-3.5 text-primary" /> .glb .gltf .obj
+                <FileBox className="size-3.5 text-primary" /> .glb .gltf .obj .fbx .stl
               </span>
               <span className="flex items-center gap-1.5">
                 <ImageIcon className="size-3.5 text-primary" /> .png .jpg .webp
               </span>
               <span className="flex items-center gap-1.5">
                 <Music2 className="size-3.5 text-primary" /> .mp3 .wav .ogg
+              </span>
+              <span className="flex items-center gap-1.5">
+                <FileArchive className="size-3.5 text-primary" /> .zip pack
               </span>
               <span className="flex items-center gap-1.5">
                 <FileJson className="size-3.5 text-primary" /> .gfscene.json

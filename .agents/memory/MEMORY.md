@@ -1,0 +1,1 @@
+- [Web asset pipeline](web-asset-pipeline.md) — FBXLoader needs fflate as a direct game-forge dep; R2 env-var fallbacks are intentional; one shared GLTFExporter path for obj/fbx/stl.

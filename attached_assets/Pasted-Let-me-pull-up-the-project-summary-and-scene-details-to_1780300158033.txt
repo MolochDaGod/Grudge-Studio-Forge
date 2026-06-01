@@ -1,0 +1,33 @@
+Let me pull up the project summary and scene details to give you the best context.
+Great question — here's a straight answer across all three parts:
+
+---
+
+## 🔗 Source / GitHub
+
+**Grudge GameForge is a proprietary, closed-source in-browser editor** — there is no public GitHub repo for the platform itself. The *project data* (scene JSON, scripts, assets) for **Project 30 ("RPG — Village")** lives in the editor's Durable Object storage and your Puter cloud drive if you've saved there. You don't have a git remote for it out of the box.
+
+**What you *can* do:**
+- Use **`save_scene_snapshot`** → get a shareable public JSON URL of your scene
+- Use **`cloud_save_project`** (Puter) → push to your Puter drive as a checkpoint
+- Export that JSON and commit it to your own GitHub manually if you want version control
+
+---
+
+## 🚀 Biggest Production Improvement I'd Want You to Have
+
+Honestly? **A real version-control / branching system integrated into the editor.** Here's why it's #1:
+
+### **Git-style Scene Branching**
+Right now every edit is either in the undo stack (session-only) or a flat snapshot blob. In production game dev you need:
+
+| What's Missing | Why It Hurts |
+|---|---|
+| **Named branches** (e.g. `feat/add-dungeon`, `hotfix/physics-bug`) | Can't safely experiment without nuking your main scene |
+| **Diffable scene history** | Snapshots are opaque blobs — you can't see *what* changed between v1 and v5 |
+| **Merge / review flow** | Two people can't collaborate on the same scene without overwriting each other |
+| **Script commits tied to scene state** | Right now scripts and scene entities are versioned separately — a breaking script change has no rollback link to the entity that used it |
+
+**The unlock:** with a proper git-backed scene format (the JSON is already structured), you'd get PRs, blame, CI checks (e.g. "does the navmesh still bake?"), and team workflows — which is the gap between "cool prototype tool" and "production pipeline."
+
+Runner-up would be **multi-scene streaming / portals** (right now it's one flat scene), but branching is the foundational unlock that makes everything else safer to build.
