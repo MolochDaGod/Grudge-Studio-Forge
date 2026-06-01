@@ -122,6 +122,11 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
+  // Chicken Gun maps — hosted on R2 CDN (too large to ship in git)
+  "map-mistytown": "https://assets.grudge-studio.com/builtin/map-mistytown.glb",
+  "map-town2f": "https://assets.grudge-studio.com/builtin/map-town2f.glb",
+  "map-bigfarm": "https://assets.grudge-studio.com/builtin/map-bigfarm.glb",
+  "map-western": "https://assets.grudge-studio.com/builtin/map-western.glb",
   // Vehicles (Realistic Car Pack — OBJ→GLB conversion)
   "vehicle-cop": ensureBaseUrl("builtin/vehicle-cop.glb"),
   "vehicle-sedan": ensureBaseUrl("builtin/vehicle-sedan.glb"),

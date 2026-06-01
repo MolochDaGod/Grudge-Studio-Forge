@@ -1,5 +1,5 @@
 {
-  "version": "2026-05-29",
+  "version": "2026-06-01",
   "description": "Grudge Forge builtin asset manifest — categorized GLB models for the editor",
   "categories": {
     "characters": {
@@ -29,8 +29,10 @@
       "assets": [
         { "key": "map-chinese-market", "file": "map-chinese-market.glb", "size_mb": 13.0, "builtin": true, "tags": ["map", "market", "town", "asian"], "usage": "Chinese market town environment. Good for RPG town hub or trading post." },
         { "key": "map-encampment", "file": null, "source": "chicken_gun_fruzer_-_encampment_1777399255724.glb", "size_mb": 30.7, "builtin": false, "tags": ["map", "encampment", "outdoor", "camp"], "usage": "Forest encampment. Already used as builtin map-encampment (scaled copy)." },
-        { "key": "map-mistytown", "file": null, "source": "chicken_gun_mistytown_1777399258873.glb", "size_mb": 19.6, "builtin": false, "tags": ["map", "town", "misty", "atmosphere"], "usage": "Atmospheric misty town. Upload to R2 for horror/mystery game modes." },
-        { "key": "map-town2f", "file": null, "source": "chicken_gun_town2f_reupload_1777399223990.glb", "size_mb": 50.4, "builtin": false, "tags": ["map", "town", "large", "urban"], "usage": "Large urban town map. Upload to R2 — best for open-world or large deathmatch." }
+        { "key": "map-mistytown", "file": "map-mistytown.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-mistytown.glb", "size_mb": 19.6, "builtin": false, "tags": ["map", "town", "misty", "atmosphere"], "usage": "Atmospheric misty town. Hosted on R2 CDN." },
+        { "key": "map-town2f", "file": "map-town2f.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-town2f.glb", "size_mb": 50.4, "builtin": false, "tags": ["map", "town", "large", "urban"], "usage": "Large urban town map. Hosted on R2 CDN." },
+        { "key": "map-bigfarm", "file": "map-bigfarm.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-bigfarm.glb", "size_mb": 51.1, "builtin": false, "tags": ["map", "farm", "rural", "outdoor"], "usage": "Big farm outdoor map. Hosted on R2 CDN." },
+        { "key": "map-western", "file": "map-western.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-western.glb", "size_mb": 40.2, "builtin": false, "tags": ["map", "western", "town", "desert"], "usage": "Western town map. Hosted on R2 CDN." }
       ]
     },
     "props": {
