@@ -1,5 +1,5 @@
 import { defineConfig, type Plugin } from "vite";
-import react from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import wasm from "vite-plugin-wasm";
@@ -149,6 +149,8 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
+    target: "esnext",
+    minify: "esbuild",
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     /**
@@ -166,10 +168,10 @@ export default defineConfig({
       // Cap the number of files Rollup opens in parallel. The default
       // (os.cpus().length × 20) creates huge in-memory queues when bundling
       // heavy deps like Three.js on CI containers with limited RAM.
-      // 20 keeps throughput reasonable while cutting peak RSS significantly.
+      // 5 keeps throughput reasonable while cutting peak RSS significantly.
       // NOTE: this must be at the top level of rollupOptions, NOT inside
       // output — Rollup ignores it if placed inside the output block.
-      maxParallelFileOps: 20,
+      maxParallelFileOps: 5,
       output: {
         /**
          * Split the heavy vendor libraries into their own chunks so:

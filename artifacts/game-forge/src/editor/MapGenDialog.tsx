@@ -46,6 +46,7 @@ const KIND_LABELS: { value: MapKind; label: string; help: string }[] = [
   { value: "openArena", label: "Open Arena", help: "Bordered playfield with scattered cover crates." },
   { value: "dungeonRooms", label: "Dungeon Rooms", help: "BSP-style rooms with doorways and torches." },
   { value: "maze", label: "Maze", help: "Recursive-backtracker corridors carved from a grid." },
+  { value: "openWorld", label: "Open World", help: "Outdoor biome terrain with trees, structures, monsters, harvestables, and VFX. Best with a World Sector selected." },
 ];
 
 export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
@@ -72,11 +73,11 @@ export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
   // Live preview count (cheap — the generator is fast enough on these sizes)
   const previewCount = useMemo(() => {
     try {
-      return generateMap({ kind, size, density, seed }).length;
+      return generateMap({ kind, size, density, seed, sectorId: sectorId === "none" ? undefined : sectorId }).length;
     } catch {
       return 0;
     }
-  }, [kind, size, density, seed]);
+  }, [kind, size, density, seed, sectorId]);
 
   const commandStack = useEditor((s) => s.commandStack);
   const getEntities = () => useEditor.getState().sceneData.entities;
@@ -103,7 +104,7 @@ export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
     } else {
       setActiveSector(null);
     }
-    const fresh = generateMap({ kind, size, density, seed });
+    const fresh = generateMap({ kind, size, density, seed, sectorId: sectorId === "none" ? undefined : sectorId });
     // Re-id everything we hand to the scene so subsequent generations don't collide.
     const { entities: prepared } = reidTree(fresh, null);
     const rootId = prepared[0]?.id ?? null;

@@ -113,9 +113,12 @@ function rootGroup(name: string): SceneEntity {
 }
 
 /* ---------------- City Grid --------------------------------------------- */
-/** Square grid of buildings (boxes) with road gaps; ground plane underneath. */
+/** Square grid of buildings (boxes) with road gaps; ground plane underneath.
+ *  When a sector is set, spawns structure GLB models alongside primitives
+ *  and scatters monster entities into the street network. */
 function cityGrid(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
   const root = rootGroup("Generated · City Grid");
   const out: SceneEntity[] = [root];
 
@@ -125,14 +128,14 @@ function cityGrid(opts: MapGenOptions): SceneEntity[] {
   const halfSize = size / 2;
   const buildChance = 0.35 + opts.density * 0.55; // 0.35..0.9
 
-  // Ground plane (parented to root)
+  // Ground plane
   out.push(
     entity({
       name: "Street",
       type: "plane",
       parentId: root.id,
       transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
-      material: { color: "#1a1a25", metalness: 0, roughness: 1 },
+      material: { color: assets?.groundColor ?? "#1a1a25", metalness: 0, roughness: 1 },
       physics: { bodyType: "fixed", colliderType: "cuboid" },
     }),
   );
@@ -140,27 +143,43 @@ function cityGrid(opts: MapGenOptions): SceneEntity[] {
   for (let x = -halfSize + cell / 2; x < halfSize; x += cell) {
     for (let z = -halfSize + cell / 2; z < halfSize; z += cell) {
       if (rng() > buildChance) continue;
-      const h = 2 + Math.floor(rng() * 6) * 1.5;
-      const tint = 0x20 + Math.floor(rng() * 0x40);
-      const color = `#${tint.toString(16).padStart(2, "0").repeat(3)}`;
-      out.push(
-        entity({
-          name: `Building (${x.toFixed(0)}, ${z.toFixed(0)})`,
-          type: "box",
-          parentId: root.id,
-          transform: {
-            position: [x, h / 2, z],
-            rotation: [0, 0, 0],
-            scale: [block, h, block],
-          },
-          material: { color, metalness: 0.05, roughness: 0.9 },
-          physics: { bodyType: "fixed", colliderType: "cuboid" },
-        }),
-      );
+
+      // Try to place a GLB structure model when assets are available
+      if (assets && assets.structures.length > 0 && rng() < 0.45) {
+        const key = pick(assets.structures, rng)!;
+        out.push(modelEntity(
+          `Structure (${x.toFixed(0)}, ${z.toFixed(0)})`,
+          key,
+          [x, 0, z],
+          rng() * Math.PI * 2,
+          1 + rng() * 0.4,
+          root.id,
+        ));
+      } else {
+        const h = 2 + Math.floor(rng() * 6) * 1.5;
+        const tint = 0x20 + Math.floor(rng() * 0x40);
+        const color = `#${tint.toString(16).padStart(2, "0").repeat(3)}`;
+        out.push(
+          entity({
+            name: `Building (${x.toFixed(0)}, ${z.toFixed(0)})`,
+            type: "box",
+            parentId: root.id,
+            transform: {
+              position: [x, h / 2, z],
+              rotation: [0, 0, 0],
+              scale: [block, h, block],
+            },
+            material: { color, metalness: 0.05, roughness: 0.9 },
+            physics: { bodyType: "fixed", colliderType: "cuboid" },
+          }),
+        );
+      }
     }
   }
 
-  // A handful of street lights at intersections
+  // Street lights / ambient lights
+  const lightColor = assets?.lightColor ?? "#ffd28a";
+  const lightIntensity = assets?.lightIntensity ?? 6;
   const lightStep = cell * 3;
   for (let x = -halfSize + lightStep / 2; x < halfSize; x += lightStep) {
     for (let z = -halfSize + lightStep / 2; z < halfSize; z += lightStep) {
@@ -171,19 +190,46 @@ function cityGrid(opts: MapGenOptions): SceneEntity[] {
           type: "light",
           parentId: root.id,
           transform: { position: [x, 6, z], rotation: [0, 0, 0], scale: [1, 1, 1] },
-          light: { kind: "point", color: "#ffd28a", intensity: 6, distance: 15 },
+          light: { kind: "point", color: lightColor, intensity: lightIntensity, distance: 15 },
         }),
       );
     }
+  }
+
+  // Sector monsters in the streets
+  if (assets && assets.monsters.length > 0) {
+    const monsterCount = Math.round(2 + opts.density * 4);
+    for (let i = 0; i < monsterCount; i++) {
+      const mx = (rng() - 0.5) * (size - 4);
+      const mz = (rng() - 0.5) * (size - 4);
+      const key = pick(assets.monsters, rng)!;
+      out.push(modelEntity(
+        `Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "Enemy" },
+      ));
+    }
+  }
+
+  // VFX emitters from sector
+  if (assets && assets.vfx.length > 0 && rng() < 0.5) {
+    const key = pick(assets.vfx, rng)!;
+    out.push(modelEntity("Ambient VFX", key, [0, 0.5, 0], 0, 1, root.id));
   }
 
   return out;
 }
 
 /* ---------------- Open Arena -------------------------------------------- */
-/** Bordered arena + scattered cover boxes (Poisson-ish via grid jitter). */
+/** Bordered arena + scattered cover. When a sector is set, cover uses real
+ *  GLB prop models and monsters spawn around the arena perimeter. */
 function openArena(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
   const root = rootGroup("Generated · Open Arena");
   const out: SceneEntity[] = [root];
   const size = Math.max(12, opts.size);
@@ -198,7 +244,7 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
       type: "plane",
       parentId: root.id,
       transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
-      material: { color: "#2a2a3a", metalness: 0, roughness: 1 },
+      material: { color: assets?.groundColor ?? "#2a2a3a", metalness: 0, roughness: 1 },
       physics: { bodyType: "fixed", colliderType: "cuboid" },
     }),
   );
@@ -224,7 +270,7 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
     );
   }
 
-  // Scattered cover via jittered grid sampling
+  // Cover objects — prefer GLB props when assets available
   const step = 3;
   const jitter = step * 0.45;
   const coverChance = 0.2 + opts.density * 0.55;
@@ -233,20 +279,81 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
       if (rng() > coverChance) continue;
       const px = x + (rng() - 0.5) * jitter;
       const pz = z + (rng() - 0.5) * jitter;
-      const w = 1 + rng() * 1.5;
-      const h = 1 + rng() * 1.2;
-      const d = 1 + rng() * 1.5;
-      out.push(
-        entity({
-          name: "Cover Crate",
-          type: "box",
-          parentId: root.id,
-          transform: { position: [px, h / 2, pz], rotation: [0, rng() * Math.PI, 0], scale: [w, h, d] },
-          material: { color: "#6b5a2a", metalness: 0.1, roughness: 0.7 },
-          physics: { bodyType: "fixed", colliderType: "cuboid" },
-        }),
-      );
+
+      if (assets && assets.props.length > 0 && rng() < 0.6) {
+        const key = pick(assets.props, rng)!;
+        out.push(modelEntity(
+          "Cover Prop",
+          key,
+          [px, 0, pz],
+          rng() * Math.PI * 2,
+          0.8 + rng() * 0.4,
+          root.id,
+        ));
+      } else {
+        const w = 1 + rng() * 1.5;
+        const h = 1 + rng() * 1.2;
+        const d = 1 + rng() * 1.5;
+        out.push(
+          entity({
+            name: "Cover Crate",
+            type: "box",
+            parentId: root.id,
+            transform: { position: [px, h / 2, pz], rotation: [0, rng() * Math.PI, 0], scale: [w, h, d] },
+            material: { color: "#6b5a2a", metalness: 0.1, roughness: 0.7 },
+            physics: { bodyType: "fixed", colliderType: "cuboid" },
+          }),
+        );
+      }
     }
+  }
+
+  // Harvestable pickups in arena corners
+  if (assets && assets.harvestables.length > 0) {
+    const corners: Vec3[] = [
+      [-half * 0.6, 0, -half * 0.6],
+      [half * 0.6, 0, -half * 0.6],
+      [-half * 0.6, 0, half * 0.6],
+      [half * 0.6, 0, half * 0.6],
+    ];
+    for (const pos of corners) {
+      if (rng() < 0.4) continue;
+      const key = pick(assets.harvestables, rng)!;
+      const e = modelEntity("Harvestable", key, pos, rng() * Math.PI * 2, 0.8, root.id);
+      out.push(e);
+    }
+  }
+
+  // Monsters near arena center
+  if (assets && assets.monsters.length > 0) {
+    const count = Math.round(1 + opts.density * 3);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const radius = half * 0.4;
+      const mx = Math.cos(angle) * radius;
+      const mz = Math.sin(angle) * radius;
+      const key = pick(assets.monsters, rng)!;
+      out.push(modelEntity(
+        `Arena Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "Enemy" },
+      ));
+    }
+  }
+
+  // Ambient light
+  if (assets) {
+    out.push(entity({
+      name: "Arena Light",
+      type: "light",
+      parentId: root.id,
+      transform: { position: [0, half * 0.8, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      light: { kind: "point", color: assets.lightColor, intensity: assets.lightIntensity, distance: size },
+    }));
   }
 
   return out;
@@ -261,6 +368,7 @@ interface BspRect {
 }
 function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
   const root = rootGroup("Generated · Dungeon");
   const out: SceneEntity[] = [root];
   const size = Math.max(20, opts.size);
@@ -376,7 +484,9 @@ function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
     });
   }
 
-  // A torch (point light) per room
+  // A torch (point light) per room + sector-aware monster/prop placement
+  const torchColor = assets?.lightColor ?? "#ff9d3a";
+  const torchIntensity = assets?.lightIntensity ?? 5;
   for (const r of splits) {
     if (rng() < 1 - opts.density) continue;
     out.push(
@@ -385,9 +495,52 @@ function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
         type: "light",
         parentId: root.id,
         transform: { position: [r.x + r.w / 2, 2.4, r.z + r.d / 2], rotation: [0, 0, 0], scale: [1, 1, 1] },
-        light: { kind: "point", color: "#ff9d3a", intensity: 5, distance: 12 },
+        light: { kind: "point", color: torchColor, intensity: torchIntensity, distance: 12 },
       }),
     );
+
+    // VFX fire emitter alongside some torches
+    if (assets && assets.vfx.length > 0 && rng() < 0.35) {
+      const vfxKey = pick(assets.vfx, rng)!;
+      out.push(modelEntity("Room VFX", vfxKey, [r.x + r.w / 2, 0, r.z + r.d / 2 + 1], 0, 0.6, root.id));
+    }
+
+    // Monster per room (density-gated)
+    if (assets && assets.monsters.length > 0 && rng() < 0.4 + opts.density * 0.5) {
+      const key = pick(assets.monsters, rng)!;
+      const jx = r.x + r.w * (0.25 + rng() * 0.5);
+      const jz = r.z + r.d * (0.25 + rng() * 0.5);
+      out.push(modelEntity(
+        "Dungeon Enemy",
+        key,
+        [jx, 0, jz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "Enemy" },
+      ));
+    }
+
+    // Harvestable node in some rooms
+    if (assets && assets.harvestables.length > 0 && rng() < 0.25) {
+      const key = pick(assets.harvestables, rng)!;
+      out.push(modelEntity(
+        "Harvestable",
+        key,
+        [r.x + r.w * 0.75, 0, r.z + r.d * 0.75],
+        rng() * Math.PI * 2,
+        0.7,
+        root.id,
+      ));
+    }
+
+    // Floor prop
+    if (assets && assets.props.length > 0 && rng() < 0.3) {
+      const key = pick(assets.props, rng)!;
+      const px = r.x + r.w * (0.15 + rng() * 0.7);
+      const pz = r.z + r.d * (0.15 + rng() * 0.7);
+      out.push(modelEntity("Room Prop", key, [px, 0, pz], rng() * Math.PI * 2, 0.8 + rng() * 0.4, root.id));
+    }
   }
 
   return out;
@@ -412,6 +565,7 @@ function buildWall(
 /* ---------------- Maze (recursive backtracker) -------------------------- */
 function maze(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
   const root = rootGroup("Generated · Maze");
   const out: SceneEntity[] = [root];
 
@@ -427,7 +581,7 @@ function maze(opts: MapGenOptions): SceneEntity[] {
       type: "plane",
       parentId: root.id,
       transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [count * cellSize, count * cellSize, 1] },
-      material: { color: "#1a1f1a", metalness: 0, roughness: 1 },
+      material: { color: assets?.groundColor ?? "#1a1f1a", metalness: 0, roughness: 1 },
       physics: { bodyType: "fixed", colliderType: "cuboid" },
     }),
   );
@@ -517,8 +671,212 @@ function maze(opts: MapGenOptions): SceneEntity[] {
           ),
         );
       }
+
+      // Dead end cells get a VFX or monster placed at their center
+      const wallCount = (walls[x][y].N ? 1 : 0) + (walls[x][y].S ? 1 : 0)
+        + (walls[x][y].E ? 1 : 0) + (walls[x][y].W ? 1 : 0);
+      if (wallCount >= 3 && rng() < 0.5) {
+        if (assets && assets.vfx.length > 0 && rng() < 0.45) {
+          const key = pick(assets.vfx, rng)!;
+          out.push(modelEntity("Dead End VFX", key, [cx, 0, cz], rng() * Math.PI * 2, 0.6, root.id));
+        } else if (assets && assets.monsters.length > 0) {
+          const key = pick(assets.monsters, rng)!;
+          out.push(modelEntity(
+            "Maze Enemy",
+            key,
+            [cx, 0, cz],
+            rng() * Math.PI * 2,
+            1,
+            root.id,
+            { behavior: "enemy-deathmatch", layer: "Enemy" },
+          ));
+        }
+      }
+    }
+  }
+
+  // Ambient sector lights scattered through the maze
+  if (assets) {
+    const lightStep = cellSize * 3;
+    for (let lx = -half + lightStep; lx < half; lx += lightStep) {
+      for (let lz = -half + lightStep; lz < half; lz += lightStep) {
+        if (rng() < 0.6) continue;
+        out.push(entity({
+          name: "Maze Light",
+          type: "light",
+          parentId: root.id,
+          transform: { position: [lx, wallH + 1, lz], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          light: { kind: "point", color: assets.lightColor, intensity: assets.lightIntensity * 0.7, distance: cellSize * 4 },
+        }));
+      }
     }
   }
 
   return out;
 }
+
+/* ---------------- Open World (biome terrain) ---------------------------- */
+/** Outdoor generator: large ground plane + dense foliage + scattered
+ *  structures + monsters + harvestable resource nodes + NPC friendly units
+ *  + VFX emitters. Designed for the "Open World" map kind when a world
+ *  sector is selected. Falls back to flat ground + scattered crates when
+ *  no sector assets are available. */
+function openWorld(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · Open World");
+  const out: SceneEntity[] = [root];
+  const size = Math.max(40, opts.size);
+  const half = size / 2;
+
+  // Ground
+  out.push(
+    entity({
+      name: "Terrain",
+      type: "plane",
+      parentId: root.id,
+      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
+      material: { color: assets?.groundColor ?? "#2a3a1a", metalness: 0, roughness: 1 },
+      physics: { bodyType: "fixed", colliderType: "cuboid" },
+    }),
+  );
+
+  // Foliage (trees / plants) — dense scatter
+  if (assets && assets.foliage.length > 0) {
+    const foliageDensity = (assets.foliageDensity ?? 0.5) * opts.density;
+    const foliageStep = 4;
+    const jitter = foliageStep * 0.8;
+    for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
+      for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
+        if (rng() > foliageDensity) continue;
+        const key = pick(assets.foliage, rng)!;
+        const px = x + (rng() - 0.5) * jitter;
+        const pz = z + (rng() - 0.5) * jitter;
+        out.push(modelEntity(
+          "Foliage",
+          key,
+          [px, 0, pz],
+          rng() * Math.PI * 2,
+          0.7 + rng() * 0.8,
+          root.id,
+        ));
+      }
+    }
+  }
+
+  // Structures — sparsely scattered
+  if (assets && assets.structures.length > 0) {
+    const structureCount = Math.round(2 + opts.density * 4);
+    for (let i = 0; i < structureCount; i++) {
+      const key = pick(assets.structures, rng)!;
+      const sx = (rng() - 0.5) * (size - 10);
+      const sz = (rng() - 0.5) * (size - 10);
+      out.push(modelEntity(
+        `Structure ${i + 1}`,
+        key,
+        [sx, 0, sz],
+        rng() * Math.PI * 2,
+        1 + rng() * 0.3,
+        root.id,
+      ));
+
+      // Place a friendly NPC near each structure
+      if (assets.npcs.length > 0 && rng() < 0.6) {
+        const npcKey = pick(assets.npcs, rng)!;
+        out.push(modelEntity(
+          "NPC",
+          npcKey,
+          [sx + (rng() - 0.5) * 4, 0, sz + (rng() - 0.5) * 4],
+          rng() * Math.PI * 2,
+          1,
+          root.id,
+          { behavior: "npc-dialog", layer: "NPC" },
+        ));
+      }
+    }
+  }
+
+  // Fallback boxes when no structures defined
+  if (!assets || assets.structures.length === 0) {
+    for (let i = 0; i < 6; i++) {
+      const sx = (rng() - 0.5) * (size - 10);
+      const sz = (rng() - 0.5) * (size - 10);
+      const s = 2 + rng() * 3;
+      out.push(entity({
+        name: `Rock ${i + 1}`,
+        type: "box",
+        parentId: root.id,
+        transform: { position: [sx, s / 2, sz], rotation: [0, rng() * Math.PI, 0], scale: [s, s * 0.6, s] },
+        material: { color: "#5a5048", metalness: 0, roughness: 1 },
+        physics: { bodyType: "fixed", colliderType: "cuboid" },
+      }));
+    }
+  }
+
+  // Monsters — scattered throughout
+  if (assets && assets.monsters.length > 0) {
+    const monsterCount = Math.round(3 + opts.density * 8);
+    for (let i = 0; i < monsterCount; i++) {
+      const key = pick(assets.monsters, rng)!;
+      const mx = (rng() - 0.5) * (size - 8);
+      const mz = (rng() - 0.5) * (size - 8);
+      out.push(modelEntity(
+        `Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-rpg", layer: "Enemy" },
+      ));
+    }
+  }
+
+  // Harvestable resource nodes
+  const harvestCount = Math.round(4 + opts.density * 8);
+  for (let i = 0; i < harvestCount; i++) {
+    const key = assets && assets.harvestables.length > 0
+      ? pick(assets.harvestables, rng)!
+      : "prop-crystal-gems";
+    const hx = (rng() - 0.5) * (size - 6);
+    const hz = (rng() - 0.5) * (size - 6);
+    out.push(modelEntity(
+      `Resource Node ${i + 1}`,
+      key,
+      [hx, 0.5, hz],
+      rng() * Math.PI * 2,
+      0.6 + rng() * 0.4,
+      root.id,
+    ));
+  }
+
+  // VFX emitters near interesting spots
+  if (assets && assets.vfx.length > 0) {
+    const vfxCount = Math.round(1 + opts.density * 3);
+    for (let i = 0; i < vfxCount; i++) {
+      const key = pick(assets.vfx, rng)!;
+      const vx = (rng() - 0.5) * (size - 12);
+      const vz = (rng() - 0.5) * (size - 12);
+      out.push(modelEntity("Ambient VFX", key, [vx, 0, vz], 0, 1, root.id));
+    }
+  }
+
+  // Ambient lights (warm / cool depending on biome)
+  const lightColor = assets?.lightColor ?? "#ffe4a0";
+  const lightIntensity = assets?.lightIntensity ?? 5;
+  const lightCount = Math.round(3 + opts.density * 3);
+  for (let i = 0; i < lightCount; i++) {
+    const lx = (rng() - 0.5) * size;
+    const lz = (rng() - 0.5) * size;
+    out.push(entity({
+      name: `Ambient Light ${i + 1}`,
+      type: "light",
+      parentId: root.id,
+      transform: { position: [lx, 8, lz], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      light: { kind: "point", color: lightColor, intensity: lightIntensity, distance: size * 0.4 },
+    }));
+  }
+
+  return out;
+}
+
