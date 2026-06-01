@@ -142,6 +142,72 @@ const group = (
   return g;
 };
 
+/** A harvestable / pickup node placed directly on a map's walkable
+ *  surface. Rendered as a glowing primitive on the `Trigger` layer so its
+ *  body is a sensor — the player walks through it without a physics bump,
+ *  and `behavior:"pickup-trigger"` despawns it on contact while firing the
+ *  HUD pickup counter. `pendingTerrainSnap` settles it onto the real map
+ *  trimesh after mount (the snap raycast ignores the authored Y), so a
+ *  designer only needs to pick an XZ position over the map. */
+const pickup = (o: {
+  name: string;
+  position: [number, number, number];
+  kind: "box" | "sphere";
+  color: string;
+  emissive: string;
+  scale?: [number, number, number];
+  parentId?: string | null;
+}): SceneEntity => ({
+  id: id(),
+  name: o.name,
+  type: o.kind,
+  transform: {
+    position: o.position,
+    rotation: [0, 0, 0],
+    scale: o.scale ?? [0.6, 0.6, 0.6],
+  },
+  material: {
+    color: o.color,
+    emissive: o.emissive,
+    metalness: 0.3,
+    roughness: 0.4,
+  },
+  physics: {
+    bodyType: "fixed",
+    colliderType: o.kind === "sphere" ? "ball" : "cuboid",
+    mass: 0,
+    restitution: 0.1,
+    friction: 1,
+  },
+  behavior: "pickup-trigger",
+  layer: "Trigger",
+  parentId: o.parentId ?? null,
+  pendingTerrainSnap: true,
+});
+
+/** Deep, invisible safety floor parented under the Map group. It catches
+ *  anything that walks/falls off the real map trimesh and would otherwise
+ *  drop to -infinity. Authored FAR below the playable surface and tagged
+ *  `surface:"None"` + `layer:"Default"` so it overrides the Map group's
+ *  inherited `Walk`/`Terrain` — without that override the navmesh baker
+ *  and terrain-snap would treat this flat plane as a competing walkable
+ *  ground coplanar with nothing, hiding the real terrain shape. */
+const safetyFloor = (parentId: string | null, size = 400): SceneEntity =>
+  ent({
+    name: "SafetyFloor",
+    type: "plane",
+    position: [0, -200, 0],
+    rotation: [-Math.PI / 2, 0, 0],
+    scale: [size, size, 1],
+    color: "#05050a",
+    roughness: 1,
+    metalness: 0,
+    fixed: true,
+    parentId,
+    layer: "Default",
+    surface: "None",
+  });
+
 /** Third-person zombie shooter sandbox inspired by YetAnotherZombieHorror
  *  and Mugen87/dive. Player rigged character with a parented rifle; the
  *  player runs the same `player-deathmatch` behavior as the dm-* maps so
@@ -659,22 +725,10 @@ export function rpgVillageScene(): SceneData {
     physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
   });
 
-  // Invisible safety ground (catches off-map falls).
-  entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#b08754",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
-      parentId: mapGroupId,
-      layer: "Terrain",
-      surface: "Walk",
-    }),
-  );
+  // Deep invisible safety floor — catches off-map falls without competing
+  // with the real encampment trimesh for the navmesh / terrain-snap (it's
+  // tagged surface:"None" so the map mesh is the only Walk surface).
+  entities.push(safetyFloor(mapGroupId));
 
   // Per-race weapon names mirror RACE_WEAPON in
   // artifacts/game-forge/src/lib/objectStoreApi.ts (kept inline here so
@@ -838,6 +892,32 @@ export function rpgVillageScene(): SceneData {
     });
   }
 
+  // Loot group — gold caches dotted around the plaza. Sensors on the
+  // Trigger layer; `pickup-trigger` despawns each on touch and bumps the
+  // HUD pickup counter. Terrain-snap settles each onto the dirt after the
+  // map GLB streams in.
+  const lootGroupId = id();
+  entities.push(group(lootGroupId, "Loot", { layer: "Trigger" }));
+  const LOOT: { name: string; pos: [number, number, number] }[] = [
+    { name: "Gold Cache", pos: [0, 1, -3] },
+    { name: "Gold Cache", pos: [-2, 1, 0] },
+    { name: "Gold Cache", pos: [2.5, 1, 1] },
+    { name: "Treasure", pos: [0, 1, 4] },
+  ];
+  for (const l of LOOT) {
+    entities.push(
+      pickup({
+        name: l.name,
+        position: l.pos,
+        kind: "box",
+        color: "#ffd34d",
+        emissive: "#b8860b",
+        scale: [0.35, 0.35, 0.35],
+        parentId: lootGroupId,
+      }),
+    );
+  }
+
   // Lighting group — warm directional sun + soft hemisphere ambient
   // (matches the deserttown tone). The sun is encoded as a directional
   // light entity; ambient/hemisphere is driven by the environment
@@ -959,23 +1039,10 @@ function buildDeathmatch(opts: {
     physics: { bodyType: "fixed", colliderType: "trimesh", mass: 0, restitution: 0.1, friction: 1 },
   });
 
-  // Invisible safety ground (catches the player if they walk off the
-  // map mesh). Cuboid collider — cheap.
-  entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#0a0a14",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
-      parentId: mapGroupId,
-      layer: "Terrain",
-      surface: "Walk",
-    }),
-  );
+  // Deep invisible safety floor — catches the player if they walk off the
+  // map mesh, parked far below and tagged surface:"None" so it never
+  // competes with the real map trimesh for the navmesh / terrain-snap.
+  entities.push(safetyFloor(mapGroupId));
 
   // Players group + the player rig. Layer cascades from the group.
   const playersGroupId = id();
@@ -1045,6 +1112,28 @@ function buildDeathmatch(opts: {
       parentId: enemiesGroupId,
       pendingTerrainSnap: true,
     });
+  }
+
+  // Pickups group — themed harvestables on the arena floor. Sensors on
+  // the Trigger layer; `pickup-trigger` despawns them on contact and bumps
+  // the HUD pickup counter. Terrain-snap settles each onto the real map
+  // mesh after the GLB loads.
+  const pickupsGroupId = id();
+  entities.push(group(pickupsGroupId, "Pickups", { layer: "Trigger" }));
+  const pickupRing = opts.spawnRadius * 0.55;
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + Math.PI / 5;
+    const isHealth = i % 2 === 0;
+    entities.push(
+      pickup({
+        name: isHealth ? `Health_${i + 1}` : `Ammo_${i + 1}`,
+        position: [Math.cos(a) * pickupRing, 1, Math.sin(a) * pickupRing],
+        kind: isHealth ? "sphere" : "box",
+        color: isHealth ? "#39ff8c" : "#ffb43a",
+        emissive: isHealth ? "#0f8f4a" : "#a85f00",
+        parentId: pickupsGroupId,
+      }),
+    );
   }
 
   // Lighting group — all mood lights per setting.
@@ -1395,6 +1484,11 @@ export function rtsFortRoyaleScene(): SceneData {
     surface: "Walk",
     terrain: { size: 1200, segments: 128, heightAmp: 12, heightSeed: 0xfa17, noiseScale: 0.008 },
   });
+
+  // Deep invisible safety floor under the whole 1200m terrain — catches
+  // any unit that paths past the falloff ring so it doesn't fall forever.
+  // Tagged surface:"None" so only the real heightmap drives navmesh/snap.
+  entities.push(safetyFloor(null, 1600));
 
   // Spawn units a few meters above terrain so the snap retry has
   // headroom while the map GLB streams in (snap raycasts down from

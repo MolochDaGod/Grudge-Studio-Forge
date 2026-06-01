@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 import { bootstrapAuth } from "@/lib/authBootstrap";
+import { seedExampleScreens } from "@/lib/uiScreen/exampleScreens";
 import { Toolbar } from "@/editor/Toolbar";
 import { MenuBar } from "@/editor/MenuBar";
 import { Hierarchy } from "@/editor/Hierarchy";
@@ -136,6 +137,12 @@ function EditorShell() {
   // mount; failures are non-fatal (the user just stays anonymous).
   useEffect(() => {
     void bootstrapAuth();
+  }, []);
+
+  // Seed the shipped example HUD screens into the UI editor's "global"
+  // bucket once. One-shot (localStorage-guarded) so deletions stick.
+  useEffect(() => {
+    seedExampleScreens();
   }, []);
 
   // Mirror the scene store into the miniplex ECS so AI bulk queries

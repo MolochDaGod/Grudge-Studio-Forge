@@ -52,8 +52,14 @@ import {
  *  20260514.4: rts-fort-royale Map is now a procedural `terrain`
  *  entity (vertex-colored heightfield, deterministic seed) instead of
  *  the fort-royale GLB, so the RTS map has actual hills + a horizon
- *  for the SC1-style overhead camera. */
-export const TEMPLATES_VERSION = "20260601.1";
+ *  for the SC1-style overhead camera.
+ *  20260601.2: Example maps now use the map mesh / heightmap as the
+ *  real walkable ground — the flat fallback "Ground" plane is demoted
+ *  to a deep invisible SafetyFloor (surface:"None", far below) so it no
+ *  longer competes with the map for navmesh / terrain-snap, rts-fort-
+ *  royale gains the same safety floor, and the deathmatch + RPG maps
+ *  seed themed pickup-trigger harvestables snapped onto the terrain. */
+export const TEMPLATES_VERSION = "20260601.2";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */

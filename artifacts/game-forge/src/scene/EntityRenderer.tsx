@@ -1091,6 +1091,23 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   const tr = entity.transform;
   const usePhysics = playMode && entity.physics && entity.type !== "light" && entity.type !== "camera";
 
+  // Terrain-snap for NON-model entities. The model path runs inside
+  // `LoadedModel` (which defers until the GLB mesh has loaded). Primitive
+  // props / pickups / RTS resource + building boxes also set
+  // `pendingTerrainSnap`, but without this effect that flag is a no-op for
+  // them and they float at their authored Y. `snapEntityToTerrainOnce` is
+  // entity-type-agnostic and bounded-retry safe, so it waits for the map
+  // GLB / terrain trimesh to mount before settling the entity.
+  useEffect(() => {
+    if (entity.type === "model" || !entity.pendingTerrainSnap) return;
+    const handle = window.requestAnimationFrame(() => {
+      void import("@/lib/terrainSnap").then((m) =>
+        m.snapEntityToTerrainOnce(entity.id),
+      );
+    });
+    return () => window.cancelAnimationFrame(handle);
+  }, [entity.id, entity.type, entity.pendingTerrainSnap]);
+
   // Layer-driven collision filtering. Subscribe to env so toggling the
   // collision matrix in the Layers panel re-renders bodies live during Play.
   const env = useEditor((s) => s.sceneData.environment);

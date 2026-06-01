@@ -1,2 +1,3 @@
-- [Web asset pipeline](web-asset-pipeline.md) — FBXLoader needs fflate as a direct game-forge dep; R2 env-var fallbacks are intentional; one shared GLTFExporter path for obj/fbx/stl.
-- [builtin:character faces +Z](character-facing-yaw.md) — bundled char GLB faces +Z like race rigs; per-player yawOffset (not global registry) or enemies sharing the model flip backward.
+# Index — durable lessons & pointers (one bullet per line)
+
+- [Walkable example maps & terrain snap](terrain-snap-and-walkable-ground.md) — surface:"None" demotes the flat ground out of navmesh+snap; non-model entities need their own pendingTerrainSnap effect; template ETag determinism rules.
