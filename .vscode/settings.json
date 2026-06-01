@@ -1,0 +1,5 @@
+{
+    "DockerRun.DisableDockerrc": true,
+    "serverpulse.ai.enabled": true,
+    "serverpulse.ai.optInShown": true
+}

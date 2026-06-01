@@ -254,11 +254,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
       let inspectorAssigned = !single;
       for (const f of files) {
         const kind = classifyDroppedFile(f);
-        const isModel: boolean =
-          kind === "glb" ||
-          kind === "gltf" ||
-          (kind !== null && CONVERTIBLE_3D_KINDS.has(kind as DroppedFileKind)) ||
-          kind === "zip";
+        const isModel = kind === "glb" || kind === "gltf" || kind === "obj";
         const open = single || (isModel && !inspectorAssigned);
         if (open && isModel) inspectorAssigned = true;
         await route(f, { openInspector: open });
@@ -292,15 +288,9 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
             <div className="font-heading text-[11px] uppercase tracking-[0.2em] text-muted-foreground mb-4">
               Grudge Studio · Asset Forge
             </div>
-      < div className = "flex gap-4 justify-center flex-wrap text-xs text-muted-foreground max-w-md" >
+            <div className="flex gap-4 justify-center text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-      <FileBox className="size-3.5 text-primary" /> .glb.gltf
-        </span>
-        < span className = "flex items-center gap-1.5" >
-          <Boxes className="size-3.5 text-primary" /> .obj.fbx.stl
-            </span>
-            < span className = "flex items-center gap-1.5" >
-              <FileArchive className="size-3.5 text-primary" /> .zip
+                <FileBox className="size-3.5 text-primary" /> .glb .gltf .obj
               </span>
               <span className="flex items-center gap-1.5">
                 <ImageIcon className="size-3.5 text-primary" /> .png .jpg .webp
@@ -309,7 +299,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
                 <Music2 className="size-3.5 text-primary" /> .mp3 .wav .ogg
               </span>
               <span className="flex items-center gap-1.5">
-      <FileJson className="size-3.5 text-primary" /> .gfscene.json
+                <FileJson className="size-3.5 text-primary" /> .gfscene.json
               </span>
             </div>
           </div>

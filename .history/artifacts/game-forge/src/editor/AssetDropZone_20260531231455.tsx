@@ -137,60 +137,34 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
               assetId: asset?.id,
             });
           }
-        } else if (CONVERTIBLE_3D_KINDS.has(kind) || kind === "zip") {
+        } else if (kind === "obj") {
           setBusy(`Converting ${file.name} → GLB…`);
-          pushLog("info", `Converting ${kind.toUpperCase()} → GLB in-browser…`);
-          // Lazy-load the three.js + three-stdlib pipeline only when a
-          // convertible 3D file (or a ZIP wrapping one) is actually dropped.
-          const { convertFile } = await import("@/lib/assetConverter");
-          const converted = await convertFile(file, (pct, msg) => {
-            setBusy(`${msg} (${Math.round(pct * 100)}%)`);
-          });
-          if (converted.length === 0) {
-            pushLog("warn", `${file.name}: no convertible assets found`);
-            return;
+          pushLog("info", `Converting OBJ → GLB in-browser…`);
+          const text = await file.text();
+          // Lazy-load the three.js-based converter only when an OBJ is
+          // actually dropped — keeps three out of the initial bundle.
+          const { objToGlb } = await import("@/lib/converters");
+          const glbFile = await objToGlb(text, file.name);
+          let info: GlbInfo | undefined;
+          try {
+            info = inspectGlb(await glbFile.arrayBuffer());
+          } catch {
+            /* ignore */
           }
-          // For ZIP drops with multiple results, only open the inspector
-          // for the first model — the rest upload silently.
-          let inspectorAssignedLocal = false;
-          for (const result of converted) {
-            const glbBlob = new File([result.data as BlobPart], result.outputName, {
-              type: result.contentType,
+          setBusy(`Uploading ${glbFile.name}…`);
+          const res = await uploadFile(glbFile, { projectId, assetType: "model" });
+          if (!res) return;
+          const url = `/api/storage${res.objectPath}`;
+          const asset = await recordAsset(glbFile.name, url, "model");
+          pushLog("info", `Converted & uploaded ${glbFile.name}`);
+          if (opts.openInspector) {
+            setInspector({
+              fileName: glbFile.name,
+              fileSize: glbFile.size,
+              glb: info,
+              modelUrl: url,
+              assetId: asset?.id,
             });
-            let info: GlbInfo | undefined;
-            if (result.contentType === "model/gltf-binary") {
-              try {
-                info = inspectGlb(await glbBlob.arrayBuffer());
-              } catch {
-                /* ignore */
-              }
-            }
-            setBusy(`Uploading ${glbBlob.name}…`);
-            const assetType = result.contentType.startsWith("image/")
-              ? "image"
-              : result.contentType.startsWith("audio/")
-                ? "audio"
-                : "model";
-            const res = await uploadFile(glbBlob, { projectId, assetType });
-            if (!res) continue;
-            const url = `/api/storage${res.objectPath}`;
-            const asset = await recordAsset(glbBlob.name, url, assetType);
-            pushLog(
-              "info",
-              result.converted
-                ? `Converted & uploaded ${glbBlob.name}`
-                : `Uploaded ${glbBlob.name}`,
-            );
-            if (opts.openInspector && assetType === "model" && !inspectorAssignedLocal) {
-              setInspector({
-                fileName: glbBlob.name,
-                fileSize: glbBlob.size,
-                glb: info,
-                modelUrl: url,
-                assetId: asset?.id,
-              });
-              inspectorAssignedLocal = true;
-            }
           }
         } else if (kind === "image" || kind === "audio") {
           setBusy(`Uploading ${file.name}…`);
@@ -254,11 +228,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
       let inspectorAssigned = !single;
       for (const f of files) {
         const kind = classifyDroppedFile(f);
-        const isModel: boolean =
-          kind === "glb" ||
-          kind === "gltf" ||
-          (kind !== null && CONVERTIBLE_3D_KINDS.has(kind as DroppedFileKind)) ||
-          kind === "zip";
+        const isModel = kind === "glb" || kind === "gltf" || kind === "obj";
         const open = single || (isModel && !inspectorAssigned);
         if (open && isModel) inspectorAssigned = true;
         await route(f, { openInspector: open });
@@ -292,15 +262,9 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
             <div className="font-heading text-[11px] uppercase tracking-[0.2em] text-muted-foreground mb-4">
               Grudge Studio · Asset Forge
             </div>
-      < div className = "flex gap-4 justify-center flex-wrap text-xs text-muted-foreground max-w-md" >
+            <div className="flex gap-4 justify-center text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-      <FileBox className="size-3.5 text-primary" /> .glb.gltf
-        </span>
-        < span className = "flex items-center gap-1.5" >
-          <Boxes className="size-3.5 text-primary" /> .obj.fbx.stl
-            </span>
-            < span className = "flex items-center gap-1.5" >
-              <FileArchive className="size-3.5 text-primary" /> .zip
+                <FileBox className="size-3.5 text-primary" /> .glb .gltf .obj
               </span>
               <span className="flex items-center gap-1.5">
                 <ImageIcon className="size-3.5 text-primary" /> .png .jpg .webp
@@ -309,7 +273,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
                 <Music2 className="size-3.5 text-primary" /> .mp3 .wav .ogg
               </span>
               <span className="flex items-center gap-1.5">
-      <FileJson className="size-3.5 text-primary" /> .gfscene.json
+                <FileJson className="size-3.5 text-primary" /> .gfscene.json
               </span>
             </div>
           </div>

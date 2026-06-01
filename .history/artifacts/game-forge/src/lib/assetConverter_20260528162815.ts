@@ -1,19 +1,18 @@
 /**
  * Browser-side asset conversion pipeline.
  *
- * Converts FBX, OBJ, STL, glTF → GLB using three.js + GLTFExporter via the
- * already-installed `three-stdlib` loaders. ZIP files are extracted with
- * `fflate` and each contained 3D file is converted individually; sibling
- * MTL / texture files in the same archive are auto-attached to OBJ
- * conversions through an in-memory blob: URL resolver.
+ * Converts FBX, OBJ, STL → GLB using the same assimpjs WASM module the
+ * desktop app uses, but running entirely in the browser. ZIP files are
+ * extracted with `fflate` (tiny, no native deps) and each contained 3D
+ * file is converted individually.
  *
  * Supported input → output:
- *   .fbx  → .glb   (three-stdlib FBXLoader → GLTFExporter)
- *   .obj  → .glb   (three-stdlib OBJLoader + MTLLoader → GLTFExporter)
- *   .stl  → .glb   (three-stdlib STLLoader → GLTFExporter)
- *   .gltf → .glb   (three-stdlib GLTFLoader → GLTFExporter, embeds textures)
- *   .glb  → .glb   (passthrough)
- *   .zip  → .glb[] (extract + convert each 3D file found inside)
+ *   .fbx  → .glb   (assimpjs WASM)
+ *   .obj  → .glb   (assimpjs WASM, MTL auto-detected in ZIPs)
+ *   .stl  → .glb   (assimpjs WASM)
+ *   .gltf → .glb   (three.js GLTFExporter via scene round-trip)
+ *   .glb  → .glb   (passthrough, no conversion needed)
+ *   .zip  → .glb[]  (extract + convert each 3D file found)
  *   .png/.jpg/.webp/.json → passthrough (direct upload, no conversion)
  *
  * Usage:
@@ -21,7 +20,6 @@
  *   const result = await convertFile(file, (progress, message) => { ... });
  */
 import { unzipSync } from "fflate";
-import type * as THREE_NS from "three";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -67,142 +65,73 @@ function baseName(filename: string): string {
   return filename.replace(/\.[^.]+$/, "");
 }
 
-// ── Core conversion (three-stdlib, lazy-loaded) ──────────────────────
+// ── Assimp WASM loader (lazy, cached) ────────────────────────────────
 
-function mimeForExt(ext: string): string {
-  switch (ext) {
-    case "png": return "image/png";
-    case "jpg":
-    case "jpeg": return "image/jpeg";
-    case "webp": return "image/webp";
-    case "gif": return "image/gif";
-    case "svg": return "image/svg+xml";
-    case "avif": return "image/avif";
-    default: return "application/octet-stream";
+interface AssimpFile {
+  GetPath(): string;
+  GetContent(): Uint8Array;
+}
+interface AssimpResult {
+  IsSuccess(): boolean;
+  GetErrorCode(): string;
+  FileCount(): number;
+  GetFile(i: number): AssimpFile;
+}
+interface AssimpFileList {
+  AddFile(name: string, data: Uint8Array): void;
+}
+interface AssimpModule {
+  FileList: new () => AssimpFileList;
+  ConvertFileList(list: AssimpFileList, fmt: string): AssimpResult;
+}
+
+let _assimpPromise: Promise<AssimpModule> | null = null;
+
+async function loadAssimp(): Promise<AssimpModule> {
+  if (!_assimpPromise) {
+    _assimpPromise = (async () => {
+      // Dynamic import — assimpjs ships a UMD factory that returns a Promise.
+      // No @types/assimpjs exists; we cast through `unknown`.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mod: any = await (import("assimpjs" as string) as Promise<unknown>);
+      const factory = mod.default ?? mod;
+      return (await factory()) as AssimpModule;
+    })();
   }
+  return _assimpPromise;
 }
 
-/** Get an ArrayBuffer view that owns its memory (loaders mutate input). */
-function toArrayBuffer(data: Uint8Array): ArrayBuffer {
-  return data.buffer.slice(
-    data.byteOffset,
-    data.byteOffset + data.byteLength,
-  ) as ArrayBuffer;
-}
+// ── Core conversion ──────────────────────────────────────────────────
 
-/** Serialize an Object3D root to a binary GLB Uint8Array. */
-async function exportToGlb(
-  root: THREE_NS.Object3D,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  GLTFExporterCtor: any,
-): Promise<Uint8Array> {
-  const exporter = new GLTFExporterCtor();
-  const result = await new Promise<ArrayBuffer | Record<string, unknown>>((resolve, reject) => {
-    exporter.parse(
-      root,
-      (out: ArrayBuffer | Record<string, unknown>) => resolve(out),
-      (err: unknown) => reject(err),
-      { binary: true, embedImages: true },
-    );
-  });
-  if (!(result instanceof ArrayBuffer)) {
-    throw new Error("GLTFExporter did not return a binary GLB buffer");
-  }
-  return new Uint8Array(result);
-}
-
-/** Convert a single 3D file (FBX/OBJ/STL/GLTF) → GLB. */
+/** Convert a single 3D file (FBX/OBJ/STL) → GLB using assimpjs WASM. */
 async function convertToGlb(
   filename: string,
   data: Uint8Array,
   siblings?: Map<string, Uint8Array>,
 ): Promise<Uint8Array> {
-  const ext = getExtension(filename);
-  // Lazy-load the heavy three.js graph only when an actual conversion runs.
-  const THREE = (await import("three")) as typeof THREE_NS;
-  const { GLTFExporter } = await import("three-stdlib");
+  const ajs = await loadAssimp();
+  const list = new ajs.FileList();
+  list.AddFile(filename, data);
 
-  let root: THREE_NS.Object3D;
-
-  if (ext === "fbx") {
-    const { FBXLoader } = await import("three-stdlib");
-    const loader = new FBXLoader();
-    root = loader.parse(toArrayBuffer(data), "");
-  } else if (ext === "stl") {
-    const { STLLoader } = await import("three-stdlib");
-    const loader = new STLLoader();
-    const geometry = loader.parse(toArrayBuffer(data));
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xd4af37,
-      metalness: 0.1,
-      roughness: 0.6,
-    });
-    const mesh = new THREE.Mesh(geometry, mat);
-    const group = new THREE.Group();
-    group.add(mesh);
-    root = group;
-  } else if (ext === "obj") {
-    const { OBJLoader } = await import("three-stdlib");
-    const objText = new TextDecoder().decode(data);
-    const loader = new OBJLoader();
-    // Wire sibling MTL + textures from a ZIP via in-memory blob: URLs so
-    // `mtllib foo.mtl` and `map_Kd bar.png` references resolve client-side.
-    const createdUrls: string[] = [];
-    if (siblings) {
-      const mtlMatch = objText.match(/^\s*mtllib\s+(.+?)\s*$/m);
-      if (mtlMatch) {
-        const mtlName = mtlMatch[1].trim();
-        const mtlBuf =
-          siblings.get(mtlName) ??
-          [...siblings.entries()].find(([k]) =>
-            k.toLowerCase().endsWith(`/${mtlName.toLowerCase()}`) ||
-            k.toLowerCase() === mtlName.toLowerCase(),
-          )?.[1];
-        if (mtlBuf) {
-          const { MTLLoader } = await import("three-stdlib");
-          const mtlLoader = new MTLLoader();
-          const mtlText = new TextDecoder().decode(mtlBuf);
-          const blobUrls = new Map<string, string>();
-          for (const [sName, sBuf] of siblings) {
-            const sExt = getExtension(sName);
-            if (IMAGE_EXTENSIONS.has(sExt)) {
-              const url = URL.createObjectURL(
-                new Blob([sBuf], { type: mimeForExt(sExt) }),
-              );
-              blobUrls.set(sName.split("/").pop()!.toLowerCase(), url);
-              createdUrls.push(url);
-            }
-          }
-          mtlLoader.manager.setURLModifier((url) => {
-            const key = url.split("/").pop()?.toLowerCase() ?? url;
-            return blobUrls.get(key) ?? url;
-          });
-          const materials = mtlLoader.parse(mtlText, "");
-          materials.preload();
-          loader.setMaterials(materials);
-        }
+  // For OBJ files, add sibling MTL + texture files if available
+  if (getExtension(filename) === "obj" && siblings) {
+    for (const [name, buf] of siblings) {
+      if (name === filename) continue;
+      const ext = getExtension(name);
+      if (ext === "mtl" || IMAGE_EXTENSIONS.has(ext)) {
+        list.AddFile(name, buf);
       }
     }
-    try {
-      root = loader.parse(objText);
-    } finally {
-      // Revoke blob URLs after the OBJ parse + texture upload latches them
-      // into Textures (which keep their own references). Defer one tick so
-      // the loader's async image loads can grab the URL first.
-      if (createdUrls.length > 0) {
-        setTimeout(() => createdUrls.forEach((u) => URL.revokeObjectURL(u)), 5000);
-      }
-    }
-  } else if (ext === "gltf" || ext === "glb") {
-    const { GLTFLoader } = await import("three-stdlib");
-    const loader = new GLTFLoader();
-    const gltf = await loader.parseAsync(toArrayBuffer(data), "");
-    root = gltf.scene;
-  } else {
-    throw new Error(`Unsupported 3D extension: .${ext}`);
   }
 
-  return await exportToGlb(root, GLTFExporter);
+  const result = ajs.ConvertFileList(list, "glb2");
+  if (!result.IsSuccess()) {
+    throw new Error(`Conversion failed: ${result.GetErrorCode()}`);
+  }
+  if (result.FileCount() === 0) {
+    throw new Error("Conversion produced no output");
+  }
+  return result.GetFile(0).GetContent();
 }
 
 // ── Public API ───────────────────────────────────────────────────────

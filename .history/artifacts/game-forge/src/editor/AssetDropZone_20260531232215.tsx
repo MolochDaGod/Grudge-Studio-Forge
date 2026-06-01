@@ -309,7 +309,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
                 <Music2 className="size-3.5 text-primary" /> .mp3 .wav .ogg
               </span>
               <span className="flex items-center gap-1.5">
-      <FileJson className="size-3.5 text-primary" /> .gfscene.json
+                <FileJson className="size-3.5 text-primary" /> .gfscene.json
               </span>
             </div>
           </div>

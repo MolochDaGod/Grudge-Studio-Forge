@@ -207,13 +207,7 @@ export function ScriptEditor() {
             </div>
             <div className="flex-1 min-h-0">
               <Editor
-                language={
-  active.language === "cs"
-    ? "csharp"
-    : active.language === "ts"
-      ? "typescript"
-      : "javascript"
-}
+                language={active.language === "cs" ? "csharp" : "javascript"}
                 value={draft}
                 onChange={(v) => setDraft(v ?? "")}
                 theme="vs-dark"

@@ -140,13 +140,13 @@ export function ScriptEditor() {
       {/* Script list */}
       <div className="border-r border-border flex flex-col bg-card/40">
         <div className="p-2 border-b border-border flex gap-1">
-          <Select value={newLanguage} onValueChange={(v) => setNewLanguage(v as "js" | "ts" | "cs")}>
+  <Select value={ newLanguage } onValueChange = {(v) => setNewLanguage(v as "js" | "ts" | "cs")}>
             <SelectTrigger className="h-7 text-xs flex-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="js">JavaScript</SelectItem>
-              <SelectItem value="ts">TypeScript</SelectItem>
+  < SelectItem value = "ts" > TypeScript </SelectItem>
               <SelectItem value="cs">C# (Blazor)</SelectItem>
             </SelectContent>
           </Select>

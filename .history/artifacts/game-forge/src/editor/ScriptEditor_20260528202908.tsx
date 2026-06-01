@@ -34,7 +34,7 @@ export function ScriptEditor() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [draft, setDraft] = useState<string>("");
   const [draftName, setDraftName] = useState<string>("");
-  const [newLanguage, setNewLanguage] = useState<"js" | "ts" | "cs">("js");
+  const [newLanguage, setNewLanguage] = useState<"js" | "cs">("js");
 
   const active = useMemo<Script | undefined>(
     () => scripts.find((s) => s.id === activeId),
@@ -140,13 +140,12 @@ export function ScriptEditor() {
       {/* Script list */}
       <div className="border-r border-border flex flex-col bg-card/40">
         <div className="p-2 border-b border-border flex gap-1">
-          <Select value={newLanguage} onValueChange={(v) => setNewLanguage(v as "js" | "ts" | "cs")}>
+          <Select value={newLanguage} onValueChange={(v) => setNewLanguage(v as "js" | "cs")}>
             <SelectTrigger className="h-7 text-xs flex-1">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="js">JavaScript</SelectItem>
-              <SelectItem value="ts">TypeScript</SelectItem>
               <SelectItem value="cs">C# (Blazor)</SelectItem>
             </SelectContent>
           </Select>
@@ -207,13 +206,7 @@ export function ScriptEditor() {
             </div>
             <div className="flex-1 min-h-0">
               <Editor
-                language={
-  active.language === "cs"
-    ? "csharp"
-    : active.language === "ts"
-      ? "typescript"
-      : "javascript"
-}
+                language={active.language === "cs" ? "csharp" : "javascript"}
                 value={draft}
                 onChange={(v) => setDraft(v ?? "")}
                 theme="vs-dark"
