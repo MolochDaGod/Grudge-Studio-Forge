@@ -1,51 +1,26 @@
 /**
- * Configure Monaco's web-worker environment for Vite.
+ * Configure Monaco Editor to load from CDN instead of bundling it.
  *
- * Without this, `@monaco-editor/react` falls back to a same-thread polyfill
- * that hard-disables the TypeScript / JSON / CSS language services in
- * production builds and produces the runtime warning:
+ * The previous approach imported Monaco language workers via Vite's
+ * `?worker` suffix (e.g. `monaco-editor/esm/vs/editor/editor.worker?worker`).
+ * That forced Rollup to transform all ~1,000 Monaco ESM source files during
+ * the production build, consuming several GB of RAM and causing SIGKILL on
+ * Vercel's build containers.
  *
- *   "You must define a function MonacoEnvironment.getWorkerUrl or
- *    MonacoEnvironment.getWorker"
- *
- * Vite's `?worker` import suffix builds each Monaco language worker as a
- * standalone module that ships in `dist/assets/<hash>.js` and is loaded
- * by the browser on demand. We map each Monaco worker label to its module.
+ * @monaco-editor/react already supports CDN loading via @monaco-editor/loader
+ * (RequireJS / AMD). Pointing the loader at the CDN removes every Monaco
+ * source file from the Rollup transform pipeline entirely — Monaco is
+ * downloaded by the browser at runtime instead.  Language workers (TS, JSON,
+ * CSS, HTML) ship with the CDN bundle and are loaded automatically.
  *
  * Imported for side-effects only — see `main.tsx`.
  */
-import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
-import JsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
-import CssWorker from "monaco-editor/esm/vs/language/css/css.worker?worker";
-import HtmlWorker from "monaco-editor/esm/vs/language/html/html.worker?worker";
-import TsWorker from "monaco-editor/esm/vs/language/typescript/ts.worker?worker";
+import loader from "@monaco-editor/loader";
 
-declare global {
-  interface Window {
-    MonacoEnvironment?: {
-      getWorker?(workerId: string, label: string): Worker;
-    };
-  }
-}
-
-self.MonacoEnvironment = {
-  getWorker(_workerId: string, label: string): Worker {
-    switch (label) {
-      case "json":
-        return new JsonWorker();
-      case "css":
-      case "scss":
-      case "less":
-        return new CssWorker();
-      case "html":
-      case "handlebars":
-      case "razor":
-        return new HtmlWorker();
-      case "typescript":
-      case "javascript":
-        return new TsWorker();
-      default:
-        return new EditorWorker();
-    }
+// Pin to the exact installed version so the CDN and the @monaco-editor/react
+// wrapper are guaranteed to be in sync.
+loader.config({
+  paths: {
+    vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs",
   },
-};
+});
