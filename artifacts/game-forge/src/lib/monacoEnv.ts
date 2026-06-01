@@ -15,7 +15,7 @@
  *
  * Imported for side-effects only — see `main.tsx`.
  */
-import loader from "@monaco-editor/loader";
+import { loader } from "@monaco-editor/react";
 
 // Pin to the exact installed version so the CDN and the @monaco-editor/react
 // wrapper are guaranteed to be in sync.
