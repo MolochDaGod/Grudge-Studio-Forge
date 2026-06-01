@@ -84,13 +84,53 @@ interface UIScreensState {
 
 const projectKey = (p: ProjectKey) => String(p);
 
+/** Bucket holding the shipped example HUD screens. They're authored once
+ *  (no project open yet) and surfaced into every numeric project below so
+ *  they're discoverable + editable in the normal project UI flow. */
+const GLOBAL_KEY = "global";
+
+/** A project's own screens merged with the shared "global" examples.
+ *  Project-scoped screens win on id collision (so a project can shadow an
+ *  example). When the project IS global we don't double-merge. */
+function withGlobal(
+  byProject: ScreensByProject,
+  project: ProjectKey,
+): UIScreen[] {
+  const own = byProject[projectKey(project)] ?? [];
+  if (project === "global") return [...own];
+  const globals = byProject[GLOBAL_KEY] ?? [];
+  const ownIds = new Set(own.map((s) => s.id));
+  return [...own, ...globals.filter((g) => !ownIds.has(g.id))];
+}
+
+/** Resolve which bucket actually owns `screenId` so mutations land in the
+ *  right place: editing/deleting a global example while a numeric project
+ *  is open must persist in the global bucket, not silently no-op against
+ *  the project bucket. Falls back to the active project key when nothing
+ *  owns it yet (so create-then-mutate flows still work). */
+function owningKey(
+  byProject: ScreensByProject,
+  project: ProjectKey,
+  screenId: string,
+): string {
+  const key = projectKey(project);
+  if ((byProject[key] ?? []).some((s) => s.id === screenId)) return key;
+  if (
+    project !== "global" &&
+    (byProject[GLOBAL_KEY] ?? []).some((s) => s.id === screenId)
+  ) {
+    return GLOBAL_KEY;
+  }
+  return key;
+}
+
 function mutateScreen(
   byProject: ScreensByProject,
   project: ProjectKey,
   screenId: string,
   fn: (s: UIScreen) => UIScreen,
 ): ScreensByProject {
-  const key = projectKey(project);
+  const key = owningKey(byProject, project, screenId);
   const list = byProject[key] ?? [];
   const next = list.map((s) =>
     s.id === screenId ? { ...fn(s), updatedAt: Date.now() } : s,
@@ -104,15 +144,21 @@ export const useUIScreens = create<UIScreensState>()(
       byProject: {},
       selectedWidgetId: null,
 
-      listScreens: (project) => {
-        const list = get().byProject[projectKey(project)] ?? [];
-        return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
-      },
-
-      getScreen: (project, screenId) =>
-        (get().byProject[projectKey(project)] ?? []).find(
-          (s) => s.id === screenId,
+      listScreens: (project) =>
+        withGlobal(get().byProject, project).sort(
+          (a, b) => b.updatedAt - a.updatedAt,
         ),
+
+      getScreen: (project, screenId) => {
+        const own = (get().byProject[projectKey(project)] ?? []).find(
+          (s) => s.id === screenId,
+        );
+        if (own) return own;
+        if (project === "global") return undefined;
+        return (get().byProject[GLOBAL_KEY] ?? []).find(
+          (s) => s.id === screenId,
+        );
+      },
 
       createScreen: (project, opts) => {
         const screen: UIScreen = {
@@ -154,7 +200,7 @@ export const useUIScreens = create<UIScreensState>()(
 
       deleteScreen: (project, screenId) =>
         set((s) => {
-          const key = projectKey(project);
+          const key = owningKey(s.byProject, project, screenId);
           const list = s.byProject[key] ?? [];
           return {
             byProject: {
