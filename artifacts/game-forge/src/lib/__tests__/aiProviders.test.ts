@@ -11,9 +11,10 @@ describe("AI provider catalog", () => {
     expect(DEFAULT_MODEL_ID).toBe(MODELS[0].id);
   });
 
-  it("default model is server-anthropic (no Puter required)", () => {
-    expect(MODELS[0].provider).toBe("server-anthropic");
-    expect(MODELS[0].requiresPuterAuth).toBeFalsy();
+  it("default model is a Puter-backed Claude (free via Puter)", () => {
+    expect(MODELS[0].provider).toBe("puter");
+    expect(MODELS[0].requiresPuterAuth).toBe(true);
+    expect(MODELS[0].id.startsWith("puter:claude")).toBe(true);
   });
 
   it("includes Puter-backed models gated behind requiresPuterAuth", () => {
@@ -31,11 +32,13 @@ describe("AI provider catalog", () => {
     expect(findModel(MODELS[1].id).id).toBe(MODELS[1].id);
   });
 
-  it("getProvider returns a streaming provider for both ids", () => {
+  it("getProvider returns a streaming provider for puter, ollama, and server-anthropic", () => {
     const a = getProvider("server-anthropic");
     const b = getProvider("puter");
+    const c = getProvider("ollama");
     expect(typeof a.streamTurn).toBe("function");
     expect(typeof b.streamTurn).toBe("function");
+    expect(typeof c.streamTurn).toBe("function");
     expect(a.id).toBe("server-anthropic");
     expect(b.id).toBe("puter");
   });
@@ -45,9 +48,10 @@ describe("AI provider catalog", () => {
     expect(fallback.id).toBe("server-anthropic");
   });
 
-  it("every Puter model id starts with 'puter:' for stable picker keying", () => {
+  it("model ids use stable provider-prefixed keys", () => {
     for (const m of MODELS) {
       if (m.provider === "puter") expect(m.id.startsWith("puter:")).toBe(true);
+      if (m.provider === "ollama") expect(m.id.startsWith("ollama:")).toBe(true);
       if (m.provider === "server-anthropic") expect(m.id.startsWith("server:")).toBe(true);
     }
   });
