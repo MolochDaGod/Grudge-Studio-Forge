@@ -86,7 +86,8 @@ function InheritedAxisRow({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {options.map((o) => (
+  {
+    options.filter((o) => o).map((o) => (
             <SelectItem key={o} value={o} className="text-xs">
               {o}
             </SelectItem>
@@ -1448,7 +1449,8 @@ export function Inspector() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none">None</SelectItem>
-                {scripts.map((s) => (
+{
+  scripts.filter((s) => s.id != null).map((s) => (
                   <SelectItem key={s.id} value={String(s.id)}>
                     [{s.language.toUpperCase()}] {s.name}
                   </SelectItem>

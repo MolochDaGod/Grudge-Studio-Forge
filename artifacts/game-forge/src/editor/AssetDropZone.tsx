@@ -54,6 +54,34 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
     [projectId, createAsset, qc],
   );
 
+  /**
+   * Upload a `<glbName>.meta.json` sidecar next to the just-uploaded model so
+   * the Library panel can render anim/bone/triangle counts without re-parsing
+   * the GLB. Returns the recorded asset row (sidecar name = model name + ".meta.json")
+   * or null on failure — sidecar failures never block the primary upload.
+   */
+  const uploadMetaSidecar = useCallback(
+    async (modelName: string, metadata: object) => {
+      if (!projectId) return null;
+      try {
+        const sidecarName = `${modelName}.meta.json`;
+        const blob = new File(
+          [JSON.stringify(metadata, null, 2)],
+          sidecarName,
+          { type: "application/json" },
+        );
+        const res = await uploadFile(blob, { projectId, assetType: "other" });
+        if (!res) return null;
+        const url = `/api/storage${res.objectPath}`;
+        return await recordAsset(sidecarName, url, "other");
+      } catch (err) {
+        pushLog("warn", `Metadata sidecar upload failed: ${(err as Error).message}`);
+        return null;
+      }
+    },
+    [projectId, uploadFile, recordAsset, pushLog],
+  );
+
   const importSceneJson = useCallback(
     (text: string, fileName: string) => {
       let parsed: unknown;
@@ -175,6 +203,12 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
             if (!res) continue;
             const url = `/api/storage${res.objectPath}`;
             const asset = await recordAsset(glbBlob.name, url, assetType);
+            // Sidecar: `<glb>.meta.json` with pre-computed mesh stats. Lets
+            // the Library panel render anim/bone/triangle counts without
+            // re-fetching and re-parsing the GLB binary.
+            if (assetType === "model" && result.metadata) {
+              await uploadMetaSidecar(glbBlob.name, result.metadata);
+            }
             pushLog(
               "info",
               result.converted
@@ -207,7 +241,7 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
         setBusy(null);
       }
     },
-    [projectId, importSceneJson, pushLog, uploadFile, recordAsset],
+    [projectId, importSceneJson, pushLog, uploadFile, recordAsset, uploadMetaSidecar],
   );
 
   const onAddToScene = useCallback(

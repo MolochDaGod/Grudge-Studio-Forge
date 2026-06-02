@@ -7,12 +7,19 @@
  * MTL / texture files in the same archive are auto-attached to OBJ
  * conversions through an in-memory blob: URL resolver.
  *
+ * Every emitted GLB (converted or passthrough) is also run through a
+ * gltf-transform post-process pass that dedups / prunes / welds geometry
+ * and applies `EXT_meshopt_compression` for ~5–10× smaller meshes. KTX2
+ * texture compression is intentionally NOT applied client-side because
+ * the basis-encoder WASM (~3 MB) is too heavy for the editor bundle — the
+ * desktop bridge handles it on the heavy path.
+ *
  * Supported input → output:
- *   .fbx  → .glb   (three-stdlib FBXLoader → GLTFExporter)
- *   .obj  → .glb   (three-stdlib OBJLoader + MTLLoader → GLTFExporter)
- *   .stl  → .glb   (three-stdlib STLLoader → GLTFExporter)
- *   .gltf → .glb   (three-stdlib GLTFLoader → GLTFExporter, embeds textures)
- *   .glb  → .glb   (passthrough)
+ *   .fbx  → .glb   (three-stdlib FBXLoader → GLTFExporter → meshopt)
+ *   .obj  → .glb   (three-stdlib OBJLoader + MTLLoader → GLTFExporter → meshopt)
+ *   .stl  → .glb   (three-stdlib STLLoader → GLTFExporter → meshopt)
+ *   .gltf → .glb   (three-stdlib GLTFLoader → GLTFExporter → meshopt)
+ *   .glb  → .glb   (re-optimized through meshopt; falls back to passthrough on failure)
  *   .zip  → .glb[] (extract + convert each 3D file found inside)
  *   .png/.jpg/.webp/.json → passthrough (direct upload, no conversion)
  *
@@ -22,8 +29,26 @@
  */
 import { unzipSync } from "fflate";
 import type * as THREE_NS from "three";
+import type { Document } from "@gltf-transform/core";
 
 // ── Types ────────────────────────────────────────────────────────────
+
+/** Lightweight summary the Library panel can render without re-parsing the GLB. */
+export interface AssetMetadata {
+  triangles: number;
+  vertices: number;
+  meshes: number;
+  /** Number of unique bones across all skinned meshes. */
+  bones: number;
+  /** Animation clip names (empty when the asset has no animations). */
+  animations: string[];
+  /** Distinct material names referenced by the meshes. */
+  materials: string[];
+  /** World-space AABB of the merged root after import. */
+  bbox: { min: [number, number, number]; max: [number, number, number] };
+  /** True when at least one material references a texture map. */
+  hasTextures: boolean;
+}
 
 export interface ConvertedAsset {
   /** Original filename (or extracted filename from ZIP). */
@@ -36,6 +61,8 @@ export interface ConvertedAsset {
   contentType: string;
   /** Whether this was a 3D conversion or a passthrough. */
   converted: boolean;
+  /** Optional summary of the GLB's contents (only set for 3D assets). */
+  metadata?: AssetMetadata;
 }
 
 export type ProgressCallback = (progress: number, message: string) => void;
@@ -110,6 +137,142 @@ async function exportToGlb(
   }
   return new Uint8Array(result);
 }
+
+// ── Meshopt optimize + metadata extraction (gltf-transform) ─────────
+
+/**
+ * Run a GLB through gltf-transform: dedup duplicate accessors / textures,
+ * prune unused nodes, weld near-duplicate vertices, then apply
+ * `EXT_meshopt_compression` for ~5–10× smaller meshes. Falls back to the
+ * input bytes if any step fails so an unusual GLB never blocks an upload.
+ *
+ * Also extracts an `AssetMetadata` summary from the same Document so the
+ * Library panel can render anim/bone/triangle counts without re-parsing
+ * the binary.
+ */
+async function optimizeAndMeasure(
+  bytes: Uint8Array,
+): Promise<{ bytes: Uint8Array; metadata: AssetMetadata }> {
+  const { WebIO } = await import("@gltf-transform/core");
+  const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
+  const { dedup, prune, weld, meshopt } = await import(
+    "@gltf-transform/functions"
+  );
+  const { MeshoptEncoder } = await import("meshoptimizer");
+
+  const io = new WebIO().registerExtensions(ALL_EXTENSIONS);
+  let doc: Document;
+  try {
+    doc = await io.readBinary(bytes);
+  } catch (err) {
+    console.warn("[AssetConverter] gltf-transform read failed:", err);
+    return { bytes, metadata: emptyMetadata() };
+  }
+
+  try {
+    await MeshoptEncoder.ready;
+    await doc.transform(
+      dedup(),
+      prune(),
+      weld({ tolerance: 0.0001 }),
+      meshopt({ encoder: MeshoptEncoder, level: "medium" }),
+    );
+  } catch (err) {
+    console.warn("[AssetConverter] meshopt transform failed; keeping unoptimized doc:", err);
+  }
+
+  const metadata = extractMetadata(doc);
+
+  let outBytes: Uint8Array;
+  try {
+    outBytes = await io.writeBinary(doc);
+  } catch (err) {
+    console.warn("[AssetConverter] gltf-transform write failed; using input bytes:", err);
+    outBytes = bytes;
+  }
+
+  return { bytes: outBytes, metadata };
+}
+
+function emptyMetadata(): AssetMetadata {
+  return {
+    triangles: 0,
+    vertices: 0,
+    meshes: 0,
+    bones: 0,
+    animations: [],
+    materials: [],
+    bbox: { min: [0, 0, 0], max: [0, 0, 0] },
+    hasTextures: false,
+  };
+}
+
+function extractMetadata(doc: Document): AssetMetadata {
+  const root = doc.getRoot();
+  const meshes = root.listMeshes();
+  let triangles = 0;
+  let vertices = 0;
+  let hasTextures = false;
+  const bboxMin: [number, number, number] = [Infinity, Infinity, Infinity];
+  const bboxMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+
+  for (const mesh of meshes) {
+    for (const prim of mesh.listPrimitives()) {
+      const pos = prim.getAttribute("POSITION");
+      if (pos) {
+        vertices += pos.getCount();
+        const lo = pos.getMin([0, 0, 0]) as number[];
+        const hi = pos.getMax([0, 0, 0]) as number[];
+        for (let i = 0; i < 3; i++) {
+          if (lo[i] < bboxMin[i]) bboxMin[i] = lo[i];
+          if (hi[i] > bboxMax[i]) bboxMax[i] = hi[i];
+        }
+      }
+      const indices = prim.getIndices();
+      if (indices) triangles += Math.floor(indices.getCount() / 3);
+      else if (pos) triangles += Math.floor(pos.getCount() / 3);
+    }
+  }
+
+  let bones = 0;
+  for (const skin of root.listSkins()) bones += skin.listJoints().length;
+
+  const materials: string[] = [];
+  for (const mat of root.listMaterials()) {
+    materials.push(mat.getName() || "(unnamed)");
+    if (
+      mat.getBaseColorTexture() ||
+      mat.getMetallicRoughnessTexture() ||
+      mat.getNormalTexture() ||
+      mat.getEmissiveTexture() ||
+      mat.getOcclusionTexture()
+    ) {
+      hasTextures = true;
+    }
+  }
+
+  const animations = root
+    .listAnimations()
+    .map((a) => a.getName() || "(unnamed)");
+
+  if (!Number.isFinite(bboxMin[0])) {
+    bboxMin[0] = bboxMin[1] = bboxMin[2] = 0;
+    bboxMax[0] = bboxMax[1] = bboxMax[2] = 0;
+  }
+
+  return {
+    triangles,
+    vertices,
+    meshes: meshes.length,
+    bones,
+    animations,
+    materials,
+    bbox: { min: bboxMin, max: bboxMax },
+    hasTextures,
+  };
+}
+
+
 
 /** Convert a single 3D file (FBX/OBJ/STL/GLTF) → GLB. */
 async function convertToGlb(
@@ -237,25 +400,40 @@ export async function convertFile(
       if (THREE_D_EXTENSIONS.has(entryExt) && entryExt !== "glb") {
         progress(pct, `Converting ${name}...`);
         try {
-          const glb = await convertToGlb(name, data, siblings);
+          const rawGlb = await convertToGlb(name, data, siblings);
+          const optimized = await optimizeAndMeasure(rawGlb);
           results.push({
             originalName: name,
             outputName: `${baseName(name)}.glb`,
-            data: glb,
+            data: optimized.bytes,
             contentType: "model/gltf-binary",
             converted: true,
+            metadata: optimized.metadata,
           });
         } catch (e) {
           console.warn(`[AssetConverter] Skipping ${name}:`, e);
         }
       } else if (entryExt === "glb") {
-        results.push({
-          originalName: name,
-          outputName: name,
-          data,
-          contentType: "model/gltf-binary",
-          converted: false,
-        });
+        try {
+          const optimized = await optimizeAndMeasure(data);
+          results.push({
+            originalName: name,
+            outputName: name,
+            data: optimized.bytes,
+            contentType: "model/gltf-binary",
+            converted: optimized.bytes.byteLength !== data.byteLength,
+            metadata: optimized.metadata,
+          });
+        } catch (e) {
+          console.warn(`[AssetConverter] GLB optimize failed for ${name}; passing through:`, e);
+          results.push({
+            originalName: name,
+            outputName: name,
+            data,
+            contentType: "model/gltf-binary",
+            converted: false,
+          });
+        }
       } else if (IMAGE_EXTENSIONS.has(entryExt)) {
         const mimeMap: Record<string, string> = {
           png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
@@ -290,26 +468,56 @@ export async function convertFile(
     progress(0.2, "Loading converter...");
     const data = new Uint8Array(await file.arrayBuffer());
     progress(0.5, `Converting ${file.name}...`);
-    const glb = await convertToGlb(file.name, data);
+    const rawGlb = await convertToGlb(file.name, data);
+    progress(0.8, "Optimizing mesh...");
+    const optimized = await optimizeAndMeasure(rawGlb);
     progress(1, "Conversion complete");
     return [{
       originalName: file.name,
       outputName: `${baseName(file.name)}.glb`,
-      data: glb,
+      data: optimized.bytes,
       contentType: "model/gltf-binary",
       converted: true,
+      metadata: optimized.metadata,
     }];
   }
 
-  // ── GLB/GLTF: passthrough ──
-  if (ext === "glb" || ext === "gltf") {
+  // ── GLB: optimize + measure (compressed re-export). GLTF: passthrough. ──
+  if (ext === "glb") {
+    progress(0.3, "Reading GLB...");
+    const data = new Uint8Array(await file.arrayBuffer());
+    progress(0.6, "Optimizing mesh...");
+    try {
+      const optimized = await optimizeAndMeasure(data);
+      progress(1, "Ready to upload");
+      return [{
+        originalName: file.name,
+        outputName: file.name,
+        data: optimized.bytes,
+        contentType: "model/gltf-binary",
+        converted: optimized.bytes.byteLength !== data.byteLength,
+        metadata: optimized.metadata,
+      }];
+    } catch (e) {
+      console.warn(`[AssetConverter] GLB optimize failed; passing through:`, e);
+      progress(1, "Ready to upload");
+      return [{
+        originalName: file.name,
+        outputName: file.name,
+        data,
+        contentType: "model/gltf-binary",
+        converted: false,
+      }];
+    }
+  }
+  if (ext === "gltf") {
     progress(1, "Ready to upload");
     const data = new Uint8Array(await file.arrayBuffer());
     return [{
       originalName: file.name,
       outputName: file.name,
       data,
-      contentType: ext === "glb" ? "model/gltf-binary" : "model/gltf+json",
+      contentType: "model/gltf+json",
       converted: false,
     }];
   }

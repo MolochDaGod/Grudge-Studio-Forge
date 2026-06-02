@@ -682,7 +682,7 @@ function ScriptDiskTool() {
               <SelectValue placeholder="Recent files…" />
             </SelectTrigger>
             <SelectContent>
-              {recents.map((r) => (
+              {recents.filter((r) => r).map((r) => (
                 <SelectItem key={r} value={r} className="text-xs">
                   {r.split(/[\\/]/).slice(-2).join("/")}
                 </SelectItem>

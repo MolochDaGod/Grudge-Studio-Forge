@@ -4,7 +4,16 @@ import { AssetBrowser } from "./AssetBrowser";
 import { PrefabsPanel } from "./PrefabsPanel";
 import { LayersPanel } from "./LayersPanel";
 import { useEditor } from "@/store/editor";
-import { Terminal, Boxes, Code2, Package, Loader2, Network, FlaskConical, Shield } from "lucide-react";
+import {
+  Terminal,
+  Boxes,
+  Code2,
+  Package,
+  Loader2,
+  Network,
+  FlaskConical,
+  Shield,
+} from "lucide-react";
 import { lazy, Suspense } from "react";
 import { AIInlinePrompt } from "./AIInlinePrompt";
 
@@ -36,39 +45,45 @@ function ScriptEditorFallback() {
   );
 }
 
-/**
- * Sub-navigation for the unified Library tab (Assets + Prefabs).
- * Both "assets" and "prefabs" store values render this tab; the toggle
- * inside switches between the two panels without adding a 6th top-level tab.
- */
-function LibrarySubNav({ tab, setTab }: { tab: string; setTab: (t: "assets" | "prefabs") => void }) {
-  return (
-    <div className= "flex items-center gap-0.5 px-2 py-1 border-b border-border/50 shrink-0 bg-background/30" >
-    <button
-        type="button"
-  onClick = {() => setTab("assets")
+type LibrarySubTab = "assets" | "prefabs";
+
+interface LibrarySubNavProps {
+  tab: string;
+  setTab: (t: LibrarySubTab) => void;
 }
-data - testid="library-sub-assets"
-title = "Project assets (Ctrl+Shift+A)"
-className = {`flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${tab !== "prefabs"
-    ? "bg-accent/20 text-accent"
-    : "text-muted-foreground hover:text-foreground hover:bg-accent/10"
-  }`}
+
+function LibrarySubNav({ tab, setTab }: LibrarySubNavProps) {
+  const activeAssets = tab !== "prefabs";
+  return (
+    <div className="flex items-center gap-0.5 px-2 py-1 border-b border-border/50 shrink-0 bg-background/30">
+      <button
+        type="button"
+        onClick={() => setTab("assets")}
+        data-testid="library-sub-assets"
+        title="Project assets (Ctrl+Shift+A)"
+        className={
+          "flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium transition-colors " +
+          (activeAssets
+            ? "bg-accent/20 text-accent"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent/10")
+        }
       >
-  <Boxes className="size-3" /> Files
-    </button>
-    < button
-type = "button"
-onClick = {() => setTab("prefabs")}
-data - testid="library-sub-prefabs"
-title = "Prefab templates (Ctrl+Shift+B)"
-className = {`flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium transition-colors ${tab === "prefabs"
-    ? "bg-accent/20 text-accent"
-    : "text-muted-foreground hover:text-foreground hover:bg-accent/10"
-  }`}
+        <Boxes className="size-3" /> Files
+      </button>
+      <button
+        type="button"
+        onClick={() => setTab("prefabs")}
+        data-testid="library-sub-prefabs"
+        title="Prefab templates (Ctrl+Shift+B)"
+        className={
+          "flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium transition-colors " +
+          (!activeAssets
+            ? "bg-accent/20 text-accent"
+            : "text-muted-foreground hover:text-foreground hover:bg-accent/10")
+        }
       >
-  <Package className="size-3" /> Prefabs
-    </button>
+        <Package className="size-3" /> Prefabs
+      </button>
     </div>
   );
 }
@@ -83,38 +98,34 @@ export function BottomPanel() {
   const radixTab = tab === "prefabs" ? "assets" : tab;
 
   return (
-    <Tabs value= { radixTab } onValueChange = {(v) => setTab(v as typeof tab)
-} className = "flex flex-col h-full" >
+    <Tabs
+      value={radixTab}
+      onValueChange={(v) => setTab(v as typeof tab)}
+      className="flex flex-col h-full"
+    >
       <TabsList className="rounded-none w-fit mx-2 mt-1.5 shrink-0">
-  {/* ── Runtime / scripting tools ── */ }
-  < TabsTrigger value = "console" className = "text-xs gap-1.5" data - testid="tab-console" title = "Console — runtime output (Ctrl+`)" >
+        <TabsTrigger value="console" className="text-xs gap-1.5" data-testid="tab-console" title="Console — runtime output (Ctrl+`)">
           <Terminal className="size-3" /> Console
         </TabsTrigger>
-  < TabsTrigger value = "scripts" className = "text-xs gap-1.5" data - testid="tab-scripts" title = "Scripts — Monaco editor (Ctrl+Shift+S)" >
+        <TabsTrigger value="scripts" className="text-xs gap-1.5" data-testid="tab-scripts" title="Scripts — Monaco editor (Ctrl+Shift+S)">
           <Code2 className="size-3" /> Scripts
         </TabsTrigger>
-  < TabsTrigger value = "nodes" className = "text-xs gap-1.5" data - testid="tab-nodes" title = "Nodes — visual scripting (Ctrl+Shift+N)" >
+        <TabsTrigger value="nodes" className="text-xs gap-1.5" data-testid="tab-nodes" title="Nodes — visual scripting (Ctrl+Shift+N)">
           <Network className="size-3" /> Nodes
         </TabsTrigger>
-
-{/* ── Separator ── */ }
-<div className="w-px h-4 bg-border/60 mx-1 self-center" aria - hidden />
-
-  {/* ── Asset libraries ── */ }
-  < TabsTrigger value = "assets" className = "text-xs gap-1.5" data - testid="tab-assets" title = "Library — assets & prefabs (Ctrl+Shift+A)" >
-    <FlaskConical className="size-3" /> Library
-      </TabsTrigger>
-
-{/* ── World settings ── */ }
-<TabsTrigger value="layers" className = "text-xs gap-1.5" data - testid="tab-layers" title = "Physics — collision matrix & navmesh (Ctrl+Shift+L)" >
-  <Shield className="size-3" /> Physics
+        <div className="w-px h-4 bg-border/60 mx-1 self-center" aria-hidden />
+        <TabsTrigger value="assets" className="text-xs gap-1.5" data-testid="tab-assets" title="Library — assets & prefabs (Ctrl+Shift+A)">
+          <FlaskConical className="size-3" /> Library
+        </TabsTrigger>
+        <TabsTrigger value="layers" className="text-xs gap-1.5" data-testid="tab-layers" title="Physics — collision matrix & navmesh (Ctrl+Shift+L)">
+          <Shield className="size-3" /> Physics
         </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
         <TabsContent value="console" className="m-0 h-full flex flex-col">
           <div className="flex-1 min-h-0"><Console /></div>
           <AIInlinePrompt tabContext="console" />
-            </TabsContent>
+        </TabsContent>
         <TabsContent value="scripts" className="m-0 h-full flex flex-col">
           <div className="flex-1 min-h-0">
             <Suspense fallback={<ScriptEditorFallback />}>
@@ -122,7 +133,7 @@ export function BottomPanel() {
             </Suspense>
           </div>
           <AIInlinePrompt tabContext="scripts" />
-            </TabsContent>
+        </TabsContent>
         <TabsContent value="nodes" className="m-0 h-full flex flex-col">
           <div className="flex-1 min-h-0">
             <Suspense fallback={<ScriptEditorFallback />}>
@@ -131,17 +142,13 @@ export function BottomPanel() {
           </div>
           <AIInlinePrompt tabContext="nodes" />
         </TabsContent>
-{/* Unified library tab — Assets and Prefabs share one slot with an
-            internal sub-nav. setBottomTab("prefabs") from Hierarchy / context
-            menus is honoured: radixTab maps it to "assets" and the sub-nav
-            activates the Prefabs panel automatically. */}
-<TabsContent value="assets" className = "m-0 h-full flex flex-col" >
-  <LibrarySubNav tab={ tab } setTab = {(t) => setTab(t)} />
-    < div className = "flex-1 min-h-0" >
-      { tab === "prefabs" ? <PrefabsPanel /> : <AssetBrowser / >}
-</div>
-  < AIInlinePrompt tabContext = { tab === "prefabs" ? "prefabs" : "assets"} />
-    </TabsContent>
+        <TabsContent value="assets" className="m-0 h-full flex flex-col">
+          <LibrarySubNav tab={tab} setTab={(t) => setTab(t)} />
+          <div className="flex-1 min-h-0">
+            {tab === "prefabs" ? <PrefabsPanel /> : <AssetBrowser />}
+          </div>
+          <AIInlinePrompt tabContext={tab === "prefabs" ? "prefabs" : "assets"} />
+        </TabsContent>
         <TabsContent value="layers" className="m-0 h-full flex flex-col">
           <div className="flex-1 min-h-0"><LayersPanel /></div>
           <AIInlinePrompt tabContext="layers" />

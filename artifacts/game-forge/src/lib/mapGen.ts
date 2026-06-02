@@ -210,7 +210,7 @@ function cityGrid(opts: MapGenOptions): SceneEntity[] {
         rng() * Math.PI * 2,
         1,
         root.id,
-        { behavior: "enemy-deathmatch", layer: "Enemy" },
+        { behavior: "enemy-deathmatch", layer: "NPC" },
       ));
     }
   }
@@ -340,7 +340,7 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
         rng() * Math.PI * 2,
         1,
         root.id,
-        { behavior: "enemy-deathmatch", layer: "Enemy" },
+        { behavior: "enemy-deathmatch", layer: "NPC" },
       ));
     }
   }
@@ -517,7 +517,7 @@ function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
         rng() * Math.PI * 2,
         1,
         root.id,
-        { behavior: "enemy-deathmatch", layer: "Enemy" },
+        { behavior: "enemy-deathmatch", layer: "NPC" },
       ));
     }
 
@@ -688,7 +688,7 @@ function maze(opts: MapGenOptions): SceneEntity[] {
             rng() * Math.PI * 2,
             1,
             root.id,
-            { behavior: "enemy-deathmatch", layer: "Enemy" },
+            { behavior: "enemy-deathmatch", layer: "NPC" },
           ));
         }
       }
@@ -827,7 +827,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
         rng() * Math.PI * 2,
         1,
         root.id,
-        { behavior: "enemy-rpg", layer: "Enemy" },
+        { behavior: "enemy-rpg", layer: "NPC" },
       ));
     }
   }

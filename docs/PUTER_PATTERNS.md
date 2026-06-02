@@ -1,228 +1,1471 @@
-# Puter integration patterns
+/**
+ * Procedural map generation. Each generator returns a flat list of
+ * `SceneEntity` rows, all parented under a single named root group, so
+ * the entire generated chunk is one drag/delete/undo unit.
+ *
+ * Reproducible output: every generator takes a numeric `seed`. Same seed
+ * + same options → identical map.
+ *
+ * When `sectorId` is provided the generators use the matching biome's
+ * asset table (`lib/sectorAssets.ts`) to place real GLB models — trees,
+ * structures, harvestables, monsters, and ambient VFX — instead of (or
+ * alongside) the fallback primitive geometry.
+ */
 
-This document is the canonical reference for how Grudge GameForge uses
-[Puter](https://puter.com) for auth, cloud storage, AI models, and
-publishing. New code that touches Puter should follow these patterns.
+import { nanoid } from "nanoid";
+import type { SceneEntity, Vec3 } from "@/scene/types";
+import { DEFAULT_TRANSFORM } from "@/scene/types";
+import { getSectorById } from "@/lib/worldSectors";
+import { SECTOR_ASSETS, pick } from "@/lib/sectorAssets";
+import type { BiomeAssets } from "@/lib/sectorAssets";
 
-## 1. Auth (client)
+export type MapKind = "cityGrid" | "openArena" | "dungeonRooms" | "maze" | "openWorld";
 
-The editor uses Puter Auth as the **only** real identity source. There
-is no local password / cookie / username database — guests get a
-local-only display name (kept in `localStorage`) and signed-in users
-are identified by `puter.auth.getUser().uuid`.
-
-### Store
-
-`src/store/auth.ts` holds:
-
-```ts
-{
-  status: "idle" | "anon" | "guest" | "signedIn",
-  user: AuthUser | null,
-  isPuterSignedIn: boolean,
+export interface MapGenOptions {
+  kind: MapKind;
+  /** "Map width" in world units (also map depth — generators are square). */
+  size: number;
+  /** Density tuning, 0..1. Meaning depends on the generator. */
+  density: number;
+  seed: number;
+  /** Optional Grudge world sector id. When set, generators replace primitive
+   *  geometry with biome-appropriate GLB models from sectorAssets. */
+  sectorId?: string;
 }
-```
 
-`status === "signedIn"` is the publish / cloud / Puter-AI gate. Guest
-users get `isPuterSignedIn: false` and Puter-only features render a
-"Sign in with Puter" hint.
+/* ---------------- PRNG (mulberry32, deterministic and tiny) ------------- */
 
-### Bootstrap
-
-`src/lib/authBootstrap.ts` exposes:
-
-| Fn                       | When to call                                  |
-| ------------------------ | ---------------------------------------------- |
-| `bootstrapAuth()`        | Once on app mount. Restores any existing session. Never opens a popup. |
-| `signInWithPuter()`      | From a user click. Opens Puter's sign-in flow. |
-| `continueAsGuest(name?)` | Welcome modal "Continue without signing in".  |
-| `renameGuest(name)`      | Guest dropdown rename. No-op for Puter users.  |
-| `signOut()`              | Sign-out. Clears local guest record too.       |
-
-The Welcome modal (`src/editor/WelcomeModal.tsx`) appears when
-bootstrap finishes with `status === "anon"` and offers both paths.
-
-### Server mirror
-
-`POST /api/auth/puter/sync` (existing) is the **only** way the server
-learns about a user. The editor calls it once after a successful Puter
-sign-in to ensure the shared `users` table has a row keyed on
-`puter_uuid`. The server verifies the token via `verifyPuterToken()`
-in `src/lib/puterAuth.ts` — never trust the client's claimed identity.
-
-`POST /api/puter/exchange` is the lightweight variant: it verifies the
-token and returns `{uuid, username, email}` **without** touching the
-shared identity tables. Use it for non-auth flows (e.g. confirming a
-token before stashing it).
-
-## 2. Cloud storage wrapper
-
-Always go through `src/lib/cloud/puterCloud.ts` rather than reaching
-into `puter.fs` / `puter.kv` directly. The wrapper handles two things
-automatically:
-
-1. **Guest no-op.** Each operation returns
-   `{ ok: false, reason: "guest" }` instead of throwing when the user
-   isn't signed in. Call sites become `if (r.ok) { … }` instead of
-   `try { if (signedIn) … } catch { … }`.
-2. **SDK availability.** The Puter SDK loads lazily; the wrapper waits
-   for it on first use and surfaces a structured `sdk-unavailable`
-   reason if loading fails (corp networks blocking puter.com).
-
-### Path conventions
-
-| Path                                  | Used for                       |
-| ------------------------------------- | ------------------------------ |
-| `Grudge/projects/<projectId>/scene.json` | Per-project Cloud Save snapshot |
-| `Grudge/projects/<projectId>/meta.json`  | Per-project metadata           |
-| `Grudge/published/<slug>/scene.json`     | Published scene (public site)  |
-| `Grudge/published/<slug>/index.html`     | Public bootstrapper            |
-
-Use `cloud.path("Grudge", "projects", String(projectId), "scene.json")`
-to build paths — never hand-concatenate.
-
-### KV index
-
-The cloud-projects list is stored under the `grudge:projects:index`
-KV key as `ProjectIndexEntry[]`. KV is a convenience read; the FS
-write is the source of truth, so it's safe if KV is unavailable on a
-particular SDK build.
-
-## 3. AI providers
-
-`src/lib/ai/providers/` defines a tiny abstraction so the AI Worker can
-talk to either:
-
-- **`server-anthropic`** — the existing `POST /api/ai/chat` (Replit AI
-  Anthropic proxy). Default for new projects.
-- **`puter`** — `POST /api/ai/chat?provider=puter` with the user's
-  `X-Puter-Token` header. The server forwards via Puter's REST surface
-  using `puterServerClient.puterChat()` and re-emits the same SSE
-  events the client already understands.
-
-Adding a new model is a one-line change in `MODELS` (in
-`providers/types.ts`):
-
-```ts
-{
-  id: "puter:my-model",
-  label: "My Model (Puter)",
-  hint: "Free via Puter",
-  provider: "puter",
-  modelId: "my-model",
-  requiresPuterAuth: true,
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
-```
 
-The AIWorkerPanel picker reads from `MODELS`, persists the selection
-in `localStorage` under `grudge.ai.model`, and disables Puter entries
-for guest users with a "(sign in)" hint.
+const id = () => nanoid(8);
 
-### SSE event shape
+function entity(
+  partial: Partial<SceneEntity> & { name: string; type: SceneEntity["type"] },
+): SceneEntity {
+  return {
+    id: id(),
+    transform: DEFAULT_TRANSFORM(),
+    ...partial,
+  } as SceneEntity;
+}
 
-Both providers emit the same five event types so the tool-loop in
-`runConversation` doesn't need to branch:
+/** Resolve BiomeAssets for an optional sector id. Returns null when none. */
+function resolveAssets(sectorId?: string): BiomeAssets | null {
+  if (!sectorId) return null;
+  const sector = getSectorById(sectorId);
+  if (!sector) return null;
+  return SECTOR_ASSETS[sector.biome] ?? null;
+}
 
-```ts
-{ type: "text_delta", text }
-{ type: "text_block", text }
-{ type: "tool_use",   id, name, input }
-{ type: "stop",       stop_reason }
-{ type: "error",      error }
-```
+/** Create a static model entity using a builtin GLB key. */
+function modelEntity(
+  name: string,
+  key: string,
+  pos: Vec3,
+  yaw: number,
+  scale: number,
+  parentId: string,
+  opts?: { behavior?: SceneEntity["behavior"]; layer?: SceneEntity["layer"] },
+): SceneEntity {
+  return entity({
+    name,
+    type: "model",
+    parentId,
+    transform: { position: pos, rotation: [0, yaw, 0], scale: [scale, scale, scale] },
+    model: { url: `builtin:${key}` },
+    physics: { bodyType: "fixed", colliderType: "cuboid" },
+    ...(opts ?? {}),
+  });
+}
 
-The shared parser lives in `providers/sse.ts`.
+/* ---------------- Generators -------------------------------------------- */
 
-## 4. Publishing
+export function generateMap(opts: MapGenOptions): SceneEntity[] {
+  switch (opts.kind) {
+    case "cityGrid":
+      return cityGrid(opts);
+    case "openArena":
+      return openArena(opts);
+    case "dungeonRooms":
+      return dungeonRooms(opts);
+    case "maze":
+      return maze(opts);
+    case "openWorld":
+      return openWorld(opts);
+  }
+}
 
-`src/lib/puterPublish.ts` handles "publish to a free `<sub>.puter.site`
-URL". Re-publishing the same scene yields the same subdomain so
-bookmarked links keep working. The slug is derived from `sceneId`
-(or a content hash for unsaved scratch scenes) — never the scene
-**name**, so renaming a saved scene leaves the URL alone.
+function rootGroup(name: string): SceneEntity {
+  return entity({
+    name,
+    type: "empty",
+    parentId: null,
+  });
+}
 
-The Toolbar checks `useAuth(s => s.status === "signedIn")` before
-allowing publish. Guests see the gold "Sign in with Puter to publish"
-tooltip on hover.
+/* ---------------- City Grid --------------------------------------------- */
+/** Square grid of buildings (boxes) with road gaps; ground plane underneath.
+ *  When a sector is set, spawns structure GLB models alongside primitives
+ *  and scatters monster entities into the street network. */
+function cityGrid(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · City Grid");
+  const out: SceneEntity[] = [root];
 
-### What ships in the published bucket
+  const size = Math.max(20, opts.size);
+  const cell = 6;
+  const block = 4; // building footprint
+  const halfSize = size / 2;
+  const buildChance = 0.35 + opts.density * 0.55; // 0.35..0.9
 
-For each publish, `publishScene()` writes two files to
-`Grudge/published/<slug>/`:
+  // Ground plane
+  out.push(
+    entity({
+      name: "Street",
+      type: "plane",
+      parentId: root.id,
+      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
+      material: { color: assets?.groundColor ?? "#1a1a25", metalness: 0, roughness: 1 },
+      physics: { bodyType: "fixed", colliderType: "cuboid" },
+    }),
+  );
 
-| File           | Contents                                                              |
-| -------------- | --------------------------------------------------------------------- |
-| `scene.json`   | Serialized `SceneData` — the same blob the editor stores.             |
-| `scripts.json` | `Script[]` snapshot from `listScripts(projectId)`. Empty `[]` when    |
-|                | the project has no scripts; always present so the player's fetch     |
-|                | doesn't 404 and stale scripts from a prior publish get overwritten.  |
-| `index.html`   | The standalone player bundle (see below) or the legacy redirect HTML. |
+  for (let x = -halfSize + cell / 2; x < halfSize; x += cell) {
+    for (let z = -halfSize + cell / 2; z < halfSize; z += cell) {
+      if (rng() > buildChance) continue;
 
-The standalone player lives at `artifacts/player/` (the
-`@workspace/player` workspace package). It is a tiny Vite app that
-imports `PlayScriptRuntime`, `PlayCameraController`, and `EffectsRig`
-straight from `artifacts/game-forge/src/...` via a vite alias, stubs
-out `@/store/editor` with a minimal `useEditor`-shaped zustand store
-(`src/playerStore.ts` — exposes `sceneData`/`scripts`/`pushLog` and a
-`cmdBakeNavmesh` no-op so cross-imported runtime files compile against
-it), and bundles to a single self-contained `dist/index.html` (JS +
-CSS inlined) using `vite-plugin-singlefile`. The bundle fetches
-sibling `./scene.json` + `./scripts.json` in parallel on load so it
-doesn't need to know which subdomain it ends up on.
+      // Try to place a GLB structure model when assets are available
+      if (assets && assets.structures.length > 0 && rng() < 0.45) {
+        const key = pick(assets.structures, rng)!;
+        out.push(modelEntity(
+          `Structure (${x.toFixed(0)}, ${z.toFixed(0)})`,
+          key,
+          [x, 0, z],
+          rng() * Math.PI * 2,
+          1 + rng() * 0.4,
+          root.id,
+        ));
+      } else {
+        const h = 2 + Math.floor(rng() * 6) * 1.5;
+        const tint = 0x20 + Math.floor(rng() * 0x40);
+        const color = `#${tint.toString(16).padStart(2, "0").repeat(3)}`;
+        out.push(
+          entity({
+            name: `Building (${x.toFixed(0)}, ${z.toFixed(0)})`,
+            type: "box",
+            parentId: root.id,
+            transform: {
+              position: [x, h / 2, z],
+              rotation: [0, 0, 0],
+              scale: [block, h, block],
+            },
+            material: { color, metalness: 0.05, roughness: 0.9 },
+            physics: { bodyType: "fixed", colliderType: "cuboid" },
+          }),
+        );
+      }
+    }
+  }
 
-The shared `PlayScriptRuntime` (in `artifacts/game-forge/src/scene/`)
-was extracted from `Viewport.tsx`'s `ScriptedEntities` so the editor's
-play mode and the standalone player run the *exact same* gameplay tick
-— script `start`/`update`, XState nav-agent FSMs (Idle/Patrol/Chase/
-Climb/Swim/Stuck/Dead/Attack), surface ticks, navmesh hydration,
-agent reconciliation, mouse delta, teleport queue. The component takes
-`scripts` as a prop instead of calling `useListScripts`: editor passes
-the react-query result, player passes the JSON it fetched at boot.
+  // Street lights / ambient lights
+  const lightColor = assets?.lightColor ?? "#ffd28a";
+  const lightIntensity = assets?.lightIntensity ?? 6;
+  const lightStep = cell * 3;
+  for (let x = -halfSize + lightStep / 2; x < halfSize; x += lightStep) {
+    for (let z = -halfSize + lightStep / 2; z < halfSize; z += lightStep) {
+      if (rng() < 0.7) continue;
+      out.push(
+        entity({
+          name: "Street Light",
+          type: "light",
+          parentId: root.id,
+          transform: { position: [x, 6, z], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          light: { kind: "point", color: lightColor, intensity: lightIntensity, distance: 15 },
+        }),
+      );
+    }
+  }
 
-The build is wired into the editor as a `prebuild` script — running
-`pnpm --filter @workspace/game-forge run build` automatically builds
-the player first and copies the result into
-`artifacts/game-forge/public/player.html`, so the deployed editor
-serves it at `${editorOrigin}player.html`.
+  // Sector monsters in the streets
+  if (assets && assets.monsters.length > 0) {
+    const monsterCount = Math.round(2 + opts.density * 4);
+    for (let i = 0; i < monsterCount; i++) {
+      const mx = (rng() - 0.5) * (size - 4);
+      const mz = (rng() - 0.5) * (size - 4);
+      const key = pick(assets.monsters, rng)!;
+      out.push(modelEntity(
+        `Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "NPC" },
+      ));
+    }
+  }
 
-At publish time, the *callers* of `publishScene()` (the editor's
-Toolbar Publish button and the AI `publish_to_puter` tool) snapshot
-the project's scripts via `listScripts(projectId)` and pass them into
-the new `scripts` option. Both call sites are best-effort — failure
-logs a warning and proceeds with an empty array rather than blocking
-the publish. `publishScene()` then writes scene.json + scripts.json +
-the player HTML to `Grudge/published/<slug>/`. If the player HTML fetch fails (older
-deploy that doesn't serve `/player.html` yet), it falls back to the
-legacy redirect HTML that bounces the visitor back to the editor with
-`?scene=…`. The result includes a `bootstrapper: "player" | "redirect"`
-field so the publish dialog can surface which experience visitors get.
+  // VFX emitters from sector
+  if (assets && assets.vfx.length > 0 && rng() < 0.5) {
+    const key = pick(assets.vfx, rng)!;
+    out.push(modelEntity("Ambient VFX", key, [0, 0.5, 0], 0, 1, root.id));
+  }
 
-## 5. Puter AI tools
+  return out;
+}
 
-Three tools live at `src/ai/tools/puter/index.ts` and all gate on
-`cloud.isAvailable()`:
+/* ---------------- Open Arena -------------------------------------------- */
+/** Bordered arena + scattered cover. When a sector is set, cover uses real
+ *  GLB prop models and monsters spawn around the arena perimeter. */
+function openArena(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · Open Arena");
+  const out: SceneEntity[] = [root];
+  const size = Math.max(12, opts.size);
+  const half = size / 2;
+  const wallH = 3;
+  const wallT = 0.6;
 
-| Tool                       | What it does                                                |
-| -------------------------- | ----------------------------------------------------------- |
-| `cloud_save_project`       | Snapshots current scene to `Grudge/projects/<projectId>/`.  |
-| `publish_to_puter`         | Wraps `publishScene()`, returns `<sub>.puter.site` URL.     |
-| `list_my_puter_projects`   | Lists everything saved via `cloud_save_project`.            |
+  // Floor
+  out.push(
+    entity({
+      name: "Arena Floor",
+      type: "plane",
+      parentId: root.id,
+      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
+      material: { color: assets?.groundColor ?? "#2a2a3a", metalness: 0, roughness: 1 },
+      physics: { bodyType: "fixed", colliderType: "cuboid" },
+    }),
+  );
 
-Guest path: each handler returns
-`{ ok: false, error: "Sign in with Puter to …" }` so the model can
-surface the prompt to the user verbatim instead of retrying. The
-system prompt explicitly tells the model not to retry.
+  // Four perimeter walls
+  const wallMat = { color: "#5b4a2a", metalness: 0.05, roughness: 0.9 };
+  const walls: [Vec3, Vec3][] = [
+    [[0, wallH / 2, -half], [size, wallH, wallT]], // north
+    [[0, wallH / 2, half], [size, wallH, wallT]],  // south
+    [[-half, wallH / 2, 0], [wallT, wallH, size]], // west
+    [[half, wallH / 2, 0], [wallT, wallH, size]],  // east
+  ];
+  for (const [pos, scale] of walls) {
+    out.push(
+      entity({
+        name: "Arena Wall",
+        type: "box",
+        parentId: root.id,
+        transform: { position: pos, rotation: [0, 0, 0], scale },
+        material: wallMat,
+        physics: { bodyType: "fixed", colliderType: "cuboid" },
+      }),
+    );
+  }
 
-## 6. Common pitfalls
+  // Cover objects — prefer GLB props when assets available
+  const step = 3;
+  const jitter = step * 0.45;
+  const coverChance = 0.2 + opts.density * 0.55;
+  for (let x = -half + step; x < half - step; x += step) {
+    for (let z = -half + step; z < half - step; z += step) {
+      if (rng() > coverChance) continue;
+      const px = x + (rng() - 0.5) * jitter;
+      const pz = z + (rng() - 0.5) * jitter;
 
-- **Never** call `puter.auth.signIn()` from a non-click handler — the
-  Puter popup is blocked otherwise.
-- **Never** trust `getUser()` returned over the wire — always verify
-  the token server-side via `verifyPuterToken()` before writing to
-  shared identity tables.
-- **Never** set `crossOrigin` on the Puter SDK script tag (Puter's CDN
-  doesn't return CORS headers; any value forces a preflight that
-  fails).
-- **Never** reach into `puter.fs.write` directly with `overwrite:false`
-  — use the cloud wrapper which defaults to `overwrite:true` so
-  re-saves don't throw.
+      if (assets && assets.props.length > 0 && rng() < 0.6) {
+        const key = pick(assets.props, rng)!;
+        out.push(modelEntity(
+          "Cover Prop",
+          key,
+          [px, 0, pz],
+          rng() * Math.PI * 2,
+          0.8 + rng() * 0.4,
+          root.id,
+        ));
+      } else {
+        const w = 1 + rng() * 1.5;
+        const h = 1 + rng() * 1.2;
+        const d = 1 + rng() * 1.5;
+        out.push(
+          entity({
+            name: "Cover Crate",
+            type: "box",
+            parentId: root.id,
+            transform: { position: [px, h / 2, pz], rotation: [0, rng() * Math.PI, 0], scale: [w, h, d] },
+            material: { color: "#6b5a2a", metalness: 0.1, roughness: 0.7 },
+            physics: { bodyType: "fixed", colliderType: "cuboid" },
+          }),
+        );
+      }
+    }
+  }
+
+  // Harvestable pickups in arena corners
+  if (assets && assets.harvestables.length > 0) {
+    const corners: Vec3[] = [
+      [-half * 0.6, 0, -half * 0.6],
+      [half * 0.6, 0, -half * 0.6],
+      [-half * 0.6, 0, half * 0.6],
+      [half * 0.6, 0, half * 0.6],
+    ];
+    for (const pos of corners) {
+      if (rng() < 0.4) continue;
+      const key = pick(assets.harvestables, rng)!;
+      const e = modelEntity("Harvestable", key, pos, rng() * Math.PI * 2, 0.8, root.id);
+      out.push(e);
+    }
+  }
+
+  // Monsters near arena center
+  if (assets && assets.monsters.length > 0) {
+    const count = Math.round(1 + opts.density * 3);
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const radius = half * 0.4;
+      const mx = Math.cos(angle) * radius;
+      const mz = Math.sin(angle) * radius;
+      const key = pick(assets.monsters, rng)!;
+      out.push(modelEntity(
+        `Arena Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "NPC" },
+      ));
+    }
+  }
+
+  // Ambient light
+  if (assets) {
+    out.push(entity({
+      name: "Arena Light",
+      type: "light",
+      parentId: root.id,
+      transform: { position: [0, half * 0.8, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      light: { kind: "point", color: assets.lightColor, intensity: assets.lightIntensity, distance: size },
+    }));
+  }
+
+  return out;
+}
+
+/* ---------------- Dungeon Rooms (BSP) ----------------------------------- */
+interface BspRect {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+}
+function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · Dungeon");
+  const out: SceneEntity[] = [root];
+  const size = Math.max(20, opts.size);
+
+  // BSP split until rooms small enough
+  const minRoom = Math.max(6, size * 0.12);
+  const splits: BspRect[] = [{ x: -size / 2, z: -size / 2, w: size, d: size }];
+  for (let pass = 0; pass < 6; pass++) {
+    const next: BspRect[] = [];
+    for (const r of splits) {
+      if (r.w < minRoom * 2 && r.d < minRoom * 2) {
+        next.push(r);
+        continue;
+      }
+      const splitH = r.w > r.d ? false : true;
+      if (splitH) {
+        const t = r.d * (0.35 + rng() * 0.3);
+        next.push({ x: r.x, z: r.z, w: r.w, d: t });
+        next.push({ x: r.x, z: r.z + t, w: r.w, d: r.d - t });
+      } else {
+        const t = r.w * (0.35 + rng() * 0.3);
+        next.push({ x: r.x, z: r.z, w: t, d: r.d });
+        next.push({ x: r.x + t, z: r.z, w: r.w - t, d: r.d });
+      }
+    }
+    splits.length = 0;
+    splits.push(...next);
+  }
+
+  // Floor for each leaf
+  for (const r of splits) {
+    out.push(
+      entity({
+        name: "Room Floor",
+        type: "plane",
+        parentId: root.id,
+        transform: {
+          position: [r.x + r.w / 2, 0, r.z + r.d / 2],
+          rotation: [-Math.PI / 2, 0, 0],
+          scale: [r.w * 0.95, r.d * 0.95, 1],
+        },
+        material: { color: "#26242a", metalness: 0, roughness: 1 },
+        physics: { bodyType: "fixed", colliderType: "cuboid" },
+      }),
+    );
+  }
+
+  // Walls between leaves: place wall rectangles at the 4 borders, leave a doorway gap.
+  const wallH = 3;
+  const wallT = 0.5;
+  for (const r of splits) {
+    const wallMat = { color: "#3a2a1a", metalness: 0.05, roughness: 0.95 };
+    const segs: { pos: Vec3; scale: Vec3 }[] = [
+      { pos: [r.x + r.w / 2, wallH / 2, r.z], scale: [r.w, wallH, wallT] },
+      { pos: [r.x + r.w / 2, wallH / 2, r.z + r.d], scale: [r.w, wallH, wallT] },
+      { pos: [r.x, wallH / 2, r.z + r.d / 2], scale: [wallT, wallH, r.d] },
+      { pos: [r.x + r.w, wallH / 2, r.z + r.d / 2], scale: [wallT, wallH, r.d] },
+    ];
+    // Doorway: cut a gap by splitting one wall in two (random side)
+    const cutSide = Math.floor(rng() * 4);
+    segs.forEach((seg, i) => {
+      if (i === cutSide) {
+        // Shorten by 40% in the long axis: produce two half-walls with a gap.
+        const isXLong = seg.scale[0] > seg.scale[2];
+        if (isXLong) {
+          const halfLen = (seg.scale[0] - 2.5) / 2;
+          if (halfLen <= 0) {
+            out.push(buildWall(seg.pos, seg.scale, wallMat, root.id));
+            return;
+          }
+          out.push(
+            buildWall(
+              [seg.pos[0] - (halfLen + 1.25), seg.pos[1], seg.pos[2]],
+              [halfLen, seg.scale[1], seg.scale[2]],
+              wallMat,
+              root.id,
+            ),
+          );
+          out.push(
+            buildWall(
+              [seg.pos[0] + (halfLen + 1.25), seg.pos[1], seg.pos[2]],
+              [halfLen, seg.scale[1], seg.scale[2]],
+              wallMat,
+              root.id,
+            ),
+          );
+        } else {
+          const halfLen = (seg.scale[2] - 2.5) / 2;
+          if (halfLen <= 0) {
+            out.push(buildWall(seg.pos, seg.scale, wallMat, root.id));
+            return;
+          }
+          out.push(
+            buildWall(
+              [seg.pos[0], seg.pos[1], seg.pos[2] - (halfLen + 1.25)],
+              [seg.scale[0], seg.scale[1], halfLen],
+              wallMat,
+              root.id,
+            ),
+          );
+          out.push(
+            buildWall(
+              [seg.pos[0], seg.pos[1], seg.pos[2] + (halfLen + 1.25)],
+              [seg.scale[0], seg.scale[1], halfLen],
+              wallMat,
+              root.id,
+            ),
+          );
+        }
+      } else {
+        out.push(buildWall(seg.pos, seg.scale, wallMat, root.id));
+      }
+    });
+  }
+
+  // A torch (point light) per room + sector-aware monster/prop placement
+  const torchColor = assets?.lightColor ?? "#ff9d3a";
+  const torchIntensity = assets?.lightIntensity ?? 5;
+  for (const r of splits) {
+    if (rng() < 1 - opts.density) continue;
+    out.push(
+      entity({
+        name: "Torch",
+        type: "light",
+        parentId: root.id,
+        transform: { position: [r.x + r.w / 2, 2.4, r.z + r.d / 2], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        light: { kind: "point", color: torchColor, intensity: torchIntensity, distance: 12 },
+      }),
+    );
+
+    // VFX fire emitter alongside some torches
+    if (assets && assets.vfx.length > 0 && rng() < 0.35) {
+      const vfxKey = pick(assets.vfx, rng)!;
+      out.push(modelEntity("Room VFX", vfxKey, [r.x + r.w / 2, 0, r.z + r.d / 2 + 1], 0, 0.6, root.id));
+    }
+
+    // Monster per room (density-gated)
+    if (assets && assets.monsters.length > 0 && rng() < 0.4 + opts.density * 0.5) {
+      const key = pick(assets.monsters, rng)!;
+      const jx = r.x + r.w * (0.25 + rng() * 0.5);
+      const jz = r.z + r.d * (0.25 + rng() * 0.5);
+      out.push(modelEntity(
+        "Dungeon Enemy",
+        key,
+        [jx, 0, jz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-deathmatch", layer: "NPC" },
+      ));
+    }
+
+    // Harvestable node in some rooms
+    if (assets && assets.harvestables.length > 0 && rng() < 0.25) {
+      const key = pick(assets.harvestables, rng)!;
+      out.push(modelEntity(
+        "Harvestable",
+        key,
+        [r.x + r.w * 0.75, 0, r.z + r.d * 0.75],
+        rng() * Math.PI * 2,
+        0.7,
+        root.id,
+      ));
+    }
+
+    // Floor prop
+    if (assets && assets.props.length > 0 && rng() < 0.3) {
+      const key = pick(assets.props, rng)!;
+      const px = r.x + r.w * (0.15 + rng() * 0.7);
+      const pz = r.z + r.d * (0.15 + rng() * 0.7);
+      out.push(modelEntity("Room Prop", key, [px, 0, pz], rng() * Math.PI * 2, 0.8 + rng() * 0.4, root.id));
+    }
+  }
+
+  return out;
+}
+
+function buildWall(
+  pos: Vec3,
+  scale: Vec3,
+  material: { color: string; metalness: number; roughness: number },
+  parentId: string,
+): SceneEntity {
+  return entity({
+    name: "Dungeon Wall",
+    type: "box",
+    parentId,
+    transform: { position: pos, rotation: [0, 0, 0], scale },
+    material,
+    physics: { bodyType: "fixed", colliderType: "cuboid" },
+  });
+}
+
+/* ---------------- Maze (recursive backtracker) -------------------------- */
+function maze(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · Maze");
+  const out: SceneEntity[] = [root];
+
+  // Cell grid: choose count by size; cell side = 3 units
+  const cellSize = 3;
+  const count = Math.max(6, Math.floor(opts.size / cellSize));
+  const half = (count * cellSize) / 2;
+
+  // Floor
+  out.push(
+    entity({
+      name: "Maze Floor",
+      type: "plane",
+      parentId: root.id,
+      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [count * cellSize, count * cellSize, 1] },
+      material: { color: assets?.groundColor ?? "#1a1f1a", metalness: 0, roughness: 1 },
+      physics: { bodyType: "fixed", colliderType: "cuboid" },
+    }),
+  );
+
+  // walls[x][y] = { N, S, E, W }
+  const walls: { N: boolean; S: boolean; E: boolean; W: boolean }[][] = [];
+  for (let x = 0; x < count; x++) {
+    walls.push([]);
+    for (let y = 0; y < count; y++) {
+      walls[x].push({ N: true, S: true, E: true, W: true });
+    }
+  }
+  const visited: boolean[][] = walls.map((col) => col.map(() => false));
+
+  function neighbors(x: number, y: number): [number, number, "N" | "S" | "E" | "W"][] {
+    const n: [number, number, "N" | "S" | "E" | "W"][] = [];
+    if (y > 0 && !visited[x][y - 1]) n.push([x, y - 1, "N"]);
+    if (y < count - 1 && !visited[x][y + 1]) n.push([x, y + 1, "S"]);
+    if (x < count - 1 && !visited[x + 1][y]) n.push([x + 1, y, "E"]);
+    if (x > 0 && !visited[x - 1][y]) n.push([x - 1, y, "W"]);
+    return n;
+  }
+
+  const stack: [number, number][] = [[0, 0]];
+  visited[0][0] = true;
+  while (stack.length) {
+    const [x, y] = stack[stack.length - 1];
+    const ns = neighbors(x, y);
+    if (ns.length === 0) {
+      stack.pop();
+      continue;
+    }
+    const [nx, ny, dir] = ns[Math.floor(rng() * ns.length)];
+    walls[x][y][dir] = false;
+    const opp = dir === "N" ? "S" : dir === "S" ? "N" : dir === "E" ? "W" : "E";
+    walls[nx][ny][opp] = false;
+    visited[nx][ny] = true;
+    stack.push([nx, ny]);
+  }
+
+  // Materialize remaining walls. We only emit the N and W walls per cell to
+  // avoid duplication, plus the outermost S/E walls at the boundary.
+  const wallMat = { color: "#0a0f08", metalness: 0.1, roughness: 0.95 };
+  const wallH = 2.5;
+  const wallT = 0.4;
+  for (let x = 0; x < count; x++) {
+    for (let y = 0; y < count; y++) {
+      const cx = -half + x * cellSize + cellSize / 2;
+      const cz = -half + y * cellSize + cellSize / 2;
+      if (walls[x][y].N) {
+        out.push(
+          buildWall(
+            [cx, wallH / 2, cz - cellSize / 2],
+            [cellSize, wallH, wallT],
+            wallMat,
+            root.id,
+          ),
+        );
+      }
+      if (walls[x][y].W) {
+        out.push(
+          buildWall(
+            [cx - cellSize / 2, wallH / 2, cz],
+            [wallT, wallH, cellSize],
+            wallMat,
+            root.id,
+          ),
+        );
+      }
+      if (y === count - 1 && walls[x][y].S) {
+        out.push(
+          buildWall(
+            [cx, wallH / 2, cz + cellSize / 2],
+            [cellSize, wallH, wallT],
+            wallMat,
+            root.id,
+          ),
+        );
+      }
+      if (x === count - 1 && walls[x][y].E) {
+        out.push(
+          buildWall(
+            [cx + cellSize / 2, wallH / 2, cz],
+            [wallT, wallH, cellSize],
+            wallMat,
+            root.id,
+          ),
+        );
+      }
+
+      // Dead end cells get a VFX or monster placed at their center
+      const wallCount = (walls[x][y].N ? 1 : 0) + (walls[x][y].S ? 1 : 0)
+        + (walls[x][y].E ? 1 : 0) + (walls[x][y].W ? 1 : 0);
+      if (wallCount >= 3 && rng() < 0.5) {
+        if (assets && assets.vfx.length > 0 && rng() < 0.45) {
+          const key = pick(assets.vfx, rng)!;
+          out.push(modelEntity("Dead End VFX", key, [cx, 0, cz], rng() * Math.PI * 2, 0.6, root.id));
+        } else if (assets && assets.monsters.length > 0) {
+          const key = pick(assets.monsters, rng)!;
+          out.push(modelEntity(
+            "Maze Enemy",
+            key,
+            [cx, 0, cz],
+            rng() * Math.PI * 2,
+            1,
+            root.id,
+            { behavior: "enemy-deathmatch", layer: "NPC" },
+          ));
+        }
+      }
+    }
+  }
+
+  // Ambient sector lights scattered through the maze
+  if (assets) {
+    const lightStep = cellSize * 3;
+    for (let lx = -half + lightStep; lx < half; lx += lightStep) {
+      for (let lz = -half + lightStep; lz < half; lz += lightStep) {
+        if (rng() < 0.6) continue;
+        out.push(entity({
+          name: "Maze Light",
+          type: "light",
+          parentId: root.id,
+          transform: { position: [lx, wallH + 1, lz], rotation: [0, 0, 0], scale: [1, 1, 1] },
+          light: { kind: "point", color: assets.lightColor, intensity: assets.lightIntensity * 0.7, distance: cellSize * 4 },
+        }));
+      }
+    }
+  }
+
+  return out;
+}
+
+/* ---------------- Open World (biome terrain) ---------------------------- */
+/** Outdoor generator: large ground plane + dense foliage + scattered
+ *  structures + monsters + harvestable resource nodes + NPC friendly units
+ *  + VFX emitters. Designed for the "Open World" map kind when a world
+ *  sector is selected. Falls back to flat ground + scattered crates when
+ *  no sector assets are available. */
+function openWorld(opts: MapGenOptions): SceneEntity[] {
+  const rng = mulberry32(opts.seed);
+  const assets = resolveAssets(opts.sectorId);
+  const root = rootGroup("Generated · Open World");
+  const out: SceneEntity[] = [root];
+  const size = Math.max(40, opts.size);
+  const half = size / 2;
+
+  // Ground
+  out.push(
+    entity({
+      name: "Terrain",
+      type: "plane",
+      parentId: root.id,
+      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
+      material: { color: assets?.groundColor ?? "#2a3a1a", metalness: 0, roughness: 1 },
+      physics: { bodyType: "fixed", colliderType: "cuboid" },
+    }),
+  );
+
+  // Foliage (trees / plants) — dense scatter
+  if (assets && assets.foliage.length > 0) {
+    const foliageDensity = (assets.foliageDensity ?? 0.5) * opts.density;
+    const foliageStep = 4;
+    const jitter = foliageStep * 0.8;
+    for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
+      for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
+        if (rng() > foliageDensity) continue;
+        const key = pick(assets.foliage, rng)!;
+        const px = x + (rng() - 0.5) * jitter;
+        const pz = z + (rng() - 0.5) * jitter;
+        out.push(modelEntity(
+          "Foliage",
+          key,
+          [px, 0, pz],
+          rng() * Math.PI * 2,
+          0.7 + rng() * 0.8,
+          root.id,
+        ));
+      }
+    }
+  }
+
+  // Structures — sparsely scattered
+  if (assets && assets.structures.length > 0) {
+    const structureCount = Math.round(2 + opts.density * 4);
+    for (let i = 0; i < structureCount; i++) {
+      const key = pick(assets.structures, rng)!;
+      const sx = (rng() - 0.5) * (size - 10);
+      const sz = (rng() - 0.5) * (size - 10);
+      out.push(modelEntity(
+        `Structure ${i + 1}`,
+        key,
+        [sx, 0, sz],
+        rng() * Math.PI * 2,
+        1 + rng() * 0.3,
+        root.id,
+      ));
+
+      // Place a friendly NPC near each structure
+      if (assets.npcs.length > 0 && rng() < 0.6) {
+        const npcKey = pick(assets.npcs, rng)!;
+        out.push(modelEntity(
+          "NPC",
+          npcKey,
+          [sx + (rng() - 0.5) * 4, 0, sz + (rng() - 0.5) * 4],
+          rng() * Math.PI * 2,
+          1,
+          root.id,
+          { behavior: "npc-dialog", layer: "NPC" },
+        ));
+      }
+    }
+  }
+
+  // Fallback boxes when no structures defined
+  if (!assets || assets.structures.length === 0) {
+    for (let i = 0; i < 6; i++) {
+      const sx = (rng() - 0.5) * (size - 10);
+      const sz = (rng() - 0.5) * (size - 10);
+      const s = 2 + rng() * 3;
+      out.push(entity({
+        name: `Rock ${i + 1}`,
+        type: "box",
+        parentId: root.id,
+        transform: { position: [sx, s / 2, sz], rotation: [0, rng() * Math.PI, 0], scale: [s, s * 0.6, s] },
+        material: { color: "#5a5048", metalness: 0, roughness: 1 },
+        physics: { bodyType: "fixed", colliderType: "cuboid" },
+      }));
+    }
+  }
+
+  // Monsters — scattered throughout
+  if (assets && assets.monsters.length > 0) {
+    const monsterCount = Math.round(3 + opts.density * 8);
+    for (let i = 0; i < monsterCount; i++) {
+      const key = pick(assets.monsters, rng)!;
+      const mx = (rng() - 0.5) * (size - 8);
+      const mz = (rng() - 0.5) * (size - 8);
+      out.push(modelEntity(
+        `Enemy ${i + 1}`,
+        key,
+        [mx, 0, mz],
+        rng() * Math.PI * 2,
+        1,
+        root.id,
+        { behavior: "enemy-rpg", layer: "NPC" },
+      ));
+    }
+  }
+
+  // Harvestable resource nodes
+  const harvestCount = Math.round(4 + opts.density * 8);
+  for (let i = 0; i < harvestCount; i++) {
+    const key = assets && assets.harvestables.length > 0
+      ? pick(assets.harvestables, rng)!
+      : "prop-crystal-gems";
+    const hx = (rng() - 0.5) * (size - 6);
+    const hz = (rng() - 0.5) * (size - 6);
+    out.push(modelEntity(
+      `Resource Node ${i + 1}`,
+      key,
+      [hx, 0.5, hz],
+      rng() * Math.PI * 2,
+      0.6 + rng() * 0.4,
+      root.id,
+    ));
+  }
+
+  // VFX emitters near interesting spots
+  if (assets && assets.vfx.length > 0) {
+    const vfxCount = Math.round(1 + opts.density * 3);
+    for (let i = 0; i < vfxCount; i++) {
+      const key = pick(assets.vfx, rng)!;
+      const vx = (rng() - 0.5) * (size - 12);
+      const vz = (rng() - 0.5) * (size - 12);
+      out.push(modelEntity("Ambient VFX", key, [vx, 0, vz], 0, 1, root.id));
+    }
+  }
+
+  // Ambient lights (warm / cool depending on biome)
+  const lightColor = assets?.lightColor ?? "#ffe4a0";
+  const lightIntensity = assets?.lightIntensity ?? 5;
+  const lightCount = Math.round(3 + opts.density * 3);
+  for (let i = 0; i < lightCount; i++) {
+    const lx = (rng() - 0.5) * size;
+    const lz = (rng() - 0.5) * size;
+    out.push(entity({
+      name: `Ambient Light ${i + 1}`,
+      type: "light",
+      parentId: root.id,
+      transform: { position: [lx, 8, lz], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      light: { kind: "point", color: lightColor, intensity: lightIntensity, distance: size * 0.4 },
+    }));
+  }
+
+  return out;
+}
+
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(entity.softBody?.mode ?? "continuous") === "burst" ? (
+                  <>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Burst Count: {(entity.softBody?.burstCount ?? 30).toFixed(0)}
+                      </Label>
+                      <Slider
+                        value={[entity.softBody?.burstCount ?? 30]}
+                        min={1}
+                        max={200}
+                        step={1}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.burstCount = Math.round(v);
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Burst Interval: {(entity.softBody?.burstInterval ?? 1).toFixed(2)} s
+                      </Label>
+                      <Slider
+                        value={[entity.softBody?.burstInterval ?? 1]}
+                        min={0.05}
+                        max={10}
+                        step={0.05}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.burstInterval = v;
+                          })
+                        }
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">
+                      Emit Rate: {(entity.softBody?.emitRate ?? 20).toFixed(0)} /s
+                    </Label>
+                    <Slider
+                      value={[entity.softBody?.emitRate ?? 20]}
+                      min={0}
+                      max={120}
+                      step={1}
+                      onValueChange={([v]) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.emitRate = v;
+                        })
+                      }
+                    />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">
+                    Lifetime: {(entity.softBody?.lifetime ?? 2).toFixed(2)} s
+                  </Label>
+                  <Slider
+                    value={[entity.softBody?.lifetime ?? 2]}
+                    min={0.1}
+                    max={10}
+                    step={0.1}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.lifetime = v;
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">
+                    Emit Velocity: {(entity.softBody?.emitVelocity ?? 1.5).toFixed(2)} m/s
+                  </Label>
+                  <Slider
+                    value={[entity.softBody?.emitVelocity ?? 1.5]}
+                    min={-5}
+                    max={10}
+                    step={0.1}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.emitVelocity = v;
+                      })
+                    }
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    data-testid="checkbox-particle-collide-ground"
+                    checked={entity.softBody?.collideGround ?? false}
+                    onChange={(e) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.softBody) d.softBody = {};
+                        d.softBody.collideGround = e.target.checked;
+                      })
+                    }
+                  />
+                  Collide with ground / scene
+                </label>
+                {(() => {
+                  const matRest = resolveMaterialDefaults(entity.material).restitution;
+                  const own = entity.softBody?.bounciness;
+                  const effective = own ?? matRest;
+                  return (
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1.5 block">
+                        Bounciness: {effective.toFixed(2)}
+                        {own === undefined && (
+                          <span className="ml-1 text-[10px] text-sky-400">
+                            (from {entity.material?.kind ?? "Solid"} material)
+                          </span>
+                        )}
+                      </Label>
+                      <Slider
+                        data-testid="slider-particle-bounciness"
+                        value={[effective]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={([v]) =>
+                          updateEntity(entity.id, (d) => {
+                            if (!d.softBody) d.softBody = {};
+                            d.softBody.bounciness = v;
+                          })
+                        }
+                      />
+                      {own !== undefined && (
+                        <button
+                          type="button"
+                          className="mt-1 text-[10px] underline text-muted-foreground hover:text-foreground"
+                          data-testid="btn-particle-bounciness-clear"
+                          onClick={() =>
+                            updateEntity(entity.id, (d) => {
+                              if (d.softBody) delete d.softBody.bounciness;
+                            })
+                          }
+                        >
+                          Reset to material default
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
+            ) : (
+              <>
+                {entity.type === "cloth" && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Pin</Label>
+                    <Select
+                      value={entity.softBody?.pin ?? "topCorners"}
+                      onValueChange={(v) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.pin = v as "topCorners" | "topEdge" | "none";
+                        })
+                      }
+                    >
+                      <SelectTrigger className="h-7 text-xs" data-testid="select-cloth-pin">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="topCorners">Top Corners</SelectItem>
+                        <SelectItem value="topEdge">Top Edge</SelectItem>
+                        <SelectItem value="none">None (free fall)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Segments X</Label>
+                    <NumberInput
+                      value={entity.softBody?.segmentsX ?? (entity.type === "flag" ? 12 : 10)}
+                      step={1}
+                      onChange={(n) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.segmentsX = Math.max(3, Math.round(n));
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1.5 block">Segments Y</Label>
+                    <NumberInput
+                      value={entity.softBody?.segmentsY ?? (entity.type === "flag" ? 8 : 10)}
+                      step={1}
+                      onChange={(n) =>
+                        updateEntity(entity.id, (d) => {
+                          if (!d.softBody) d.softBody = {};
+                          d.softBody.segmentsY = Math.max(2, Math.round(n));
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Damping: {(entity.softBody?.damping ?? (entity.type === "flag" ? 0.4 : entity.type === "cloth" ? 0.6 : 0.2)).toFixed(2)}
+              </Label>
+              <Slider
+                value={[entity.softBody?.damping ?? (entity.type === "flag" ? 0.4 : entity.type === "cloth" ? 0.6 : 0.2)]}
+                min={0}
+                max={5}
+                step={0.05}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.softBody) d.softBody = {};
+                    d.softBody.damping = v;
+                  })
+                }
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Wind direction lives on the Environment (deselect to edit).
+              Damping defaults come from the Material kind's drag.
+            </p>
+          </Section>
+        )}
+
+        {entity.light && (
+          <Section title="Light" Icon={Lightbulb}>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Kind</Label>
+              <Select
+                value={entity.light.kind ?? "point"}
+                onValueChange={(v) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.light) d.light = {};
+                    d.light.kind = v as "point" | "directional" | "spot";
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="point">Point</SelectItem>
+                  <SelectItem value="directional">Directional</SelectItem>
+                  <SelectItem value="spot">Spot</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Color</Label>
+              <Input
+                type="color"
+                value={entity.light.color ?? "#ffffff"}
+                onChange={(e) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.light) d.light = {};
+                    d.light.color = e.target.value;
+                  })
+                }
+                className="h-8 cursor-pointer"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Intensity: {(entity.light.intensity ?? 4).toFixed(1)}
+              </Label>
+              <Slider
+                value={[entity.light.intensity ?? 4]}
+                min={0}
+                max={20}
+                step={0.1}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.light) d.light = {};
+                    d.light.intensity = v;
+                  })
+                }
+              />
+            </div>
+          </Section>
+        )}
+
+        {entity.physics && (
+          <Section title="Rigid Body" Icon={FlaskConical}>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Body Type</Label>
+              <Select
+                value={entity.physics.bodyType ?? "dynamic"}
+                onValueChange={(v) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.physics) d.physics = {};
+                    d.physics.bodyType = v as "fixed" | "dynamic" | "kinematicPosition" | "kinematicVelocity";
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="dynamic">Dynamic</SelectItem>
+                  <SelectItem value="fixed">Fixed (static)</SelectItem>
+                  <SelectItem value="kinematicPosition">Kinematic Position</SelectItem>
+                  <SelectItem value="kinematicVelocity">Kinematic Velocity</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Mass: {(entity.physics.mass ?? 1).toFixed(2)}
+              </Label>
+              <Slider
+                value={[entity.physics.mass ?? 1]}
+                min={0.1}
+                max={20}
+                step={0.1}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.physics) d.physics = {};
+                    d.physics.mass = v;
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Restitution: {(entity.physics.restitution ?? 0.4).toFixed(2)}
+              </Label>
+              <Slider
+                value={[entity.physics.restitution ?? 0.4]}
+                min={0}
+                max={1.5}
+                step={0.05}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.physics) d.physics = {};
+                    d.physics.restitution = v;
+                  })
+                }
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Friction: {(entity.physics.friction ?? 0.6).toFixed(2)}
+              </Label>
+              <Slider
+                value={[entity.physics.friction ?? 0.6]}
+                min={0}
+                max={2}
+                step={0.05}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.physics) d.physics = {};
+                    d.physics.friction = v;
+                  })
+                }
+              />
+            </div>
+            <BakeConvexDecompPanel
+              key={entity.id}
+              entityId={entity.id}
+              saved={entity.physics.colliderBakeOptions}
+            />
+          </Section>
+        )}
+
+        {entity.model && (
+          <Section title="Model" Icon={Box}>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">URL (.glb / .gltf)</Label>
+              <Input
+                value={entity.model.url ?? ""}
+                onChange={(e) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.model) d.model = {};
+                    d.model.url = e.target.value;
+                  })
+                }
+                placeholder="https://..."
+                className="h-7 text-xs font-mono"
+                data-testid="input-model-url"
+              />
+            </div>
+            {entity.model.proxy ? (
+              <p className="text-[11px] text-muted-foreground">
+                Locator (proxy) for sub-node{" "}
+                <span className="font-mono text-foreground">{entity.model.subNode ?? "?"}</span> of
+                its parent GLB. Geometry is rendered by the parent — this entity is a
+                transform-only anchor you can target by name (Spawn_*, Cover_*, etc.) or attach
+                scripts/behaviors to.
+              </p>
+            ) : (
+              entity.model.url && (
+                <div className="space-y-1.5">
+                  {(() => {
+                    const alreadyExposed = entities.some(
+                      (e) => e.parentId === entity.id && e.model?.proxy,
+                    );
+                    return (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs w-full"
+                          disabled={alreadyExposed}
+                          onClick={() => {
+                            void explodeGlbHierarchy(entity.id);
+                          }}
+                          data-testid="button-expose-children"
+                        >
+                          {alreadyExposed ? "Children already exposed" : "Expose Children"}
+                        </Button>
+                        <p className="text-[11px] text-muted-foreground">
+                          Walks the GLB and adds a transform-only locator child for each top-level
+                          named node (Spawn_*, Cover_*, Door_*, …). Lets scripts/AI target sub-parts
+                          by name and attach behaviors.
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+              )
+            )}
+          </Section>
+        )}
+
+        <Section title="Player Controller" Icon={User}>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Role</Label>
+            <Select
+              value={entity.controllerKind ?? "none"}
+              onValueChange={(v) => setEntityController(entity.id, v as ControllerKind)}
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-controller">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None (passive object)</SelectItem>
+                <SelectItem value="thirdPerson">Player — Third-person</SelectItem>
+                <SelectItem value="firstPerson">Player — First-person</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              Marks this entity as the player. Camera in Play Mode will follow it
+              and WASD will drive it. Use kinematic body type to avoid physics
+              fighting the controller.
+            </p>
+          </div>
+        </Section>
+
+        {/* ── Stats ─────────────────────────────────────────────── */}
+        {entity.stats ? (
+          <Section title="Stats" Icon={SwordsIcon}>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Level</Label>
+                <NumberInput
+                  value={entity.stats.level ?? 1}
+                  step={1}
+                  onChange={(n) =>
+                    updateEntity(entity.id, (d) => {
+                      if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                      d.stats.level = Math.max(1, Math.round(n));
+                    })
+                  }
+                  className="w-20"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">XP</Label>
+                <NumberInput
+                  value={entity.stats.xp ?? 0}
+                  step={10}
+                  onChange={(n) =>
+                    updateEntity(entity.id, (d) => {
+                      if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                      d.stats.xp = Math.max(0, Math.round(n));
+                    })
+                  }
+                  className="w-20"
+                />
+              </div>
+              <Separator />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Base Attributes</p>
+              {ATTRIBUTES.map((attr) => (
+                <div key={attr} className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono w-8 text-muted-foreground">{attr}</span>
+                  <Slider
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={[entity.stats!.base[attr] ?? 10]}
+                    onValueChange={([v]) =>
+                      updateEntity(entity.id, (d) => {
+                        if (!d.stats) d.stats = { ...DEFAULT_STATS };
+                        d.stats.base[attr] = v;
+                      })
+                    }
+                    className="flex-1"
+                  />
+                  <span className="text-[11px] font-mono w-6 text-right">
+                    {entity.stats!.base[attr] ?? 10}
+                  </span>
+                </div>
+              ))}
+              <Separator />
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Derived Stats (preview)</p>
+              {(() => {
+                const resolved = resolveStats(entity.stats!);
+                return (
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                    {DERIVED_STATS.map((s) => (
+                      <div key={s} className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground truncate">{s}</span>
+                        <span className="text-[10px] font-mono">{resolved.derived[s]}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-6 text-xs w-full"
+                onClick={() => {
+                  const s = useEditor.getState();
+                  s.cmdSetEntityStats(entity.id, null);
+                }}
+              >
+                Remove Stats
+              </Button>
+            </div>
+          </Section>
+        ) : (
+          <div className="px-3 py-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs w-full"
+              onClick={() => {
+                const s = useEditor.getState();
+                s.cmdSetEntityStats(entity.id, { ...DEFAULT_STATS });
+              }}
+            >
+              Add Stats Component
+            </Button>
+          </div>
+        )}
+
+        <Section title="Script" Icon={Code2}>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Attached Script</Label>
+            <Select
+              value={entity.scriptId ? String(entity.scriptId) : "__none"}
+              onValueChange={(v) =>
+                setEntityScript(entity.id, v === "__none" ? null : Number(v))
+              }
+            >
+              <SelectTrigger className="h-7 text-xs" data-testid="select-script">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">None</SelectItem>
+                {scripts.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    [{s.language.toUpperCase()}] {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {scripts.length === 0 && (
+              <p className="text-[11px] text-muted-foreground mt-2">
+                No scripts yet. Open the Scripts panel below to create one.
+              </p>
+            )}
+          </div>
+        </Section>
+
+        <Separator />
+        <div className="px-3 py-2 text-[10px] font-mono text-muted-foreground">id: {selectedId}</div>
+      </ScrollArea>
+    </div>
+  );
+}

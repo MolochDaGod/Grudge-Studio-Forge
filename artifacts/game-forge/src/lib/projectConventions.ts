@@ -7,7 +7,7 @@
  *   - Script names:    camelCase  ("playerHealth", "enemyPatrol")
  *   - File names:      kebab-case ("player-health.js", "enemy-group.prefab.json")
  *   - Prefab names:    PascalCase ("PlayerPrefab", "EnemyGroup")
- *   - Layer names:     PascalCase ("Default", "Enemy", "Trigger", "Player")
+ *   - Layer names:     PascalCase ("Default", "NPC", "Trigger", "Player")
  *
  * UUID:
  *   - Entity IDs: UUID v4 (globally unique across projects + GitHub sync)

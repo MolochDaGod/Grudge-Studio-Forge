@@ -16,7 +16,7 @@ Three.js scene editor, physics engine & AI-assisted game builder — by [Grudge 
 - **Inline AI Assistant** — contextual AI prompt bar in every bottom-panel tab (Console, Assets, Scripts, Prefabs, Nodes, Layers)
 - **Visual Scripting** — @xyflow node graph with AI prompt-to-graph generation + drag-and-drop from Assets/Hierarchy
 - **Monaco Code Editor** — embedded TypeScript editor for custom scripts and behaviors with 15 built-in templates
-- **Asset Pipeline** — browser-side FBX→GLB, OBJ→GLB, STL→GLB via assimpjs WASM + ZIP extract via fflate
+- **Asset Pipeline** — browser-side FBX→GLB, OBJ→GLB, STL→GLB via assimpjs WASM + ZIP extract via fflate, post-processed with `@gltf-transform` (dedup → prune → weld → meshopt) and a `.meta.json` sidecar (tri/vert/mesh/bone counts, bbox, animations)
 - **Animation Library** — 22-clip catalog (locomotion, combat, emote, utility) with Mixamo patterns
 - **GitHub Project Sync** — push/pull projects to GitHub repos via Git tree API
 - **Project Conventions** — UUID v4, PascalCase/camelCase/kebab-case naming, project audit scoring
@@ -112,6 +112,20 @@ The project includes a comprehensive AI skill at [`.agents/skills/forge-editor/S
 - How to add new tools, templates, models, and scripts
 - Deployment stack and environment variables
 - Tech stack reference
+
+Alongside it ships a catalog of focused 3D / engine skills under [`.agents/skills/`](.agents/skills/):
+
+| Skill | Coverage |
+|---|---|
+| `animation-and-skinned-meshes` | SkeletonUtils.clone, mixer / actions, shared-skeleton crowds, cross-fades |
+| `spatial-queries-and-surfaces` | Raycasts, shape casts, 8-dir probe fan, surface tagging |
+| `threejs-controls` | Transform / Orbit / Map / Fly / Drag arbitration |
+| `threejs-asset-io` | GLTF / FBX / OBJ / STL, meshopt vs Draco vs KTX2, the canonical pipeline |
+| `threejs-html-overlays` | CSS2DRenderer + drei `<Html />` for labels, sector pins, damage numbers |
+| `rapier-physics-patterns` | Kinematic controller, joints, instancing, heightfields — mapped to our 10 layers |
+| `threejs-positional-audio` | Listener-on-camera, perfect-timing, directional cones, FFT visualizers |
+| `threejs-volume-rendering` | `Data3DTexture` + `RaymarchingBox` (clouds) + `VolumeNodeMaterial` (god rays) |
+| `threejs-tsl` | TSL fundamentals, VFX (tornado / flames), GLSL→TSL transpiler workflow |
 
 ## Part of Grudge Studio
 

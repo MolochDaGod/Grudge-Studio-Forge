@@ -63,3 +63,9 @@ attached_assets/*.fbx
 
 .vercel
 .env*.local
+
+# Agent / pnpm / build scratch logs (never commit)
+_*.log
+_tmp_*
+build*.log
+*-debug-*.log
