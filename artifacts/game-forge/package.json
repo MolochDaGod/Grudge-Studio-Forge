@@ -84,9 +84,6 @@
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.19.3",
-    "@gltf-transform/core": "^4.4.0",
-    "@gltf-transform/extensions": "^4.4.0",
-    "@gltf-transform/functions": "^4.4.0",
     "@monaco-editor/react": "^4.7.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.0",
@@ -99,7 +96,6 @@
     "immer": "^11.1.4",
     "leva": "^0.10.1",
     "maath": "^0.10.8",
-    "meshoptimizer": "^0.25.0",
     "miniplex": "^2.0.0",
     "monaco-editor": "^0.55.1",
     "nanoid": "^5.1.9",

@@ -9,9 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 - **Browser-side GLB optimization pipeline** (`src/lib/assetConverter.ts`).
   Every uploaded FBX/OBJ/STL → GLB and every dropped GLB now runs through a
-  `dedup → prune → weld → meshopt` pass via `@gltf-transform` (dynamic
-  import). Typical reduction is 5–10× on geometry payload. Failures fall back
-  to the raw `GLTFExporter` output so a busted asset never blocks the user.
+  `dedup → prune → weld → meshopt` pass via `@gltf-transform` + `meshoptimizer`,
+  loaded on-demand from `esm.sh` so the editor bundle stays slim and the
+  workspace lockfile is not perturbed by the encoder WASM. Typical reduction
+  is 5–10× on geometry payload. Failures fall back to the raw `GLTFExporter`
+  output so a busted asset (or an offline CDN) never blocks the user.
 - **Per-asset `.meta.json` sidecars** (`src/editor/AssetDropZone.tsx`).
   After a successful model upload, the editor writes a sibling
   `<glbName>.meta.json` with triangle / vertex / mesh / bone counts,
