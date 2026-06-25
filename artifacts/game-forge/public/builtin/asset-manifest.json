@@ -33,7 +33,7 @@
         { "key": "map-town2f", "file": "map-town2f.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-town2f.glb", "size_mb": 50.4, "builtin": false, "tags": ["map", "town", "large", "urban"], "usage": "Large urban town map. Hosted on R2 CDN." },
         { "key": "map-bigfarm", "file": "map-bigfarm.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-bigfarm.glb", "size_mb": 51.1, "builtin": false, "tags": ["map", "farm", "rural", "outdoor"], "usage": "Big farm outdoor map. Hosted on R2 CDN." },
         { "key": "map-western", "file": "map-western.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-western.glb", "size_mb": 40.2, "builtin": false, "tags": ["map", "western", "town", "desert"], "usage": "Western town map. Hosted on R2 CDN." },
-        { "key": "map-underground-wars", "file": "map-underground-wars.glb", "size_mb": 18.9, "builtin": true, "tags": ["map", "underground", "dungeon", "pvp", "warlords"], "usage": "Underground Wars PvP arena from RTS-Grudge. Used by Warlords forge scenes." }
+        { "key": "map-underground-wars", "file": "map-underground-wars.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-underground-wars.glb", "size_mb": 18.9, "builtin": false, "tags": ["map", "underground", "dungeon", "pvp", "warlords"], "usage": "Underground Wars PvP arena from RTS-Grudge. Hosted on R2 CDN." }
       ]
     },
     "props": {

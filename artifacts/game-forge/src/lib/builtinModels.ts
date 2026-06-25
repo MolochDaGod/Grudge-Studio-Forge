@@ -39,7 +39,8 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
   "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
   "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
-  "map-underground-wars": ensureBaseUrl("builtin/map-underground-wars.glb"),
+  // RTS-Grudge Underground Wars PvP arena — hosted on R2 (too large for Vite git bundle)
+  "map-underground-wars": "https://assets.grudge-studio.com/builtin/map-underground-wars.glb",
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
   "forge-scene": ensureBaseUrl("builtin/forge-scene.glb"),
