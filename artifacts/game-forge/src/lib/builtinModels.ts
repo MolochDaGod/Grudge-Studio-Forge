@@ -39,6 +39,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
   "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
   "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
+  "map-underground-wars": ensureBaseUrl("builtin/map-underground-wars.glb"),
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
   "forge-scene": ensureBaseUrl("builtin/forge-scene.glb"),
@@ -251,4 +252,26 @@ export function resolveBuiltinModel(url: string): string | null {
   if (!url.startsWith("builtin:")) return null;
   const key = url.slice("builtin:".length);
   return BUILTIN_MODELS[key] ?? null;
+}
+
+/** Resolve a model URL for GLTF loaders. Order:
+ *   1. `builtin:<key>` → bundled / CDN asset URL
+ *   2. absolute http(s)/data/blob → returned as-is
+ *   3. anything else → relative to the artifact BASE_URL
+ *
+ *  Unknown `builtin:` keys must NOT fall through to (3) — Vercel's SPA
+ *  catch-all would return `index.html` and drei would try to parse it as
+ *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error. */
+export function resolveModelUrl(url: string): string {
+  const builtin = resolveBuiltinModel(url);
+  if (builtin) return builtin;
+  if (url.startsWith("builtin:")) {
+    const key = url.slice("builtin:".length);
+    throw new Error(
+      `Unknown builtin model "${key}". Register it in BUILTIN_MODELS (lib/builtinModels.ts) or update the scene to use a valid builtin: key.`,
+    );
+  }
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
+  const base = import.meta.env.BASE_URL || "/";
+  return `${base}${url.replace(/^\/+/, "")}`;
 }

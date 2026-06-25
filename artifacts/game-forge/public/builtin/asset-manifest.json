@@ -32,7 +32,8 @@
         { "key": "map-mistytown", "file": "map-mistytown.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-mistytown.glb", "size_mb": 19.6, "builtin": false, "tags": ["map", "town", "misty", "atmosphere"], "usage": "Atmospheric misty town. Hosted on R2 CDN." },
         { "key": "map-town2f", "file": "map-town2f.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-town2f.glb", "size_mb": 50.4, "builtin": false, "tags": ["map", "town", "large", "urban"], "usage": "Large urban town map. Hosted on R2 CDN." },
         { "key": "map-bigfarm", "file": "map-bigfarm.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-bigfarm.glb", "size_mb": 51.1, "builtin": false, "tags": ["map", "farm", "rural", "outdoor"], "usage": "Big farm outdoor map. Hosted on R2 CDN." },
-        { "key": "map-western", "file": "map-western.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-western.glb", "size_mb": 40.2, "builtin": false, "tags": ["map", "western", "town", "desert"], "usage": "Western town map. Hosted on R2 CDN." }
+        { "key": "map-western", "file": "map-western.glb", "r2_url": "https://assets.grudge-studio.com/builtin/map-western.glb", "size_mb": 40.2, "builtin": false, "tags": ["map", "western", "town", "desert"], "usage": "Western town map. Hosted on R2 CDN." },
+        { "key": "map-underground-wars", "file": "map-underground-wars.glb", "size_mb": 18.9, "builtin": true, "tags": ["map", "underground", "dungeon", "pvp", "warlords"], "usage": "Underground Wars PvP arena from RTS-Grudge. Used by Warlords forge scenes." }
       ]
     },
     "props": {

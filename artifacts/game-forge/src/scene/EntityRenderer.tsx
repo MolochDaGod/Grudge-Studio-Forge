@@ -15,7 +15,7 @@ import type { TriggerEvent } from "./GameBus";
 import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
-import { resolveBuiltinModel, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
+import { resolveBuiltinModel, resolveModelUrl, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
 import { synthesizeBipedClips, getBipedProfile } from "@/lib/proceduralBipedAnimations";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
 import {
@@ -31,18 +31,6 @@ import {
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 import { ClothEntity, FlagEntity, ParticlesEntity } from "./SoftBodies";
-
-/** Resolve a model URL. Order:
- *   1. `builtin:<key>` → bundled Vite asset URL (works in dev + prod)
- *   2. absolute http(s)/data/blob → returned as-is
- *   3. anything else → treated as relative to the artifact BASE_URL */
-function resolveModelUrl(url: string): string {
-  const builtin = resolveBuiltinModel(url);
-  if (builtin) return builtin;
-  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base}${url.replace(/^\/+/, "")}`;
-}
 
 interface RenderProps {
   entity: SceneEntity;

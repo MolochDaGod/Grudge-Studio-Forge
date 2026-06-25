@@ -22,7 +22,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three-stdlib";
 import { extendGltfLoader } from "@/lib/gltfLoaderConfig";
-import { resolveBuiltinModel } from "@/lib/builtinModels";
+import { resolveModelUrl } from "@/lib/builtinModels";
 
 export interface GlbChildNode {
   /** glTF node name. Guaranteed non-empty (anonymous nodes are filtered). */
@@ -31,15 +31,6 @@ export interface GlbChildNode {
   /** Euler XYZ (radians). */
   rotation: [number, number, number];
   scale: [number, number, number];
-}
-
-/** Resolve a model URL the same way EntityRenderer does. */
-function resolveUrl(url: string): string {
-  const builtin = resolveBuiltinModel(url);
-  if (builtin) return builtin;
-  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base}${url.replace(/^\/+/, "")}`;
 }
 
 const SHARED_LOADER = new GLTFLoader();
@@ -61,7 +52,7 @@ const inflightLoads = new Map<string, Promise<THREE.Object3D>>();
 
 /** Load (or return cached if pending) a GLB scene root for the given URL. */
 function loadSceneRoot(rawUrl: string): Promise<THREE.Object3D> {
-  const url = resolveUrl(rawUrl);
+  const url = resolveModelUrl(rawUrl);
   const pending = inflightLoads.get(url);
   if (pending) return pending;
   const p = new Promise<THREE.Object3D>((resolve, reject) => {
