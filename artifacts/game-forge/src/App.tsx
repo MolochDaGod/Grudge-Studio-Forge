@@ -92,6 +92,12 @@ function EditorShell() {
     const params = new URLSearchParams(window.location.search);
     const sceneUrl = params.get("scene");
     if (!sceneUrl) return;
+    // ?edit=1 (or edit=true) keeps the editor editable — do not auto-enter play.
+    // Used by gameopen / fleet deep links for AI-assisted authoring.
+    const editMode =
+      params.get("edit") === "1" ||
+      params.get("edit") === "true" ||
+      params.get("mode") === "edit";
     let cancelled = false;
     (async () => {
       try {
@@ -111,18 +117,23 @@ function EditorShell() {
           entities: data.entities as never,
           environment: (data.environment as never) ?? {},
         });
-        store.setSceneName("Published Scene");
-        store.setPlaying(true);
-        store.pushLog("info", `Loaded published scene from ${sceneUrl}`);
+        store.setSceneName(editMode ? "Loaded Scene (Edit)" : "Published Scene");
+        store.setPlaying(!editMode);
+        store.pushLog(
+          "info",
+          `Loaded scene from ${sceneUrl}${editMode ? " · edit mode (AI + inspector ready)" : " · play mode"}`,
+        );
       } catch (err) {
         if (!cancelled) {
           pushLog("error", `Failed to load shared scene: ${(err as Error).message}`);
         }
       } finally {
-        // Strip ?scene= so a refresh keeps the now-live scene rather
+        // Strip ?scene= / ?edit= so a refresh keeps the now-live scene rather
         // than re-fetching (and the URL stays clean for the user).
         const url = new URL(window.location.href);
         url.searchParams.delete("scene");
+        url.searchParams.delete("edit");
+        url.searchParams.delete("mode");
         window.history.replaceState({}, "", url.toString());
       }
     })();
