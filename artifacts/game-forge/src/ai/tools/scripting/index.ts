@@ -620,6 +620,26 @@ const BEHAVIOR_DOCS: Record<
       "Friendly NPC: listens for the player-rpg E-key 'interact' event and pops a one-line speech bubble in the HUD. Configure the line via SceneEntity.npcLine; falls back to '...' if unset.",
     recommendedLayer: "NPC",
   },
+  ally: {
+    description:
+      "Combat ally brain: seeks nearest hostile (enemy-deathmatch / enemy-rpg / boss), melee-fights them, soft-follows the player when idle. Ignores friendly fire from player.",
+    recommendedLayer: "NPC",
+  },
+  neutral: {
+    description:
+      "Civilian ruleset: wanders peacefully until damaged, then retaliates against the attacker. No deathmatch scoring side-effects required.",
+    recommendedLayer: "NPC",
+  },
+  vendor: {
+    description:
+      "Merchant: on player-rpg interact, emits npcDialog + vendorOpen with stock (default potions/ammo, or JSON array in npcLine).",
+    recommendedLayer: "NPC",
+  },
+  boss: {
+    description:
+      "Boss strategy: 500 HP, heavy melee, never flees, enrages under 30% HP (speed+damage). Emits bossHealth / bossEnrage / bossDefeated.",
+    recommendedLayer: "NPC",
+  },
 };
 const listBuiltinBehaviorsHandler: ToolHandler = async () => {
   return {

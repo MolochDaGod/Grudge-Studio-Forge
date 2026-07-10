@@ -275,7 +275,15 @@ export type BehaviorKind =
    *  this entity, emits a `npcDialog` HUD event with the per-entity
    *  {@link SceneEntity.npcLine} (or a generic fallback). The HUD speech
    *  bubble in `PlayHUD` shows the line for a few seconds. */
-  | "npc-dialog";
+  | "npc-dialog"
+  /** Combat ally — fights hostiles (enemy-deathmatch, enemy-rpg, boss), never targets Player. Layer NPC. */
+  | "ally"
+  /** Neutral civilian — wanders; only fights after taking damage. Layer NPC. */
+  | "neutral"
+  /** Vendor merchant — interact (E via player-rpg) opens vendor HUD from npcLine stock. Layer NPC. */
+  | "vendor"
+  /** Boss enemy — high HP, heavy damage, no flee, enrages under 30 percent HP. Layer NPC. */
+  | "boss";
 
 export interface SceneEntity {
   id: string;
@@ -510,8 +518,17 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   if (e.type === "plane" || lower === "map" || lower === "terrain") return "Terrain";
   if (e.controllerKind && e.controllerKind !== "none") return "Player";
   if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
-  if (e.behavior === "npc-dialog") return "NPC";
-  if (e.behavior === "spawnpoint") return "Trigger";
+  if (
+    e.behavior === "npc-dialog" ||
+    e.behavior === "ally" ||
+    e.behavior === "neutral" ||
+    e.behavior === "vendor" ||
+    e.behavior === "boss"
+  ) {
+    return "NPC";
+  }
+  if (e.behavior === "spawnpoint" || e.behavior === "pickup-trigger") return "Trigger";
+  if (e.behavior === "player-deathmatch" || e.behavior === "player-rpg") return "Player";
   return "Default";
 }
 

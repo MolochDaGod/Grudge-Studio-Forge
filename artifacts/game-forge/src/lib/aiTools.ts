@@ -1242,6 +1242,7 @@ export function buildSystemPrompt(): string {
     `- When the user asks "how does X work in three/r3f/rapier?" or for examples: research first (list_docs → fetch_doc_url and/or search_github), then build a minimal working version in the scene.`,
     `- Blazor C# scripts: the editor ships a Blazor WASM runtime + C#→JS transpile path for MonoBehaviour-style scripts (public/_framework, scene/csTranspile). Prefer JS script templates (list_script_templates) unless the user explicitly wants C#; when writing C#, stick to Vector3/Transform/Time/Debug APIs documented in csharp/GameForgeRuntime.`,
     `- Node graph / visual blocks: use the Nodes panel tools when available; compile graphs to scene entities. Treat node-graph + AI as the "block LLM" layer for non-coders.`,
+    `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch (score), rpg (interact/vendors), skirmish (mixed). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders. Trees/buildings/fences → Terrain+Walk fixed cuboid; water pools → Water+Swim; climb walls → Terrain+Climb.`,
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,
