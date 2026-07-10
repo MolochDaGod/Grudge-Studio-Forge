@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased — AI Worker / agentic editor
+
+### Fixed
+- **Anthropic 401 “invalid x-api-key”** — server now rejects placeholder keys and surfaces a clear Puter/Ollama fallback message instead of a raw Anthropic error.
+- **AI Worker Puter path** — browser `puter.ai.chat` fallback when the server Puter proxy fails; token + server path still preferred for full tool_use.
+- **AI Worker panel** — Puter/Ollama status chips, sign-in banner with one-click Puter login, model picker no longer hard-locks Puter models (prompt to sign in on send).
+- **`GET /api/ai/status`** — lightweight status for the panel (anthropic configured?).
+- **Viewport clip range** — camera near 0.05 / far 50k + logarithmic depth buffer so large agent-built maps stay visible.
+
+
+
 All notable changes to Grudge Forge are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 

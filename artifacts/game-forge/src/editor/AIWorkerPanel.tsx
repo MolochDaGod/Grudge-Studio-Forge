@@ -42,6 +42,7 @@ import {
   type ModelOption,
 } from "@/lib/ai/providers";
 import { useAuth } from "@/store/auth";
+import { signInWithPuter } from "@/lib/authBootstrap";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isOllamaAvailable } from "@/lib/ai/providers/ollamaProvider";
 import { MUTATING_TOOLS } from "@/ai/aiAuditLog";
 import {
   countCompletedSteps,
@@ -158,6 +160,8 @@ export function AIWorkerPanel({
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [ollamaOk, setOllamaOk] = useState(false);
+  const [aiStatusHint, setAiStatusHint] = useState<string | null>(null);
   // Per-project model selection: each project remembers which model it
   // was last using. Falls back to the global default when the project
   // hasn't picked one yet (or in pre-project state).
@@ -251,6 +255,33 @@ export function AIWorkerPanel({
   const livePlanRef = useRef<AITurn["plan"]>([]);
   const liveToolsRef = useRef<AIToolEvent[]>([]);
   const bumpLive = () => setLiveTick((t) => t + 1);
+
+  // Probe local Ollama + server AI status when panel opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      const ok = await isOllamaAvailable();
+      if (!cancelled) setOllamaOk(ok);
+      try {
+        const res = await fetch("/api/ai/status", { signal: AbortSignal.timeout(4000) });
+        if (res.ok) {
+          const j = (await res.json()) as { anthropic?: boolean; hint?: string };
+          if (!cancelled && !j.anthropic && j.hint) setAiStatusHint(j.hint);
+          else if (!cancelled && j.anthropic) setAiStatusHint(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setAiStatusHint(
+            "AI status endpoint unreachable — Puter (sign-in) or local Ollama still work from the browser.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const interrupt = () => {
     if (!abortRef.current) return;
@@ -555,6 +586,28 @@ export function AIWorkerPanel({
             AI Worker
           </span>
           {streaming && <Loader2 className="size-3 animate-spin text-primary" />}
+          <span
+            className={cn(
+              "text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border",
+              isPuterSignedIn
+                ? "border-emerald-500/40 text-emerald-400"
+                : "border-border text-muted-foreground",
+            )}
+            title="Puter AI (free cloud models)"
+          >
+            Puter {isPuterSignedIn ? "on" : "off"}
+          </span>
+          <span
+            className={cn(
+              "text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border",
+              ollamaOk
+                ? "border-sky-500/40 text-sky-400"
+                : "border-border text-muted-foreground",
+            )}
+            title="Local Ollama at localhost:11434"
+          >
+            Ollama {ollamaOk ? "on" : "off"}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           {hasUndoableTurn && !streaming && (
@@ -592,6 +645,38 @@ export function AIWorkerPanel({
           </Button>
         </div>
       </div>
+
+      {!isPuterSignedIn && (
+        <div className="px-3 py-2 border-b border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-100/90 space-y-1.5 shrink-0">
+          <p className="leading-snug">
+            <strong className="text-amber-200">Sign in with Puter</strong> to use free agentic models
+            (Claude / GPT / Gemini). Server Anthropic is optional; Ollama works offline when running locally.
+          </p>
+          <Button
+            size="sm"
+            className="h-7 text-[11px]"
+            onClick={() => {
+              void signInWithPuter()
+                .then(() => toast({ title: "Signed in with Puter", description: "Free AI models unlocked." }))
+                .catch((err: unknown) =>
+                  toast({
+                    title: "Puter sign-in failed",
+                    description: err instanceof Error ? err.message : String(err),
+                    variant: "destructive",
+                  }),
+                );
+            }}
+            data-testid="button-ai-puter-signin"
+          >
+            Sign in with Puter
+          </Button>
+        </div>
+      )}
+      {aiStatusHint && isPuterSignedIn && (
+        <div className="px-3 py-1.5 border-b border-border text-[10px] text-muted-foreground shrink-0">
+          {aiStatusHint}
+        </div>
+      )}
 
       <ScrollArea className="flex-1 min-h-0">
         <div ref={scrollRef} className="p-3 space-y-3">
@@ -702,7 +787,9 @@ export function AIWorkerPanel({
             </SelectTrigger>
             <SelectContent>
               {MODELS.map((m) => {
-                const locked = m.requiresPuterAuth && !isPuterSignedIn;
+                // Allow selecting Puter models even when signed out — send()
+                // surfaces a clear sign-in prompt instead of a dead dropdown.
+                const locked = m.provider === "ollama" && !ollamaOk;
                 return (
                   <SelectItem
                     key={m.id}
@@ -713,9 +800,14 @@ export function AIWorkerPanel({
                     <div className="flex flex-col">
                       <span className="text-xs">
                         {m.label}
-                        {locked && (
+                        {m.requiresPuterAuth && !isPuterSignedIn && (
                           <span className="text-[10px] text-muted-foreground ml-1">
                             (sign in)
+                          </span>
+                        )}
+                        {m.provider === "ollama" && !ollamaOk && (
+                          <span className="text-[10px] text-muted-foreground ml-1">
+                            (offline)
                           </span>
                         )}
                       </span>

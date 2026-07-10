@@ -17,7 +17,7 @@
  * every request, so adding a new editor capability never requires touching
  * the server. */
 import { Router, type IRouter } from "express";
-import { anthropic } from "../lib/anthropicClient";
+import { anthropic, ANTHROPIC_UNAVAILABLE_HINT } from "../lib/anthropicClient";
 import { logger } from "../lib/logger";
 import { puterChat } from "../lib/puterServerClient";
 
@@ -169,7 +169,7 @@ router.post("/ai/chat", async (req, res) => {
   }
 
   if (!anthropic) {
-    send({ type: "error", error: "Anthropic AI is not configured on this server. Use ?provider=puter with a Puter token instead, or set ANTHROPIC_API_KEY." });
+    send({ type: "error", error: ANTHROPIC_UNAVAILABLE_HINT });
     send({ type: "stop", stop_reason: "error" });
     res.end();
     return;
@@ -219,15 +219,32 @@ router.post("/ai/chat", async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.error({ err }, "ai/chat stream failed");
-    // The client may have already received text_delta events — we still send
-    // a structured error so the UI can surface it instead of hanging.
+    const authFail =
+      /authentication_error|invalid x-api-key|401|unauthorized/i.test(message);
+    const friendly = authFail
+      ? `${ANTHROPIC_UNAVAILABLE_HINT} (upstream: auth failed)`
+      : message;
     try {
-      send({ type: "error", error: message });
+      send({ type: "error", error: friendly });
+      send({ type: "stop", stop_reason: "error" });
       res.end();
     } catch {
       // socket already closed
     }
   }
+});
+
+/** Lightweight status for the AI Worker panel (no secrets). */
+router.get("/ai/status", (_req, res) => {
+  res.json({
+    ok: true,
+    anthropic: Boolean(anthropic),
+    puter: true,
+    ollama: "client-local",
+    hint: anthropic
+      ? "Server Anthropic key present"
+      : ANTHROPIC_UNAVAILABLE_HINT,
+  });
 });
 
 export default router;

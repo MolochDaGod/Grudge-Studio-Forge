@@ -995,7 +995,10 @@ export function Viewport() {
           >
             <Canvas
               shadows
-              camera={{ position: [8, 8, 12], fov: 45 }}
+              // Wide clip range for large templates / city maps (agentic builds
+              // often place content far from origin). logarithmicDepthBuffer
+              // reduces z-fighting when near is small and far is huge.
+              camera={{ position: [8, 8, 12], fov: 45, near: 0.05, far: 50_000 }}
               onPointerMissed={
                 isPlaying
                   ? undefined
@@ -1008,6 +1011,7 @@ export function Viewport() {
                 antialias: false,
                 powerPreference: "high-performance",
                 toneMapping: THREE.NoToneMapping,
+                logarithmicDepthBuffer: true,
               }}
               dpr={[1, 2]}
               style={isPlaying ? { cursor: "none" } : undefined}

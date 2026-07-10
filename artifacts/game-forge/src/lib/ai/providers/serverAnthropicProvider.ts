@@ -26,12 +26,31 @@ export const serverAnthropicProvider: AIProvider = {
       signal: req.signal,
     });
     if (!res.ok || !res.body) {
+      const body = await res.text().catch(() => "");
+      const auth =
+        res.status === 401 ||
+        /invalid x-api-key|authentication_error/i.test(body);
       yield {
         type: "error",
-        error: `AI chat HTTP ${res.status}: ${await res.text().catch(() => "")}`,
+        error: auth
+          ? "Server Anthropic key is missing/invalid. Switch the model picker to a Puter model (sign in) or a local Ollama model."
+          : `AI chat HTTP ${res.status}: ${body.slice(0, 240)}`,
       };
+      yield { type: "stop", stop_reason: "error" };
       return;
     }
-    yield* readSSE(res.body, req.signal);
+    // Map upstream auth errors that still stream as 200 SSE.
+    for await (const ev of readSSE(res.body, req.signal)) {
+      if (ev.type === "error" && /invalid x-api-key|authentication_error|401/i.test(ev.error)) {
+        yield {
+          type: "error",
+          error:
+            "Server Anthropic key is invalid. Use a Puter model (sign in with Puter) or Ollama (local).",
+        };
+        yield { type: "stop", stop_reason: "error" };
+        return;
+      }
+      yield ev;
+    }
   },
 };
