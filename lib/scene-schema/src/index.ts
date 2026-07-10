@@ -475,6 +475,27 @@ export interface Environment {
    *  cloth/flag verts; m/s velocity bias added to spawned particles).
    *  Defaults to {@link DEFAULT_WIND} when unset. */
   wind?: Vec3;
+  /**
+   * Professional game HUD / UI kit theme for Play mode.
+   * Design source of truth: https://ui.grudge-studio.com
+   * (Fantasy / Cyberpunk / FPS / RPG kits — theme, layers, export).
+   */
+  uiKit?: {
+    /** Kit theme matching ui.grudge-studio.com genres. */
+    theme?: "fantasy" | "cyberpunk" | "fps" | "rpg";
+    /**
+     * Enabled HUD layer stack (bottom → top). Known ids:
+     * hud-root, unit-frame, action-bar, minimap, chat, quest-tracker,
+     * inventory, shop, skill-tree, notifications, crosshair, scoreboard.
+     */
+    layers?: string[];
+    /** Relative font scale (1 = default). */
+    fontScale?: number;
+    /** Accent / brand color (hex). */
+    accent?: string;
+    /** Optional deep link back to a saved design on the UI kit site. */
+    designUrl?: string;
+  };
 }
 
 /** Gentle default wind — a light breeze blowing in +X. Picked so a

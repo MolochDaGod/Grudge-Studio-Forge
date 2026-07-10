@@ -98,6 +98,11 @@ import {
   handlers as motionToolHandlers,
   destructiveToolNames as motionDestructiveTools,
 } from "@/ai/tools/motion";
+import {
+  defs as uiToolDefs,
+  handlers as uiToolHandlers,
+  destructiveToolNames as uiDestructiveTools,
+} from "@/ai/tools/ui";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -122,6 +127,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...cfaiDestructiveTools,
   ...knowledgeDestructiveTools,
   ...motionDestructiveTools,
+  ...uiDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1175,6 +1181,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: motionToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ── Professional UI kits (ui.grudge-studio.com) ───────────────────────
+  // list_ui_kits, list_ui_layers, apply_ui_kit, browse_ui_kit, …
+  ...uiToolDefs.map((def) => ({
+    def,
+    exec: uiToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1257,6 +1270,7 @@ export function buildSystemPrompt(): string {
     `- Node graph / visual blocks: use the Nodes panel tools when available; compile graphs to scene entities. Treat node-graph + AI as the "block LLM" layer for non-coders.`,
     `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch (score), rpg (interact/vendors), skirmish (mixed). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders. Trees/buildings/fences → Terrain+Walk fixed cuboid; water pools → Water+Swim; climb walls → Terrain+Climb.`,
     `- Texture & motion (do these end-to-end): generate_texture({ prompt, entityIds:[id], mapRepeat:[4,4] }) auto-applies albedo; or generate_texture then set_material_map({ entityId, url }). list_animations → apply_animation({ entityId, clip:'walk'|'run'|'idle'|'attack'|'death' }) plays immediately (fuzzy match + procedural biped). set_physics for Rapier bodyType/collider/ccd/capsule. set_wind + set_soft_body for cloth/flag/particles.`,
+    `- Professional UI layers (https://ui.grudge-studio.com): ALWAYS use list_ui_kits / browse_ui_kit when building HUDs, inventories, shops, skill trees, or deathmatch chrome. apply_ui_kit({ theme:'fantasy'|'cyberpunk'|'fps'|'rpg', layers:[...] }) stamps Environment.uiKit for PlayHUD. list_ui_layers for stack ids; list_ui_assets for /ui/rpg-mmo/ texture paths. Puter sign-in on the UI kit site saves designs — designUrl can be stored on uiKit.`,
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,

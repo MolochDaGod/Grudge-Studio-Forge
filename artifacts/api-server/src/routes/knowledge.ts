@@ -416,6 +416,8 @@ const DOC_ALLOWLIST: Array<{ host: string; label: string }> = [
   { host: "unpkg.com", label: "unpkg" },
   { host: "assets.grudge-studio.com", label: "Grudge R2 CDN" },
   { host: "forge.grudge-studio.com", label: "Forge" },
+  { host: "ui.grudge-studio.com", label: "Grudge Game UI Kit" },
+  { host: "id.grudge-studio.com", label: "Grudge ID Auth" },
 ];
 
 function isAllowedDocUrl(urlStr: string): boolean {
@@ -507,6 +509,35 @@ const DOC_INDEX: Array<{
     url: "https://github.com/molochdagod/Grudge-Studio-Forge",
     tags: ["forge", "rapier"],
     blurb: "Grudge Studio Forge monorepo — editor + AI tools + Rapier layer matrix.",
+  },
+  {
+    id: "ui-kit",
+    title: "Grudge Game UI Kit",
+    url: "https://ui.grudge-studio.com/",
+    tags: ["ui", "hud", "fantasy", "cyberpunk", "fps", "rpg"],
+    blurb:
+      "Visual editor for production HUDs, inventories, skill trees, shops — Fantasy, Cyberpunk, FPS, RPG kits. Export themes into Forge via apply_ui_kit.",
+  },
+  {
+    id: "ui-kit-fantasy",
+    title: "UI Kit — Fantasy theme",
+    url: "https://ui.grudge-studio.com/?theme=fantasy",
+    tags: ["ui", "fantasy", "hud"],
+    blurb: "Ornate fantasy HUD kit for RPG / MMO play mode.",
+  },
+  {
+    id: "ui-kit-cyberpunk",
+    title: "UI Kit — Cyberpunk theme",
+    url: "https://ui.grudge-studio.com/?theme=cyberpunk",
+    tags: ["ui", "cyberpunk", "hud"],
+    blurb: "Neon cyberpunk HUD kit for deathmatch / neon cities.",
+  },
+  {
+    id: "ui-kit-fps",
+    title: "UI Kit — FPS / Tactical",
+    url: "https://ui.grudge-studio.com/?theme=fps",
+    tags: ["ui", "fps", "hud"],
+    blurb: "Minimal tactical FPS HUD — reticle, score, hit markers.",
   },
 ];
 
