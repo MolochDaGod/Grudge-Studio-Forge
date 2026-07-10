@@ -236,13 +236,27 @@ router.post("/ai/chat", async (req, res) => {
 
 /** Lightweight status for the AI Worker panel (no secrets). */
 router.get("/ai/status", (_req, res) => {
+  const d1 =
+    Boolean(process.env.CF_ACCOUNT_ID) &&
+    Boolean(process.env.CF_D1_DATABASE_ID) &&
+    Boolean(
+      process.env.CF_D1_API_TOKEN ||
+        process.env.CF_AI_API_TOKEN ||
+        process.env.CF_API_TOKEN,
+    );
   res.json({
     ok: true,
     anthropic: Boolean(anthropic),
     puter: true,
     ollama: "client-local",
+    knowledge: {
+      r2: Boolean(process.env.CF_ACCOUNT_ID && (process.env.OBJECT_STORAGE_KEY || process.env.R2_ACCESS_KEY_ID)),
+      d1,
+      githubToken: Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN),
+      docs: true,
+    },
     hint: anthropic
-      ? "Server Anthropic key present"
+      ? "Server Anthropic key present — R2/D1/GitHub research via /api/knowledge/*"
       : ANTHROPIC_UNAVAILABLE_HINT,
   });
 });

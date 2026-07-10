@@ -93,24 +93,35 @@ if ($ollamaRunning) {
     }
 }
 
-# ── 4. Check Node.js / pnpm ─────────────────────────────────────────
+# ── 4. Check Node.js / pnpm (Forge pin: Node 22 LTS + pnpm 10.32) ────
 
 Write-Step "Checking Node.js and pnpm..."
 
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodeCmd) {
-    Write-Warn "Node.js not found. Install Node.js 22+ from https://nodejs.org"
+    Write-Warn "Node.js not found. Install Node.js 22 LTS from https://nodejs.org"
     exit 1
 }
 $nodeVersion = & node --version
 Write-Ok "Node.js $nodeVersion"
+$major = [int](($nodeVersion -replace '^v','').Split('.')[0])
+if ($major -lt 22) {
+    Write-Warn "Forge requires Node.js 22+ (found $nodeVersion). Upgrade from https://nodejs.org"
+    exit 1
+}
 
 $pnpmCmd = Get-Command pnpm -ErrorAction SilentlyContinue
 if (-not $pnpmCmd) {
-    Write-Host "   Installing pnpm..."
-    & npm install -g pnpm 2>&1 | Out-Null
+    Write-Host "   Enabling pnpm via Corepack (10.32.1)..."
+    try {
+        & corepack enable 2>&1 | Out-Null
+        & corepack prepare pnpm@10.32.1 --activate 2>&1 | Out-Null
+    } catch {
+        Write-Host "   Corepack failed; installing pnpm via npm..."
+        & npm install -g pnpm@10.32.1 2>&1 | Out-Null
+    }
 }
-Write-Ok "pnpm $(& pnpm --version)"
+Write-Ok "pnpm $(& pnpm --version)  |  npm $(& npm --version)"
 
 # ── 5. Install dependencies ─────────────────────────────────────────
 

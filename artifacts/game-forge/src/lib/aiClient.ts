@@ -92,21 +92,23 @@ export interface RunHandlers {
   model?: ModelOption;
 }
 
-const MAX_TURNS = 15;
+/** Research (GitHub/docs) + multi-step scene builds need headroom beyond
+ *  the old 15-turn cap. Cooldown still forces a clean wind-down. */
+const MAX_TURNS = 18;
 
 /** Turns at which the AI enters "cooldown" mode — the system prompt is
  *  augmented to instruct the model to wrap up, summarise changes, update
  *  game info, and run a consistency check against the current project
  *  state (README, scene data, AI tool registry). */
-const COOLDOWN_TURN = 14;
+const COOLDOWN_TURN = 16;
 
 const COOLDOWN_SYSTEM_SUFFIX = `
 
 --- COOLDOWN PHASE ---
 You are running low on remaining tool turns. Use this and the next turn to:
-1. Finalise any in-progress changes — do NOT start new features.
+1. Finalise any in-progress changes — do NOT start new features or new GitHub/doc research.
 2. Update the project's game info (scene name, entity counts, environment settings) via get_scene_summary so it reflects the current state.
-3. Review your changes for consistency — verify names, positions, and references are correct by calling list_entities.
+3. Review your changes for consistency — verify names, positions, and references are correct by calling list_entities (and list_r2_storage if you imported assets).
 4. Provide a concise summary of everything you changed this session.
 Do NOT begin new multi-step tasks. Focus on verification and cleanup.`;
 

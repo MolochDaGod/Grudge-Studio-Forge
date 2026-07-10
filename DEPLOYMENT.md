@@ -210,6 +210,11 @@ Set these in the Railway service variables:
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Claude AI assistant |
 | `CF_AI_API_TOKEN` | Cloudflare Workers AI (image gen, text gen, vision) |
+| `CF_D1_DATABASE_ID` | Cloudflare D1 database for AI brain SQL (read-only SELECT) |
+| `CF_D1_API_TOKEN` | D1 API token (falls back to `CF_AI_API_TOKEN` / `CF_API_TOKEN`) |
+| `GITHUB_TOKEN` | GitHub search rate limits for AI `search_github` tool |
+
+**AI knowledge routes** (mounted on the API under `/api/knowledge/*`): R2 list, D1 query, Postgres brain catalog, GitHub search, curated three.js/R3F/Rapier docs fetch.
 
 **Puter Auth (optional):**
 

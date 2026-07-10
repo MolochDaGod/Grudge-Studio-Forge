@@ -15,6 +15,7 @@ import aiRouter from "./ai";
 import navmeshRouter from "./navmesh";
 import puterRouter from "./puter";
 import cfAiRouter from "./cfAi";
+import knowledgeRouter from "./knowledge";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(aiRouter);
 router.use(navmeshRouter);
 router.use(puterRouter);
 router.use(cfAiRouter);
+router.use(knowledgeRouter);
 
 export default router;

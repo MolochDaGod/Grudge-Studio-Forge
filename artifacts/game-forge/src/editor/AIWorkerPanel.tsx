@@ -266,9 +266,22 @@ export function AIWorkerPanel({
       try {
         const res = await fetch("/api/ai/status", { signal: AbortSignal.timeout(4000) });
         if (res.ok) {
-          const j = (await res.json()) as { anthropic?: boolean; hint?: string };
-          if (!cancelled && !j.anthropic && j.hint) setAiStatusHint(j.hint);
-          else if (!cancelled && j.anthropic) setAiStatusHint(null);
+          const j = (await res.json()) as {
+            anthropic?: boolean;
+            hint?: string;
+            knowledge?: { r2?: boolean; d1?: boolean; githubToken?: boolean };
+          };
+          if (!cancelled) {
+            const brainBits: string[] = [];
+            if (j.knowledge?.r2) brainBits.push("R2");
+            if (j.knowledge?.d1) brainBits.push("D1");
+            if (j.knowledge?.githubToken) brainBits.push("GitHub");
+            else brainBits.push("GitHub(public)");
+            const brain = brainBits.length ? ` Brain: ${brainBits.join("+")}.` : "";
+            if (!j.anthropic && j.hint) setAiStatusHint(`${j.hint}${brain}`);
+            else if (j.anthropic) setAiStatusHint(brain ? brain.trim() : null);
+            else setAiStatusHint(null);
+          }
         }
       } catch {
         if (!cancelled) {
