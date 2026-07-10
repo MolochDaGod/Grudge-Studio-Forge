@@ -4,13 +4,29 @@
  * progress state, and dialog open/close — so both call sites just hand
  * us a `(key, label) => void` handle and listen for the success
  * callback to populate the editor store.
+ *
+ * When no project is open, we auto-create a local/cloud project + scene
+ * so AI tools, autosave, and asset import work immediately. If the
+ * remote API is down (HTTP 500 / HTML error pages), we fall back to the
+ * Puter/local data provider so the example still loads into a real
+ * project instead of a dead scratch scene.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { TemplateLoadProgress } from "@/lib/loadTemplate";
 import { loadTemplateWithProgress } from "@/lib/loadTemplate";
 import { warmBuiltinModelsForEntities } from "@/lib/modelPreload";
 import type { SceneData } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
+import {
+  useCreateProject,
+  useCreateScene,
+  useDeleteProject,
+  getListProjectsQueryKey,
+  getListScenesQueryKey,
+  getListTemplatesQueryKey,
+} from "@workspace/api-client-react";
+import * as localDp from "@/lib/cloud/puterDataProvider";
 
 interface ActiveLoad {
   key: string;
@@ -19,29 +35,31 @@ interface ActiveLoad {
 
 const DIALOG_HOLD_MS = 250;
 
+function exampleProjectName(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `Example project ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function useTemplateLoader() {
   const setSceneData = useEditor((s) => s.setSceneData);
   const setSceneName = useEditor((s) => s.setSceneName);
   const pushLog = useEditor((s) => s.pushLog);
+  const setProject = useEditor((s) => s.setProject);
+  const loadScene = useEditor((s) => s.loadScene);
+  const getState = useEditor.getState;
+
+  const qc = useQueryClient();
+  const createProject = useCreateProject();
+  const createScene = useCreateScene();
+  const deleteProject = useDeleteProject();
 
   const [active, setActive] = useState<ActiveLoad | null>(null);
   const [progress, setProgress] = useState<TemplateLoadProgress | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Monotonic load id — every `start()` increments and the new value is
-  // captured in that load's promise callbacks. Stale callbacks (whose
-  // captured id no longer matches) become no-ops, so an aborted A-load
-  // can never clobber an in-flight B-load's state. Without this guard,
-  // rapid clicks would race: A's AbortError handler fires AFTER B's
-  // start() has already populated the dialog, hiding B's dialog and
-  // nulling B's controller.
   const loadIdRef = useRef(0);
-  // Pending "hold at 100% before closing" timer. Tracked so unmount can
-  // clear it, otherwise a fast unmount-after-success would still call
-  // setSceneData on a torn-down store consumer.
   const holdTimerRef = useRef<number | null>(null);
 
-  // Centralized teardown for the current load attempt — only run when
-  // the captured id still matches.
   const finalizeIfCurrent = (id: number) => {
     if (loadIdRef.current !== id) return;
     setActive(null);
@@ -51,15 +69,9 @@ export function useTemplateLoader() {
 
   const start = useCallback(
     (key: string, label: string) => {
-      // Bump id BEFORE aborting the previous controller. Otherwise the
-      // prior load's AbortError handler might race ahead and observe
-      // its own (now-stale) id as still-current.
       const id = ++loadIdRef.current;
 
-      // If a previous load is in flight, abort it. Its callbacks will
-      // see id mismatch and silently bail.
       abortRef.current?.abort();
-      // Clear any pending success-hold timer from a previous load too.
       if (holdTimerRef.current != null) {
         window.clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
@@ -74,24 +86,99 @@ export function useTemplateLoader() {
       loadTemplateWithProgress(key, {
         signal: ctrl.signal,
         onProgress: (p) => {
-          // Drop progress events from superseded loads.
           if (loadIdRef.current !== id) return;
           setProgress(() => p);
         },
       })
-        .then((data: SceneData) => {
+        .then(async (data: SceneData) => {
           if (loadIdRef.current !== id) return;
-          // Kick off background warm-up of every `builtin:` GLB referenced
-          // by the template's entities BEFORE the dialog closes and the
-          // viewport mounts them. Big maps (the deathmatch templates ship
-          // 14–44 MB GLBs) otherwise wouldn't start downloading until
-          // useGLTF() fires inside EntityRenderer, leaving the viewport
-          // showing only the small wireframe placeholder for the entire
-          // download. This call is best-effort and dedupes against drei's
-          // loader cache, so re-picking the same template is a no-op.
           warmBuiltinModelsForEntities(data.entities);
-          // Hold the 100% bar for a beat so the user sees completion
-          // before the dialog vanishes.
+
+          // Auto-create project when none is open so AI + assets work.
+          if (getState().projectId == null) {
+            const projName = exampleProjectName();
+            let createdProjectId: number | null = null;
+            try {
+              // Prefer data-layer hooks (Puter / localStorage when aliased).
+              const project = await createProject.mutateAsync({
+                data: {
+                  name: projName,
+                  description: `Auto-created from example "${label}".`,
+                },
+              });
+              createdProjectId = project.id;
+              if (loadIdRef.current !== id) {
+                deleteProject.mutate({ id: project.id });
+                return;
+              }
+              const scene = await createScene.mutateAsync({
+                data: {
+                  projectId: project.id,
+                  name: label,
+                  data,
+                },
+              });
+              if (loadIdRef.current !== id) {
+                deleteProject.mutate({ id: project.id });
+                return;
+              }
+              setProject(project.id);
+              loadScene(scene.id, scene.name, (scene.data as SceneData) ?? data);
+              void qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+              void qc.invalidateQueries({ queryKey: getListScenesQueryKey(project.id) });
+              void qc.invalidateQueries({ queryKey: getListTemplatesQueryKey() });
+              pushLog(
+                "info",
+                `Created project "${projName}" with example "${label}" (${data.entities.length} entities).`,
+              );
+              holdTimerRef.current = window.setTimeout(() => {
+                holdTimerRef.current = null;
+                if (loadIdRef.current === id) finalizeIfCurrent(id);
+              }, DIALOG_HOLD_MS);
+              return;
+            } catch (err) {
+              // Remote API often returns HTML 500 pages through Cloudflare.
+              // Fall back to pure local Puter/guest provider so the example
+              // still opens as a real project.
+              if (createdProjectId != null) {
+                try {
+                  deleteProject.mutate({ id: createdProjectId });
+                } catch {
+                  /* ignore */
+                }
+              }
+              try {
+                const project = await localDp.createProject({
+                  name: projName,
+                  description: `Auto-created from example "${label}" (offline fallback).`,
+                });
+                const scene = await localDp.createScene({
+                  projectId: project.id,
+                  name: label,
+                  data,
+                });
+                if (loadIdRef.current !== id) return;
+                setProject(project.id);
+                loadScene(scene.id, scene.name, (scene.data as SceneData) ?? data);
+                void qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+                pushLog(
+                  "warn",
+                  `API project create failed (${err instanceof Error ? err.message : String(err)}). Opened local project "${projName}" instead.`,
+                );
+                holdTimerRef.current = window.setTimeout(() => {
+                  holdTimerRef.current = null;
+                  if (loadIdRef.current === id) finalizeIfCurrent(id);
+                }, DIALOG_HOLD_MS);
+                return;
+              } catch (fallbackErr) {
+                pushLog(
+                  "warn",
+                  `Could not auto-create project: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}. Loading template into scratch scene.`,
+                );
+              }
+            }
+          }
+
           holdTimerRef.current = window.setTimeout(() => {
             holdTimerRef.current = null;
             if (loadIdRef.current !== id) return;
@@ -107,7 +194,6 @@ export function useTemplateLoader() {
         .catch((err: Error) => {
           if (loadIdRef.current !== id) return;
           if (err.name === "AbortError") {
-            // User-cancelled — silent close, no toast/log noise.
             finalizeIfCurrent(id);
             return;
           }
@@ -118,17 +204,20 @@ export function useTemplateLoader() {
           finalizeIfCurrent(id);
         });
     },
-    [setSceneData, setSceneName, pushLog],
+    [
+      setSceneData,
+      setSceneName,
+      pushLog,
+      setProject,
+      loadScene,
+      createProject,
+      createScene,
+      deleteProject,
+      qc,
+    ],
   );
 
   const cancel = useCallback(() => {
-    // Make Cancel authoritative across BOTH phases:
-    //   1. Streaming phase — abort the in-flight fetch (AbortController).
-    //   2. Hold-at-100% phase (between fetch resolve and the 250ms timer
-    //      firing) — fetch has already resolved, so abort() is a no-op;
-    //      we must clear the hold timer ourselves AND bump loadId so the
-    //      already-scheduled callback bails on its id-mismatch check.
-    // Without (2), Cancel during the hold window still applies the scene.
     loadIdRef.current++;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -140,17 +229,10 @@ export function useTemplateLoader() {
     setProgress(null);
   }, []);
 
-  // Unmount cleanup: abort any in-flight fetch and clear the hold
-  // timer so stale promise callbacks can't run against a torn-down
-  // component (or, during dev, against the previous module instance
-  // after a Vite hot reload).
   useEffect(() => {
     return () => {
-      // Bumping the id invalidates every captured closure, even if
-      // the controller's abort hasn't propagated yet.
       loadIdRef.current++;
       abortRef.current?.abort();
-      abortRef.current = null;
       if (holdTimerRef.current != null) {
         window.clearTimeout(holdTimerRef.current);
         holdTimerRef.current = null;
@@ -159,10 +241,12 @@ export function useTemplateLoader() {
   }, []);
 
   return {
+    active,
+    /** Convenience label for the loading dialog title. */
     activeLabel: active?.label ?? "",
-    isLoading: active != null,
     progress,
     start,
     cancel,
+    isLoading: active != null,
   };
 }

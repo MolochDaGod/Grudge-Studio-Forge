@@ -12,6 +12,7 @@ describe("scene-templates manifest", () => {
       "forge-dungeon",
       "survival-camp",
       "city-sandbox",
+      "arena-underground-wars",
     ]);
   });
 

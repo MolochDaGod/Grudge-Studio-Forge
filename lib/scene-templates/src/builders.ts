@@ -1558,3 +1558,260 @@ export function citySandboxScene(): SceneData {
     },
   };
 }
+
+
+// ── Arena — Underground Wars (AI / behavior-tree test) ─────────────────
+// Mirrors the production 20260604.1 template so re-seeding API keeps
+// forge.grudge-studio.com examples working after a Railway redeploy.
+export function arenaUndergroundWarsScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  const mapRoot = id();
+  entities.push({
+    id: mapRoot,
+    name: "Map",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Terrain",
+    surface: "Walk",
+  });
+
+  entities.push({
+    id: id(),
+    name: "MapModel",
+    type: "model",
+    model: { url: "builtin:map-underground-wars" },
+    transform: {
+      position: [-255.5, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [70, 70, 70],
+    },
+    parentId: mapRoot,
+    physics: {
+      bodyType: "fixed",
+      colliderType: "trimesh",
+      mass: 0,
+      restitution: 0.1,
+      friction: 1,
+    },
+  });
+
+  entities.push({
+    id: id(),
+    name: "SafetyFloor",
+    type: "plane",
+    transform: {
+      position: [0, -200, 0],
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [800, 800, 1],
+    },
+    parentId: mapRoot,
+    material: { color: "#05050a", metalness: 0, roughness: 1 },
+    layer: "Default",
+    surface: "None",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.2,
+      friction: 1,
+    },
+  });
+
+  const players = id();
+  entities.push({
+    id: players,
+    name: "Players",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Player",
+  });
+
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: "builtin:character", yawOffset: Math.PI },
+    transform: { position: [0, 0, -95], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    parentId: players,
+  });
+
+  const playerSpawns = id();
+  entities.push({
+    id: playerSpawns,
+    name: "Player Spawns",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Trigger",
+  });
+  const pSpawnPos: [number, number, number][] = [
+    [-45, 0, -100],
+    [0, 0, -110],
+    [45, 0, -100],
+    [-25, 0, -80],
+    [25, 0, -80],
+  ];
+  pSpawnPos.forEach((pos, i) => {
+    entities.push({
+      id: id(),
+      name: `PlayerSpawn_${i + 1}`,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      parentId: playerSpawns,
+    });
+  });
+
+  const enemySpawns = id();
+  entities.push({
+    id: enemySpawns,
+    name: "Enemy Spawns",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Trigger",
+  });
+  const eSpawnPos: [number, number, number][] = [
+    [-45, 0, 100],
+    [0, 0, 110],
+    [45, 0, 100],
+    [-25, 0, 80],
+    [25, 0, 80],
+  ];
+  eSpawnPos.forEach((pos, i) => {
+    entities.push({
+      id: id(),
+      name: `EnemySpawn_${i + 1}`,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: enemySpawns,
+    });
+  });
+
+  const enemies = id();
+  entities.push({
+    id: enemies,
+    name: "Enemies",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "NPC",
+  });
+
+  type EnemySpec = {
+    name: string;
+    pos: [number, number, number];
+    preset: string;
+    speed: number;
+  };
+  const enemySpecs: EnemySpec[] = [
+    { name: "East_Grunt_1", pos: [-50, 0, 70], preset: "combat-grunt", speed: 5 },
+    { name: "East_Skirmisher", pos: [-55, 0, 95], preset: "skirmisher", speed: 6 },
+    { name: "East_Grunt_2", pos: [-45, 0, 115], preset: "combat-grunt", speed: 5 },
+    { name: "West_Grunt_1", pos: [50, 0, 70], preset: "combat-grunt", speed: 5 },
+    { name: "West_Skirmisher", pos: [55, 0, 95], preset: "skirmisher", speed: 6 },
+    { name: "West_Grunt_2", pos: [45, 0, 115], preset: "combat-grunt", speed: 5 },
+    { name: "Center_Ambusher_1", pos: [15, 0, 45], preset: "ambusher", speed: 6.5 },
+    { name: "Center_Ambusher_2", pos: [-15, 0, 45], preset: "ambusher", speed: 6.5 },
+    { name: "Rear_Sentry_1", pos: [20, 0, 120], preset: "sentry", speed: 4.5 },
+    { name: "Rear_Sentry_2", pos: [-20, 0, 120], preset: "sentry", speed: 4.5 },
+  ];
+  for (const e of enemySpecs) {
+    entities.push({
+      id: id(),
+      name: e.name,
+      type: "model",
+      model: { url: "builtin:character", tint: "#ff5050" },
+      transform: {
+        position: e.pos,
+        rotation: [0, Math.PI, 0],
+        scale: [1, 1, 1],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0.2,
+        friction: 0.8,
+      },
+      // behaviorTree is consumed by agentRuntime when present (loose field)
+      behaviorTree: { preset: e.preset, team: "red" },
+      navAgent: { speed: e.speed, radius: 0.4 },
+      parentId: enemies,
+    } as SceneEntity);
+  }
+
+  const lighting = id();
+  entities.push({
+    id: lighting,
+    name: "Lighting",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+  const lights: { pos: [number, number, number]; color: string; intensity: number; distance: number }[] = [
+    { pos: [0, 30, -90], color: "#7fb0ff", intensity: 14, distance: 160 },
+    { pos: [0, 30, 90], color: "#ff8a6b", intensity: 14, distance: 160 },
+    { pos: [0, 40, 0], color: "#cfe0ff", intensity: 10, distance: 200 },
+  ];
+  for (const L of lights) {
+    entities.push({
+      id: id(),
+      name: "Mood Light",
+      type: "light",
+      transform: { position: L.pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: lighting,
+      light: {
+        kind: "point",
+        color: L.color,
+        intensity: L.intensity,
+        distance: L.distance,
+      },
+    });
+  }
+
+  const logic = id();
+  entities.push({
+    id: logic,
+    name: "GameLogic",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: logic,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#1a1320",
+      groundColor: "#241b29",
+      ambientIntensity: 0.5,
+      sunIntensity: 0.7,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+    },
+  };
+}

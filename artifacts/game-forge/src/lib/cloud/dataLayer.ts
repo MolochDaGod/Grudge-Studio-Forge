@@ -93,8 +93,27 @@ export function useCreateProject(_opts?: unknown) {
   const qc = useQueryClient();
   return useMutation({
     mutationKey: ["createProject"],
-    mutationFn: async ({ data }: { data: { name: string; description?: string } }) =>
-      dp.createProject(data),
+    mutationFn: async ({ data }: { data: { name: string; description?: string } }) => {
+      // Prefer API when healthy (shared Postgres). Fall back to Puter/local
+      // so example loads never hard-fail on Railway 500 / HTML error pages.
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (res.ok) {
+          const json = (await res.json()) as { id?: number };
+          if (typeof json.id === "number") {
+            return json as Awaited<ReturnType<typeof dp.createProject>>;
+          }
+        }
+      } catch {
+        /* offline / HTML 500 / timeout */
+      }
+      return dp.createProject(data);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
   });
 }
@@ -148,7 +167,32 @@ export function useCreateScene(_opts?: unknown) {
       data,
     }: {
       data: { projectId: number; name: string; data?: unknown };
-    }) => dp.createScene(data),
+    }) => {
+      try {
+        const res = await fetch("/api/scenes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json && typeof json.id === "number") {
+            return {
+              id: json.id as number,
+              projectId: data.projectId,
+              name: (json.name as string) ?? data.name,
+              data: (json.data as unknown) ?? data.data,
+              createdAt: (json.createdAt as string) ?? new Date().toISOString(),
+              updatedAt: (json.updatedAt as string) ?? new Date().toISOString(),
+            };
+          }
+        }
+      } catch {
+        /* fall through to local */
+      }
+      return dp.createScene(data);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scenes"] }),
   });
 }
@@ -437,12 +481,30 @@ export function useGetGrudgeQuests(_opts?: unknown) {
   });
 }
 
-// ── Templates (static JSON served from /builtin/) ──────────────────────
+// ── Templates ──────────────────────────────────────────────────────────
+// Prefer api-server seeder (/api/templates) so production examples always
+// match Railway R2. Fall back to static SPA copies when the API is down.
 export function useListTemplates(_opts?: unknown) {
   return queryResult(["templates"], async () => {
-    const res = await fetch("/builtin/template-manifest.json");
-    if (!res.ok) return [];
-    return res.json();
+    try {
+      const res = await fetch("/api/templates", {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) return data;
+      }
+    } catch {
+      /* API offline — try static */
+    }
+    try {
+      const res = await fetch("/builtin/template-manifest.json");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
   });
 }
 
@@ -450,7 +512,13 @@ export function useGetTemplate(key: string, _opts?: unknown) {
   return queryResult(
     ["templates", key],
     async () => {
-      const res = await fetch(`/builtin/templates/${key}`);
+      try {
+        const res = await fetch(`/api/templates/${encodeURIComponent(key)}`);
+        if (res.ok) return res.json();
+      } catch {
+        /* fall through */
+      }
+      const res = await fetch(`/builtin/templates/${encodeURIComponent(key)}`);
       return res.json();
     },
     !!key,

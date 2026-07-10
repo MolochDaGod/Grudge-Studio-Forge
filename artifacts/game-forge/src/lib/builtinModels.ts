@@ -39,7 +39,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
   "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
   "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
-  // RTS-Grudge Underground Wars PvP arena — hosted on R2 (too large for Vite git bundle)
+  // RTS-Grudge Underground Wars PvP arena — R2 only (too large for SPA git bundle)
   "map-underground-wars": "https://assets.grudge-studio.com/builtin/map-underground-wars.glb",
   "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
   "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
@@ -248,15 +248,56 @@ export function getRaceModelKey(race: RaceId): `builtin:race:${RaceId}` {
   return `builtin:race:${race}` as const;
 }
 
+/** Public R2/CDN prefix for large builtins that are not shipped in the SPA. */
+export const BUILTIN_R2_BASE =
+  (typeof import.meta !== "undefined" &&
+    (import.meta as ImportMeta & { env?: Record<string, string> }).env
+      ?.VITE_BUILTIN_CDN) ||
+  "https://assets.grudge-studio.com/builtin";
+
+/** Keys that only exist on R2 (never fall back to /builtin/<key>.glb SPA path). */
+const R2_ONLY_KEYS = new Set([
+  "map-underground-wars",
+  "map-mistytown",
+  "map-town2f",
+  "map-bigfarm",
+  "map-western",
+]);
+
 /** Resolve `"builtin:foo"` → real URL. Returns null if not a builtin key. */
 export function resolveBuiltinModel(url: string): string | null {
   if (!url.startsWith("builtin:")) return null;
   const key = url.slice("builtin:".length);
-  return BUILTIN_MODELS[key] ?? null;
+  // race: / race-weapon: handled via dynamic registry entries below.
+  if (key in BUILTIN_MODELS) return BUILTIN_MODELS[key] ?? null;
+  // Soft-resolve common prefixes against the CDN so production templates
+  // that reference newly seeded maps keep working even when the SPA
+  // registry is one deploy behind the API template seeder.
+  // Soft-resolve unknown keys so API templates one deploy ahead of the SPA
+  // still load. Prefer CDN for R2-only maps; same-origin /builtin/ for the rest.
+  if (R2_ONLY_KEYS.has(key) || key.startsWith("map-")) {
+    // Unknown map-* → CDN first (SPA may not ship every large GLB).
+    // Known maps already returned above from BUILTIN_MODELS.
+    return `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key}.glb`;
+  }
+  if (
+    key.startsWith("char-") ||
+    key.startsWith("vfx-") ||
+    key.startsWith("prop-") ||
+    key.startsWith("bldg-") ||
+    key.startsWith("vehicle-") ||
+    key.startsWith("nature-") ||
+    key.startsWith("loco-") ||
+    key.startsWith("magic-") ||
+    key.startsWith("anim-")
+  ) {
+    return ensureBaseUrl(`builtin/${key}.glb`);
+  }
+  return null;
 }
 
 /** Resolve a model URL for GLTF loaders. Order:
- *   1. `builtin:<key>` → bundled / CDN asset URL
+ *   1. `builtin:<key>` → bundled / CDN asset URL (with soft R2/map fallback)
  *   2. absolute http(s)/data/blob → returned as-is
  *   3. anything else → relative to the artifact BASE_URL
  *
@@ -268,9 +309,13 @@ export function resolveModelUrl(url: string): string {
   if (builtin) return builtin;
   if (url.startsWith("builtin:")) {
     const key = url.slice("builtin:".length);
-    throw new Error(
-      `Unknown builtin model "${key}". Register it in BUILTIN_MODELS (lib/builtinModels.ts) or update the scene to use a valid builtin: key.`,
+    // Last-chance: always try R2 rather than inventing a relative path that
+    // returns HTML from the SPA router.
+    const r2Guess = `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key.replace(/[/\\]/g, "")}.glb`;
+    console.warn(
+      `[Forge] Unknown builtin "${key}" — trying CDN ${r2Guess}. Register it in BUILTIN_MODELS for a stable mapping.`,
     );
+    return r2Guess;
   }
   if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
   const base = import.meta.env.BASE_URL || "/";

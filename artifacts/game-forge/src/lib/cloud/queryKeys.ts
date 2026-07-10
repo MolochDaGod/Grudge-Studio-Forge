@@ -9,13 +9,13 @@ export const getGetPublicObjectUrl = (filePath: string) =>
 export const getGetStorageObjectUrl = (objectPath: string) =>
   `https://assets.grudge-studio.com/${objectPath}`;
 
-// Templates are served as static JSON under /builtin/templates/<key> in the
-// Puter-backed data layer (matches `useGetTemplate` in dataLayer.ts).
+// Prefer the live API seeder (Railway R2 templates). Static SPA copies under
+// /builtin/templates/ are a cold-cache fallback only.
 export const getGetTemplateUrl = (key: string) =>
-  `/builtin/templates/${key}`;
+  `/api/templates/${encodeURIComponent(key)}`;
 
 export const getGetTemplateQueryKey = (key: string) =>
-  [`/builtin/templates/${key}`] as const;
+  [`/api/templates/${key}`] as const;
 
 export const getListProjectsQueryKey = () => ["projects"] as const;
 export const getListScenesQueryKey = (id: number) => ["scenes", id] as const;
