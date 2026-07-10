@@ -32,39 +32,140 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 > (Railway). Any scenes saved on Replit that reference `/api/storage/objects/`
 > paths need their models re-uploaded as `.glb` files through the editor.
 
-## Frontend — Vercel
+## Frontend — build on VPS / second PC (recommended)
 
-The editor SPA (`artifacts/game-forge`) deploys to Vercel via their **native
-GitHub integration** (not a GitHub Actions workflow). Vercel watches the `main`
-branch and auto-deploys on push.
+Vercel’s default **8 GB** build containers **OOM/SIGKILL** while Vite transforms
+the R3F + Monaco + Rapier graph. Prefer building on a machine with **≥16 GB free
+RAM** (second PC or VPS), then serve the static `dist` from nginx. The public
+URL stays `https://forge.grudge-studio.com` via Cloudflare Worker
+`grudge-gameforge-web`, which reverse-proxies to an `ORIGIN` binding.
+
+```
+[browser] → forge.grudge-studio.com
+         → CF Worker grudge-gameforge-web
+         → ORIGIN  (VPS nginx / other PC tunnel / prebuilt host)
+```
+
+### 1. Build
+
+```bash
+git clone https://github.com/MolochDaGod/Grudge-Studio-Forge.git
+cd Grudge-Studio-Forge
+chmod +x scripts/build-spa.sh scripts/deploy-spa-vps.sh
+
+# Linux / macOS / WSL (needs Node 20+ and pnpm)
+./scripts/build-spa.sh
+
+# Windows (PowerShell) on a high-RAM box:
+#   .\scripts\build-spa.ps1
+```
+
+Output: `artifacts/game-forge/dist/public/` (static SPA — no Node at runtime).
+
+Optional: raise the heap if you still OOM:
+
+```bash
+NODE_OPTIONS=--max-old-space-size=24576 ./scripts/build-spa.sh
+```
+
+### 2. Host on VPS (nginx)
+
+```bash
+# One-time on VPS
+sudo mkdir -p /var/www/forge-origin
+sudo cp deploy/nginx-forge-origin.conf /etc/nginx/sites-available/forge-origin
+sudo ln -sf /etc/nginx/sites-available/forge-origin /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# From build machine
+export FORGE_VPS_HOST=user@your-vps
+./scripts/deploy-spa-vps.sh
+# or: ./scripts/deploy-spa-vps.sh user@your-vps /var/www/forge-origin
+```
+
+Cloudflare DNS for the **origin** host (not the public editor name):
+
+| Record | Type | Target | Proxy |
+| --- | --- | --- | --- |
+| `forge-origin` | A | VPS IP | Yes (orange) |
+
+TLS: **Full (strict)** + Cloudflare origin cert on the VPS (see
+`grudge-stack` / origin certs), or plain HTTP origin if CF terminates TLS.
+
+### 3. Point `forge.grudge-studio.com` at the origin
+
+Worker: **`grudge-gameforge-web`**
+
+| Binding | Value |
+| --- | --- |
+| `ORIGIN` | `https://forge-origin.grudge-studio.com` (or the HTTPS base of the SPA) |
+| `API_ORIGIN` | `https://the-engine.up.railway.app` (or forge-api) |
+| `ASSETS_ORIGIN` | `https://assets.grudge-studio.com` |
+
+Routes (already set):
+
+- `forge.grudge-studio.com/api/*` → `grudge-gameforge-api`
+- `forge.grudge-studio.com/*` → `grudge-gameforge-web`
+
+After upload, patch `ORIGIN` (Cloudflare dashboard → Workers → settings, or API)
+and hard-refresh the public URL. Smoke test:
+
+```bash
+curl -sL https://forge.grudge-studio.com/ | grep -o '<title>[^<]*</title>'
+# expect: Grudge Forge / Grudge GameForge — not Flippy Studio
+```
+
+### 4. Optional: R2 upload of dist
+
+```bash
+# needs CF_ACCOUNT_ID, OBJECT_STORAGE_KEY, OBJECT_STORAGE_SECRET
+node scripts/deploy-spa-r2.mjs   # → grudge-assets/forge-spa/
+```
+
+R2 is fine for assets; for the SPA shell prefer VPS/nginx (SPA `try_files` +
+correct `Cache-Control` on `index.html`). If you serve from R2, the Worker
+must map `/` → `…/forge-spa/index.html` and strip/add the prefix on assets.
+
+### Second PC without a public IP
+
+Build on the strong machine, then either:
+
+1. `scp -r artifacts/game-forge/dist/public/* user@vps:/var/www/forge-origin/`
+2. Or zip `dist/public` and unpack on the VPS
+3. Or `cloudflared tunnel` from the second PC as a temporary ORIGIN
+
+---
+
+## Frontend — Vercel (legacy / optional)
+
+Native GitHub integration on project **`grudge-studio-forge`**. Default 8 GB
+builders currently OOM; only use if **Enhanced Builds** (16 GB+) are enabled
+or you deploy **prebuilt** output (`vercel deploy --prebuilt` after a local build).
 
 ### Vercel project settings
 
 | Setting | Value |
 | --- | --- |
-| Build command | `pnpm --filter @workspace/game-forge run build` |
-| Install command | `pnpm install --frozen-lockfile` |
+| Build command | `NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts` |
+| Install command | `pnpm install --frozen-lockfile --filter @workspace/game-forge...` |
 | Output directory | `artifacts/game-forge/dist/public` |
 | Framework | Other |
 | Node version | 24.x |
 
 ### Routing
 
-Configured in `vercel.json`:
-
-- `/api/*` → proxied to `https://forge-api.grudge-studio.com/api/*`
-- `/*` → rewritten to `/index.html` (SPA client-side routing)
+Configured in `vercel.json` (SPA fallback to `/index.html`).
 
 The frontend build is fully static — no Node process at runtime.
 
-### Custom domain
-
-Add `forge.grudge-studio.com` as a custom domain in the Vercel dashboard, then
-point a CNAME in Cloudflare:
+### Custom domain (only if Worker is removed)
 
 ```
 forge  CNAME  cname.vercel-dns.com  (proxied)
 ```
+
+While the Worker owns `forge.grudge-studio.com/*`, set Vercel as `ORIGIN`
+instead of attaching the domain to Vercel directly.
 
 ## API Server — Railway
 
