@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts",
+  "installCommand": "pnpm install --frozen-lockfile --filter @workspace/game-forge...",
   "outputDirectory": "artifacts/game-forge/dist/public",
   "framework": null,
   "rewrites": [

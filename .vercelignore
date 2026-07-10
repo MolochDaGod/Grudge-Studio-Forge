@@ -1,0 +1,12 @@
+# Keep Vercel upload + peak build RSS low.
+# Heavy binaries are either built as separate artifacts or served from CDN.
+attached_assets/**
+artifacts/game-forge-desktop/**
+artifacts/api-server/**
+artifacts/mockup-sandbox/**
+artifacts/player/**
+csharp/**
+screenshots/**
+docs/**
+.agents/**
+.git/**

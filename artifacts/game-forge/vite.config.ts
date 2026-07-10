@@ -151,6 +151,9 @@ export default defineConfig({
   build: {
     target: "esnext",
     minify: "esbuild",
+    // Source maps double peak RSS on Vercel 8 GB builders (OOM/SIGKILL).
+    sourcemap: false,
+    reportCompressedSize: false,
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     /**
@@ -168,10 +171,10 @@ export default defineConfig({
       // Cap the number of files Rollup opens in parallel. The default
       // (os.cpus().length × 20) creates huge in-memory queues when bundling
       // heavy deps like Three.js on CI containers with limited RAM.
-      // 5 keeps throughput reasonable while cutting peak RSS significantly.
+      // 2 is required for Vercel hobby/pro 8 GB builders — 5 still OOMs.
       // NOTE: this must be at the top level of rollupOptions, NOT inside
       // output — Rollup ignores it if placed inside the output block.
-      maxParallelFileOps: 5,
+      maxParallelFileOps: 2,
       output: {
         /**
          * Split the heavy vendor libraries into their own chunks so:
