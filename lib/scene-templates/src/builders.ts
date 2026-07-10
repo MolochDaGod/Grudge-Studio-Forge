@@ -1014,35 +1014,22 @@ export function rpgVillageScene(): SceneData {
     race: "orc" | "skeleton";
     name: string;
     pos: [number, number, number];
-    behavior: "enemy-rpg" | "boss";
-    scale?: number;
   }[] = [
-    { race: "orc", name: "Orc", pos: [4.5, 0, -2.0], behavior: "enemy-rpg" },
-    { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0], behavior: "enemy-rpg" },
-    {
-      race: "orc",
-      name: "Orc_Boss",
-      pos: [6, 0, 0.5],
-      behavior: "boss",
-      scale: 1.35,
-    },
+    { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
+    { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
   ];
   for (const e of ENEMIES) {
     const enemyId = id();
-    const sc = e.scale ?? 1;
     entities.push({
       id: enemyId,
       name: e.name,
       type: "model",
-      model: {
-        url: `builtin:race:${e.race}`,
-        tint: e.behavior === "boss" ? "#a855f7" : undefined,
-      },
+      model: { url: `builtin:race:${e.race}` },
       raceId: e.race,
       transform: {
         position: e.pos,
         rotation: [0, Math.atan2(-e.pos[0], -e.pos[2]), 0],
-        scale: [sc, sc, sc],
+        scale: [1, 1, 1],
       },
       physics: {
         bodyType: "kinematicPosition",
@@ -1051,7 +1038,7 @@ export function rpgVillageScene(): SceneData {
         restitution: 0.2,
         friction: 0.8,
       },
-      behavior: e.behavior,
+      behavior: "enemy-rpg",
       layer: "NPC",
       parentId: null,
     });
@@ -1064,6 +1051,29 @@ export function rpgVillageScene(): SceneData {
       parentId: enemyId,
     });
   }
+
+  // Boss uses dedicated boss character (keeps one entity per race key for catalog)
+  entities.push({
+    id: id(),
+    name: "Village_Boss",
+    type: "model",
+    model: { url: "builtin:char-boss-orc", tint: "#a855f7" },
+    transform: {
+      position: [6, 0, 0.5],
+      rotation: [0, -Math.PI / 2, 0],
+      scale: [1.25, 1.25, 1.25],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.2,
+      friction: 0.8,
+    },
+    behavior: "boss",
+    layer: "NPC",
+    parentId: null,
+  });
 
   // Lighting — warm directional sun + soft hemisphere ambient (matches
   // the deserttown tone). The sun is encoded as a directional light
