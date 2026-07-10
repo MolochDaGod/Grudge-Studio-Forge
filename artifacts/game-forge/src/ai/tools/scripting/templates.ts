@@ -603,6 +603,192 @@ exports.update = function(entity, ctx) {
 `;
     },
   },
+  // ── Motion / physics / texture templates ───────────────────────────
+  {
+    key: "bob-hover",
+    name: "Bob / Hover",
+    description:
+      "Sine-wave vertical bob for pickups, crystals, and floating UI anchors. Optional spin on Y.",
+    params: [
+      { name: "amplitude", description: "Meters peak-to-peak / 2.", type: "number", default: 0.25 },
+      { name: "frequency", description: "Cycles per second.", type: "number", default: 1.2 },
+      { name: "spin", description: "Y-axis spin rad/s (0 = none).", type: "number", default: 0.8 },
+    ],
+    render: (p) => {
+      const amp = num(p.amplitude, 0.25);
+      const freq = num(p.frequency, 1.2);
+      const spin = num(p.spin, 0.8);
+      return `// Bob / hover motion — amplitude ${amp}m @ ${freq}Hz, spin ${spin} rad/s
+exports.start = function(entity, ctx) {
+  ctx.state.baseY = entity.position[1];
+  ctx.state.phase = Math.random() * Math.PI * 2;
+};
+exports.update = function(entity, ctx) {
+  var t = ctx.time.elapsed * ${freq} * Math.PI * 2 + ctx.state.phase;
+  entity.position[1] = ctx.state.baseY + Math.sin(t) * ${amp};
+  entity.rotation[1] += ${spin} * ctx.time.delta;
+};
+`;
+    },
+  },
+  {
+    key: "orbit-point",
+    name: "Orbit Point",
+    description:
+      "Orbits a world-space point (or named entity) on the XZ plane. Great for drones, moons, camera rigs.",
+    params: [
+      { name: "centerName", description: "Entity name to orbit, or empty for world origin.", type: "string", default: "Player" },
+      { name: "radius", description: "Orbit radius meters.", type: "number", default: 4 },
+      { name: "speed", description: "Angular speed rad/s.", type: "number", default: 0.8 },
+      { name: "height", description: "Fixed Y height offset from center.", type: "number", default: 2 },
+    ],
+    render: (p) => {
+      const center = str(p.centerName, "Player");
+      const radius = num(p.radius, 4);
+      const speed = num(p.speed, 0.8);
+      const height = num(p.height, 2);
+      return `// Orbit "${center}" at r=${radius} speed=${speed}
+exports.start = function(entity, ctx) {
+  ctx.state.angle = Math.random() * Math.PI * 2;
+};
+exports.update = function(entity, ctx) {
+  ctx.state.angle += ${speed} * ctx.time.delta;
+  var cx = 0, cy = 0, cz = 0;
+  ${center ? `var c = ctx.scene.find(${JSON.stringify(center)});
+  if (c) { cx = c.position[0]; cy = c.position[1]; cz = c.position[2]; }` : ""}
+  entity.position[0] = cx + Math.cos(ctx.state.angle) * ${radius};
+  entity.position[1] = cy + ${height};
+  entity.position[2] = cz + Math.sin(ctx.state.angle) * ${radius};
+  entity.rotation[1] = -ctx.state.angle + Math.PI / 2;
+};
+`;
+    },
+  },
+  {
+    key: "physics-impulse",
+    name: "Physics Impulse on Hit",
+    description:
+      "When this dynamic body is damaged (or E pressed nearby), apply a Rapier impulse. Requires dynamic physics.",
+    params: [
+      { name: "impulseY", description: "Upward impulse.", type: "number", default: 8 },
+      { name: "impulseForward", description: "Forward impulse strength.", type: "number", default: 4 },
+    ],
+    render: (p) => {
+      const iy = num(p.impulseY, 8);
+      const ifw = num(p.impulseForward, 4);
+      return `// Apply impulse on damage or nearby interact
+exports.start = function(entity, ctx) {
+  ctx.scene.on("damage", function() {
+    ctx.state.kick = true;
+  });
+  ctx.events.on("interact", function(payload) {
+    if (payload && payload.targetId === entity.id) ctx.state.kick = true;
+  });
+};
+exports.update = function(entity, ctx) {
+  if (!ctx.state.kick) return;
+  ctx.state.kick = false;
+  var yaw = entity.rotation[1] || 0;
+  var fx = -Math.sin(yaw) * ${ifw};
+  var fz = -Math.cos(yaw) * ${ifw};
+  if (ctx.scene.applyImpulse) {
+    ctx.scene.applyImpulse(entity.id, [fx, ${iy}, fz]);
+  } else {
+    // Fallback: teleport nudge if impulse API unavailable
+    entity.position[0] += fx * 0.05;
+    entity.position[1] += 0.2;
+    entity.position[2] += fz * 0.05;
+  }
+};
+`;
+    },
+  },
+  {
+    key: "ground-follow",
+    name: "Ground Snap Follow",
+    description:
+      "Each frame raycasts down and snaps Y to the ground surface (Walk/Terrain). Keeps NPCs glued to uneven maps.",
+    params: [
+      { name: "maxDrop", description: "Max ray length down.", type: "number", default: 20 },
+      { name: "offset", description: "Y offset above hit (character feet).", type: "number", default: 0.05 },
+    ],
+    render: (p) => {
+      const maxDrop = num(p.maxDrop, 20);
+      const offset = num(p.offset, 0.05);
+      return `// Ground snap — raycast down each frame
+exports.update = function(entity, ctx) {
+  var origin = [entity.position[0], entity.position[1] + 2, entity.position[2]];
+  var hit = ctx.scene.castRay
+    ? ctx.scene.castRay(origin, [0, -1, 0], ${maxDrop + 2}, [entity.id])
+    : null;
+  if (hit && typeof hit.point === "object") {
+    entity.position[1] = hit.point[1] + ${offset};
+  } else if (hit && typeof hit.distance === "number") {
+    entity.position[1] = origin[1] - hit.distance + ${offset};
+  }
+};
+`;
+    },
+  },
+  {
+    key: "uv-scroll",
+    name: "UV Scroll (Conveyor)",
+    description:
+      "Emits a material UV scroll event for shaders / future texture offset. Also slowly rotates the entity as a visible conveyor cue.",
+    params: [
+      { name: "speedU", description: "U scroll speed.", type: "number", default: 0.5 },
+      { name: "speedV", description: "V scroll speed.", type: "number", default: 0 },
+    ],
+    render: (p) => {
+      const u = num(p.speedU, 0.5);
+      const v = num(p.speedV, 0);
+      return `// UV scroll conveyor cue — emits 'uvScroll' for HUD/material systems
+exports.start = function(entity, ctx) {
+  ctx.state.u = 0;
+  ctx.state.v = 0;
+};
+exports.update = function(entity, ctx) {
+  ctx.state.u += ${u} * ctx.time.delta;
+  ctx.state.v += ${v} * ctx.time.delta;
+  ctx.events.emit("uvScroll", {
+    entityId: entity.id,
+    offset: [ctx.state.u, ctx.state.v],
+  });
+  // Visible belt motion
+  entity.rotation[0] += ${u} * 0.15 * ctx.time.delta;
+};
+`;
+    },
+  },
+  {
+    key: "camera-shake",
+    name: "Camera Shake on Event",
+    description:
+      "Listens for 'damage' / 'explosion' events and emits cameraShake for the play HUD / camera controller.",
+    params: [
+      { name: "intensity", description: "Shake strength.", type: "number", default: 0.4 },
+      { name: "duration", description: "Seconds.", type: "number", default: 0.35 },
+    ],
+    render: (p) => {
+      const intensity = num(p.intensity, 0.4);
+      const duration = num(p.duration, 0.35);
+      return `// Camera shake relay
+exports.start = function(entity, ctx) {
+  function shake() {
+    ctx.events.emit("cameraShake", {
+      intensity: ${intensity},
+      duration: ${duration},
+      at: entity.position.slice ? entity.position.slice() : entity.position,
+    });
+  }
+  ctx.events.on("explosion", shake);
+  ctx.scene.on("damage", function(payload) {
+    if (payload && payload.amount >= 15) shake();
+  });
+};
+`;
+    },
+  },
   {
     key: "weapon-pickup-swap",
     name: "Weapon Pickup & Swap",

@@ -93,6 +93,11 @@ import {
   handlers as knowledgeToolHandlers,
   destructiveToolNames as knowledgeDestructiveTools,
 } from "@/ai/tools/knowledge";
+import {
+  defs as motionToolDefs,
+  handlers as motionToolHandlers,
+  destructiveToolNames as motionDestructiveTools,
+} from "@/ai/tools/motion";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -116,6 +121,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...statsDestructiveTools,
   ...cfaiDestructiveTools,
   ...knowledgeDestructiveTools,
+  ...motionDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1162,6 +1168,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: knowledgeToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ── Motion / texture / physics tools ──────────────────────────────────
+  // set_material_map, list_animations, apply_animation, set_physics
+  ...motionToolDefs.map((def) => ({
+    def,
+    exec: motionToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1243,6 +1256,7 @@ export function buildSystemPrompt(): string {
     `- Blazor C# scripts: the editor ships a Blazor WASM runtime + C#→JS transpile path for MonoBehaviour-style scripts (public/_framework, scene/csTranspile). Prefer JS script templates (list_script_templates) unless the user explicitly wants C#; when writing C#, stick to Vector3/Transform/Time/Debug APIs documented in csharp/GameForgeRuntime.`,
     `- Node graph / visual blocks: use the Nodes panel tools when available; compile graphs to scene entities. Treat node-graph + AI as the "block LLM" layer for non-coders.`,
     `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch (score), rpg (interact/vendors), skirmish (mixed). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders. Trees/buildings/fences → Terrain+Walk fixed cuboid; water pools → Water+Swim; climb walls → Terrain+Climb.`,
+    `- Texture & motion: generate_texture → set_material_map (mapUrl/normalMapUrl/roughnessMapUrl/metalnessMapUrl/emissiveMapUrl, mapRepeat). list_animations + apply_animation for model.clip. set_physics for Rapier bodyType/colliderType/mass/friction/ccd/capsule size. set_wind + set_soft_body for cloth/flag/particles.`,
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,

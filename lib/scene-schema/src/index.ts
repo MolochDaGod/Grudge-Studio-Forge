@@ -47,6 +47,13 @@ export interface PhysicsComponent {
   mass?: number;
   restitution?: number;
   friction?: number;
+  /** Continuous collision detection — enable for fast projectiles / thin
+   *  colliders so they don't tunnel through walls at high speed. */
+  ccd?: boolean;
+  /** Override linear damping (falls back to material.drag when unset). */
+  linearDamping?: number;
+  /** Angular damping — high values stop props from spinning forever. */
+  angularDamping?: number;
   /** When `colliderType === "convex-decomp"`, points to the asset id
    *  holding the precomputed hull set (array of Vec3 vertex arrays). */
   collidersAssetId?: number;
@@ -55,6 +62,10 @@ export interface PhysicsComponent {
    *  `bake_convex_hulls` tool can reproduce the same decomposition. See
    *  `lib/colliderBaker.ts → BuildHullsOptions`. */
   colliderBakeOptions?: ColliderBakeOptions;
+  /** Character capsule half-height (m). Default 0.85 for humanoids. */
+  capsuleHalfHeight?: number;
+  /** Character capsule radius (m). Default 0.35. */
+  capsuleRadius?: number;
 }
 
 /** V-HACD tuning knobs surfaced in the Inspector's advanced bake panel

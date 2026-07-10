@@ -31,6 +31,10 @@ import {
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 import { ClothEntity, FlagEntity, ParticlesEntity } from "./SoftBodies";
+import {
+  useMaterialTextures,
+  applyMapsToMaterial,
+} from "@/lib/useMaterialTextures";
 
 interface RenderProps {
   entity: SceneEntity;
@@ -139,6 +143,7 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
   const resolved = matKind ? resolveMaterialDefaults(mat) : null;
   const transparent = resolved && resolved.opacity < 1;
   const opacity = mat.opacity ?? resolved?.opacity ?? 1;
+  const maps = useMaterialTextures(mat);
   return (
     <>
       <mesh {...meshProps}>
@@ -148,7 +153,12 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
           metalness={mat.metalness ?? 0.1}
           roughness={mat.roughness ?? 0.6}
           emissive={emissive}
-          emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
+          emissiveIntensity={emissive !== "#000000" || maps.emissiveMap ? 0.6 : 0}
+          map={maps.map ?? undefined}
+          normalMap={maps.normalMap ?? undefined}
+          roughnessMap={maps.roughnessMap ?? undefined}
+          metalnessMap={maps.metalnessMap ?? undefined}
+          emissiveMap={maps.emissiveMap ?? undefined}
           side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
           transparent={!!transparent}
           opacity={opacity}
@@ -594,13 +604,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   const matRoughness = material?.roughness;
   const matEmissive = material?.emissive;
   const matOpacity = material?.opacity;
+  const matMaps = useMaterialTextures(material);
+  const hasMaps =
+    !!matMaps.map ||
+    !!matMaps.normalMap ||
+    !!matMaps.roughnessMap ||
+    !!matMaps.metalnessMap ||
+    !!matMaps.emissiveMap;
   useEffect(() => {
     const hasMaterial =
       matColor !== undefined ||
       matMetalness !== undefined ||
       matRoughness !== undefined ||
       matEmissive !== undefined ||
-      matOpacity !== undefined;
+      matOpacity !== undefined ||
+      hasMaps;
     if (!tint && !hasMaterial) return;
     const colorOverride = tint ?? matColor;
     const colorObj = colorOverride ? new THREE.Color(colorOverride) : null;
@@ -623,6 +641,7 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
             cm.emissive.copy(emissiveObj);
             cm.emissiveIntensity = 0.6;
           }
+          applyMapsToMaterial(cm, matMaps);
         }
         if (matOpacity !== undefined && matOpacity < 1) {
           cm.transparent = true;
@@ -640,7 +659,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     return () => {
       for (const r of restorers) r();
     };
-  }, [cloned, tint, matColor, matMetalness, matRoughness, matEmissive, matOpacity]);
+  }, [
+    cloned,
+    tint,
+    matColor,
+    matMetalness,
+    matRoughness,
+    matEmissive,
+    matOpacity,
+    hasMaps,
+    matMaps.map,
+    matMaps.normalMap,
+    matMaps.roughnessMap,
+    matMaps.metalnessMap,
+    matMaps.emissiveMap,
+  ]);
 
   // ── Label: floating sprite above the model. Repositioned each frame would
   // be ideal but a static "above bbox" placement covers 95% of cases.
@@ -910,8 +943,33 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     // which would crash every render with "undefined is not iterable".
     const isPlayerControlled =
       !!entity.controllerKind && entity.controllerKind !== "none";
+    const isCharacter =
+      isPlayerControlled ||
+      entity.layer === "Player" ||
+      entity.layer === "NPC" ||
+      (typeof entity.behavior === "string" &&
+        (entity.behavior.startsWith("player-") ||
+          entity.behavior.startsWith("enemy-") ||
+          entity.behavior === "ally" ||
+          entity.behavior === "boss" ||
+          entity.behavior === "neutral" ||
+          entity.behavior === "vendor"));
     const playerRotationLockProps: { enabledRotations?: [boolean, boolean, boolean] } =
-      isPlayerControlled ? { enabledRotations: [false, true, false] } : {};
+      isPlayerControlled || isCharacter
+        ? { enabledRotations: [false, true, false] }
+        : {};
+
+    // Projectiles / thin fast bodies: CCD prevents tunneling.
+    const enableCcd =
+      ph.ccd === true ||
+      entity.layer === "Projectile" ||
+      (typeof entity.name === "string" &&
+        entity.name.toLowerCase().includes("projectile"));
+
+    const capHalf = ph.capsuleHalfHeight ?? 0.85;
+    const capRadius = ph.capsuleRadius ?? 0.35;
+    // Center capsule so feet sit at local y=0 (halfHeight + radius).
+    const capY = capHalf + capRadius;
 
     return (
       <RigidBody
@@ -939,7 +997,12 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         restitution={ph.restitution ?? matResolved.restitution}
         friction={ph.friction ?? matResolved.friction}
         mass={ph.mass ?? matResolved.density / 1000}
-        linearDamping={matResolved.drag}
+        linearDamping={ph.linearDamping ?? matResolved.drag}
+        angularDamping={
+          ph.angularDamping ?? (isCharacter ? 2.5 : matResolved.drag * 0.5)
+        }
+        // CCD stops fast projectiles / thin bodies tunneling through walls.
+        ccd={enableCcd}
         userData={{
           entityId: entity.id,
           name: entity.name,
@@ -956,12 +1019,10 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
           materialBlocksAudio: matResolved.blocksAudio,
         }}
       >
-        {/* Capsule for character-shaped models, sphere for round ones.
-            Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
-            its feet (matches Blake). Position offset puts the collider center
-            at y=0.85 so the capsule's base aligns with the model's pivot. */}
+        {/* Character capsule: half-height + radius ≈ 1.7 m tall humanoid.
+            Feet at local y=0. Tunable via physics.capsuleHalfHeight / capsuleRadius. */}
         {explicitForModel && colliderShape === "cylinder" && (
-          <CapsuleCollider args={[0.85, 0.4]} position={[0, 0.85, 0]} />
+          <CapsuleCollider args={[capHalf, capRadius]} position={[0, capY, 0]} />
         )}
         {explicitForModel && colliderShape === "ball" && (
           <CylinderCollider args={[0.5, 0.5]} position={[0, 0.5, 0]} />
