@@ -13,6 +13,10 @@ import {
   type AnimationClip,
 } from "@/lib/animationLibrary";
 import { resolveModelUrl } from "@/lib/builtinModels";
+import {
+  normalizeCatalogClip,
+  publishAgentClip,
+} from "@/lib/animationClipResolve";
 
 interface ToolDef {
   name: string;
@@ -38,6 +42,14 @@ const COLLIDER_TYPES = [
   "convex-decomp",
 ] as const;
 
+const MAP_SLOTS = [
+  "mapUrl",
+  "normalMapUrl",
+  "roughnessMapUrl",
+  "metalnessMapUrl",
+  "emissiveMapUrl",
+] as const;
+
 // ── set_material_map ─────────────────────────────────────────────────
 
 const SET_MATERIAL_MAP: ToolDef = {
@@ -46,7 +58,7 @@ const SET_MATERIAL_MAP: ToolDef = {
     "Attach PBR texture map URL(s) to one or more entities' materials. " +
     "Use after generate_texture / import_asset_from_url. Maps: mapUrl (albedo), " +
     "normalMapUrl, roughnessMapUrl, metalnessMapUrl, emissiveMapUrl. " +
-    "Optional mapRepeat [u,v] tiles the UVs. Undoable.",
+    "Optional mapRepeat [u,v] tiles the UVs. Pass slot='mapUrl' with url= for a single map. Undoable.",
   input_schema: {
     type: "object",
     properties: {
@@ -55,6 +67,20 @@ const SET_MATERIAL_MAP: ToolDef = {
         items: { type: "string" },
         minItems: 1,
         description: "Target entity ids.",
+      },
+      entityId: {
+        type: "string",
+        description: "Single entity id (alias for entityIds:[id]).",
+      },
+      url: {
+        type: "string",
+        description:
+          "Single texture URL — applied to `slot` (default mapUrl/albedo).",
+      },
+      slot: {
+        type: "string",
+        enum: [...MAP_SLOTS],
+        description: "Which map slot receives `url`. Default mapUrl.",
       },
       mapUrl: { type: "string", description: "Albedo / diffuse texture URL." },
       normalMapUrl: { type: "string" },
@@ -73,34 +99,51 @@ const SET_MATERIAL_MAP: ToolDef = {
         description: "If true, clear all map URLs on the entities.",
       },
     },
-    required: ["entityIds"],
     additionalProperties: false,
   },
 };
 
+function collectEntityIds(input: Record<string, unknown>): string[] {
+  const ids: string[] = [];
+  if (typeof input.entityId === "string" && input.entityId.trim()) {
+    ids.push(input.entityId.trim());
+  }
+  if (Array.isArray(input.entityIds)) {
+    for (const v of input.entityIds) {
+      if (typeof v === "string" && v.trim()) ids.push(v.trim());
+    }
+  }
+  return [...new Set(ids)];
+}
+
 const setMaterialMapHandler: ToolHandler = async (input) => {
-  const ids = Array.isArray(input.entityIds)
-    ? input.entityIds.filter((v): v is string => typeof v === "string")
-    : [];
-  if (!ids.length) return { ok: false, error: "entityIds required." };
+  const ids = collectEntityIds(input);
+  if (!ids.length) {
+    return {
+      ok: false,
+      error: "entityIds (or entityId) required. Pass the ids from list_entities / add_entity.",
+    };
+  }
 
   const clear = input.clear === true;
-  const mapFields: (keyof MaterialComponent)[] = [
-    "mapUrl",
-    "normalMapUrl",
-    "roughnessMapUrl",
-    "metalnessMapUrl",
-    "emissiveMapUrl",
-  ];
   const patch: Partial<MaterialComponent> = {};
+
   if (clear) {
-    for (const k of mapFields) patch[k] = undefined;
-    patch.mapRepeat = undefined;
+    // handled per-entity below
   } else {
-    for (const k of mapFields) {
+    for (const k of MAP_SLOTS) {
       if (typeof input[k] === "string" && (input[k] as string).trim()) {
         (patch as Record<string, string>)[k] = (input[k] as string).trim();
       }
+    }
+    // Convenience: url + slot
+    if (typeof input.url === "string" && input.url.trim()) {
+      const slot =
+        typeof input.slot === "string" &&
+        (MAP_SLOTS as readonly string[]).includes(input.slot)
+          ? (input.slot as (typeof MAP_SLOTS)[number])
+          : "mapUrl";
+      (patch as Record<string, string>)[slot] = input.url.trim();
     }
     if (
       Array.isArray(input.mapRepeat) &&
@@ -113,7 +156,8 @@ const setMaterialMapHandler: ToolHandler = async (input) => {
     if (Object.keys(patch).length === 0) {
       return {
         ok: false,
-        error: "Provide at least one map URL, mapRepeat, or clear:true.",
+        error:
+          "Provide url (or mapUrl/normalMapUrl/…), mapRepeat, or clear:true.",
       };
     }
   }
@@ -137,16 +181,33 @@ const setMaterialMapHandler: ToolHandler = async (input) => {
         delete next.mapRepeat;
       } else {
         Object.assign(next, patch);
+        // Ensure kind exists so renderer treats material as intentional
+        if (!next.kind) next.kind = "Custom";
       }
       ent.material = next;
     });
     updated.push(id);
   }
 
+  if (updated.length) {
+    useEditor.getState().pushLog(
+      "info",
+      `Textures applied to ${updated.length} entit${updated.length === 1 ? "y" : "ies"}${
+        patch.mapUrl ? ` (albedo)` : ""
+      }.`,
+    );
+  }
+
   return {
     ok: updated.length > 0,
-    data: { updated, missing: missing.length ? missing : undefined, patch },
-    error: updated.length ? undefined : `No entities found: ${missing.join(", ")}`,
+    data: {
+      updated,
+      missing: missing.length ? missing : undefined,
+      maps: clear ? null : patch,
+    },
+    error: updated.length
+      ? undefined
+      : `No entities found: ${missing.join(", ")}`,
   };
 };
 
@@ -157,7 +218,7 @@ const LIST_ANIMATIONS: ToolDef = {
   description:
     "List the Forge animation catalog (locomotion, combat, emote, utility). " +
     "Use apply_animation with a catalog key to set model.clip on a character. " +
-    "Builtin loco-* / magic-* clips also work via apply_animation source.",
+    "Procedural biped clips: idle, walk, run, attack, death, jump, climb, swim.",
   input_schema: {
     type: "object",
     properties: {
@@ -172,8 +233,7 @@ const LIST_ANIMATIONS: ToolDef = {
 };
 
 const listAnimationsHandler: ToolHandler = async (input) => {
-  const cat =
-    typeof input.category === "string" ? input.category : null;
+  const cat = typeof input.category === "string" ? input.category : null;
   const clips = ANIMATION_CATALOG.filter(
     (c) => !cat || c.category === cat,
   ).map((c: AnimationClip) => ({
@@ -185,23 +245,24 @@ const listAnimationsHandler: ToolHandler = async (input) => {
     skeleton: c.skeleton,
     description: c.description,
     source: c.source,
+    playAs: normalizeCatalogClip(c.key),
   }));
   return {
     ok: true,
     data: {
       count: clips.length,
       clips,
-      builtinLoco: [
+      proceduralBiped: [
         "idle",
         "walk",
         "run",
+        "attack",
+        "death",
         "jump",
-        "loco-idle",
-        "loco-walking",
-        "loco-running",
-        "loco-jump",
+        "climb",
+        "swim",
       ],
-      tip: "apply_animation entityId + clip key. Procedural biped synthesis also provides idle/walk/run/attack/death when GLB has no clips.",
+      tip: "apply_animation({ entityId, clip: 'walk' }). Works in edit mode via live crossfade.",
     },
   };
 };
@@ -211,74 +272,126 @@ const listAnimationsHandler: ToolHandler = async (input) => {
 const APPLY_ANIMATION: ToolDef = {
   name: "apply_animation",
   description:
-    "Set the playing animation clip on a model entity (entity.model.clip). " +
-    "Use list_animations for catalog keys (idle, walk, run, attack-sword, death, …) " +
-    "or pass any clip name present in the GLB / procedural biped set. Undoable.",
+    "Play an animation on a model entity (sets model.clip + live preview). " +
+    "clip: idle|walk|run|jump|attack|death or any list_animations key. " +
+    "Supports entityId or entityIds. Undoable. Works immediately in the viewport.",
   input_schema: {
     type: "object",
     properties: {
       entityId: { type: "string" },
+      entityIds: { type: "array", items: { type: "string" } },
       clip: {
         type: "string",
-        description: "Catalog key or raw AnimationClip name.",
+        description: "Catalog key or raw AnimationClip name (idle, walk, run, attack, death…).",
       },
       clear: {
         type: "boolean",
-        description: "If true, clear model.clip (auto-pick idle).",
+        description: "If true, clear model.clip (return to auto idle).",
       },
     },
-    required: ["entityId"],
     additionalProperties: false,
   },
 };
 
 const applyAnimationHandler: ToolHandler = async (input) => {
-  const entityId = typeof input.entityId === "string" ? input.entityId : "";
-  if (!entityId) return { ok: false, error: "entityId required." };
-  const e = useEditor.getState().sceneData.entities.find((x) => x.id === entityId);
-  if (!e) return { ok: false, error: `Entity not found: ${entityId}` };
-  if (e.type !== "model" && !e.model) {
-    return {
-      ok: false,
-      error: "apply_animation only works on model entities with a model component.",
-    };
+  const ids = collectEntityIds(input);
+  if (!ids.length) {
+    return { ok: false, error: "entityId or entityIds required." };
   }
 
-  if (input.clear === true) {
+  const clear = input.clear === true;
+  let clipRaw = typeof input.clip === "string" ? input.clip.trim() : "";
+  if (!clear && !clipRaw) {
+    return { ok: false, error: "clip is required (or clear:true)." };
+  }
+
+  // Catalog resolution
+  const catalog = clipRaw
+    ? ANIMATION_CATALOG.find(
+        (c) =>
+          c.key === clipRaw ||
+          c.key.toLowerCase() === clipRaw.toLowerCase() ||
+          c.name.toLowerCase() === clipRaw.toLowerCase(),
+      )
+    : undefined;
+  const playClip = clear
+    ? null
+    : normalizeCatalogClip(catalog?.key ?? clipRaw);
+
+  const results: Array<{
+    entityId: string;
+    clip: string | null;
+    previous: string | null;
+    ok: boolean;
+    error?: string;
+  }> = [];
+
+  for (const entityId of ids) {
+    const e = useEditor.getState().sceneData.entities.find((x) => x.id === entityId);
+    if (!e) {
+      results.push({
+        entityId,
+        clip: playClip,
+        previous: null,
+        ok: false,
+        error: "not found",
+      });
+      continue;
+    }
+    if (e.type !== "model" && !e.model?.url) {
+      results.push({
+        entityId,
+        clip: playClip,
+        previous: null,
+        ok: false,
+        error: "not a model entity",
+      });
+      continue;
+    }
+
+    const previous = e.model?.clip ?? null;
+
+    if (clear) {
+      useEditor.getState().cmdUpdateEntity(entityId, (ent) => {
+        if (!ent.model) return;
+        const { clip: _c, ...rest } = ent.model;
+        ent.model = rest as typeof ent.model;
+        // ensure url preserved
+        if (!ent.model.url && e.model?.url) ent.model.url = e.model.url;
+        delete ent.model.clip;
+      });
+      publishAgentClip(entityId, null);
+      results.push({ entityId, clip: null, previous, ok: true });
+      continue;
+    }
+
+    // Ensure model component exists
     useEditor.getState().cmdUpdateEntity(entityId, (ent) => {
-      if (!ent.model) return;
-      delete ent.model.clip;
+      const baseUrl =
+        ent.model?.url ||
+        e.model?.url ||
+        (ent.type === "model" ? "builtin:character" : "");
+      ent.model = {
+        ...(ent.model ?? {}),
+        url: baseUrl || ent.model?.url || "builtin:character",
+        clip: playClip!,
+      };
+      ent.type = "model";
     });
-    return { ok: true, data: { entityId, clip: null } };
+    // Live preview in edit mode (LoadedModel polls __agentClips each frame)
+    publishAgentClip(entityId, playClip);
+
+    results.push({ entityId, clip: playClip, previous, ok: true });
   }
 
-  let clip = typeof input.clip === "string" ? input.clip.trim() : "";
-  if (!clip) return { ok: false, error: "clip is required (or clear:true)." };
-
-  // Resolve catalog key → preferred playback name
-  const catalog = ANIMATION_CATALOG.find(
-    (c) => c.key === clip || c.name.toLowerCase() === clip.toLowerCase(),
-  );
-  if (catalog) {
-    // Prefer short keys that match procedural biped / agent FSM names
-    clip =
-      catalog.key === "attack-sword" || catalog.key === "attack-2h"
-        ? "attack"
-        : catalog.key === "hit-react"
-          ? "hit"
-          : catalog.key.startsWith("attack")
-            ? "attack"
-            : catalog.key === "death"
-              ? "death"
-              : catalog.key;
+  const okCount = results.filter((r) => r.ok).length;
+  if (okCount) {
+    useEditor.getState().pushLog(
+      "info",
+      `Animation "${playClip ?? "cleared"}" on ${okCount} model(s).`,
+    );
   }
 
-  const previous = e.model?.clip ?? null;
-  useEditor.getState().cmdUpdateEntity(entityId, (ent) => {
-    ent.model = { ...(ent.model ?? { url: "" }), clip };
-  });
-
-  // Optional: if source is builtin: loco, also allow resolving model URL
   let resolvedSource: string | null = null;
   if (catalog?.source.startsWith("builtin:")) {
     try {
@@ -289,14 +402,22 @@ const applyAnimationHandler: ToolHandler = async (input) => {
   }
 
   return {
-    ok: true,
+    ok: okCount > 0,
     data: {
-      entityId,
-      clip,
-      previous,
+      results,
+      clip: playClip,
       catalogKey: catalog?.key ?? null,
       resolvedSource,
+      tip:
+        okCount > 0
+          ? "Clip applied. If the GLB has no baked animations, procedural biped idle/walk/run/attack/death still play."
+          : undefined,
     },
+    error:
+      okCount > 0
+        ? undefined
+        : results.map((r) => r.error).filter(Boolean).join("; ") ||
+          "No models updated.",
   };
 };
 
@@ -319,6 +440,7 @@ const SET_PHYSICS: ToolDef = {
         items: { type: "string" },
         minItems: 1,
       },
+      entityId: { type: "string" },
       bodyType: { type: "string", enum: BODY_TYPES },
       colliderType: { type: "string", enum: [...COLLIDER_TYPES] },
       mass: { type: "number" },
@@ -334,16 +456,13 @@ const SET_PHYSICS: ToolDef = {
         description: "Remove the physics component entirely.",
       },
     },
-    required: ["entityIds"],
     additionalProperties: false,
   },
 };
 
 const setPhysicsHandler: ToolHandler = async (input) => {
-  const ids = Array.isArray(input.entityIds)
-    ? input.entityIds.filter((v): v is string => typeof v === "string")
-    : [];
-  if (!ids.length) return { ok: false, error: "entityIds required." };
+  const ids = collectEntityIds(input);
+  if (!ids.length) return { ok: false, error: "entityIds (or entityId) required." };
 
   const updated: Array<{ id: string; physics: SceneEntity["physics"] }> = [];
   const missing: string[] = [];
@@ -360,7 +479,10 @@ const setPhysicsHandler: ToolHandler = async (input) => {
         return;
       }
       const ph = { ...(ent.physics ?? {}) };
-      if (typeof input.bodyType === "string" && BODY_TYPES.includes(input.bodyType as BodyType)) {
+      if (
+        typeof input.bodyType === "string" &&
+        BODY_TYPES.includes(input.bodyType as BodyType)
+      ) {
         ph.bodyType = input.bodyType as BodyType;
       }
       if (
@@ -376,14 +498,15 @@ const setPhysicsHandler: ToolHandler = async (input) => {
       if (typeof input.restitution === "number") ph.restitution = input.restitution;
       if (typeof input.ccd === "boolean") ph.ccd = input.ccd;
       if (typeof input.linearDamping === "number") ph.linearDamping = input.linearDamping;
-      if (typeof input.angularDamping === "number") ph.angularDamping = input.angularDamping;
+      if (typeof input.angularDamping === "number") {
+        ph.angularDamping = input.angularDamping;
+      }
       if (typeof input.capsuleHalfHeight === "number") {
         ph.capsuleHalfHeight = input.capsuleHalfHeight;
       }
       if (typeof input.capsuleRadius === "number") {
         ph.capsuleRadius = input.capsuleRadius;
       }
-      // Defaults when first enabling physics
       if (!ph.bodyType) ph.bodyType = "dynamic";
       if (!ph.colliderType) ph.colliderType = "cuboid";
       ent.physics = ph;
@@ -395,7 +518,9 @@ const setPhysicsHandler: ToolHandler = async (input) => {
   return {
     ok: updated.length > 0,
     data: { updated, missing: missing.length ? missing : undefined },
-    error: updated.length ? undefined : `No entities found: ${missing.join(", ")}`,
+    error: updated.length
+      ? undefined
+      : `No entities found: ${missing.join(", ")}`,
   };
 };
 

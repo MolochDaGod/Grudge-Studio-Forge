@@ -27,18 +27,17 @@ const apiUrl = (path: string) => `/api/${path.replace(/^\/+/, "")}`;
 const GENERATE_TEXTURE: ToolDef = {
   name: "generate_texture",
   description:
-    "Generate a texture image using Cloudflare Workers AI (FLUX, Phoenix, Lucid Origin, or SDXL). " +
-    "Provide a descriptive prompt and optional parameters. When a projectId is available the " +
-    "generated image is automatically uploaded to R2 and a persistent URL is returned. " +
-    "Use the returned URL with set_material_map or apply it as an entity's texture. " +
-    "Models: flux-2-klein-4b (fast), phoenix-1.0 (high quality), lucid-origin (creative), sdxl (classic).",
+    "Generate a texture with Cloudflare Workers AI (FLUX / Phoenix / Lucid / SDXL). " +
+    "Returns a durable R2 URL when projectId is open (else data-URL). " +
+    "Optionally pass entityIds to auto-apply as albedo (or slot) via set_material_map in one step. " +
+    "Example: prompt='seamless mossy stone wall, PBR diffuse', entityIds=['abc'], mapRepeat=[4,4].",
   input_schema: {
     type: "object",
     properties: {
       prompt: {
         type: "string",
         description:
-          "Detailed description of the texture to generate, e.g. 'seamless mossy stone wall texture, 1024x1024, PBR, diffuse map'.",
+          "Detailed description of the texture, e.g. 'seamless mossy stone wall, 1024x1024, PBR diffuse'.",
       },
       model: {
         type: "string",
@@ -48,14 +47,41 @@ const GENERATE_TEXTURE: ToolDef = {
           "@cf/leonardo/lucid-origin",
           "@cf/stabilityai/stable-diffusion-xl-base-1.0",
         ],
-        description: "CF AI model to use. Defaults to flux-2-klein-4b (fastest).",
+        description: "CF AI model. Defaults to flux-2-klein-4b (fastest).",
       },
-      width: { type: "number", description: "Image width in pixels (256–2048). Default 512." },
-      height: { type: "number", description: "Image height in pixels (256–2048). Default 512." },
-      negativePrompt: { type: "string", description: "What to avoid in the generated image." },
-      steps: { type: "number", description: "Diffusion steps (1–50). Higher = better quality, slower." },
-      guidance: { type: "number", description: "Prompt adherence strength." },
-      seed: { type: "number", description: "Random seed for reproducibility." },
+      width: { type: "number", description: "Width 256–2048. Default 512." },
+      height: { type: "number", description: "Height 256–2048. Default 512." },
+      negativePrompt: { type: "string" },
+      steps: { type: "number" },
+      guidance: { type: "number" },
+      seed: { type: "number" },
+      entityIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "If set, auto-apply the texture to these entities.",
+      },
+      entityId: {
+        type: "string",
+        description: "Single entity to auto-apply (alias of entityIds).",
+      },
+      slot: {
+        type: "string",
+        enum: [
+          "mapUrl",
+          "normalMapUrl",
+          "roughnessMapUrl",
+          "metalnessMapUrl",
+          "emissiveMapUrl",
+        ],
+        description: "Material map slot when auto-applying. Default mapUrl (albedo).",
+      },
+      mapRepeat: {
+        type: "array",
+        items: { type: "number" },
+        minItems: 2,
+        maxItems: 2,
+        description: "UV repeat when auto-applying, e.g. [4,4].",
+      },
     },
     required: ["prompt"],
     additionalProperties: false,
@@ -85,7 +111,10 @@ const generateTextureHandler: ToolHandler = async (input) => {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      return { ok: false, error: (err as { error?: string }).error ?? `HTTP ${res.status}` };
+      return {
+        ok: false,
+        error: (err as { error?: string }).error ?? `HTTP ${res.status}`,
+      };
     }
     const data = (await res.json()) as {
       image: string;
@@ -95,18 +124,70 @@ const generateTextureHandler: ToolHandler = async (input) => {
       url?: string;
       key?: string;
     };
+    const url =
+      data.url ?? `data:${data.contentType};base64,${data.image}`;
+
     useEditor.getState().pushLog(
       "info",
-      `CF AI generated texture (${data.model}, ${data.byteSize} bytes)${data.url ? ` → ${data.url}` : ""}`,
+      `CF AI texture (${data.model}, ${data.byteSize} B)${data.url ? ` → ${data.url}` : " (data-URL)"}`,
     );
+
+    // Optional one-shot apply onto selected entities
+    const applyIds: string[] = [];
+    if (typeof input.entityId === "string" && input.entityId.trim()) {
+      applyIds.push(input.entityId.trim());
+    }
+    if (Array.isArray(input.entityIds)) {
+      for (const id of input.entityIds) {
+        if (typeof id === "string" && id.trim()) applyIds.push(id.trim());
+      }
+    }
+    let applied: string[] | undefined;
+    if (applyIds.length > 0) {
+      const slot =
+        typeof input.slot === "string" && input.slot
+          ? input.slot
+          : "mapUrl";
+      const repeat =
+        Array.isArray(input.mapRepeat) &&
+        input.mapRepeat.length >= 2 &&
+        typeof input.mapRepeat[0] === "number" &&
+        typeof input.mapRepeat[1] === "number"
+          ? ([input.mapRepeat[0], input.mapRepeat[1]] as [number, number])
+          : undefined;
+      applied = [];
+      for (const id of [...new Set(applyIds)]) {
+        const ent = useEditor.getState().sceneData.entities.find((e) => e.id === id);
+        if (!ent) continue;
+        useEditor.getState().cmdUpdateEntity(id, (e) => {
+          const mat = { ...(e.material ?? {}), kind: e.material?.kind ?? ("Custom" as const) };
+          (mat as Record<string, unknown>)[slot] = url;
+          if (repeat) mat.mapRepeat = repeat;
+          e.material = mat;
+        });
+        applied.push(id);
+      }
+      if (applied.length) {
+        useEditor.getState().pushLog(
+          "info",
+          `Texture auto-applied to ${applied.length} entit${applied.length === 1 ? "y" : "ies"} (${slot}).`,
+        );
+      }
+    }
+
     return {
       ok: true,
       data: {
-        url: data.url ?? `data:${data.contentType};base64,${data.image}`,
+        url,
         key: data.key,
         model: data.model,
         byteSize: data.byteSize,
         contentType: data.contentType,
+        appliedTo: applied,
+        next:
+          applied && applied.length
+            ? "Texture is on the entity. Adjust mapRepeat or generate a normal map with slot=normalMapUrl."
+            : "Call set_material_map({ entityIds, url }) to apply, or re-run with entityIds.",
       },
     };
   } catch (err) {

@@ -35,6 +35,7 @@ import {
   useMaterialTextures,
   applyMapsToMaterial,
 } from "@/lib/useMaterialTextures";
+import { resolveClipName } from "@/lib/animationClipResolve";
 
 interface RenderProps {
   entity: SceneEntity;
@@ -552,11 +553,16 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   const currentClipNameRef = useRef<string | null>(null);
   const pickClipName = (): string | null => {
     if (!names.length) return null;
+    // Priority: agent FSM override → explicit model.clip → idle/loop heuristic.
+    // resolveClipName fuzzy-matches catalog keys (walk/run/attack) against
+    // Mixamo-style names and procedural biped clips.
     const fsmClip = readAgentClip(entityId);
-    if (fsmClip && names.includes(fsmClip)) return fsmClip;
-    if (clip && names.includes(clip)) return clip;
+    const fromFsm = resolveClipName(fsmClip, names);
+    if (fromFsm) return fromFsm;
+    const fromProp = resolveClipName(clip, names);
+    if (fromProp) return fromProp;
     return (
-      names.find((n) => /idle/i.test(n)) ??
+      resolveClipName("idle", names) ??
       names.find((n) => /loop/i.test(n)) ??
       names[0] ??
       null
@@ -565,7 +571,8 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   useFrame(() => {
     const desired = pickClipName();
     if (!desired || desired === currentClipNameRef.current) return;
-    const next = actions[desired];
+    // actions keys are exact clip names from useAnimations
+    const next = actions[desired] ?? actions[Object.keys(actions).find((k) => k === desired) ?? ""];
     if (!next) return;
     const prev = currentActionRef.current;
     if (prev && prev !== next) prev.fadeOut(0.2);

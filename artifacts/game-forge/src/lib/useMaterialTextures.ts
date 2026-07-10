@@ -31,17 +31,40 @@ function loadTex(
   repeat: [number, number] | undefined,
 ): Promise<THREE.Texture | null> {
   if (!url || typeof url !== "string" || !url.trim()) return Promise.resolve(null);
+  const src = url.trim();
+
+  // data: / blob: URLs — TextureLoader works but some browsers need Image()
+  if (src.startsWith("data:") || src.startsWith("blob:")) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const t = new THREE.Texture(img);
+        if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = THREE.RepeatWrapping;
+        t.wrapT = THREE.RepeatWrapping;
+        t.flipY = true;
+        if (repeat) t.repeat.set(repeat[0], repeat[1]);
+        t.needsUpdate = true;
+        resolve(t);
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
   return new Promise((resolve) => {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin("anonymous");
     loader.load(
-      url,
+      src,
       (t) => {
         if (srgb) t.colorSpace = THREE.SRGBColorSpace;
         t.wrapS = THREE.RepeatWrapping;
         t.wrapT = THREE.RepeatWrapping;
+        t.flipY = true;
         if (repeat) t.repeat.set(repeat[0], repeat[1]);
         t.needsUpdate = true;
+        t.anisotropy = 8;
         resolve(t);
       },
       undefined,
