@@ -496,6 +496,48 @@ export interface Environment {
     /** Optional deep link back to a saved design on the UI kit site. */
     designUrl?: string;
   };
+  /**
+   * Equirectangular skybox / panorama texture URL (https, data:, or R2).
+   * When set, CelestialSky samples it as a background dome.
+   */
+  skyTexture?: string;
+  /**
+   * Procedural celestial dome: gradient sky, stars, sun, moon, aurora.
+   * When unset the viewport falls back to a solid skyColor background.
+   */
+  celestial?: {
+    /** Master enable. Default true when the object is present. */
+    enabled?: boolean;
+    /** 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset, 1 = midnight. */
+    timeOfDay?: number;
+    /** Star density / brightness (0–1). Auto-boosted at night. */
+    stars?: number;
+    /** Show sun disc + directional glow. Default true. */
+    sun?: boolean;
+    /** Show moon disc when night. Default true. */
+    moon?: boolean;
+    /** Aurora ribbon intensity 0–1 (polar night look). Default 0. */
+    aurora?: number;
+    /** Sky dome radius in world units. Default 800. */
+    radius?: number;
+    /** Top zenith color override (hex). */
+    zenithColor?: string;
+    /** Horizon color override (hex). */
+    horizonColor?: string;
+  };
+  /**
+   * Volumetric / particle weather FX (rain, snow, dust, storm, fog bank).
+   */
+  weather?: {
+    /** Preset type. `clear` disables particles. */
+    type?: "clear" | "rain" | "snow" | "dust" | "storm" | "fog";
+    /** Effect intensity 0–1 (density, opacity, wind bias). Default 0.55. */
+    intensity?: number;
+    /** Wind push for precipitation [x,y,z]. Falls back to Environment.wind. */
+    wind?: Vec3;
+    /** Particle count scale (1 = preset default). */
+    density?: number;
+  };
 }
 
 /** Gentle default wind — a light breeze blowing in +X. Picked so a
@@ -533,6 +575,21 @@ export const DEFAULT_ENV: Environment = {
   playerMoveSpeed: 6,
   mouseSensitivity: 0.0025,
   sensorLayers: [...DEFAULT_SENSOR_LAYERS],
+  /** Procedural sky enabled by default so new scenes get stars/sun/gradient. */
+  celestial: {
+    enabled: true,
+    timeOfDay: 0.55,
+    stars: 0.7,
+    sun: true,
+    moon: true,
+    aurora: 0,
+    radius: 900,
+  },
+  weather: {
+    type: "clear",
+    intensity: 0.55,
+    density: 1,
+  },
 };
 
 /** Infer a default {@link LayerName} for an entity that has no `layer`

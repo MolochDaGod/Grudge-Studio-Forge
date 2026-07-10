@@ -272,19 +272,31 @@ const generateSkyboxHandler: ToolHandler = async (input) => {
 
     const textureUrl = data.url ?? `data:${data.contentType};base64,${data.image}`;
 
-    // Auto-apply: set sky color to a complementary dark tone derived
-    // from the prompt (the generated image URL is returned for the AI
-    // to apply via set_material_map or as a texture on a sky sphere).
+    // Auto-apply equirectangular panorama as Environment.skyTexture so
+    // CelestialSky samples it on the dome (blended with procedural gradient).
     const shouldApply = input.apply !== false;
     if (shouldApply) {
-      useEditor
-        .getState()
-        .cmdSetEnvironment({ skyColor: "#050510" }, "Set sky for AI-generated skybox");
+      const prevCelestial = useEditor.getState().sceneData.environment.celestial ?? {};
+      useEditor.getState().cmdSetEnvironment(
+        {
+          skyTexture: textureUrl,
+          skyColor: "#050510",
+          celestial: {
+            ...prevCelestial,
+            enabled: true,
+            // Keep procedural sun/stars subtle under a full skybox map.
+            stars: prevCelestial.stars ?? 0.35,
+            sun: prevCelestial.sun ?? true,
+            moon: prevCelestial.moon ?? true,
+          },
+        },
+        "Apply AI-generated skybox",
+      );
     }
 
     useEditor.getState().pushLog(
       "info",
-      `CF AI generated skybox (${data.model})${shouldApply ? " — applied to scene" : ""}`,
+      `CF AI generated skybox (${data.model})${shouldApply ? " — applied as skyTexture" : ""}`,
     );
     return {
       ok: true,
@@ -293,6 +305,7 @@ const generateSkyboxHandler: ToolHandler = async (input) => {
         key: data.key,
         model: data.model,
         applied: shouldApply,
+        skyTexture: shouldApply ? textureUrl : undefined,
         byteSize: data.byteSize,
       },
     };

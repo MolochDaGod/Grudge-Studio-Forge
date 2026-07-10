@@ -47,6 +47,8 @@ import {
   Bot,
   Wind as WindIcon,
   Swords as SwordsIcon,
+  CloudSun as CloudSunIcon,
+  CloudRain as CloudRainIcon,
 } from "lucide-react";
 
 /** Inspector row for a tri-axis tag (Layer / Surface / Material kind)
@@ -590,8 +592,210 @@ export function Inspector() {
                 step={0.25}
               />
               <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-                Drives the cloth / flag verlet sim and biases newly
-                spawned particles. Try +X for a flag rippling east.
+                Drives the cloth / flag verlet sim, weather particles, and
+                biases newly spawned particles. Try +X for a flag rippling east.
+              </p>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <Label className="text-xs text-muted-foreground mb-1.5 block flex items-center gap-1">
+                <CloudSunIcon className="size-3" /> Celestial Sky
+              </Label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="celestial-enabled"
+                  className="size-3.5 accent-primary"
+                  checked={env.celestial?.enabled !== false}
+                  onChange={(e) =>
+                    setEnv({
+                      celestial: {
+                        ...(env.celestial ?? {}),
+                        enabled: e.target.checked,
+                      },
+                    })
+                  }
+                />
+                <Label htmlFor="celestial-enabled" className="text-xs cursor-pointer">
+                  Procedural sky dome
+                </Label>
+              </div>
+              {env.celestial?.enabled !== false && (
+                <>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1 block">
+                      Time of day: {((env.celestial?.timeOfDay ?? 0.55) * 24).toFixed(1)}h
+                    </Label>
+                    <Slider
+                      value={[env.celestial?.timeOfDay ?? 0.55]}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onValueChange={([v]) =>
+                        setEnv({
+                          celestial: { ...(env.celestial ?? {}), enabled: true, timeOfDay: v },
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1 block">
+                      Stars: {(env.celestial?.stars ?? 0.7).toFixed(2)}
+                    </Label>
+                    <Slider
+                      value={[env.celestial?.stars ?? 0.7]}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onValueChange={([v]) =>
+                        setEnv({
+                          celestial: { ...(env.celestial ?? {}), enabled: true, stars: v },
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1 block">
+                      Aurora: {(env.celestial?.aurora ?? 0).toFixed(2)}
+                    </Label>
+                    <Slider
+                      value={[env.celestial?.aurora ?? 0]}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onValueChange={([v]) =>
+                        setEnv({
+                          celestial: { ...(env.celestial ?? {}), enabled: true, aurora: v },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="size-3 accent-primary"
+                        checked={env.celestial?.sun !== false}
+                        onChange={(e) =>
+                          setEnv({
+                            celestial: {
+                              ...(env.celestial ?? {}),
+                              enabled: true,
+                              sun: e.target.checked,
+                            },
+                          })
+                        }
+                      />
+                      Sun
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="size-3 accent-primary"
+                        checked={env.celestial?.moon !== false}
+                        onChange={(e) =>
+                          setEnv({
+                            celestial: {
+                              ...(env.celestial ?? {}),
+                              enabled: true,
+                              moon: e.target.checked,
+                            },
+                          })
+                        }
+                      />
+                      Moon
+                    </label>
+                  </div>
+                  {env.skyTexture && (
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground block">
+                        Skybox texture set
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => setEnv({ skyTexture: undefined })}
+                      >
+                        Clear skybox map
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-xs text-muted-foreground mb-1.5 block flex items-center gap-1">
+                <CloudRainIcon className="size-3" /> Weather
+              </Label>
+              <Select
+                value={env.weather?.type ?? "clear"}
+                onValueChange={(v) =>
+                  setEnv({
+                    weather: {
+                      ...(env.weather ?? {}),
+                      type: v as NonNullable<typeof env.weather>["type"],
+                      intensity:
+                        v === "clear" ? 0 : (env.weather?.intensity ?? 0.55),
+                    },
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clear">Clear</SelectItem>
+                  <SelectItem value="rain">Rain</SelectItem>
+                  <SelectItem value="snow">Snow</SelectItem>
+                  <SelectItem value="dust">Dust</SelectItem>
+                  <SelectItem value="storm">Storm (+ lightning)</SelectItem>
+                  <SelectItem value="fog">Fog bank</SelectItem>
+                </SelectContent>
+              </Select>
+              {(env.weather?.type ?? "clear") !== "clear" && (
+                <>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1 block">
+                      Intensity: {(env.weather?.intensity ?? 0.55).toFixed(2)}
+                    </Label>
+                    <Slider
+                      value={[env.weather?.intensity ?? 0.55]}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onValueChange={([v]) =>
+                        setEnv({
+                          weather: { ...(env.weather ?? {}), intensity: v },
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground mb-1 block">
+                      Density: {(env.weather?.density ?? 1).toFixed(2)}
+                    </Label>
+                    <Slider
+                      value={[env.weather?.density ?? 1]}
+                      min={0.2}
+                      max={2}
+                      step={0.1}
+                      onValueChange={([v]) =>
+                        setEnv({
+                          weather: { ...(env.weather ?? {}), density: v },
+                        })
+                      }
+                    />
+                  </div>
+                </>
+              )}
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                Needs Cinematic render quality. AI: apply_atmosphere_preset /
+                set_weather / generate_skybox.
               </p>
             </div>
 

@@ -527,7 +527,9 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def: {
       name: "set_environment",
       description:
-        "Update environment settings (sky color, ground color, ambient/sun lighting, gravity, fog, active camera mode).",
+        "Update environment settings (sky/ground colors, ambient/sun, gravity, fog, camera mode, skyTexture). " +
+        "For day/night stars/sun/moon/aurora prefer set_celestial; for rain/snow/storm use set_weather; " +
+        "for full moods use apply_atmosphere_preset or generate_skybox.",
       input_schema: {
         type: "object",
         properties: {
@@ -537,6 +539,10 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
           ambientIntensity: { type: "number" },
           sunColor: { type: "string" },
           sunIntensity: { type: "number" },
+          skyTexture: {
+            type: "string",
+            description: "Equirectangular skybox URL (https/data:/R2). Use set_sky_texture to clear.",
+          },
           gravity: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
           cameraMode: {
             type: "string",
@@ -554,6 +560,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       if (typeof input.groundColor === "string") patch.groundColor = input.groundColor;
       if (typeof input.ambientIntensity === "number") patch.ambientIntensity = input.ambientIntensity;
       if (typeof input.sunIntensity === "number") patch.sunIntensity = input.sunIntensity;
+      if (typeof input.skyTexture === "string") patch.skyTexture = input.skyTexture;
       if (Array.isArray(input.gravity) && input.gravity.length === 3) {
         patch.gravity = asVec3(input.gravity);
       }
@@ -1270,11 +1277,12 @@ export function buildSystemPrompt(): string {
     `- Node graph / visual blocks: use the Nodes panel tools when available; compile graphs to scene entities. Treat node-graph + AI as the "block LLM" layer for non-coders.`,
     `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch (score), rpg (interact/vendors), skirmish (mixed). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders. Trees/buildings/fences → Terrain+Walk fixed cuboid; water pools → Water+Swim; climb walls → Terrain+Climb.`,
     `- Texture & motion (do these end-to-end): generate_texture({ prompt, entityIds:[id], mapRepeat:[4,4] }) auto-applies albedo; or generate_texture then set_material_map({ entityId, url }). list_animations → apply_animation({ entityId, clip:'walk'|'run'|'idle'|'attack'|'death' }) plays immediately (fuzzy match + procedural biped). set_physics for Rapier bodyType/collider/ccd/capsule. set_wind + set_soft_body for cloth/flag/particles.`,
+    `- Sky / weather / skybox (GPU shaders in viewport): list_atmosphere_presets → apply_atmosphere_preset({ preset:'thunderstorm'|'midnight-stars'|'aurora-night'|'golden-sunset'|… }) for full moods. set_celestial({ timeOfDay:0–1, stars, sun, moon, aurora }) for day/night. set_weather({ type:'rain'|'snow'|'dust'|'storm'|'fog'|'clear', intensity }). generate_skybox({ prompt, apply:true }) paints equirect skyTexture on the dome; set_sky_texture / clearSkyTexture to manage maps. Requires Cinematic render quality (not Performance).`,
     `- Professional UI layers (https://ui.grudge-studio.com): ALWAYS use list_ui_kits / browse_ui_kit when building HUDs, inventories, shops, skill trees, or deathmatch chrome. apply_ui_kit({ theme:'fantasy'|'cyberpunk'|'fps'|'rpg', layers:[...] }) stamps Environment.uiKit for PlayHUD. list_ui_layers for stack ids; list_ui_assets for /ui/rpg-mmo/ texture paths. Puter sign-in on the UI kit site saves designs — designUrl can be stored on uiKit.`,
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,
-    `- Take initiative. For a "playable scene": generate_map → add_model_entity (blake) → set_player → set_environment / lighting as needed.`,
+    `- Take initiative. For a "playable scene": generate_map → add_model_entity (blake) → set_player → set_environment / apply_atmosphere_preset as needed.`,
     `- For "feel" tweaks prefer set_tunable_param after list_tunable_params.`,
     `- Bulk scene questions → count_entities / query_entities (ECS mirror).`,
     `- BEFORE big builds: get_active_scene_meta, get_project_summary or get_brain_catalog, describe_layout, list_scenes / list_prefabs / list_assets / list_r2_storage.`,
@@ -1291,7 +1299,7 @@ export function buildSystemPrompt(): string {
     `- Materials: list_materials, set_material, find_entities_by_material.`,
     `- Puter cloud: cloud_save_project, list_my_puter_projects, publish_to_puter — if "Sign in with Puter", tell the user; do not retry endlessly.`,
     `- Design polish: diagnose_scene → polish_scene; arrange_entities for patterns; apply_palette / apply_lighting_preset; frame_camera + capture_viewport before declaring creative work done.`,
-    `- CF Workers AI: generate_texture / generate_skybox / lore tools when the user wants generated art — results land in R2 when projectId is set.`,
+    `- CF Workers AI: generate_texture / generate_skybox (auto-sets skyTexture) / lore tools when the user wants generated art — results land in R2 when projectId is set.`,
     `- After changes, summarize in 1–2 plain sentences.`,
     `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,
     ``,

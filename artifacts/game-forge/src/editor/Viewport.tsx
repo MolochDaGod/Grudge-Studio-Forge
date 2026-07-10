@@ -1,6 +1,8 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, Stats, TransformControls } from "@react-three/drei";
 import { EffectsRig } from "@/scene/EffectsRig";
+import { CelestialSky } from "@/scene/CelestialSky";
+import { WeatherFx } from "@/scene/WeatherFx";
 import { Physics, type RapierRigidBody } from "@react-three/rapier";
 import { Component, Suspense, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import * as THREE from "three";
@@ -353,16 +355,33 @@ function Lights() {
   // it to env.skyColor / env.groundColor / env.ambientIntensity so that
   // tuning the environment in the inspector still works as before — the
   // hemisphere just rides on top of the existing ambient + sun pair.
+  // When celestial.timeOfDay is set, the directional sun tracks the same
+  // arc as the sky shader disc so day/night lighting stays coherent.
   const ambient = env.ambientIntensity ?? 0.4;
   const sky = env.skyColor ?? "#0a0a14";
   const ground = env.groundColor ?? "#1a1a2e";
+  const tod = env.celestial?.timeOfDay;
+  const sunPos = useMemo((): [number, number, number] => {
+    if (tod === undefined || tod === null) return [10, 12, 8];
+    const angle = (tod - 0.25) * Math.PI * 2;
+    const x = Math.sin(angle) * 40;
+    const y = Math.max(0.5, Math.cos(angle) * 0.85 * 40);
+    return [x, y, 6];
+  }, [tod]);
+  // Dim the sun at night so ambient/moon feel dominate.
+  let sunI = env.sunIntensity ?? 1.2;
+  if (tod !== undefined && tod !== null) {
+    const day = 0.5 + 0.5 * Math.cos((tod - 0.5) * Math.PI * 2);
+    const dayFactor = THREE.MathUtils.smoothstep(day, 0.08, 0.55);
+    sunI *= 0.08 + 0.92 * dayFactor;
+  }
   return (
     <>
       <ambientLight intensity={ambient} />
       <hemisphereLight args={[sky, ground, ambient * 0.85]} />
       <directionalLight
-        position={[10, 12, 8]}
-        intensity={env.sunIntensity ?? 1.2}
+        position={sunPos}
+        intensity={sunI}
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -1034,6 +1053,18 @@ export function Viewport() {
                   env.fog?.near ?? DEFAULT_FOG.near,
                   env.fog?.far ?? DEFAULT_FOG.far,
                 ]}
+              />
+              {/* Procedural sky dome + equirect skybox; falls back to solid bg when disabled. */}
+              <CelestialSky
+                skyColor={env.skyColor}
+                skyTexture={env.skyTexture}
+                celestial={env.celestial}
+                enabled={renderQuality === "high"}
+              />
+              <WeatherFx
+                weather={env.weather}
+                wind={env.wind}
+                enabled={renderQuality === "high"}
               />
               <Lights />
               <Suspense fallback={null}>
