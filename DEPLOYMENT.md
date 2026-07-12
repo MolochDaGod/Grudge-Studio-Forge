@@ -98,8 +98,8 @@ Worker: **`grudge-gameforge-web`**
 
 | Binding | Value |
 | --- | --- |
-| `ORIGIN` | `https://forge-origin.grudge-studio.com` (or the HTTPS base of the SPA) |
-| `API_ORIGIN` | `https://the-engine.up.railway.app` (or forge-api) |
+| `ORIGIN` | `https://grudge-studio-forge.vercel.app` (thin SPA shell; builtins on R2) |
+| `API_ORIGIN` | `https://grudge-api-production-0d46.up.railway.app` (or forge-api) |
 | `ASSETS_ORIGIN` | `https://assets.grudge-studio.com` |
 
 Routes (already set):
