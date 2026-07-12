@@ -539,4 +539,9 @@ export {
   getListAssetsQueryKey,
   getListPrefabsQueryKey,
   getListTemplatesQueryKey,
+  getGetProjectQueryKey,
+  getGetProjectSummaryQueryKey,
+  getGetSceneQueryKey,
+  getGetScriptQueryKey,
+  getGetPrefabQueryKey,
 } from "./queryKeys";

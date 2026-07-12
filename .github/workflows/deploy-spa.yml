@@ -1,0 +1,99 @@
+# Build the full game-forge SPA and deploy to Vercel production.
+# Uses a temporary swap file so the Vite+Rollup graph fits on ubuntu-latest (~7 GB RAM).
+name: Deploy Forge SPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-forge-spa
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build SPA · Deploy Vercel
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable swap (16G)
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install game-forge graph
+        run: pnpm install --frozen-lockfile --filter "@workspace/game-forge..."
+
+      - name: Build player embed (prebuild)
+        run: pnpm --filter @workspace/player run build
+        continue-on-error: true
+
+      - name: Vite production build
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          BASE_PATH: /
+        run: pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
+
+      - name: Verify dist
+        run: |
+          test -f artifacts/game-forge/dist/public/index.html
+          grep -q 'id="root"' artifacts/game-forge/dist/public/index.html
+          grep -E 'type="module".*assets/' artifacts/game-forge/dist/public/index.html
+          du -sh artifacts/game-forge/dist/public
+          ls -la artifacts/game-forge/dist/public/assets | head
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Pull Vercel project settings
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Deploy prebuilt SPA to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          # Deploy the dist folder as a static site (prebuilt-style).
+          # Project "grudge-studio-forge" must have VERCEL_ORG_ID / PROJECT_ID secrets set.
+          cd artifacts/game-forge/dist/public
+          # Copy SPA rewrites into the deploy root
+          cat > vercel.json <<'EOF'
+          {
+            "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }],
+            "headers": [
+              {
+                "source": "/index.html",
+                "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+              },
+              {
+                "source": "/assets/(.*)",
+                "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+              }
+            ]
+          }
+          EOF
+          vercel deploy --prod --yes --token=$VERCEL_TOKEN

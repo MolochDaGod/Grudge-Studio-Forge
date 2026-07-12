@@ -26,6 +26,27 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * `src/lib/prefetch.ts` (or the user opens a project), the chunks are
  * either already in cache or in flight.
  */
+/**
+ * Production deploys should NOT ship public/builtin (hundreds of MB of GLBs).
+ * Those load from R2 (assets.grudge-studio.com/builtin). Strip after copy.
+ */
+function stripHeavyPublicAssets(): Plugin {
+  return {
+    name: "strip-heavy-public-assets",
+    apply: "build",
+    async closeBundle() {
+      const { rm } = await import("node:fs/promises");
+      const outDir = path.resolve(import.meta.dirname, "dist/public/builtin");
+      try {
+        await rm(outDir, { recursive: true, force: true });
+        console.log("[build] stripped dist/public/builtin (use R2 CDN at runtime)");
+      } catch {
+        /* folder may not exist */
+      }
+    },
+  };
+}
+
 function preloadViewportCandidate(): Plugin {
   const TARGET_CHUNK_NAMES = new Set(["viewportPreload"]);
   return {
@@ -81,6 +102,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     preloadViewportCandidate(),
+    stripHeavyPublicAssets(),
     /**
      * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
      * statement inside `@dimforge/rapier3d` natively, emitting the binary as
@@ -171,10 +193,10 @@ export default defineConfig({
       // Cap the number of files Rollup opens in parallel. The default
       // (os.cpus().length × 20) creates huge in-memory queues when bundling
       // heavy deps like Three.js on CI containers with limited RAM.
-      // 2 is required for Vercel hobby/pro 8 GB builders — 5 still OOMs.
+      // 1 keeps peak RSS lowest for local/CI prebuilt deploys (8–16 GB hosts).
       // NOTE: this must be at the top level of rollupOptions, NOT inside
       // output — Rollup ignores it if placed inside the output block.
-      maxParallelFileOps: 2,
+      maxParallelFileOps: 1,
       output: {
         /**
          * Split the heavy vendor libraries into their own chunks so:

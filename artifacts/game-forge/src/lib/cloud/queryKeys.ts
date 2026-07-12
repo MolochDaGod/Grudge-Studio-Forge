@@ -23,3 +23,11 @@ export const getListScriptsQueryKey = (id: number) => ["scripts", id] as const;
 export const getListAssetsQueryKey = (id: number) => ["assets", id] as const;
 export const getListPrefabsQueryKey = (id: number) => ["prefabs", id] as const;
 export const getListTemplatesQueryKey = () => ["templates"] as const;
+
+/** Single-resource keys — mirror orval factories used by Toolbar / Hierarchy. */
+export const getGetProjectQueryKey = (id: number) => [`/api/projects/${id}`] as const;
+export const getGetProjectSummaryQueryKey = (id: number) =>
+  [`/api/projects/${id}/summary`] as const;
+export const getGetSceneQueryKey = (id: number) => [`/api/scenes/${id}`] as const;
+export const getGetScriptQueryKey = (id: number) => [`/api/scripts/${id}`] as const;
+export const getGetPrefabQueryKey = (id: number) => [`/api/prefabs/${id}`] as const;

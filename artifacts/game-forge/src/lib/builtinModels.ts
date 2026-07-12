@@ -264,21 +264,33 @@ const R2_ONLY_KEYS = new Set([
   "map-western",
 ]);
 
+const r2Url = (key: string) =>
+  `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key}.glb`;
+
 /** Resolve `"builtin:foo"` → real URL. Returns null if not a builtin key. */
 export function resolveBuiltinModel(url: string): string | null {
   if (!url.startsWith("builtin:")) return null;
   const key = url.slice("builtin:".length);
+
+  // Tiny Vite-bundled assets stay on the SPA host.
+  if (key === "character" || key === "rifle") {
+    return BUILTIN_MODELS[key] ?? null;
+  }
+
+  // Production: always R2/CDN — never force 350MB+ of GLBs into the deploy.
+  // Dev can still hit local /builtin when files exist.
+  if (import.meta.env.PROD || R2_ONLY_KEYS.has(key) || key.startsWith("map-")) {
+    const known = BUILTIN_MODELS[key];
+    if (known && /^https?:\/\//i.test(known)) return known;
+    return r2Url(key);
+  }
+
   // race: / race-weapon: handled via dynamic registry entries below.
   if (key in BUILTIN_MODELS) return BUILTIN_MODELS[key] ?? null;
-  // Soft-resolve common prefixes against the CDN so production templates
-  // that reference newly seeded maps keep working even when the SPA
-  // registry is one deploy behind the API template seeder.
   // Soft-resolve unknown keys so API templates one deploy ahead of the SPA
-  // still load. Prefer CDN for R2-only maps; same-origin /builtin/ for the rest.
+  // still load. Prefer CDN for maps; same-origin /builtin/ for the rest in dev.
   if (R2_ONLY_KEYS.has(key) || key.startsWith("map-")) {
-    // Unknown map-* → CDN first (SPA may not ship every large GLB).
-    // Known maps already returned above from BUILTIN_MODELS.
-    return `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key}.glb`;
+    return r2Url(key);
   }
   if (
     key.startsWith("char-") ||
