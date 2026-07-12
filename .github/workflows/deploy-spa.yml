@@ -31,9 +31,9 @@ jobs:
           sudo swapon /swapfile
           free -h
 
+      # Use package.json#packageManager only (do not set version: here —
+      # pnpm/action-setup@v4 errors on version mismatch with packageManager).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -72,12 +72,21 @@ jobs:
       - name: Install Vercel CLI
         run: npm i -g vercel@latest
 
-      - name: Pull Vercel project settings
+      - name: Link dist to grudge-studio-forge (never public)
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Missing VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets"
+            exit 1
+          fi
+          mkdir -p artifacts/game-forge/dist/public/.vercel
+          cat > artifacts/game-forge/dist/public/.vercel/project.json <<EOF
+          {"projectId":"$VERCEL_PROJECT_ID","orgId":"$VERCEL_ORG_ID","projectName":"grudge-studio-forge"}
+          EOF
+          cat artifacts/game-forge/dist/public/.vercel/project.json
 
       - name: Deploy prebuilt SPA to production
         env:
@@ -85,12 +94,9 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          # Deploy the dist folder as a static site (prebuilt-style).
-          # Project "grudge-studio-forge" must have VERCEL_ORG_ID / PROJECT_ID secrets set.
-          # vercel.json is produced by the Vite stripHeavyPublicAssets plugin.
           cd artifacts/game-forge/dist/public
           test -f vercel.json
-          vercel deploy --prod --yes --token=$VERCEL_TOKEN
+          vercel deploy --prod --yes --token="$VERCEL_TOKEN" --scope grudgenexus
 
       - name: Smoke production after deploy
         if: success()

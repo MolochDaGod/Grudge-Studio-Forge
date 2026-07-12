@@ -20,9 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # package.json#packageManager pins pnpm@10.32.1 — do not also set version:
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
