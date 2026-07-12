@@ -43,14 +43,15 @@ jobs:
       - name: Install game-forge graph
         run: pnpm install --frozen-lockfile --filter "@workspace/game-forge..."
 
-      - name: Build player embed (prebuild)
-        run: pnpm --filter @workspace/player run build
-        continue-on-error: true
+      # Skip player prebuild here (player package not fully installed with the
+      # game-forge filter; SPA build uses vite exec and does not need prebuild).
+      # Optional: host player.html on R2 separately.
 
       - name: Vite production build
         env:
           NODE_OPTIONS: --max-old-space-size=8192
           BASE_PATH: /
+        # Use `exec vite` (not `run build`) so package.json prebuild is skipped.
         run: pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
 
       - name: Verify dist

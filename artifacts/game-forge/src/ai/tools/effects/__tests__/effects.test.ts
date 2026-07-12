@@ -50,8 +50,13 @@ describe("effects AI tools", () => {
   beforeEach(resetScene);
 
   it("exports set_wind and set_soft_body as destructive tools", () => {
-    expect(defs.map((d) => d.name).sort()).toEqual(["set_soft_body", "set_wind"]);
-    expect(destructiveToolNames.sort()).toEqual(["set_soft_body", "set_wind"]);
+    const names = defs.map((d) => d.name);
+    expect(names).toContain("set_soft_body");
+    expect(names).toContain("set_wind");
+    // Atmosphere / celestial tools may also be destructive — require the core pair.
+    expect(destructiveToolNames).toEqual(
+      expect.arrayContaining(["set_soft_body", "set_wind"]),
+    );
   });
 
   it("set_wind writes the wind vector and is undoable", async () => {
