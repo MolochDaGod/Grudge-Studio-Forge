@@ -88,15 +88,21 @@ export function LandingPage() {
   const [scrollY, setScrollY] = useState(0);
 
   useEffect(() => {
+    // Unlock document scroll — global CSS keeps body overflow:hidden for the editor.
+    document.documentElement.classList.add("route-landing");
     const onScroll = () => setScrollY(window.scrollY);
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      document.documentElement.classList.remove("route-landing");
+    };
   }, []);
 
   return (
     <div
       className="min-h-screen text-[#e8ecf4] overflow-x-hidden"
       style={{ background: "#050608", fontFamily: FONTS.body }}
+      data-landing
     >
       {/* ── Animated background ── */}
       <div className="fixed inset-0 pointer-events-none">

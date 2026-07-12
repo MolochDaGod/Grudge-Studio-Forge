@@ -220,7 +220,24 @@
   html, body, #root { height: 100%; }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    /* Editor is a fixed shell — no document scroll. Landing overrides below. */
     overflow: hidden;
+  }
+
+  /**
+   * Public marketing page (`LandingPage`) needs normal document scroll.
+   * Toggled via `document.documentElement.classList` in LandingPage mount.
+   */
+  html.route-landing,
+  html.route-landing body,
+  html.route-landing #root {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  html.route-landing body {
+    overflow-y: auto;
   }
 }
 
