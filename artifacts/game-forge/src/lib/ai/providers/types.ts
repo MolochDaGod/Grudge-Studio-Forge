@@ -6,23 +6,7 @@
  * extraction, the tool-loop, the audit log, and the per-tool snapshot
  * machinery. A "provider" is the part that turns a structured request
  * (messages + tools + system + model) into a stream of normalized
- * events the loop already consumes:
- *
- *   text_delta   — token-level streaming for the UI
- *   text_block   — final text block (for transcript bookkeeping)
- *   tool_use     — assistant requested a tool call
- *   stop         — turn ended (with stop_reason)
- *   error        — fatal error mid-stream
- *
- * Two providers ship in this repo:
- *   - serverAnthropicProvider  — POST /api/ai/chat (default; Grudge API server)
- *   - puterProvider            — POST /api/ai/chat?provider=puter (uses
- *                                puter.ai.chat server-side via the user's
- *                                forwarded `X-Puter-Token`)
- *
- * The Puter route also accepts the same shape because the server
- * translates `tools` / `messages` into Puter's wire format and emits
- * the same SSE events back. Tools are provider-agnostic by construction.
+ * events the loop already consumes.
  */
 
 export interface ProviderTextDelta {
@@ -54,83 +38,69 @@ export type ProviderEvent =
   | ProviderStop
   | ProviderError;
 
-/** Request shape passed to a provider's `streamTurn()`. The shape is
- *  Anthropic-message-flavored because that's what the editor already
- *  uses for its transcript; providers translate as needed. */
 export interface ProviderRequest {
-  /** Anthropic-style content blocks. Tools / images may be present. */
   messages: Array<{ role: "user" | "assistant"; content: unknown }>;
-  /** Tool definitions in Anthropic JSON-schema shape. Providers translate. */
   tools: Array<{
     name: string;
     description: string;
     input_schema: Record<string, unknown>;
   }>;
   system: string;
-  /** Optional explicit model id. The provider chooses a sensible default
-   *  when omitted. */
   model?: string;
-  /** Max tokens for the response. */
   maxTokens?: number;
   signal?: AbortSignal;
 }
 
 export interface AIProvider {
-  /** Stable id for the picker / logs. */
   id: string;
-  /** Friendly label for the model picker header. */
   label: string;
-  /** Stream a single conversation turn — yields normalized events. */
   streamTurn(req: ProviderRequest): AsyncIterable<ProviderEvent>;
 }
 
-/** Curated catalog used by the model picker. The first entry is the
- *  default for new projects. Providers / models added here must already
- *  be supported by their backing route. */
+export type ProviderKind =
+  | "server-anthropic"
+  | "puter"
+  | "ollama"
+  | "groq"
+  | "openrouter"
+  | "gemini"
+  | "cerebras"
+  | "deepseek"
+  | "together";
+
 export interface ModelOption {
-  /** localStorage value & wire id. */
   id: string;
-  /** Picker label. */
   label: string;
-  /** Short hint shown under the picker option. */
   hint?: string;
-  provider: "server-anthropic" | "puter" | "ollama";
-  /** Model id passed through to the provider. */
+  provider: ProviderKind;
   modelId: string;
-  /** True iff Puter sign-in is required (not just guest). */
   requiresPuterAuth?: boolean;
+  /** True when this free provider needs a BYOK or server key. */
+  requiresFreeApiKey?: boolean;
 }
 
 export const MODELS: ModelOption[] = [
-  // ── Puter AI (free, client-side, default) ────────────────────────
+  // ── Puter (free, no key — sign-in) ───────────────────────────────
   {
     id: "puter:claude-3-7-sonnet",
-    label: "Claude 3.7 Sonnet",
-    hint: "Default · Free via Puter",
+    label: "Claude 3.7 Sonnet (Puter)",
+    hint: "Default · Free via Puter sign-in",
     provider: "puter",
     modelId: "claude-3-7-sonnet",
     requiresPuterAuth: true,
   },
   {
     id: "puter:claude-3-5-sonnet",
-    label: "Claude 3.5 Sonnet",
+    label: "Claude 3.5 Sonnet (Puter)",
     hint: "Free via Puter",
     provider: "puter",
     modelId: "claude-3-5-sonnet",
     requiresPuterAuth: true,
   },
   {
-    id: "puter:gpt-4o",
-    label: "GPT-4o (Puter)",
-    hint: "Free via Puter — sign in required",
-    provider: "puter",
-    modelId: "gpt-4o",
-    requiresPuterAuth: true,
-  },
-  {
     id: "puter:gpt-4o-mini",
     label: "GPT-4o mini (Puter)",
-    hint: "Free via Puter — sign in required",
+    hint: "Free via Puter",
     provider: "puter",
     modelId: "gpt-4o-mini",
     requiresPuterAuth: true,
@@ -138,7 +108,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "puter:gemini-2.0-flash",
     label: "Gemini 2.0 Flash (Puter)",
-    hint: "Free via Puter — sign in required",
+    hint: "Free via Puter",
     provider: "puter",
     modelId: "gemini-2.0-flash",
     requiresPuterAuth: true,
@@ -146,19 +116,152 @@ export const MODELS: ModelOption[] = [
   {
     id: "puter:llama-3.3-70b",
     label: "Llama 3.3 70B (Puter)",
-    hint: "Free via Puter — sign in required",
+    hint: "Free via Puter",
     provider: "puter",
     modelId: "llama-3.3-70b",
     requiresPuterAuth: true,
   },
+
+  // ── Groq (free tier — ultra fast) ────────────────────────────────
   {
-    id: "puter:deepseek-chat",
-    label: "DeepSeek Chat (Puter)",
-    hint: "Free via Puter — sign in required",
-    provider: "puter",
-    modelId: "deepseek-chat",
-    requiresPuterAuth: true,
+    id: "groq:llama-3.3-70b-versatile",
+    label: "Llama 3.3 70B (Groq)",
+    hint: "Free · ultra-fast · paste Groq key",
+    provider: "groq",
+    modelId: "llama-3.3-70b-versatile",
+    requiresFreeApiKey: true,
   },
+  {
+    id: "groq:llama-3.1-8b-instant",
+    label: "Llama 3.1 8B Instant (Groq)",
+    hint: "Free · fastest · paste Groq key",
+    provider: "groq",
+    modelId: "llama-3.1-8b-instant",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "groq:gemma2-9b-it",
+    label: "Gemma 2 9B (Groq)",
+    hint: "Free · paste Groq key",
+    provider: "groq",
+    modelId: "gemma2-9b-it",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "groq:qwen-qwq-32b",
+    label: "Qwen QwQ 32B (Groq)",
+    hint: "Free · reasoning · paste Groq key",
+    provider: "groq",
+    modelId: "qwen-qwq-32b",
+    requiresFreeApiKey: true,
+  },
+
+  // ── OpenRouter free models ───────────────────────────────────────
+  {
+    id: "openrouter:meta-llama/llama-3.3-70b-instruct:free",
+    label: "Llama 3.3 70B (OpenRouter free)",
+    hint: "Free · needs OpenRouter key",
+    provider: "openrouter",
+    modelId: "meta-llama/llama-3.3-70b-instruct:free",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "openrouter:google/gemma-2-9b-it:free",
+    label: "Gemma 2 9B (OpenRouter free)",
+    hint: "Free · needs OpenRouter key",
+    provider: "openrouter",
+    modelId: "google/gemma-2-9b-it:free",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "openrouter:qwen/qwen3-4b:free",
+    label: "Qwen3 4B (OpenRouter free)",
+    hint: "Free · needs OpenRouter key",
+    provider: "openrouter",
+    modelId: "qwen/qwen3-4b:free",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "openrouter:deepseek/deepseek-r1-0528:free",
+    label: "DeepSeek R1 (OpenRouter free)",
+    hint: "Free · reasoning · OpenRouter key",
+    provider: "openrouter",
+    modelId: "deepseek/deepseek-r1-0528:free",
+    requiresFreeApiKey: true,
+  },
+
+  // ── Google Gemini (AI Studio free key) ───────────────────────────
+  {
+    id: "gemini:gemini-2.0-flash",
+    label: "Gemini 2.0 Flash",
+    hint: "Free AI Studio key",
+    provider: "gemini",
+    modelId: "gemini-2.0-flash",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "gemini:gemini-2.0-flash-lite",
+    label: "Gemini 2.0 Flash Lite",
+    hint: "Free · fast · AI Studio key",
+    provider: "gemini",
+    modelId: "gemini-2.0-flash-lite",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "gemini:gemini-1.5-flash",
+    label: "Gemini 1.5 Flash",
+    hint: "Free AI Studio key",
+    provider: "gemini",
+    modelId: "gemini-1.5-flash",
+    requiresFreeApiKey: true,
+  },
+
+  // ── Cerebras ─────────────────────────────────────────────────────
+  {
+    id: "cerebras:llama-3.3-70b",
+    label: "Llama 3.3 70B (Cerebras)",
+    hint: "Free tier · very fast",
+    provider: "cerebras",
+    modelId: "llama-3.3-70b",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "cerebras:llama3.1-8b",
+    label: "Llama 3.1 8B (Cerebras)",
+    hint: "Free tier · paste Cerebras key",
+    provider: "cerebras",
+    modelId: "llama3.1-8b",
+    requiresFreeApiKey: true,
+  },
+
+  // ── DeepSeek ─────────────────────────────────────────────────────
+  {
+    id: "deepseek:deepseek-chat",
+    label: "DeepSeek Chat",
+    hint: "Cheap/free trial · strong code",
+    provider: "deepseek",
+    modelId: "deepseek-chat",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "deepseek:deepseek-reasoner",
+    label: "DeepSeek Reasoner",
+    hint: "Reasoning · DeepSeek key",
+    provider: "deepseek",
+    modelId: "deepseek-reasoner",
+    requiresFreeApiKey: true,
+  },
+
+  // ── Together ─────────────────────────────────────────────────────
+  {
+    id: "together:meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    label: "Llama 3.1 8B Turbo (Together)",
+    hint: "Free credits · Together key",
+    provider: "together",
+    modelId: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    requiresFreeApiKey: true,
+  },
+
   // ── Ollama (local, offline) ──────────────────────────────────────
   {
     id: "ollama:qwen2.5-coder:7b",
@@ -192,7 +295,6 @@ export const MODELS: ModelOption[] = [
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
 
-/** Legacy ids that pointed at the server Anthropic proxy — force Puter. */
 const LEGACY_SERVER_IDS = new Set([
   "claude-sonnet-4-6",
   "claude-sonnet-4-5",
@@ -203,7 +305,12 @@ const LEGACY_SERVER_IDS = new Set([
 ]);
 
 export function findModel(id: string | null | undefined): ModelOption {
-  if (!id || LEGACY_SERVER_IDS.has(id) || id.startsWith("server:") || id.startsWith("anthropic:")) {
+  if (
+    !id ||
+    LEGACY_SERVER_IDS.has(id) ||
+    id.startsWith("server:") ||
+    id.startsWith("anthropic:")
+  ) {
     return MODELS[0];
   }
   return MODELS.find((m) => m.id === id) ?? MODELS[0];

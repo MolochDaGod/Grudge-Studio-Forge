@@ -43,6 +43,8 @@ import {
 } from "@/lib/ai/providers";
 import { useAuth } from "@/store/auth";
 import { signInWithPuter } from "@/lib/authBootstrap";
+import { FreeApiKeysPanel } from "@/editor/FreeApiKeysPanel";
+import { getStoredApiKey, type FreeProviderId } from "@/lib/ai/providers";
 import {
   Select,
   SelectContent,
@@ -811,6 +813,7 @@ export function AIWorkerPanel({
       </ScrollArea>
 
       <div className="border-t border-border p-2 space-y-2 shrink-0">
+        <FreeApiKeysPanel compact />
         <Textarea
           ref={inputRef}
           value={input}
@@ -833,16 +836,28 @@ export function AIWorkerPanel({
             disabled={streaming}
           >
             <SelectTrigger
-              className="h-7 text-[11px] flex-1 max-w-[230px]"
+              className="h-7 text-[11px] flex-1 max-w-[260px]"
               data-testid="select-ai-model"
             >
               <SelectValue placeholder="Pick a model" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-80">
               {MODELS.map((m) => {
                 // Allow selecting Puter models even when signed out — send()
                 // surfaces a clear sign-in prompt instead of a dead dropdown.
                 const locked = m.provider === "ollama" && !ollamaOk;
+                const freeIds = new Set([
+                  "groq",
+                  "openrouter",
+                  "gemini",
+                  "cerebras",
+                  "deepseek",
+                  "together",
+                ]);
+                const needsKey =
+                  m.requiresFreeApiKey &&
+                  freeIds.has(m.provider) &&
+                  !getStoredApiKey(m.provider as FreeProviderId);
                 return (
                   <SelectItem
                     key={m.id}
@@ -861,6 +876,11 @@ export function AIWorkerPanel({
                         {m.provider === "ollama" && !ollamaOk && (
                           <span className="text-[10px] text-muted-foreground ml-1">
                             (offline)
+                          </span>
+                        )}
+                        {needsKey && (
+                          <span className="text-[10px] text-amber-400/90 ml-1">
+                            (key)
                           </span>
                         )}
                       </span>

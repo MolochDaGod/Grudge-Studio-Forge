@@ -1,0 +1,8 @@
+name = "grudge-forge-free-ai"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Optional secrets (wrangler secret put NAME):
+# GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
+# CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY
