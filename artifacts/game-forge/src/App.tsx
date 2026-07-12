@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/resizable";
 import { useEffect, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
-import { bootstrapAuth } from "@/lib/authBootstrap";
+import { bootstrapAuth, installStudioSsoHydrateListener } from "@/lib/authBootstrap";
 import { Toolbar } from "@/editor/Toolbar";
 import { MenuBar } from "@/editor/MenuBar";
 import { Hierarchy } from "@/editor/Hierarchy";
@@ -145,8 +145,10 @@ function EditorShell() {
 
   // Rehydrate the auth store from the session cookie. Runs once on
   // mount; failures are non-fatal (the user just stays anonymous).
+  // Also listen for Grudge Studio (dev tool) SSO hydrate after inject.
   useEffect(() => {
     void bootstrapAuth();
+    return installStudioSsoHydrateListener();
   }, []);
 
   // Mirror the scene store into the miniplex ECS so AI bulk queries

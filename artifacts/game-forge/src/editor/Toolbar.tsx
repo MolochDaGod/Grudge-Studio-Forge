@@ -79,7 +79,7 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { InstallAppButton } from "@/editor/InstallAppButton";
 import { ToolsPanel } from "@/editor/ToolsPanel";
 import { Wrench } from "lucide-react";
@@ -656,21 +656,13 @@ export function Toolbar({
         </TooltipContent>
       </Tooltip>
 
-      <Separator orientation="vertical" className="h-6 mx-1" />
-
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onSave}
-        disabled={!projectId || saving}
-        data-testid="button-save"
-      >
-        {saving ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Save className="size-4 mr-1" />}
-        Save
-      </Button>
-
-      <CloudSaveButton />
-      <CloudOpenButton />
+      {/* Save / Cloud Save / Open from Cloud live under MenuBar → File
+          (keeps the toolbar free of clutter). Hidden hosts still listen
+          for gameforge:save / cloudSave / cloudOpen events. */}
+      <div className="sr-only" aria-hidden>
+        <CloudSaveButton />
+        <CloudOpenButton />
+      </div>
 
       <Tooltip>
         <TooltipTrigger asChild>
@@ -971,8 +963,16 @@ function CloudSaveButton() {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
 
-  const onClick = async () => {
+  const onClick = useCallback(async () => {
     if (!projectId || busy) return;
+    if (!isSignedIn) {
+      toast({
+        title: "Sign in required",
+        description: "Sign in with Puter to save to the cloud.",
+        variant: "destructive",
+      });
+      return;
+    }
     setBusy(true);
     try {
       const scenePath = cloudPath("Grudge/projects", String(projectId), "scene.json");
@@ -1011,34 +1011,32 @@ function CloudSaveButton() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [projectId, busy, isSignedIn, sceneName, sceneId, sceneData, userUuid, toast, pushLog]);
+
+  // MenuBar → File → Cloud Save
+  useEffect(() => {
+    const handler = () => {
+      void onClick();
+    };
+    window.addEventListener("gameforge:cloudSave", handler);
+    return () => window.removeEventListener("gameforge:cloudSave", handler);
+  }, [onClick]);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClick}
-            disabled={!isSignedIn || !projectId || busy}
-            data-testid="button-cloud-save"
-          >
-            {busy ? (
-              <Loader2 className="size-4 mr-1 animate-spin" />
-            ) : (
-              <CloudUpload className="size-4 mr-1" />
-            )}
-            Cloud Save
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {isSignedIn
-          ? "Snapshot the current scene to your Puter drive."
-          : "Sign in with Puter to save to the cloud."}
-      </TooltipContent>
-    </Tooltip>
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onClick}
+      disabled={!isSignedIn || !projectId || busy}
+      data-testid="button-cloud-save"
+    >
+      {busy ? (
+        <Loader2 className="size-4 mr-1 animate-spin" />
+      ) : (
+        <CloudUpload className="size-4 mr-1" />
+      )}
+      Cloud Save
+    </Button>
   );
 }
 
@@ -1086,10 +1084,17 @@ function CloudOpenButton() {
     }
   };
 
-  const onTrigger = () => {
+  const onTrigger = useCallback(() => {
     setOpen(true);
     void loadIndex();
-  };
+  }, []);
+
+  // MenuBar → File → Open from Cloud
+  useEffect(() => {
+    const handler = () => onTrigger();
+    window.addEventListener("gameforge:cloudOpen", handler);
+    return () => window.removeEventListener("gameforge:cloudOpen", handler);
+  }, [onTrigger]);
 
   const onPick = async (e: CloudProjectEntry) => {
     setLoading(true);
@@ -1128,27 +1133,16 @@ function CloudOpenButton() {
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onTrigger}
-              disabled={!isSignedIn}
-              data-testid="button-cloud-open"
-            >
-              <CloudDownload className="size-4 mr-1" />
-              Open from Cloud
-            </Button>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {isSignedIn
-            ? "Open a scene previously saved to your Puter drive."
-            : "Sign in with Puter to access cloud projects."}
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onTrigger}
+        disabled={!isSignedIn}
+        data-testid="button-cloud-open"
+      >
+        <CloudDownload className="size-4 mr-1" />
+        Open from Cloud
+      </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md" data-testid="dialog-cloud-open">

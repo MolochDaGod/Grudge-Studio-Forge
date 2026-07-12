@@ -99,9 +99,11 @@ async function readPuterSession(sdk: PuterSdk): Promise<AuthUser | null> {
  */
 export async function bootstrapAuth(): Promise<void> {
   // 1. Check for a ?grudge_token= URL param (cross-domain OAuth redirect)
+  //    — used by Grudge Studio (dev tool) module embeds for single login.
   if (await checkGrudgeTokenParam()) return;
 
   // 2. Check for an existing Grudge ID session in localStorage
+  //    (may have been injected by Studio webview SSO before this ran)
   if (await checkGrudgeSession()) return;
 
   // 3. Try the Puter SDK. We tolerate CDN load failures (corp networks
@@ -128,6 +130,97 @@ export async function bootstrapAuth(): Promise<void> {
   }
 
   useAuth.getState().reset();
+}
+
+/**
+ * Studio (Electron) injects Puter + Grudge tokens into the webview after
+ * load and dispatches `grudge:sso-hydrate`. Re-apply that identity without
+ * a full page reload so the user is not forced through Welcome again.
+ */
+export function installStudioSsoHydrateListener(): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  const onHydrate = (ev: Event) => {
+    const detail = (ev as CustomEvent).detail as
+      | {
+          player?: {
+            id?: number;
+            username?: string;
+            grudgeId?: string;
+            displayName?: string | null;
+          } | null;
+          token?: string | null;
+          puterToken?: string | null;
+          puterUser?: { uuid?: string; username?: string; email?: string } | null;
+        }
+      | undefined;
+    if (!detail) return;
+
+    // Prefer Grudge player identity from Studio SSO
+    if (detail.player?.grudgeId && detail.token) {
+      try {
+        localStorage.setItem(
+          "grudge.auth.session",
+          JSON.stringify({
+            player: {
+              id: detail.player.id ?? 0,
+              username: detail.player.username ?? "player",
+              grudgeId: detail.player.grudgeId,
+              displayName: detail.player.displayName ?? detail.player.username ?? null,
+              avatarUrl: null,
+              gbuxBalance: "0",
+              role: "player",
+            },
+            token: detail.token,
+            storedAt: Date.now(),
+          }),
+        );
+      } catch { /* */ }
+
+      const puter =
+        detail.puterUser?.uuid && detail.puterUser?.username
+          ? {
+              uuid: detail.puterUser.uuid,
+              username: detail.puterUser.username,
+              email: detail.puterUser.email ?? null,
+              isTemp: false,
+            }
+          : detail.player.grudgeId
+            ? {
+                // Synthetic puter-shaped id so isPuterSignedIn gates work for
+                // Cloud Save when Studio already holds the real Puter token.
+                uuid: detail.puterUser?.uuid ?? detail.player.grudgeId,
+                username: detail.player.username ?? "player",
+                email: detail.puterUser?.email ?? null,
+                isTemp: false,
+              }
+            : undefined;
+
+      useAuth.getState().setSignedIn({
+        id: puter?.uuid ?? detail.player.grudgeId,
+        name: detail.player.displayName || detail.player.username || "Player",
+        puter,
+      });
+      return;
+    }
+
+    // Puter-only hydrate (no Grudge player row yet)
+    if (detail.puterUser?.uuid && detail.puterUser?.username) {
+      useAuth.getState().setSignedIn({
+        id: detail.puterUser.uuid,
+        name: detail.puterUser.username,
+        puter: {
+          uuid: detail.puterUser.uuid,
+          username: detail.puterUser.username,
+          email: detail.puterUser.email ?? null,
+          isTemp: false,
+        },
+      });
+    }
+  };
+
+  window.addEventListener("grudge:sso-hydrate", onHydrate);
+  return () => window.removeEventListener("grudge:sso-hydrate", onHydrate);
 }
 
 /**

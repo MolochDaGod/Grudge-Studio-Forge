@@ -2323,3 +2323,391 @@ export function arenaUndergroundWarsScene(): SceneData {
     },
   };
 }
+
+// ── RTS — Fort Royale skirmish (Warcraft-2 style foundation) ─────────────
+// Clean, error-free demo: plane ground (no unsupported terrain type),
+// toon-rts race units (CDN), skeleton-alias creeps, RTS behaviors for
+// peon gather / footman fight / creep aggro / town-hall win condition.
+export function rtsFortRoyaleScene(): SceneData {
+  return withIdScope("rts-fort-royale", () => {
+    const entities: SceneEntity[] = [];
+
+    // Large walkable ground (avoids invalid EntityType "terrain")
+    entities.push({
+      id: id(),
+      name: "Ground",
+      type: "plane",
+      transform: {
+        position: [0, 0, 0],
+        rotation: [-Math.PI / 2, 0, 0],
+        scale: [400, 400, 1],
+      },
+      parentId: null,
+      material: { color: "#3d5c3a", metalness: 0, roughness: 0.95 },
+      layer: "Terrain",
+      surface: "Walk",
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+    });
+
+    // Optional fort decoration (map GLB is large; soft-fail via builtin resolve)
+    entities.push({
+      id: id(),
+      name: "FortDecoration",
+      type: "model",
+      model: { url: "builtin:map-fort-royale" },
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      parentId: null,
+      layer: "Default",
+      surface: "None",
+    });
+
+    // ── Player base (SW) ──────────────────────────────────────────────
+    const playerBase = id();
+    entities.push({
+      id: playerBase,
+      name: "PlayerBase",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "Player",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerTownHall",
+      type: "box",
+      transform: {
+        position: [-40, 4, -40],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      material: { color: "#3a6ea8", roughness: 0.85, metalness: 0.05 },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: playerBase,
+      layer: "Player",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerPeon",
+      type: "model",
+      model: { url: "builtin:race:warrior" },
+      raceId: "warrior",
+      transform: {
+        position: [-32, 0, -40],
+        rotation: [0, 0, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: playerBase,
+      layer: "Player",
+      behavior: "rts-peon",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerFootman",
+      type: "model",
+      model: { url: "builtin:race:warrior" },
+      raceId: "warrior",
+      transform: {
+        position: [-32, 0, -32],
+        rotation: [0, 0, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: playerBase,
+      layer: "Player",
+      behavior: "rts-footman",
+    });
+
+    // ── Enemy base (NE) ───────────────────────────────────────────────
+    const enemyBase = id();
+    entities.push({
+      id: enemyBase,
+      name: "EnemyBase",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "NPC",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyTownHall",
+      type: "box",
+      transform: {
+        position: [40, 4, 40],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      material: { color: "#a83a3a", roughness: 0.85, metalness: 0.05 },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyPeon",
+      type: "model",
+      model: { url: "builtin:race:orc", tint: "#ff6060" },
+      raceId: "orc",
+      transform: {
+        position: [32, 0, 40],
+        rotation: [0, Math.PI, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+      behavior: "rts-peon",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyFootman",
+      type: "model",
+      model: { url: "builtin:race:orc", tint: "#ff5050" },
+      raceId: "orc",
+      transform: {
+        position: [32, 0, 32],
+        rotation: [0, Math.PI, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+      behavior: "rts-footman",
+    });
+
+    // ── Resources ─────────────────────────────────────────────────────
+    const resources = id();
+    entities.push({
+      id: resources,
+      name: "Resources",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+    });
+    entities.push({
+      id: id(),
+      name: "GoldMine_PlayerSide",
+      type: "box",
+      transform: {
+        position: [-18, 1.5, -18],
+        rotation: [0, 0, 0],
+        scale: [4, 3, 4],
+      },
+      material: {
+        color: "#e0b840",
+        emissive: "#553f10",
+        roughness: 0.6,
+        metalness: 0.7,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+    entities.push({
+      id: id(),
+      name: "GoldMine_EnemySide",
+      type: "box",
+      transform: {
+        position: [18, 1.5, 18],
+        rotation: [0, 0, 0],
+        scale: [4, 3, 4],
+      },
+      material: {
+        color: "#e0b840",
+        emissive: "#553f10",
+        roughness: 0.6,
+        metalness: 0.7,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+    entities.push({
+      id: id(),
+      name: "Forest_Mid",
+      type: "cylinder",
+      transform: {
+        position: [0, 3, 0],
+        rotation: [0, 0, 0],
+        scale: [3, 6, 3],
+      },
+      material: {
+        color: "#3d6b3d",
+        emissive: "#0a1408",
+        roughness: 0.6,
+        metalness: 0.05,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+
+    // ── Creeps (skeleton alias for creature:mutant — always loads) ────
+    const camps = id();
+    entities.push({
+      id: camps,
+      name: "NeutralCamps",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "NPC",
+    });
+    const creepSpots: [number, number, number][] = [
+      [-14, 0, -18],
+      [-22, 0, -18],
+      [14, 0, 18],
+      [22, 0, 18],
+      [-4, 0, 4],
+      [4, 0, -4],
+    ];
+    creepSpots.forEach((pos, i) => {
+      entities.push({
+        id: id(),
+        name: `Creep_${i + 1}`,
+        type: "model",
+        model: { url: "builtin:creature:mutant", tint: "#a0a0ff" },
+        raceId: "skeleton",
+        transform: {
+          position: pos,
+          rotation: [0, 0, 0],
+          scale: [0.9, 0.9, 0.9],
+        },
+        physics: {
+          bodyType: "kinematicPosition",
+          colliderType: "cylinder",
+          mass: 1,
+          restitution: 0.05,
+          friction: 1,
+        },
+        parentId: camps,
+        layer: "NPC",
+        behavior: "rts-creep",
+      });
+    });
+
+    // ── Lighting + match controller ───────────────────────────────────
+    const lighting = id();
+    entities.push({
+      id: lighting,
+      name: "Lighting",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+    });
+    for (const L of [
+      { pos: [-40, 12, -40] as [number, number, number], color: "#88aaff" },
+      { pos: [40, 12, 40] as [number, number, number], color: "#ff8866" },
+      { pos: [0, 14, 0] as [number, number, number], color: "#ffe8c0" },
+    ]) {
+      entities.push({
+        id: id(),
+        name: "Brazier",
+        type: "light",
+        transform: {
+          position: L.pos,
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+        parentId: lighting,
+        light: {
+          kind: "point",
+          color: L.color,
+          intensity: 12,
+          distance: 60,
+        },
+      });
+    }
+
+    entities.push({
+      id: id(),
+      name: "GameManager",
+      type: "empty",
+      transform: {
+        position: [0, -50, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+      parentId: null,
+      behavior: "gamemode-rts",
+    });
+
+    return {
+      entities,
+      environment: {
+        ...DEFAULT_ENV,
+        skyColor: "#1a1410",
+        groundColor: "#2a1f14",
+        ambientIntensity: 0.5,
+        sunIntensity: 0.85,
+        cameraMode: "rts",
+        cameraTargetEntityId: null,
+        gameMode: "rts",
+        playerMoveSpeed: 6,
+      },
+    };
+  });
+}

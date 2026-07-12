@@ -1261,6 +1261,326 @@ exports.update = function(entity, ctx) {
 // Registry
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────────────
+// RTS skirmish — peon gather / footman fight / creep guard / match rules
+// Used by the rts-fort-royale starter (Warcraft-2-style foundation).
+// ──────────────────────────────────────────────────────────────────────────────
+
+const RTS_PEON = String.raw`
+const MOVE_SPEED = 4.2;
+const GATHER_RANGE = 3.2;
+const DEPOSIT_RANGE = 5.5;
+const GATHER_RATE = 8; // gold per second while at mine
+const CARRY_CAP = 20;
+
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function moveToward(entity, target, speed, dt) {
+  var dx = target[0] - entity.position[0];
+  var dz = target[2] - entity.position[2];
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  if (d < 0.4) return d;
+  var step = Math.min(speed * dt, d);
+  entity.position = [
+    entity.position[0] + (dx / d) * step,
+    entity.position[1],
+    entity.position[2] + (dz / d) * step,
+  ];
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  return d;
+}
+function findNearestResource(entity, ctx) {
+  var best = null, bestD = 1e9;
+  var all = ctx.scene.findAll(function(e) {
+    return e.name && (e.name.indexOf("GoldMine") === 0 || e.name.indexOf("Forest") === 0);
+  });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    var d = distXZ(entity.position, o.position);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+function findOwnHall(entity, ctx) {
+  var isPlayer = entity.layer === "Player" || (entity.name && entity.name.indexOf("Player") === 0);
+  var name = isPlayer ? "PlayerTownHall" : "EnemyTownHall";
+  return ctx.scene.find(name);
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.carrying = 0;
+  ctx.state.phase = "to_resource"; // to_resource | gather | to_hall
+  ctx.state.dead = false;
+  ctx.state.health = 40;
+  ctx.state.maxHealth = 40;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  if (ctx.state.phase === "to_resource" || ctx.state.phase === "gather") {
+    var mine = findNearestResource(entity, ctx);
+    if (!mine) return;
+    var d = moveToward(entity, mine.position, MOVE_SPEED, dt);
+    if (d <= GATHER_RANGE) {
+      ctx.state.phase = "gather";
+      ctx.state.carrying = Math.min(CARRY_CAP, (ctx.state.carrying || 0) + GATHER_RATE * dt);
+      if (ctx.state.carrying >= CARRY_CAP - 0.01) ctx.state.phase = "to_hall";
+    } else {
+      ctx.state.phase = "to_resource";
+    }
+  } else if (ctx.state.phase === "to_hall") {
+    var hall = findOwnHall(entity, ctx);
+    if (!hall) { ctx.state.phase = "to_resource"; return; }
+    var d2 = moveToward(entity, hall.position, MOVE_SPEED, dt);
+    if (d2 <= DEPOSIT_RANGE) {
+      var gold = Math.floor(ctx.state.carrying || 0);
+      if (gold > 0) {
+        ctx.events.emit("rtsGold", {
+          faction: (entity.layer === "Player") ? "player" : "enemy",
+          amount: gold,
+          fromId: entity.id,
+        });
+      }
+      ctx.state.carrying = 0;
+      ctx.state.phase = "to_resource";
+    }
+  }
+};
+`;
+
+const RTS_FOOTMAN = String.raw`
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function isHostile(entity, other) {
+  if (!other || other.id === entity.id) return false;
+  if (other.behavior === "rts-creep") return true;
+  var n = other.name || "";
+  if (entity.layer === "Player") {
+    if (n === "EnemyTownHall") return true;
+    return other.layer === "NPC" && (
+      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
+      n.indexOf("Enemy") === 0
+    );
+  }
+  if (entity.layer === "NPC") {
+    if (n === "PlayerTownHall") return true;
+    return other.layer === "Player" && (
+      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
+      n.indexOf("Player") === 0
+    );
+  }
+  return false;
+}
+function findTarget(entity, ctx, maxDist) {
+  var best = null, bestD = maxDist || 80;
+  var all = ctx.scene.findAll(function(e) { return e.id !== entity.id; });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    if (!isHostile(entity, o)) continue;
+    // Prefer units over halls slightly by distance only
+    var d = distXZ(entity.position, o.position);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+
+exports.start = function(entity, ctx) {
+  var isPlayer = entity.layer === "Player";
+  ctx.state.health = 90;
+  ctx.state.maxHealth = 90;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.dmg = isPlayer ? 12 : 14;
+  ctx.state.range = 2.2;
+  ctx.state.speed = isPlayer ? 4.5 : 4.3;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+      ctx.events.emit("rtsUnitDied", { id: entity.id, faction: isPlayer ? "player" : "enemy" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  var target = findTarget(entity, ctx, 90);
+  if (!target) return;
+  var dx = target.position[0] - entity.position[0];
+  var dz = target.position[2] - entity.position[2];
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (d > ctx.state.range) {
+    var step = Math.min(ctx.state.speed * dt, d - ctx.state.range + 0.1);
+    entity.position = [
+      entity.position[0] + (dx / d) * step,
+      entity.position[1],
+      entity.position[2] + (dz / d) * step,
+    ];
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.75) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    ctx.scene.send(target.id, "damage", { amount: ctx.state.dmg });
+    // Town halls also take damage via name match
+    if (target.name && target.name.indexOf("TownHall") >= 0) {
+      ctx.events.emit("rtsBuildingDamage", {
+        buildingId: target.id,
+        name: target.name,
+        amount: ctx.state.dmg,
+      });
+    }
+  }
+};
+`;
+
+const RTS_CREEP = String.raw`
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.home = entity.position.slice();
+  ctx.state.health = 80;
+  ctx.state.maxHealth = 80;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.aggro = false;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    ctx.state.aggro = true;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  var playerUnits = ctx.scene.findAll(function(e) {
+    return e.layer === "Player" && (e.behavior === "rts-peon" || e.behavior === "rts-footman");
+  });
+  var nearest = null, bestD = 14;
+  for (var i = 0; i < playerUnits.length; i++) {
+    var d = distXZ(entity.position, playerUnits[i].position);
+    if (d < bestD) { bestD = d; nearest = playerUnits[i]; }
+  }
+  if (nearest) ctx.state.aggro = true;
+  if (!ctx.state.aggro || !nearest) {
+    // Idle near home
+    var hx = ctx.state.home[0] - entity.position[0];
+    var hz = ctx.state.home[2] - entity.position[2];
+    var hd = Math.sqrt(hx * hx + hz * hz);
+    if (hd > 1.5) {
+      entity.position = [
+        entity.position[0] + (hx / hd) * 1.5 * dt,
+        entity.position[1],
+        entity.position[2] + (hz / hd) * 1.5 * dt,
+      ];
+    }
+    return;
+  }
+  var dx = nearest.position[0] - entity.position[0];
+  var dz = nearest.position[2] - entity.position[2];
+  var d2 = Math.sqrt(dx * dx + dz * dz) || 1;
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (d2 > 1.8) {
+    entity.position = [
+      entity.position[0] + (dx / d2) * 3.6 * dt,
+      entity.position[1],
+      entity.position[2] + (dz / d2) * 3.6 * dt,
+    ];
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.9) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    ctx.scene.send(nearest.id, "damage", { amount: 14 });
+  }
+};
+`;
+
+const GAMEMODE_RTS = String.raw`
+exports.start = function(entity, ctx) {
+  ctx.state.playerGold = 150;
+  ctx.state.enemyGold = 150;
+  ctx.state.playerHallHp = 1500;
+  ctx.state.enemyHallHp = 1500;
+  ctx.state.ended = false;
+  ctx.events.emit("rtsHud", {
+    playerGold: ctx.state.playerGold,
+    enemyGold: ctx.state.enemyGold,
+    playerHallHp: ctx.state.playerHallHp,
+    enemyHallHp: ctx.state.enemyHallHp,
+  });
+  ctx.events.on("rtsGold", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    if (payload.faction === "player") ctx.state.playerGold += payload.amount || 0;
+    else if (payload.faction === "enemy") ctx.state.enemyGold += payload.amount || 0;
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+  });
+  ctx.events.on("rtsBuildingDamage", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    var name = payload.name || "";
+    var amt = payload.amount || 0;
+    if (name.indexOf("PlayerTownHall") >= 0) ctx.state.playerHallHp = Math.max(0, ctx.state.playerHallHp - amt);
+    if (name.indexOf("EnemyTownHall") >= 0) ctx.state.enemyHallHp = Math.max(0, ctx.state.enemyHallHp - amt);
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+    if (ctx.state.playerHallHp <= 0) {
+      ctx.state.ended = true;
+      ctx.events.emit("outcome", { result: "lose" });
+    } else if (ctx.state.enemyHallHp <= 0) {
+      ctx.state.ended = true;
+      ctx.events.emit("outcome", { result: "win" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  // Pulse HUD occasionally so late-joining listeners get state
+  if (!ctx.state._lastHud || ctx.time.elapsed - ctx.state._lastHud > 1.5) {
+    ctx.state._lastHud = ctx.time.elapsed;
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+  }
+};
+`;
+
 export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "player-deathmatch": PLAYER_DEATHMATCH,
   "enemy-deathmatch": ENEMY_DEATHMATCH,
@@ -1274,6 +1594,10 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   neutral: NEUTRAL_WANDER,
   vendor: VENDOR,
   boss: BOSS,
+  "rts-peon": RTS_PEON,
+  "rts-footman": RTS_FOOTMAN,
+  "rts-creep": RTS_CREEP,
+  "gamemode-rts": GAMEMODE_RTS,
 };
 
 /** Default physics layer per built-in behavior. Lets prefab definitions and
@@ -1295,6 +1619,10 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   neutral: "NPC",
   vendor: "NPC",
   boss: "NPC",
+  "rts-peon": null,
+  "rts-footman": null,
+  "rts-creep": "NPC",
+  "gamemode-rts": null,
 };
 
 /** High-level faction / ruleset catalog for AI + designers. */

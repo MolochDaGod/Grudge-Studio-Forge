@@ -147,6 +147,12 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race:elf": ensureBaseUrl(getRaceCharacterUrl("elf")),
   "race:orc": ensureBaseUrl(getRaceCharacterUrl("orc")),
   "race:skeleton": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
+  // RTS creeps — production template `rts-fort-royale` references
+  // `builtin:creature:mutant`. There is no mutant GLB on CDN; alias to
+  // skeleton race (absolute CDN URL, always loads) so play mode never
+  // 404-crashes Suspense with "not valid JSON" from the SPA fallback.
+  "creature:mutant": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
+  "creature:creep": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
   // Per-race default weapon slots — the toon-rts-characters asset pack's
   // weapon sub-pack (sword/bow/axe/mace/club/staff) is referenced in the
   // manifest but no GLB files are actually deployed at the CDN under
@@ -264,34 +270,79 @@ const R2_ONLY_KEYS = new Set([
   "map-western",
 ]);
 
+/** Never put `:` in R2 object keys — `creature:mutant.glb` is not a valid path
+ *  and always 404s, crashing the viewport ErrorBoundary. */
 const r2Url = (key: string) =>
-  `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key}.glb`;
+  `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key.replace(/:/g, "-")}.glb`;
+
+/** Absolute skeleton race GLB — safe fallback for missing RTS creeps etc. */
+function skeletonFallbackUrl(): string {
+  const known = BUILTIN_MODELS["race:skeleton"];
+  if (known && /^https?:\/\//i.test(known)) return known;
+  return getRaceCharacterUrl("skeleton");
+}
+
+/**
+ * Rewrite known-broken absolute CDN / R2 URLs that production templates and
+ * older SPA builds still produce (e.g. …/builtin/creature:mutant.glb → 404).
+ * Must run before useGLTF so the viewport never fetches a dead object key.
+ */
+export function rewriteBrokenModelUrl(url: string): string | null {
+  if (!url) return null;
+  // Literal or encoded colon in creature mutant path
+  if (
+    /\/builtin\/creature:mutant\.glb/i.test(url) ||
+    /\/builtin\/creature%3Amutant\.glb/i.test(url) ||
+    /\/builtin\/creature-mutant\.glb/i.test(url) ||
+    url === "builtin:creature:mutant" ||
+    url.endsWith("creature:mutant.glb")
+  ) {
+    return skeletonFallbackUrl();
+  }
+  if (
+    /\/builtin\/creature:creep\.glb/i.test(url) ||
+    url === "builtin:creature:creep"
+  ) {
+    return skeletonFallbackUrl();
+  }
+  return null;
+}
 
 /** Resolve `"builtin:foo"` → real URL. Returns null if not a builtin key. */
 export function resolveBuiltinModel(url: string): string | null {
+  const rewritten = rewriteBrokenModelUrl(url);
+  if (rewritten) return rewritten;
+
   if (!url.startsWith("builtin:")) return null;
   const key = url.slice("builtin:".length);
 
+  // Registry hit — prefer absolute CDN URLs (races, large maps on R2).
+  // Relative SPA paths (`/builtin/foo.glb`) stay on the forge origin so
+  // demos work even when the asset is not mirrored to assets.grudge-studio.com.
+  const known = BUILTIN_MODELS[key];
+  if (known) {
+    if (/^https?:\/\//i.test(known)) return known;
+    // Large map keys that only live on R2 (even if registry has a relative stub).
+    if (R2_ONLY_KEYS.has(key)) return r2Url(key);
+    return known;
+  }
+
   // Tiny Vite-bundled assets stay on the SPA host.
   if (key === "character" || key === "rifle") {
-    return BUILTIN_MODELS[key] ?? null;
+    return ensureBaseUrl(key === "character" ? characterUrl : rifleUrl);
   }
 
-  // Production: always R2/CDN — never force 350MB+ of GLBs into the deploy.
-  // Dev can still hit local /builtin when files exist.
-  if (import.meta.env.PROD || R2_ONLY_KEYS.has(key) || key.startsWith("map-")) {
-    const known = BUILTIN_MODELS[key];
-    if (known && /^https?:\/\//i.test(known)) return known;
-    return r2Url(key);
-  }
-
-  // race: / race-weapon: handled via dynamic registry entries below.
-  if (key in BUILTIN_MODELS) return BUILTIN_MODELS[key] ?? null;
   // Soft-resolve unknown keys so API templates one deploy ahead of the SPA
-  // still load. Prefer CDN for maps; same-origin /builtin/ for the rest in dev.
+  // still load. Prefer CDN for maps; same-origin /builtin/ for the rest.
   if (R2_ONLY_KEYS.has(key) || key.startsWith("map-")) {
     return r2Url(key);
   }
+
+  // creature:* with no registry entry → skeleton (never R2 creature:*.glb)
+  if (key.startsWith("creature:") || key.startsWith("creature-")) {
+    return skeletonFallbackUrl();
+  }
+
   if (
     key.startsWith("char-") ||
     key.startsWith("vfx-") ||
@@ -309,27 +360,32 @@ export function resolveBuiltinModel(url: string): string | null {
 }
 
 /** Resolve a model URL for GLTF loaders. Order:
- *   1. `builtin:<key>` → bundled / CDN asset URL (with soft R2/map fallback)
- *   2. absolute http(s)/data/blob → returned as-is
- *   3. anything else → relative to the artifact BASE_URL
+ *   1. Rewrite known-broken absolute CDN paths (mutant creep 404s)
+ *   2. `builtin:<key>` → bundled / CDN asset URL
+ *   3. absolute http(s)/data/blob → returned as-is
+ *   4. anything else → relative to the artifact BASE_URL
  *
- *  Unknown `builtin:` keys must NOT fall through to (3) — Vercel's SPA
- *  catch-all would return `index.html` and drei would try to parse it as
- *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error. */
+ *  Unknown `builtin:` keys must NOT fall through to SPA HTML (drei then
+ *  throws "<!doctype … is not valid JSON"). */
 export function resolveModelUrl(url: string): string {
+  const rewritten = rewriteBrokenModelUrl(url);
+  if (rewritten) return rewritten;
+
   const builtin = resolveBuiltinModel(url);
   if (builtin) return builtin;
   if (url.startsWith("builtin:")) {
     const key = url.slice("builtin:".length);
-    // Last-chance: always try R2 rather than inventing a relative path that
-    // returns HTML from the SPA router.
-    const r2Guess = `${BUILTIN_R2_BASE.replace(/\/+$/, "")}/${key.replace(/[/\\]/g, "")}.glb`;
+    const fallback = skeletonFallbackUrl();
     console.warn(
-      `[Forge] Unknown builtin "${key}" — trying CDN ${r2Guess}. Register it in BUILTIN_MODELS for a stable mapping.`,
+      `[Forge] Unknown builtin "${key}" — using skeleton placeholder. Register it in BUILTIN_MODELS.`,
     );
-    return r2Guess;
+    return fallback;
   }
-  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) {
+    // Last chance: still rewrite broken absolute URLs that slipped through
+    const again = rewriteBrokenModelUrl(url);
+    return again ?? url;
+  }
   const base = import.meta.env.BASE_URL || "/";
   return `${base}${url.replace(/^\/+/, "")}`;
 }

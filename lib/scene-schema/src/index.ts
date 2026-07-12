@@ -294,7 +294,15 @@ export type BehaviorKind =
   /** Vendor merchant — interact (E via player-rpg) opens vendor HUD from npcLine stock. Layer NPC. */
   | "vendor"
   /** Boss enemy — high HP, heavy damage, no flee, enrages under 30 percent HP. Layer NPC. */
-  | "boss";
+  | "boss"
+  /** RTS worker — auto-gathers nearest gold resource, deposits at own town hall. */
+  | "rts-peon"
+  /** RTS melee combatant — auto-engages nearest hostile unit/building. */
+  | "rts-footman"
+  /** RTS neutral creep — guards nearby resource, aggro on approach. */
+  | "rts-creep"
+  /** RTS match controller — gold HUD, town-hall destruction win/lose. */
+  | "gamemode-rts";
 
 export interface SceneEntity {
   id: string;
@@ -427,8 +435,9 @@ export interface Environment {
   /** Mouselook sensitivity (radians per pixel, default 0.0025). */
   mouseSensitivity?: number;
   /** Game mode driving the play HUD. `deathmatch` shows the kill counter,
-   *  damage flash, hit indicators, respawn timer, win/lose banner. */
-  gameMode?: "sandbox" | "deathmatch";
+   *  damage flash, hit indicators, respawn timer, win/lose banner.
+   *  `rts` shows gold + resource strip and town-hall win/lose. */
+  gameMode?: "sandbox" | "deathmatch" | "rts";
   /** Deathmatch: score required to win (default 10). */
   scoreLimit?: number;
   /** Deathmatch: respawn delay in seconds (default 5). */
@@ -618,6 +627,9 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   }
   if (e.behavior === "spawnpoint" || e.behavior === "pickup-trigger") return "Trigger";
   if (e.behavior === "player-deathmatch" || e.behavior === "player-rpg") return "Player";
+  // RTS peon/footman keep their authored layer (Player vs NPC); Default if unset.
+  if (e.behavior === "rts-creep") return "NPC";
+  if (e.behavior === "gamemode-rts") return "Default";
   return "Default";
 }
 

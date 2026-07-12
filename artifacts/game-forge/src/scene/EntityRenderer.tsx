@@ -12,7 +12,18 @@ import {
 import { deserializeHullSet, type ConvexHullSet } from "@/lib/colliderBaker";
 import { getPlaySession } from "./playSession";
 import type { TriggerEvent } from "./GameBus";
-import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import {
+  Component,
+  Suspense,
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ErrorInfo,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel, resolveModelUrl, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
@@ -222,6 +233,36 @@ function LightEntity({ entity, selected, onPick }: RenderProps) {
   );
 }
 
+/** Catches GLB load failures (404 / invalid JSON from SPA HTML) so a single
+ *  missing asset cannot blank the whole viewport — simple demos stay playable. */
+class ModelLoadErrorBoundary extends Component<
+  { children: ReactNode; label?: string },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn(
+      `[Forge] Model load failed${this.props.label ? ` (${this.props.label})` : ""}:`,
+      error.message,
+      info.componentStack?.slice(0, 200),
+    );
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <mesh>
+          <boxGeometry args={[1, 1.6, 0.6]} />
+          <meshStandardMaterial color="#884444" wireframe />
+        </mesh>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProps) {
   const url = entity.model?.url;
   if (!url) {
@@ -238,55 +279,57 @@ function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProp
     );
   }
   return (
-    <Suspense
-      fallback={
-        // Brand-gold wireframe placeholder while the GLB streams in.
-        // Color was previously "#444" (dark gray) which blended into the
-        // editor's dark background — large maps could spend 5–30 s
-        // downloading and the user couldn't tell anything was happening.
-        // Gold (#d4af37) reads cleanly against both the lit editor scene
-        // and the dark grid pattern, so it actually communicates "loading".
-        <mesh>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
-        </mesh>
-      }
-    >
-      <LoadedModel
-        url={url}
-        entityId={entity.id}
-        clip={entity.model?.clip}
-        tint={entity.model?.tint}
-        material={effectiveMaterial ?? entity.material}
-        label={entity.model?.label}
-        selected={selected}
-        onPick={onPick}
-        yawOffset={entity.model?.yawOffset}
-        // Convention: any entity literally named "Map" is treated as
-        // an environment / level mesh and drop-aligned to local Y=0
-        // so its visible floor sits flush with the invisible Ground
-        // plane templates pair it with. Cheap (one bbox per GLB load)
-        // and benefits every template that uses the same naming
-        // pattern (tps-zombies, fps-arena, all dm-*).
-        dropToGround={entity.name?.toLowerCase() === "map"}
-        // Map entities get a "walk" surface tag so spatial queries
-        // (PlayRuntime → groundProbe) can identify what they hit.
-        // Future: extend to read entity.model?.surface for water /
-        // ladder / dig zones authored at the template level.
-        surfaceTag={
-          // Prefer the explicit surface tag set on the entity (drives
-          // pathfinding + the agent FSM via userData lookups). Fall
-          // back to the legacy name="Map"→walk heuristic so older
-          // scenes that pre-date the surface field still spatially
-          // probe the same way.
-          entity.surface && entity.surface !== "None"
-            ? entity.surface.toLowerCase()
-            : entity.name?.toLowerCase() === "map"
-              ? "walk"
-              : undefined
+    <ModelLoadErrorBoundary label={entity.name ?? url}>
+      <Suspense
+        fallback={
+          // Brand-gold wireframe placeholder while the GLB streams in.
+          // Color was previously "#444" (dark gray) which blended into the
+          // editor's dark background — large maps could spend 5–30 s
+          // downloading and the user couldn't tell anything was happening.
+          // Gold (#d4af37) reads cleanly against both the lit editor scene
+          // and the dark grid pattern, so it actually communicates "loading".
+          <mesh>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color={SELECTION_COLOR} wireframe />
+          </mesh>
         }
-      />
-    </Suspense>
+      >
+        <LoadedModel
+          url={url}
+          entityId={entity.id}
+          clip={entity.model?.clip}
+          tint={entity.model?.tint}
+          material={effectiveMaterial ?? entity.material}
+          label={entity.model?.label}
+          selected={selected}
+          onPick={onPick}
+          yawOffset={entity.model?.yawOffset}
+          // Convention: any entity literally named "Map" is treated as
+          // an environment / level mesh and drop-aligned to local Y=0
+          // so its visible floor sits flush with the invisible Ground
+          // plane templates pair it with. Cheap (one bbox per GLB load)
+          // and benefits every template that uses the same naming
+          // pattern (tps-zombies, fps-arena, all dm-*).
+          dropToGround={entity.name?.toLowerCase() === "map"}
+          // Map entities get a "walk" surface tag so spatial queries
+          // (PlayRuntime → groundProbe) can identify what they hit.
+          // Future: extend to read entity.model?.surface for water /
+          // ladder / dig zones authored at the template level.
+          surfaceTag={
+            // Prefer the explicit surface tag set on the entity (drives
+            // pathfinding + the agent FSM via userData lookups). Fall
+            // back to the legacy name="Map"→walk heuristic so older
+            // scenes that pre-date the surface field still spatially
+            // probe the same way.
+            entity.surface && entity.surface !== "None"
+              ? entity.surface.toLowerCase()
+              : entity.name?.toLowerCase() === "map"
+                ? "walk"
+                : undefined
+          }
+        />
+      </Suspense>
+    </ModelLoadErrorBoundary>
   );
 }
 

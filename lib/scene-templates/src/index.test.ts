@@ -13,6 +13,7 @@ describe("scene-templates manifest", () => {
       "survival-camp",
       "city-sandbox",
       "arena-underground-wars",
+      "rts-fort-royale",
     ]);
   });
 

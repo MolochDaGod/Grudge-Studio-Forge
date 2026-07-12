@@ -107,12 +107,20 @@ export async function checkGrudgeTokenParam(): Promise<boolean> {
  * or by calling /api/auth/me with credentials.
  */
 export async function checkGrudgeSession(): Promise<boolean> {
-  // First check localStorage for a cached session
+  // First check localStorage for a cached session (also written by Grudge
+  // Studio Electron embeds for single-login SSO).
   const cached = readGrudgeSession();
   if (cached) {
-    // Verify it's still valid via the API
+    // Prefer Authorization bearer — works cross-origin from forge.grudge-studio.com
+    // when Studio injected the JWT (cookies alone may not travel).
     try {
-      const res = await fetch(`${GRUDGE_API}/api/auth/me`, { credentials: "include" });
+      const res = await fetch(`${GRUDGE_API}/api/auth/me`, {
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${cached.token}`,
+        },
+      });
       if (res.ok) {
         const player = (await res.json()) as GrudgePlayer;
         storeGrudgeSession(player, cached.token);
@@ -120,7 +128,19 @@ export async function checkGrudgeSession(): Promise<boolean> {
         return true;
       }
     } catch { /* fall through */ }
-    // Token expired — clear cache
+
+    // Offline / API unreachable: still trust a recent Studio-injected session
+    // so embedded Forge is not forced through Welcome after a network blip.
+    try {
+      const raw = localStorage.getItem(GRUDGE_SESSION_KEY);
+      const storedAt = raw ? (JSON.parse(raw) as { storedAt?: number }).storedAt : 0;
+      const ageMs = Date.now() - (storedAt || 0);
+      if (ageMs >= 0 && ageMs < 12 * 60 * 60 * 1000) {
+        useAuth.getState().setSignedIn(grudgeToAuthUser(cached.player as GrudgePlayer));
+        return true;
+      }
+    } catch { /* */ }
+
     clearGrudgeSession();
   }
   return false;

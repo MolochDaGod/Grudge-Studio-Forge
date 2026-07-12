@@ -595,6 +595,25 @@ const BEHAVIOR_DOCS: Record<
     description:
       "Score tracker for player vs. enemy kills; emits win/lose when scoreLimit is reached. Attach to a hidden empty named 'GameManager'.",
   },
+  "rts-peon": {
+    description:
+      "RTS worker: auto-moves to nearest GoldMine/Forest, gathers, deposits at own TownHall. Emits rtsGold for the match HUD.",
+    recommendedLayer: "Player",
+  },
+  "rts-footman": {
+    description:
+      "RTS melee unit: auto-engages nearest hostile peon/footman/creep/enemy town hall. Emits rtsBuildingDamage on halls.",
+    recommendedLayer: "Player",
+  },
+  "rts-creep": {
+    description:
+      "Neutral camp guard: idles near spawn, aggroes on nearby player RTS units.",
+    recommendedLayer: "NPC",
+  },
+  "gamemode-rts": {
+    description:
+      "RTS match controller: tracks gold + town-hall HP, emits rtsHud and win/lose. Attach to a hidden empty named GameManager.",
+  },
   spawnpoint: {
     description:
       "Pure marker — lets player/enemy behaviors find spawn points by behavior tag.",

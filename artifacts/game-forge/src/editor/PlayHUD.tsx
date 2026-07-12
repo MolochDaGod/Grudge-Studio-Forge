@@ -30,12 +30,15 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const showUnitFrame = layers.has("unit-frame") || layers.has("hud-root");
   const showCrosshair = layers.has("crosshair") || !uiKit?.layers;
   const showScoreboard = layers.has("scoreboard") || env.gameMode === "deathmatch";
+  const showRtsHud = env.gameMode === "rts";
   const showActionBar = layers.has("action-bar");
 
   const [playerHealth, setPlayerHealth] = useState(100);
   const [playerMaxHealth, setPlayerMaxHealth] = useState(100);
   const [playerScore, setPlayerScore] = useState(0);
   const [enemyScore, setEnemyScore] = useState(0);
+  const [rtsGold, setRtsGold] = useState({ player: 150, enemy: 150 });
+  const [rtsHall, setRtsHall] = useState({ player: 1500, enemy: 1500 });
 
   // Damage flash — opacity decays to 0 over 0.4s.
   const [damageFlash, setDamageFlash] = useState(0);
@@ -71,6 +74,26 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
 
   useEffect(() => {
     const offs: Array<() => void> = [];
+
+    offs.push(
+      bus.on("rtsHud", (p) => {
+        const obj = p as {
+          playerGold?: number;
+          enemyGold?: number;
+          playerHallHp?: number;
+          enemyHallHp?: number;
+        } | undefined;
+        if (!obj) return;
+        setRtsGold({
+          player: typeof obj.playerGold === "number" ? obj.playerGold : 0,
+          enemy: typeof obj.enemyGold === "number" ? obj.enemyGold : 0,
+        });
+        setRtsHall({
+          player: typeof obj.playerHallHp === "number" ? obj.playerHallHp : 0,
+          enemy: typeof obj.enemyHallHp === "number" ? obj.enemyHallHp : 0,
+        });
+      }),
+    );
 
     offs.push(
       bus.on("playerHealth", (p) => {
@@ -248,8 +271,8 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         }}
       />
 
-      {/* Aim crosshair — UI kit layer: crosshair */}
-      {showCrosshair && (
+      {/* Aim crosshair — UI kit layer: crosshair (hidden in RTS top-down) */}
+      {showCrosshair && !showRtsHud && (
         <DiveAim
           bus={bus}
           hidden={respawning !== null || outcome !== null}
@@ -393,7 +416,7 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
       )}
 
       {/* Scoreboard — top center — UI kit layer: scoreboard */}
-      {showScoreboard && (
+      {showScoreboard && !showRtsHud && (
       <div className="absolute left-1/2 top-4 -translate-x-1/2">
         <div className="relative px-5 py-2 text-white" style={{ fontFamily: "'Rajdhani', sans-serif" }}>
           <img src={UI.general.background} alt="" draggable={false} className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill', pointerEvents: 'none' }} />
@@ -422,6 +445,30 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* RTS resource / hall HUD */}
+      {showRtsHud && (
+        <div className="absolute left-1/2 top-4 -translate-x-1/2">
+          <div className="rounded-lg border border-amber-600/40 bg-black/70 px-5 py-2 text-white shadow-lg backdrop-blur">
+            <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-amber-400/90">
+              RTS Skirmish — destroy enemy town hall
+            </div>
+            <div className="flex items-center gap-5 text-center text-sm">
+              <div>
+                <div className="text-[9px] uppercase text-sky-300">Your gold</div>
+                <div className="text-xl font-bold tabular-nums text-amber-300">{Math.floor(rtsGold.player)}</div>
+                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.player)} HP</div>
+              </div>
+              <div className="text-white/30">|</div>
+              <div>
+                <div className="text-[9px] uppercase text-red-300">Enemy gold</div>
+                <div className="text-xl font-bold tabular-nums text-red-300">{Math.floor(rtsGold.enemy)}</div>
+                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.enemy)} HP</div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* RPG-style permanent-death overlay — quiet panel + Restart Scene
