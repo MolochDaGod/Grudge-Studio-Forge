@@ -146,3 +146,13 @@ export {
   arenaUndergroundWarsScene,
   withIdScope,
 } from "./builders.js";
+
+export {
+  wallSegment,
+  wallWithDoorway,
+  archway,
+  ladder,
+  floorHoleRim,
+  structureTestKit,
+  buildStructures,
+} from "./structures.js";

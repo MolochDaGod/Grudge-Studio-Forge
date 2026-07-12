@@ -457,7 +457,24 @@ export function spawnAgent(component: NavAgentComponent | undefined): AgentActor
       }
       const wp = path[waypointIdx];
       const dx = wp[0] - position[0];
+      const dy = wp[1] - position[1];
       const dz = wp[2] - position[2];
+      // Climb state: drive vertical velocity toward waypoint height so
+      // agents actually ascend ladders / Climb surfaces (not just park).
+      if (stateName === "climb") {
+        const horiz = Math.hypot(dx, dz) || 1;
+        const climbSpeed = speed * 0.7;
+        const vy =
+          Math.abs(dy) > 0.15 ? Math.sign(dy) * climbSpeed : 0;
+        return {
+          velocity: [
+            (dx / horiz) * speed * 0.35,
+            vy,
+            (dz / horiz) * speed * 0.35,
+          ],
+          reached: false,
+        };
+      }
       const len = Math.hypot(dx, dz) || 1;
       return {
         velocity: [(dx / len) * speed, 0, (dz / len) * speed],

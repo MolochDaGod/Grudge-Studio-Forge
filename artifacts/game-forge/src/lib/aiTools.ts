@@ -59,6 +59,11 @@ import {
   destructiveToolNames as layersDestructiveTools,
 } from "@/ai/tools/layers";
 import {
+  defs as structuresToolDefs,
+  handlers as structuresToolHandlers,
+  destructiveToolNames as structuresDestructiveTools,
+} from "@/ai/tools/structures";
+import {
   defs as navToolDefs,
   handlers as navToolHandlers,
   destructiveToolNames as navDestructiveTools,
@@ -119,6 +124,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...scriptingDestructiveTools,
   ...designDestructiveTools,
   ...layersDestructiveTools,
+  ...structuresDestructiveTools,
   ...navDestructiveTools,
   ...materialsDestructiveTools,
   ...puterDestructiveTools,
@@ -1129,6 +1135,12 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
   ...layersToolDefs.map((def) => ({
     def,
     exec: layersToolHandlers[def.name] as ToolExecutor,
+  })),
+
+  // ── Structure mesh kit (walls / openings / ladders / holes) ────────
+  ...structuresToolDefs.map((def) => ({
+    def,
+    exec: structuresToolHandlers[def.name] as ToolExecutor,
   })),
 
   // ── Navigation / surface / nav-agent tools ────────────────────────

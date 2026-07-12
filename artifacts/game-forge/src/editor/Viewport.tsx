@@ -909,9 +909,9 @@ export function Viewport() {
     : cameraMode === "rts"
       ? "▶ RTS — WASD/edge pan · MMB drag pan · wheel zoom"
       : cameraMode === "thirdPerson"
-        ? "▶ Third-person — drag to orbit · WASD to move · wheel zoom · Shift sprint"
+        ? "▶ Third-person — WASD move · wheel zoom · near ladder: W/S climb · Space detach"
         : cameraMode === "firstPerson"
-          ? "▶ First-person — click to lock pointer · WASD + mouselook · Shift to sprint · Esc to release"
+          ? "▶ First-person — click lock · WASD · near ladder: W/S climb · Space detach · Esc release"
           : "▶ PLAY MODE — physics & scripts running";
 
   const spawnFromHotbar = (slotIndex: number) => {

@@ -129,17 +129,24 @@ function groundPlane(opts: {
   return g;
 }
 
-/** Visual map mesh. Large maps stay visual-only (perf); smaller ones get
- *  fixed cuboid colliders. Always tagged Terrain/Walk for probes. */
+/**
+ * Visual map mesh. Collider policy:
+ *   - `trimesh` / collideMode "trimesh" — mesh fidelity (openings/holes work)
+ *   - `collide` / collideMode "aabb" — sealed AABB (blocks doorways — avoid for towns)
+ *   - collideMode "auto" — trimesh when scale ≤ 1.25, else visual-only + ground plane
+ *   - default large maps — visual-only (pair with groundPlane + structure kit)
+ */
 function mapModel(opts: {
   mapKey: string;
   scale: number;
   position?: [number, number, number];
   rotationY?: number;
-  /** When true, attach fixed cuboid collider (AABB) for buildings/props feel. */
+  /** When true, attach fixed cuboid collider (AABB). Prefer trimesh for maps with doors. */
   collide?: boolean;
-  /** When true, use trimesh (expensive — only small arenas). */
+  /** When true, use trimesh so mesh holes/archways stay passable. */
   trimesh?: boolean;
+  /** Explicit mode wins over collide/trimesh flags. */
+  collideMode?: "none" | "aabb" | "trimesh" | "auto";
 }): SceneEntity {
   const e: SceneEntity = {
     id: id(),
@@ -155,7 +162,16 @@ function mapModel(opts: {
     layer: "Terrain",
     surface: "Walk",
   };
-  if (opts.trimesh) {
+  let mode = opts.collideMode;
+  if (!mode) {
+    if (opts.trimesh) mode = "trimesh";
+    else if (opts.collide) mode = "aabb";
+    else mode = "none";
+  }
+  if (mode === "auto") {
+    mode = opts.scale <= 1.25 ? "trimesh" : "none";
+  }
+  if (mode === "trimesh") {
     e.physics = {
       bodyType: "fixed",
       colliderType: "trimesh",
@@ -163,7 +179,7 @@ function mapModel(opts: {
       restitution: 0.1,
       friction: 1,
     };
-  } else if (opts.collide) {
+  } else if (mode === "aabb") {
     e.physics = {
       bodyType: "fixed",
       colliderType: "cuboid",
@@ -239,31 +255,36 @@ function waterVolume(opts: {
   };
 }
 
-/** Climbable wall / ladder proxy — Terrain + Climb for agent FSM. */
+/** Climbable ladder / wall volume — Trigger sensor + Climb surface.
+ *  Sensors don't block the capsule, so the player can enter and climb. */
 function climbVolume(opts: {
   position: [number, number, number];
   scale?: [number, number, number];
   name?: string;
 }): SceneEntity {
+  const scale = opts.scale ?? [1, 4, 0.55];
+  const [px, py, pz] = opts.position;
+  // Author position is the *base* of the ladder; volume center is mid-height.
+  const h = scale[1];
   return {
     id: id(),
-    name: opts.name ?? "ClimbWall",
+    name: opts.name ?? "Ladder",
     type: "box",
     transform: {
-      position: opts.position,
+      position: [px, py + h / 2, pz],
       rotation: [0, 0, 0],
-      scale: opts.scale ?? [2, 6, 0.6],
+      scale,
     },
     parentId: null,
-    material: { color: "#4a3f35", metalness: 0.1, roughness: 0.85 },
-    layer: "Terrain",
+    material: { color: "#8b6914", metalness: 0.15, roughness: 0.75, opacity: 0.85 },
+    layer: "Trigger",
     surface: "Climb",
     physics: {
       bodyType: "fixed",
       colliderType: "cuboid",
       mass: 0,
       restitution: 0,
-      friction: 1,
+      friction: 0,
     },
   };
 }

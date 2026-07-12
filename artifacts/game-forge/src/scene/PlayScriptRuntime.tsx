@@ -415,12 +415,24 @@ export function PlayScriptRuntime({
       if (isRagdolled) {
         // skip — ragdoll owns this body now.
       } else if (bg && "setLinvel" in bg) {
-        // Preserve the body's current Y so gravity / jumps stay intact.
+        // Preserve Y for gravity / jumps — unless the agent is climbing
+        // (tick returns non-zero velocity[1] for Climb state).
         const cur = bg.linvel();
-        bg.setLinvel({ x: velocity[0], y: cur.y, z: velocity[2] }, true);
+        const climbY = Math.abs(velocity[1]) > 1e-4;
+        bg.setLinvel(
+          {
+            x: velocity[0],
+            y: climbY ? velocity[1] : cur.y,
+            z: velocity[2],
+          },
+          true,
+        );
       } else if (bg) {
         bg.position.x += velocity[0] * delta;
         bg.position.z += velocity[2] * delta;
+        if (Math.abs(velocity[1]) > 1e-4) {
+          bg.position.y += velocity[1] * delta;
+        }
       }
       if (reached) actor.send({ type: "stop" });
     }
