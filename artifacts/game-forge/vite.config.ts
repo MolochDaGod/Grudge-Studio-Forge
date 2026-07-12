@@ -29,19 +29,76 @@ import topLevelAwait from "vite-plugin-top-level-await";
 /**
  * Production deploys should NOT ship public/builtin (hundreds of MB of GLBs).
  * Those load from R2 (assets.grudge-studio.com/builtin). Strip after copy.
+ * Also guarantee vercel.json SPA rewrites exist (prebuilt dist deploys).
  */
 function stripHeavyPublicAssets(): Plugin {
   return {
     name: "strip-heavy-public-assets",
     apply: "build",
     async closeBundle() {
-      const { rm } = await import("node:fs/promises");
-      const outDir = path.resolve(import.meta.dirname, "dist/public/builtin");
+      const { rm, writeFile, stat, copyFile, access } = await import("node:fs/promises");
+      const publicDir = path.resolve(import.meta.dirname, "dist/public");
+      const builtinDir = path.join(publicDir, "builtin");
       try {
-        await rm(outDir, { recursive: true, force: true });
+        await rm(builtinDir, { recursive: true, force: true });
         console.log("[build] stripped dist/public/builtin (use R2 CDN at runtime)");
       } catch {
         /* folder may not exist */
+      }
+
+      // SPA rewrites — without this, /editor 404s on Vercel static deploys.
+      const vercelJson = path.join(publicDir, "vercel.json");
+      const vercelSrc = path.resolve(import.meta.dirname, "public/vercel.json");
+      try {
+        await access(vercelSrc);
+        await copyFile(vercelSrc, vercelJson);
+        console.log("[build] copied public/vercel.json → dist/public/");
+      } catch {
+        const fallback = {
+          rewrites: [
+            {
+              source:
+                "/((?!assets/|ui/|_framework/|favicon|logo|pwa|manifest|player\\.html|downloads\\.html|sw\\.js|opengraph|apple-touch).*)",
+              destination: "/index.html",
+            },
+          ],
+          headers: [
+            {
+              source: "/index.html",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "no-cache, no-store, must-revalidate",
+                },
+              ],
+            },
+            {
+              source: "/assets/(.*)",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "public, max-age=31536000, immutable",
+                },
+              ],
+            },
+          ],
+        };
+        await writeFile(vercelJson, JSON.stringify(fallback, null, 2), "utf8");
+        console.log("[build] wrote fallback dist/public/vercel.json");
+      }
+
+      // Oversized single-file player bloats every SPA deploy — warn loudly.
+      try {
+        const player = path.join(publicDir, "player.html");
+        const st = await stat(player);
+        const mb = st.size / (1024 * 1024);
+        if (mb > 2) {
+          console.warn(
+            `[build] player.html is ${mb.toFixed(1)} MB — consider hosting on R2 (assets…/forge/player.html) to shrink SPA deploys`,
+          );
+        }
+      } catch {
+        /* optional */
       }
     },
   };

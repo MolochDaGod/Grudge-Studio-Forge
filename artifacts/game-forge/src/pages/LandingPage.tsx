@@ -40,7 +40,7 @@ const FEATURES = [
   {
     icon: <Wand2 className="w-5 h-5" />,
     title: "AI Assistant",
-    desc: "Claude, Puter AI, Ollama (offline), Cloudflare Workers AI. 15-turn tool loop with cooldown.",
+    desc: "Puter (free), Groq, OpenRouter, Gemini, Cerebras, DeepSeek, Ollama. Agentic tool loop builds scenes for you.",
     color: "#a78bfa",
   },
   {
@@ -70,17 +70,17 @@ const FEATURES = [
 ];
 
 const AI_PROVIDERS = [
-  { name: "Claude Sonnet 4.6", hint: "Server · Default", color: "#ff8a3d" },
-  { name: "Ollama (Local)", hint: "Offline · qwen2.5-coder", color: "#6bdc8b" },
-  { name: "Puter AI", hint: "Free · 9 models", color: "#f6c945" },
-  { name: "CF Workers AI", hint: "Image gen · Text · Vision", color: "#6aa9ff" },
+  { name: "Puter AI", hint: "Default · Free sign-in", color: "#f6c945" },
+  { name: "Groq / OpenRouter", hint: "Free API keys · ultra-fast", color: "#ff8a3d" },
+  { name: "Gemini · Cerebras · DeepSeek", hint: "BYOK free tiers", color: "#6aa9ff" },
+  { name: "Ollama (Local)", hint: "Offline · full privacy", color: "#6bdc8b" },
 ];
 
 const STATS = [
-  { value: "100+", label: "Builtin 3D models" },
-  { value: "15K", label: "Token response cap" },
-  { value: "13", label: "AI models available" },
-  { value: "7", label: "Scene templates" },
+  { value: "100+", label: "Builtin 3D models (R2)" },
+  { value: "20+", label: "AI models (free + local)" },
+  { value: "0", label: "Install for web editor" },
+  { value: "7+", label: "Scene templates" },
 ];
 
 export function LandingPage() {

@@ -258,13 +258,37 @@ export function AIWorkerPanel({
   const liveToolsRef = useRef<AIToolEvent[]>([]);
   const bumpLive = () => setLiveTick((t) => t + 1);
 
-  // Probe local Ollama + server AI status when panel opens.
+  // Probe Ollama + free-ai proxy + legacy /api/ai/status when panel opens.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
       const ok = await isOllamaAvailable();
       if (!cancelled) setOllamaOk(ok);
+
+      const bits: string[] = [];
+      try {
+        const freeRes = await fetch("/api/free-ai/status", {
+          signal: AbortSignal.timeout(4000),
+        });
+        if (freeRes.ok) {
+          const free = (await freeRes.json()) as {
+            providers?: Record<string, boolean>;
+            byok?: boolean;
+          };
+          const serverKeys = Object.entries(free.providers ?? {})
+            .filter(([, v]) => v)
+            .map(([k]) => k);
+          if (serverKeys.length > 0) {
+            bits.push(`Server free AI: ${serverKeys.join(", ")}`);
+          } else {
+            bits.push("Free AI proxy online · paste keys below (Groq/OpenRouter/…)");
+          }
+        }
+      } catch {
+        /* free-ai optional */
+      }
+
       try {
         const res = await fetch("/api/ai/status", { signal: AbortSignal.timeout(4000) });
         if (res.ok) {
@@ -273,22 +297,20 @@ export function AIWorkerPanel({
             hint?: string;
             knowledge?: { r2?: boolean; d1?: boolean; githubToken?: boolean };
           };
-          if (!cancelled) {
-            const brainBits: string[] = [];
-            if (j.knowledge?.r2) brainBits.push("R2");
-            if (j.knowledge?.d1) brainBits.push("D1");
-            if (j.knowledge?.githubToken) brainBits.push("GitHub");
-            else brainBits.push("GitHub(public)");
-            const brain = brainBits.length ? ` Brain: ${brainBits.join("+")}.` : "";
-            if (!j.anthropic && j.hint) setAiStatusHint(`${j.hint}${brain}`);
-            else if (j.anthropic) setAiStatusHint(brain ? brain.trim() : null);
-            else setAiStatusHint(null);
-          }
+          if (j.knowledge?.r2) bits.push("R2");
+          if (j.knowledge?.d1) bits.push("D1");
+          if (j.anthropic) bits.push("Anthropic");
+          else if (j.hint) bits.push("Anthropic off");
         }
       } catch {
-        if (!cancelled) {
+        /* legacy status often 404 on edge worker */
+      }
+
+      if (!cancelled) {
+        if (bits.length) setAiStatusHint(bits.join(" · "));
+        else {
           setAiStatusHint(
-            "AI status endpoint unreachable — Puter (sign-in) or local Ollama still work from the browser.",
+            "Use Puter (sign-in) or Free API keys (Groq…). Local Ollama works offline.",
           );
         }
       }

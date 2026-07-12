@@ -1,0 +1,37 @@
+# Post-deploy / scheduled smoke tests against production Forge.
+name: Smoke Forge Production
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily 15:00 UTC
+    - cron: "0 15 * * *"
+  workflow_run:
+    workflows: ["Deploy Forge SPA"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  smoke:
+    name: Smoke forge.grudge-studio.com
+    runs-on: ubuntu-latest
+    # Only when deploy succeeded, or manual/schedule
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Wait for CDN / edge settle
+        if: github.event_name == 'workflow_run'
+        run: sleep 45
+
+      - name: Run production smoke
+        run: node scripts/smoke-forge-prod.mjs
+        env:
+          FORGE_BASE: https://forge.grudge-studio.com

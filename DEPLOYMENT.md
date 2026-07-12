@@ -167,6 +167,24 @@ forge  CNAME  cname.vercel-dns.com  (proxied)
 While the Worker owns `forge.grudge-studio.com/*`, set Vercel as `ORIGIN`
 instead of attaching the domain to Vercel directly.
 
+### Free AI proxy (Groq / OpenRouter / Gemini / …)
+
+Worker: **`grudge-forge-free-ai`** · route `forge.grudge-studio.com/api/free-ai/*`
+
+| Binding | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Optional shared free Groq key |
+| `OPENROUTER_API_KEY` | Optional OpenRouter free models |
+| `GEMINI_API_KEY` | Optional Google AI Studio |
+| (etc.) | See `workers/forge-free-ai/worker.js` |
+
+Users can also paste BYOK keys in the AI Worker panel (localStorage).
+
+```bash
+# Smoke production after deploy
+node scripts/smoke-forge-prod.mjs
+```
+
 ## API Server — Railway
 
 The Express backend (`artifacts/api-server`) runs as a Docker container on

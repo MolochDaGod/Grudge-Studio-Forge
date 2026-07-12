@@ -58,6 +58,14 @@ jobs:
           test -f artifacts/game-forge/dist/public/index.html
           grep -q 'id="root"' artifacts/game-forge/dist/public/index.html
           grep -E 'type="module".*assets/' artifacts/game-forge/dist/public/index.html
+          # SPA rewrites are mandatory — without them /editor 404s on Vercel
+          test -f artifacts/game-forge/dist/public/vercel.json
+          grep -q 'rewrites' artifacts/game-forge/dist/public/vercel.json
+          # Builtin GLBs must not ship (R2 only)
+          if [ -d artifacts/game-forge/dist/public/builtin ]; then
+            echo "ERROR: dist/public/builtin must be stripped" >&2
+            exit 1
+          fi
           du -sh artifacts/game-forge/dist/public
           ls -la artifacts/game-forge/dist/public/assets | head
 
@@ -79,21 +87,16 @@ jobs:
         run: |
           # Deploy the dist folder as a static site (prebuilt-style).
           # Project "grudge-studio-forge" must have VERCEL_ORG_ID / PROJECT_ID secrets set.
+          # vercel.json is produced by the Vite stripHeavyPublicAssets plugin.
           cd artifacts/game-forge/dist/public
-          # Copy SPA rewrites into the deploy root
-          cat > vercel.json <<'EOF'
-          {
-            "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }],
-            "headers": [
-              {
-                "source": "/index.html",
-                "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
-              },
-              {
-                "source": "/assets/(.*)",
-                "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-              }
-            ]
-          }
-          EOF
+          test -f vercel.json
           vercel deploy --prod --yes --token=$VERCEL_TOKEN
+
+      - name: Smoke production after deploy
+        if: success()
+        run: |
+          sleep 30
+          node scripts/smoke-forge-prod.mjs
+        env:
+          FORGE_BASE: https://forge.grudge-studio.com
+        continue-on-error: true

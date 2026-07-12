@@ -1,9 +1,12 @@
+/**
+ * Quick live probe. For pass/fail CI use: node scripts/smoke-forge-prod.mjs
+ */
 const urls = [
   "https://forge.grudge-studio.com/",
   "https://forge.grudge-studio.com/editor",
-  "https://assets.grudge-studio.com/forge/",
-  "https://assets.grudge-studio.com/forge/index.html",
-  "https://assets.grudge-studio.com/forge-spa/index.html",
+  "https://forge.grudge-studio.com/api/free-ai/status",
+  "https://forge.grudge-studio.com/api/projects",
+  "https://assets.grudge-studio.com/builtin/map-mistytown.glb",
 ];
 
 for (const u of urls) {
@@ -25,6 +28,7 @@ for (const u of urls) {
       hasViteAssets,
       title: (t.match(/<title>([^<]*)/) || [])[1],
       len: t.length,
+      snip: t.slice(0, 80).replace(/\s+/g, " "),
     });
   } catch (e) {
     console.log({ u, err: e.message });
