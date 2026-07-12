@@ -136,11 +136,31 @@ Build on the strong machine, then either:
 
 ---
 
-## Frontend — Vercel (legacy / optional)
+## Frontend — Vercel production deploy (authoritative)
 
-Native GitHub integration on project **`grudge-studio-forge`**. Default 8 GB
-builders currently OOM; only use if **Enhanced Builds** (16 GB+) are enabled
-or you deploy **prebuilt** output (`vercel deploy --prebuilt` after a local build).
+### Why git deploys were failing
+
+Vercel’s standard **8 GB** builders **OOM (SIGKILL)** while running
+`vite build` for the Forge SPA. That showed as “Failed to deploy” on every
+push from GitHub.
+
+### Fixed pipeline (use this)
+
+| Path | How |
+| --- | --- |
+| **GitHub Actions** (preferred) | `.github/workflows/deploy-spa.yml` — 16G swap, then `vercel deploy --prod` of `dist/public` |
+| **Local one-shot** | `pnpm run build:forge` then `pnpm run deploy:forge` |
+| **Vercel git build** | **Skipped** by default via `scripts/vercel-ignore-build.mjs` (stops red failed deploys). Re-enable only with Enhanced Builds + `VERCEL_FORCE_BUILD=1` |
+
+Secrets for GHA: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+
+Smoke after deploy: `pnpm run smoke:forge`.
+
+### Vercel project notes
+
+Project **`grudge-studio-forge`**. Default 8 GB builders OOM on a full Vite
+build. Use prebuilt upload (above) or enable **Enhanced Builds** (16 GB+)
+and set `VERCEL_FORCE_BUILD=1` to run `scripts/vercel-build.mjs` on Vercel.
 
 ### Vercel project settings
 

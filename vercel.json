@@ -1,22 +1,30 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts",
-  "installCommand": "pnpm install --frozen-lockfile --filter @workspace/game-forge...",
-  "outputDirectory": "artifacts/game-forge/dist/public",
   "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile --filter @workspace/game-forge...",
+  "buildCommand": "node scripts/vercel-build.mjs",
+  "outputDirectory": "artifacts/game-forge/dist/public",
+  "ignoreCommand": "node scripts/vercel-ignore-build.mjs",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|ui/|_framework/|favicon|logo|pwa|manifest|player\\.html|downloads\\.html|sw\\.js|opengraph|apple-touch|api/).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/index.html",
       "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
   ]

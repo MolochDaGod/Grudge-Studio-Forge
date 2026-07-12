@@ -5,7 +5,7 @@
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "engines": {
-    "node": ">=22.12.0 <23",
+    "node": ">=22.12.0",
     "pnpm": ">=10.12.0",
     "npm": ">=10.9.0"
   },
@@ -16,7 +16,10 @@
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test": "pnpm -r --workspace-concurrency=4 --if-present run test",
     "dev:api": "pnpm --filter @workspace/api-server run dev",
-    "dev:forge": "pnpm --filter @workspace/game-forge run dev"
+    "dev:forge": "pnpm --filter @workspace/game-forge run dev",
+    "build:forge": "pnpm --filter @workspace/game-forge run build",
+    "deploy:forge": "node scripts/deploy-forge-vercel.mjs",
+    "smoke:forge": "node scripts/smoke-forge-prod.mjs"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
