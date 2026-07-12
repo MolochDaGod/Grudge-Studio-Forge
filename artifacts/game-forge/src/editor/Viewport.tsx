@@ -1,5 +1,5 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Grid, OrbitControls, Stats, TransformControls } from "@react-three/drei";
+import { Grid, Stats, TransformControls } from "@react-three/drei";
 import { EffectsRig } from "@/scene/EffectsRig";
 import { CelestialSky } from "@/scene/CelestialSky";
 import { WeatherFx } from "@/scene/WeatherFx";
@@ -26,7 +26,10 @@ import {
   isGroundSnapModifierHeld,
   shouldGroundSnap,
 } from "@/lib/groundSnap";
-import { PlayCameraController } from "@/scene/CameraControllers";
+import {
+  PlayCameraController,
+  EditorOrbitControls,
+} from "@/scene/CameraControllers";
 import { buildTree } from "@/lib/hierarchy";
 import type { SceneEntity, EntityType } from "@/scene/types";
 import { DEFAULT_GRAVITY, DEFAULT_FOG } from "@workspace/scene-schema";
@@ -902,11 +905,11 @@ export function Viewport() {
   }, [prefabs]);
 
   const hint = !isPlaying
-    ? "Edit Mode — drag the gizmo · right-click for menu · F to focus selection"
+    ? "Edit — LMB orbit · MMB/RMB pan · wheel zoom · F focus · right-click menu"
     : cameraMode === "rts"
-      ? "▶ RTS — WASD or edge of screen to pan · wheel to zoom"
+      ? "▶ RTS — WASD/edge pan · MMB drag pan · wheel zoom"
       : cameraMode === "thirdPerson"
-        ? "▶ Third-person — drag to orbit · WASD to move · Shift to sprint"
+        ? "▶ Third-person — drag to orbit · WASD to move · wheel zoom · Shift sprint"
         : cameraMode === "firstPerson"
           ? "▶ First-person — click to lock pointer · WASD + mouselook · Shift to sprint · Esc to release"
           : "▶ PLAY MODE — physics & scripts running";
@@ -1119,7 +1122,8 @@ export function Viewport() {
                     infiniteGrid
                     position={[0, -0.001, 0]}
                   />
-                  <OrbitControls makeDefault />
+                  {/* Unity-like: MMB pan, free wheel zoom (no distance clamp) */}
+                  <EditorOrbitControls makeDefault />
                   <FocusCameraController />
                 </>
               )}

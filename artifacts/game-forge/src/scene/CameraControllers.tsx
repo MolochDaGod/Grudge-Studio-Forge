@@ -178,18 +178,105 @@ function rotateBody(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Editor (free-orbit) controller                                             */
+/* Editor (free-orbit) controller — Unity Scene View-ish                     */
+/*   - LMB drag: orbit                                                        */
+/*   - MMB drag (wheel button down): pan camera (Unity style)                 */
+/*   - RMB drag: pan (same as Unity alt-pan alternative)                      */
+/*   - Wheel: free zoom in/out — no practical min/max distance clamp          */
 /* -------------------------------------------------------------------------- */
 
+/** Shared mouse-button map: middle-mouse pans like Unity Scene view. */
+export const EDITOR_ORBIT_MOUSE_BUTTONS = {
+  LEFT: THREE.MOUSE.ROTATE,
+  MIDDLE: THREE.MOUSE.PAN,
+  RIGHT: THREE.MOUSE.PAN,
+} as const;
+
+/**
+ * Unity-like orbit for the edit viewport.
+ * Wheel dolly has effectively no distance limit (0.01 → 1e9).
+ * Middle-mouse drag pans in screen space.
+ */
+export function EditorOrbitControls({
+  makeDefault = true,
+}: {
+  makeDefault?: boolean;
+}) {
+  const controlsRef = useRef<{
+    domElement?: HTMLElement;
+    minDistance: number;
+    maxDistance: number;
+    mouseButtons: typeof EDITOR_ORBIT_MOUSE_BUTTONS;
+    enableZoom: boolean;
+    enablePan: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const c = controlsRef.current;
+    if (!c) return;
+    // Re-assert after mount (drei sometimes resets defaults).
+    c.mouseButtons = { ...EDITOR_ORBIT_MOUSE_BUTTONS };
+    c.minDistance = 0.01;
+    c.maxDistance = 1e9;
+    c.enableZoom = true;
+    c.enablePan = true;
+
+    // Stop browser "auto-scroll" / middle-click navigation on the canvas.
+    const el = c.domElement;
+    if (!el) return;
+    const blockMiddle = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    const blockAuxClick = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    el.addEventListener("mousedown", blockMiddle);
+    el.addEventListener("pointerdown", blockMiddle);
+    el.addEventListener("auxclick", blockAuxClick);
+    return () => {
+      el.removeEventListener("mousedown", blockMiddle);
+      el.removeEventListener("pointerdown", blockMiddle);
+      el.removeEventListener("auxclick", blockAuxClick);
+    };
+  }, []);
+
+  return (
+    <OrbitControls
+      ref={controlsRef as never}
+      makeDefault={makeDefault}
+      enableDamping
+      dampingFactor={0.08}
+      // Free zoom — Orbit's default maxDistance (~∞ is finite in practice)
+      // and a non-zero min so we never pass through the target.
+      minDistance={0.01}
+      maxDistance={1_000_000_000}
+      // Slightly snappier than stock for editor feel
+      zoomSpeed={1.35}
+      panSpeed={1.15}
+      rotateSpeed={0.85}
+      // Pan parallel to the screen (Unity Scene view) rather than the ground plane only
+      screenSpacePanning
+      // Plain dolly in/out (no zoom-to-cursor re-targeting of the pivot).
+      zoomToCursor={false}
+      mouseButtons={EDITOR_ORBIT_MOUSE_BUTTONS}
+      touches={{
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN,
+      }}
+    />
+  );
+}
+
 export function EditorCameraController() {
-  return <OrbitControls makeDefault />;
+  return <EditorOrbitControls makeDefault />;
 }
 
 /* -------------------------------------------------------------------------- */
 /* RTS controller — top-down strategy view                                    */
 /*   - WASD / arrows pan along ground                                         */
 /*   - Mouse near screen edge pans (when window has focus)                    */
-/*   - Wheel zooms (clamped)                                                  */
+/*   - MMB drag: pan (Unity style)                                            */
+/*   - Wheel zooms with no practical height clamp                             */
 /*   - Camera angle is fixed (looks down at ~55°)                             */
 /* -------------------------------------------------------------------------- */
 
@@ -204,6 +291,11 @@ export function RTSCameraController({
   const focusRef = useRef(new THREE.Vector3(0, 0, 0));
   const heightRef = useRef(18);
   const edgePanRef = useRef({ x: 0, z: 0 });
+  const mmbPanRef = useRef<{
+    active: boolean;
+    lastX: number;
+    lastY: number;
+  }>({ active: false, lastX: 0, lastY: 0 });
 
   // Initialise focus on first frame to the player (if any)
   const initRef = useRef(false);
@@ -217,9 +309,22 @@ export function RTSCameraController({
     const el = gl.domElement;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      heightRef.current = THREE.MathUtils.clamp(heightRef.current + e.deltaY * 0.02, 6, 50);
+      // Exponential-ish free zoom — no hard 6–50 clamp (tiny floor only).
+      const next = heightRef.current + e.deltaY * 0.025;
+      heightRef.current = Math.min(5_000, Math.max(0.5, next));
     };
     const onMove = (e: MouseEvent) => {
+      // MMB drag pans the focus on the ground plane
+      if (mmbPanRef.current.active) {
+        const dx = e.clientX - mmbPanRef.current.lastX;
+        const dy = e.clientY - mmbPanRef.current.lastY;
+        mmbPanRef.current.lastX = e.clientX;
+        mmbPanRef.current.lastY = e.clientY;
+        const scale = heightRef.current * 0.0025;
+        focusRef.current.x -= dx * scale;
+        focusRef.current.z -= dy * scale;
+        return;
+      }
       const r = el.getBoundingClientRect();
       const margin = 24;
       let x = 0;
@@ -230,14 +335,36 @@ export function RTSCameraController({
       else if (r.bottom - e.clientY < margin) z = 1;
       edgePanRef.current = { x, z };
     };
-    const onLeave = () => (edgePanRef.current = { x: 0, z: 0 });
+    const onLeave = () => {
+      edgePanRef.current = { x: 0, z: 0 };
+      mmbPanRef.current.active = false;
+    };
+    const onDown = (e: MouseEvent) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        mmbPanRef.current = {
+          active: true,
+          lastX: e.clientX,
+          lastY: e.clientY,
+        };
+      }
+    };
+    const onUp = (e: MouseEvent) => {
+      if (e.button === 1) mmbPanRef.current.active = false;
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("mousemove", onMove);
     el.addEventListener("mouseleave", onLeave);
+    el.addEventListener("mousedown", onDown);
+    el.addEventListener("mouseup", onUp);
+    el.addEventListener("pointerup", onUp);
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("mousemove", onMove);
       el.removeEventListener("mouseleave", onLeave);
+      el.removeEventListener("mousedown", onDown);
+      el.removeEventListener("mouseup", onUp);
+      el.removeEventListener("pointerup", onUp);
     };
   }, [gl]);
 
@@ -313,9 +440,10 @@ export function ThirdPersonCameraController({
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      // Fortnite-style: tight zoom band — close enough to feel like an
-      // over-the-shoulder TPS, never far enough to feel like orbit-cam.
-      distRef.current = THREE.MathUtils.clamp(distRef.current + e.deltaY * 0.005, 2.2, 5.5);
+      // Free zoom — only a tiny near-floor so the camera never sits inside
+      // the mesh; no tight 2.2–5.5 Fortnite band.
+      const next = distRef.current + e.deltaY * 0.008;
+      distRef.current = Math.min(200, Math.max(0.35, next));
     };
     document.addEventListener("pointerlockchange", onLockChange);
     document.addEventListener("mousemove", onMove);
