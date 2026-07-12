@@ -361,9 +361,49 @@ export function AIWorkerPanel({
     let turnText = "";
     let turnError: string | undefined;
 
+    // Puter is the free default — ensure session on the same click that sent the message
+    // (popup blockers require a user gesture stack).
+    const modelForTurn = selectedModelRef.current;
+    if (modelForTurn.provider === "puter" && !useAuth.getState().isPuterSignedIn) {
+      try {
+        await signInWithPuter();
+        toast({
+          title: "Signed in with Puter",
+          description: "Using free Puter AI models.",
+        });
+      } catch (err) {
+        setStreaming(false);
+        abortRef.current = null;
+        const msg = err instanceof Error ? err.message : String(err);
+        pushLog("warn", `Puter sign-in required for AI: ${msg}`);
+        toast({
+          title: "Puter sign-in required",
+          description: msg || "Sign in with Puter to use free AI, then send again.",
+          variant: "destructive",
+        });
+        // Keep the user message in history so they can retry after sign-in.
+        setHistory((h) => [
+          ...h,
+          {
+            id: turnId,
+            kind: "ai",
+            turn: {
+              id: turnId,
+              text: "",
+              plan: [],
+              nextActions: [],
+              tools: [],
+              error: `Puter sign-in required: ${msg}`,
+            },
+          },
+        ]);
+        return;
+      }
+    }
+
     try {
       await runConversation(apiMessages, TOOL_DEFS, system, {
-        model: selectedModelRef.current,
+        model: modelForTurn,
         onTextDelta: (t) => {
           liveTextRef.current += t;
           // Lock the plan in as soon as the closing tag streams in. Once

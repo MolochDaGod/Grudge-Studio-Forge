@@ -13,8 +13,9 @@ const providers: Record<string, AIProvider> = {
   ollama: ollamaProvider,
 };
 
+/** Default to Puter (free) — server Anthropic key is optional / often missing. */
 export function getProvider(id: string): AIProvider {
-  return providers[id] ?? serverAnthropicProvider;
+  return providers[id] ?? puterProvider;
 }
 
 export { MODELS, DEFAULT_MODEL_ID, findModel } from "./types";

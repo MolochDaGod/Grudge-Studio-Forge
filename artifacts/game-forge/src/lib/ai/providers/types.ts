@@ -192,7 +192,19 @@ export const MODELS: ModelOption[] = [
 
 export const DEFAULT_MODEL_ID = MODELS[0].id;
 
+/** Legacy ids that pointed at the server Anthropic proxy — force Puter. */
+const LEGACY_SERVER_IDS = new Set([
+  "claude-sonnet-4-6",
+  "claude-sonnet-4-5",
+  "claude-haiku-4-5",
+  "server:claude-sonnet-4-6",
+  "server:claude-sonnet-4-5",
+  "anthropic:claude-sonnet-4-6",
+]);
+
 export function findModel(id: string | null | undefined): ModelOption {
-  if (!id) return MODELS[0];
+  if (!id || LEGACY_SERVER_IDS.has(id) || id.startsWith("server:") || id.startsWith("anthropic:")) {
+    return MODELS[0];
+  }
   return MODELS.find((m) => m.id === id) ?? MODELS[0];
 }

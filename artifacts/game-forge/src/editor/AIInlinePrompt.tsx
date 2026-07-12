@@ -18,6 +18,8 @@ import {
   DEFAULT_MODEL_ID,
   findModel,
 } from "@/lib/ai/providers";
+import { useAuth } from "@/store/auth";
+import { signInWithPuter } from "@/lib/authBootstrap";
 import { AIIcon3D } from "@/editor/AIIcon3D";
 
 // ── Tab-specific AI context ──────────────────────────────────────────
@@ -215,6 +217,9 @@ export function AIInlinePrompt({ tabContext }: AIInlinePromptProps) {
     let fullText = "";
 
     try {
+      if (selectedModel.provider === "puter" && !useAuth.getState().isPuterSignedIn) {
+        await signInWithPuter();
+      }
       await runConversation(messages, TOOL_DEFS, system, {
         model: selectedModel,
         onTextDelta: (t) => {
