@@ -22,14 +22,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Enable swap (16G)
+      - name: Enable swap (24G)
         run: |
           sudo swapoff -a || true
-          sudo fallocate -l 16G /swapfile
+          sudo rm -f /swapfile
+          sudo fallocate -l 24G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=24576
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
           free -h
+          # Drop caches so the Vite graph has room to grow
+          sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' || true
 
       # Prefer package.json#packageManager; pin version as fallback when the
       # field is missing so setup never fails closed on a bare package.json.
@@ -52,10 +55,16 @@ jobs:
 
       - name: Vite production build
         env:
-          NODE_OPTIONS: --max-old-space-size=8192
+          # 12 GB heap + 24G swap — full R3F/Monaco/Rapier graph OOMs under 8 GB
+          NODE_OPTIONS: --max-old-space-size=12288
           BASE_PATH: /
+          # Keep transform workers low so peak RSS stays under swap
+          UV_THREADPOOL_SIZE: "2"
         # Use `exec vite` (not `run build`) so package.json prebuild is skipped.
-        run: pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
+        run: |
+          free -h
+          pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
+          free -h
 
       - name: Verify dist
         run: |
