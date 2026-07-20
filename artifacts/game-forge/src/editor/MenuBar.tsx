@@ -449,7 +449,7 @@ export function MenuBar({
           <input
             value={importUrl}
             onChange={(e) => setImportUrl(e.target.value)}
-            placeholder="https://example.com/asset.glb"
+            placeholder="https://assets.grudge-studio.com/builtin/blake.glb"
             className="w-full px-3 py-2 rounded border bg-background text-sm font-mono"
             data-testid="input-import-url"
             autoFocus

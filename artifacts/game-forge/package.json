@@ -9,7 +9,8 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "grudge:sdk:check": "node -e \"try{require.resolve('@grudge-studio/sdk');console.log('sdk ok')}catch(e){console.warn('Install @grudge-studio/sdk for fleet helpers')}\""
   },
   "devDependencies": {
     "@radix-ui/react-accordion": "^1.2.4",
@@ -40,6 +41,7 @@
     "@radix-ui/react-toggle-group": "^1.1.3",
     "@radix-ui/react-tooltip": "^1.2.0",
     "@recast-navigation/three": "^0.43.1",
+    "@rollup/rollup-win32-x64-msvc": "4.59.0",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/react-query": "catalog:",
@@ -48,7 +50,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@types/three": "0.182.0",
+    "@types/three": "catalog:",
     "@uppy/core": "^5.0.0",
     "@uppy/dashboard": "^5.0.0",
     "@uppy/react": "^5.0.0",
@@ -83,12 +85,12 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@dimforge/rapier3d": "^0.19.3",
+    "@dimforge/rapier3d": "catalog:",
     "@monaco-editor/react": "^4.7.0",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.0",
-    "@react-three/postprocessing": "^3.0.4",
-    "@react-three/rapier": "^2.2.0",
+    "@react-three/drei": "catalog:",
+    "@react-three/fiber": "catalog:",
+    "@react-three/postprocessing": "catalog:",
+    "@react-three/rapier": "catalog:",
     "@types/diff": "^8.0.0",
     "@xyflow/react": "^12.10.2",
     "diff": "^9.0.0",
@@ -99,13 +101,22 @@
     "miniplex": "^2.0.0",
     "monaco-editor": "^0.55.1",
     "nanoid": "^5.1.9",
-    "postprocessing": "^6.39.1",
-    "three": "0.182.0",
-    "three-mesh-bvh": "^0.9.9",
-    "three-stdlib": "^2.36.1",
+    "postprocessing": "catalog:",
+    "three": "catalog:",
+    "three-mesh-bvh": "catalog:",
+    "three-stdlib": "catalog:",
     "vhacd-js": "^0.0.1",
     "xstate": "^5.31.0",
     "yuka": "^0.7.8",
     "zustand": "^5.0.12"
+  },
+  "optionalDependencies": {
+    "@grudge-studio/core": "^0.2.0",
+    "@grudge-studio/assets": "^0.2.0",
+    "@grudge-studio/animator": "^0.2.0",
+    "@grudge-studio/engine": "^0.2.0",
+    "@grudge-studio/stack": "^0.2.0",
+    "@grudge-studio/sdk": "^0.2.0",
+    "@grudge-studio/asset-resolver": "^0.2.0"
   }
 }

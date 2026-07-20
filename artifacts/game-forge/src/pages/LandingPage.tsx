@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: <Layers className="w-5 h-5" />,
     title: "Three.js + R3F",
-    desc: "Full React Three Fiber pipeline with postprocessing — bloom, SSAO, DOF.",
+    desc: "Full React Three Fiber pipeline with postprocessing — SSAO, bloom, ACES, SMAA.",
     color: "#6aa9ff",
   },
   {
@@ -52,7 +52,7 @@ const FEATURES = [
   {
     icon: <Palette className="w-5 h-5" />,
     title: "Asset Pipeline",
-    desc: "FBX→GLB, OBJ→GLB, ZIP extract — all in-browser via WASM. Upload to R2 CDN.",
+    desc: "FBX/OBJ/STL→GLB in-browser (three-stdlib + meshopt). Production packs via grudge-convert → R2.",
     color: "#ff8a3d",
   },
   {
@@ -63,8 +63,8 @@ const FEATURES = [
   },
   {
     icon: <MonitorPlay className="w-5 h-5" />,
-    title: "Babylon.js Runtime",
-    desc: "Engine-agnostic scene format. Design in Three.js, play in Babylon.js.",
+    title: "R3F Player Runtime",
+    desc: "Same Three.js + R3F + Rapier stack as the editor — single-file play embed, one dependency tree.",
     color: "#e879f9",
   },
 ];
@@ -378,7 +378,7 @@ export function LandingPage() {
           </div>
 
           <p className="text-center text-[11px] text-white/20 mt-4">
-            Browser-side conversion via assimpjs WASM · ZIP extraction via fflate · Direct R2 CDN upload
+            Browser convert: three-stdlib + meshopt · ZIP via fflate · R2 CDN · production bake: grudge-convert
           </p>
         </div>
       </section>

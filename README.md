@@ -10,19 +10,19 @@ Three.js scene editor, physics engine & AI-assisted game builder — by [Grudge 
 ## Features
 
 - **Visual Scene Editor** — hierarchy panel, property inspector, transform gizmos, asset browser, drag-and-drop
-- **Three.js + R3F** — full React Three Fiber pipeline with postprocessing (bloom, SSAO, DOF)
+- **Three.js + R3F** — full React Three Fiber pipeline with postprocessing (SSAO, bloom, ACES, SMAA)
 - **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting — all configurable in-editor
 - **4 AI Providers** — Claude (server), Puter AI (free, 9 models), Ollama (offline, 4 local models), Cloudflare Workers AI (image/text/vision)
 - **Inline AI Assistant** — contextual AI prompt bar in every bottom-panel tab (Console, Assets, Scripts, Prefabs, Nodes, Layers)
 - **Visual Scripting** — @xyflow node graph with AI prompt-to-graph generation + drag-and-drop from Assets/Hierarchy
 - **Monaco Code Editor** — embedded TypeScript editor for custom scripts and behaviors with 15 built-in templates
-- **Asset Pipeline** — browser-side FBX→GLB, OBJ→GLB, STL→GLB via assimpjs WASM + ZIP extract via fflate, post-processed with `@gltf-transform` (dedup → prune → weld → meshopt) and a `.meta.json` sidecar (tri/vert/mesh/bone counts, bbox, animations)
+- **Asset Pipeline** — browser-side FBX/OBJ/STL→GLB via three-stdlib + fflate ZIP + `@gltf-transform` meshopt; desktop Assimp/glTF-Transform; **fleet production bake** via ObjectStore `grudge-convert` → R2
 - **Animation Library** — 22-clip catalog (locomotion, combat, emote, utility) with Mixamo patterns
 - **GitHub Project Sync** — push/pull projects to GitHub repos via Git tree API
 - **Project Conventions** — UUID v4, PascalCase/camelCase/kebab-case naming, project audit scoring
 - **Scene Templates** — 5 built-in starter scenes (3× deathmatch, RPG village, dungeon interior)
 - **30+ Builtin Models** — characters, monsters, VFX, maps ready to drag into any scene
-- **Babylon.js Runtime** — engine-agnostic scene format; design in Three.js, play in Babylon.js
+- **R3F Player Runtime** — same Three + R3F + Rapier stack as the editor (`artifacts/player`)
 - **Recast Navmesh** — client-side baking with Yuka AI agent pathfinding
 - **Puter Auth** — session-less server; Puter SDK client-side with server-verified tokens
 - **1-Click Offline Setup** — install Ollama + models + start editor with one command
@@ -54,8 +54,9 @@ Full manifest: [`public/builtin/asset-manifest.json`](artifacts/game-forge/publi
 
 | Layer | Tech |
 |---|---|
-| 3D Engine | Three.js 0.184, React Three Fiber 9, drei, three-mesh-bvh |
-| Physics | Rapier 3D 0.19 (WASM), @react-three/rapier |
+| 3D Engine | **Three.js 0.184** (workspace override), **R3F 9**, drei, three-mesh-bvh, three-stdlib |
+| Physics | **Rapier 3D 0.19** (WASM), @react-three/rapier — only physics engine (no Havok/Babylon) |
+| Play runtime | `@workspace/player` — R3F + Rapier + EffectsRig (not Babylon) |
 | AI Pathfinding | Yuka 0.7, recast-navigation 0.43 (WASM navmesh baking) |
 | State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
 | AI | Anthropic Claude SDK + Puter AI + Ollama + CF Workers AI |

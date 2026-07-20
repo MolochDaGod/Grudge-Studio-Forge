@@ -61,14 +61,28 @@ export async function loadTemplateWithProgress(
   // responsive than "nothing, then a sudden 73%".
   onProgress?.({ phase: "indeterminate", received: 0, total: null });
 
-  const url = getGetTemplateUrl(key);
-  let response: Response;
+  // API Worker first (production), then static files under /builtin/templates/
+  const candidates = [
+    getGetTemplateUrl(key),
+    `/builtin/templates/${encodeURIComponent(key)}.json`,
+    `/builtin/templates/${encodeURIComponent(key)}`,
+  ];
+  let response: Response | null = null;
+  let lastStatus: number | undefined;
+  let lastDetail = "";
   try {
-    response = await fetch(url, { signal });
+    for (const url of candidates) {
+      response = await fetch(url, { signal });
+      if (response.ok) break;
+      lastStatus = response.status;
+      try {
+        lastDetail = (await response.text()).slice(0, 200);
+      } catch {
+        lastDetail = "";
+      }
+      response = null;
+    }
   } catch (err) {
-    // fetch() rejects with AbortError on abort — re-throw as-is so the
-    // caller can `if (err.name === "AbortError") return;` instead of
-    // showing a confusing network error.
     if ((err as Error).name === "AbortError") throw err;
     throw new TemplateLoadError(
       `Network error loading template "${key}": ${(err as Error).message}`,
@@ -77,20 +91,12 @@ export async function loadTemplateWithProgress(
     );
   }
 
-  if (!response.ok) {
-    // Drain the body to a small text snippet for diagnostics — but cap
-    // it so a 5MB error page doesn't blow up the log.
-    let detail = "";
-    try {
-      detail = (await response.text()).slice(0, 200);
-    } catch {
-      /* ignore — best-effort diagnostic */
-    }
+  if (!response?.ok) {
     throw new TemplateLoadError(
-      `Server returned ${response.status} for template "${key}"${
-        detail ? `: ${detail}` : ""
+      `Server returned ${lastStatus ?? "error"} for template "${key}"${
+        lastDetail ? `: ${lastDetail}` : ""
       }`,
-      response.status,
+      lastStatus,
       key,
     );
   }

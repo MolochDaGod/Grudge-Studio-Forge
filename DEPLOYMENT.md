@@ -8,7 +8,7 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 | Artifact | Target | URL |
 | --- | --- | --- |
 | `artifacts/game-forge` | **Vercel** (static SPA) | `forge.grudge-studio.com` |
-| `artifacts/api-server` | **Railway** (Docker) | `forge-api.grudge-studio.com` |
+| `artifacts/api-server` | **Railway** (Docker) + CF Worker | `forge.grudge-studio.com/api/*` (Worker `grudge-gameforge-api`). DNS name `forge-api.grudge-studio.com` is **not** required if Worker proxies `/api`. |
 | `artifacts/game-forge-desktop` | **GitHub Releases** (NSIS `.exe` via CI) | GitHub Releases page |
 | `artifacts/mockup-sandbox` | **Not deployed** (dev-only) | — |
 
@@ -28,9 +28,11 @@ changing the Dockerfile, api-server build, CI workflow, or database migrations.
 > **⚠️ Replit is deprecated.** The old `grudge-studio-forge.replit.app` deployment
 > is no longer maintained. Its Object Storage references are broken (GLTF
 > `scene.bin` buffer loads fail). Do NOT use it. All traffic should go to
-> `forge.grudge-studio.com` (Vercel) with the API at `forge-api.grudge-studio.com`
-> (Railway). Any scenes saved on Replit that reference `/api/storage/objects/`
-> paths need their models re-uploaded as `.glb` files through the editor.
+> `forge.grudge-studio.com` (CF Worker → origin SPA) with API at
+> `forge.grudge-studio.com/api/*` (Worker → Railway). Do **not** depend on
+> `forge-api.grudge-studio.com` DNS unless you add that CNAME. Any scenes
+> saved on Replit that reference `/api/storage/objects/` paths need models
+> re-uploaded as `.glb` through the editor.
 
 ## Frontend — build on VPS / second PC (recommended)
 

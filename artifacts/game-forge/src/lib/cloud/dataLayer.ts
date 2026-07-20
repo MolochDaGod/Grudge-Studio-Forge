@@ -437,12 +437,20 @@ export function useGetGrudgeQuests(_opts?: unknown) {
   });
 }
 
-// ── Templates (static JSON served from /builtin/) ──────────────────────
+// ── Templates (API first, static fallback) ─────────────────────────────
 export function useListTemplates(_opts?: unknown) {
   return queryResult(["templates"], async () => {
-    const res = await fetch("/builtin/template-manifest.json");
+    // Live Worker: GET /api/templates → array of manifest entries
+    let res = await fetch("/api/templates");
+    if (res.ok) {
+      const body = await res.json();
+      if (Array.isArray(body)) return body;
+      if (Array.isArray(body?.templates)) return body.templates;
+    }
+    res = await fetch("/builtin/template-manifest.json");
     if (!res.ok) return [];
-    return res.json();
+    const body = await res.json();
+    return Array.isArray(body) ? body : body?.templates ?? [];
   });
 }
 
@@ -450,7 +458,12 @@ export function useGetTemplate(key: string, _opts?: unknown) {
   return queryResult(
     ["templates", key],
     async () => {
-      const res = await fetch(`/builtin/templates/${key}`);
+      let res = await fetch(`/api/templates/${encodeURIComponent(key)}`);
+      if (res.ok) return res.json();
+      res = await fetch(`/builtin/templates/${encodeURIComponent(key)}.json`);
+      if (!res.ok) {
+        throw new Error(`Template "${key}" not found (${res.status})`);
+      }
       return res.json();
     },
     !!key,

@@ -1,6 +1,6 @@
 import characterUrl from "@/assets/models/character.glb?url";
 import rifleUrl from "@/assets/models/rifle.glb?url";
-import { getRaceCharacterUrl } from "./objectStoreApi";
+import { getRaceCharacterUrl, getRaceWeaponUrl } from "./objectStoreApi";
 import type { RaceId } from "./races";
 
 /** Vite quirk: in dev mode `?url` returns a source path like
@@ -147,22 +147,17 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race:elf": ensureBaseUrl(getRaceCharacterUrl("elf")),
   "race:orc": ensureBaseUrl(getRaceCharacterUrl("orc")),
   "race:skeleton": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
-  // Per-race default weapon slots — the toon-rts-characters asset pack's
-  // weapon sub-pack (sword/bow/axe/mace/club/staff) is referenced in the
-  // manifest but no GLB files are actually deployed at the CDN under
-  // `…/glb/weapons/<weapon>.glb` (every URL 404s, verified by HEAD probe).
-  // Production was crash-looping on these missing fetches from the
-  // rpg-village template, so each race-weapon key is aliased to the
-  // bundled `rifle.glb` placeholder until the upstream pack ships real
-  // per-race weapon meshes. Saved scenes still reference the durable
-  // `builtin:race-weapon:<id>` key, so the day real weapons ship the only
-  // change needed is to swap these six URLs back to `getRaceWeaponUrl(...)`.
-  "race-weapon:warrior": ensureBaseUrl(rifleUrl),
-  "race-weapon:dwarf": ensureBaseUrl(rifleUrl),
-  "race-weapon:frost-dwarf": ensureBaseUrl(rifleUrl),
-  "race-weapon:elf": ensureBaseUrl(rifleUrl),
-  "race-weapon:orc": ensureBaseUrl(rifleUrl),
-  "race-weapon:skeleton": ensureBaseUrl(rifleUrl),
+  // Per-race weapons — grudge6 library on CDN (toon-rts weapons/* 404).
+  // Durable keys: builtin:race-weapon:<id>
+  "race-weapon:warrior": ensureBaseUrl(getRaceWeaponUrl("warrior")),
+  "race-weapon:dwarf": ensureBaseUrl(getRaceWeaponUrl("dwarf")),
+  "race-weapon:frost-dwarf": ensureBaseUrl(getRaceWeaponUrl("frost-dwarf")),
+  "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
+  "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
+  "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
+  // Template aliases (rts-fort-royale etc.)
+  "creature:mutant": ensureBaseUrl("builtin/char-distortus-rex.glb"),
+  "creature:boss-orc": ensureBaseUrl("builtin/char-boss-orc.glb"),
 };
 
 /** Per-builtin-model Y rotation offset (radians) applied at render time

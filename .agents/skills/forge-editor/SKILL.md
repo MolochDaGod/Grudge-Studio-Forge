@@ -25,8 +25,8 @@ Grudge-Studio-Forge/
 │   ├── api-spec/             # API route type definitions
 │   ├── db/                   # Drizzle ORM schema + idempotent migrations
 │   ├── desktop-bridge/       # IPC bridge (Electron ↔ renderer)
-│   ├── object-storage-web/   # R2/S3 upload via Uppy
-│   └── babylon-runtime/      # Babylon.js scene loader
+│   └── object-storage-web/   # R2/S3 upload via Uppy
+│   # (no babylon-runtime — play path is artifacts/player R3F+Rapier only)
 ├── scripts/
 │   ├── setup-offline.ps1     # 1-click offline setup (Windows)
 │   └── setup-offline.sh      # 1-click offline setup (Mac/Linux)
@@ -73,9 +73,10 @@ Grudge-Studio-Forge/
 - Drop entities from Hierarchy → creates Transform node
 
 ### Asset Pipeline
-- `lib/assetConverter.ts` — browser-side FBX/OBJ/STL→GLB via assimpjs WASM
+- `lib/assetConverter.ts` — browser FBX/OBJ/STL→GLB via **three-stdlib** + gltf-transform meshopt
+- Fleet production bake: ObjectStore **`grudge-convert`** → `assets.grudge-studio.com` (not a second CDN)
 - `lib/animationLibrary.ts` — 22-clip animation catalog (Mixamo patterns)
-- `desktop/src/ipc/tools.ts` — desktop conversion (GLB↔GLTF↔FBX↔OBJ↔STL)
+- `desktop/src/ipc/tools.ts` — desktop conversion (Assimp + glTF-Transform)
 - `lib/object-storage-web/` — R2 upload via Uppy + presigned URLs
 - `api-server/src/lib/r2Storage.ts` — Cloudflare R2 via native S3 endpoint
 
@@ -143,20 +144,25 @@ pnpm run typecheck    # All 6 packages
 pnpm run test         # 365 tests across 3 packages
 ```
 
-## Tech Stack Summary
+## Tech Stack Summary (single engine — no Babylon)
+
 | Layer | Tech |
 |---|---|
-| 3D Engine | Three.js 0.184, R3F 9, drei, three-mesh-bvh |
-| Physics | Rapier 3D 0.19 (WASM) |
+| 3D Engine | **Three.js 0.184** (pnpm catalog + override), **R3F 9**, drei, three-mesh-bvh, three-stdlib |
+| Play runtime | `artifacts/player` — same R3F + Rapier + EffectsRig as editor |
+| Physics | **Rapier 3D 0.19 only** (no Havok / Babylon physics) |
+| Post FX | `@react-three/postprocessing` + `postprocessing` (EffectsRig) |
 | AI Pathfinding | Yuka 0.7, recast-navigation 0.43 |
 | State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
-| AI | Anthropic Claude + Puter AI + Ollama + CF Workers AI |
+| AI Worker | Anthropic Claude + Puter + Ollama + CF Workers AI via forge-api |
 | UI | Radix UI, Tailwind CSS 4, shadcn/ui, cmdk, Framer Motion |
 | Code Editor | Monaco Editor |
 | Node Graph | @xyflow/react |
-| Backend | Express 5, Drizzle ORM, PostgreSQL |
-| Storage | Cloudflare R2 (@aws-sdk/client-s3) |
-| Auth | Puter SDK + server-verified tokens |
-| Desktop | Electron 33, electron-builder, glTF-Transform, AssimpJS |
-| Build | Vite 7, pnpm 10, esbuild, TypeScript 5.9 |
+| Backend | Express 5, Drizzle ORM, PostgreSQL (forge-api Railway) |
+| Storage | Cloudflare R2 (`assets.grudge-studio.com`) |
+| Auth | Puter SDK + server-verified tokens; fleet Grudge ID for studio SSO |
+| Desktop | Electron 33, glTF-Transform, AssimpJS |
+| Build | Vite 7, **pnpm 10** workspaces, TypeScript 5.9 |
 | Test | Vitest, @testing-library/react, happy-dom |
+
+**Hard rule:** one 3D stack. Do not reintroduce `@babylonjs/*` or a second player engine.

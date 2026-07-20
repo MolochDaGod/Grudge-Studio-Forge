@@ -39,7 +39,7 @@
     "assimpjs": "0.0.10",
     "electron-store": "8.2.0",
     "electron-updater": "^6.3.9",
-    "three": "0.184.0",
+    "three": "catalog:",
     "yauzl": "^3.2.0"
   },
   "build": {

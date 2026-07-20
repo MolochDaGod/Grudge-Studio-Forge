@@ -7,10 +7,17 @@
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
-    "test": "pnpm -r --workspace-concurrency=4 --if-present run test"
+    "test": "pnpm -r --workspace-concurrency=4 --if-present run test",
+    "smoke:forge": "node scripts/smoke-forge-resources.mjs",
+    "make:favicon": "node scripts/make-favicon.mjs"
   },
   "private": true,
   "devDependencies": {
+    "@esbuild/win32-x64": "0.27.3",
+    "@rollup/rollup-win32-x64-msvc": "4.59.0",
+    "@tailwindcss/oxide-win32-x64-msvc": "4.2.1",
+    "esbuild": "0.27.3",
+    "lightningcss-win32-x64-msvc": "1.30.1",
     "prettier": "^3.8.1",
     "sharp": "^0.34.5",
     "typescript": "~5.9.2"
@@ -18,7 +25,9 @@
   "pnpm": {
     "overrides": {
       "react": "19.1.0",
-      "react-dom": "19.1.0"
+      "react-dom": "19.1.0",
+      "three": "0.184.0",
+      "@types/three": "0.184.0"
     }
   }
 }

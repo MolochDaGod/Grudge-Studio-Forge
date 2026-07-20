@@ -9,13 +9,19 @@ export const getGetPublicObjectUrl = (filePath: string) =>
 export const getGetStorageObjectUrl = (objectPath: string) =>
   `https://assets.grudge-studio.com/${objectPath}`;
 
-// Templates are served as static JSON under /builtin/templates/<key> in the
-// Puter-backed data layer (matches `useGetTemplate` in dataLayer.ts).
+/**
+ * Templates: prefer production API Worker (`/api/templates/:key` — verified 200).
+ * Static fallback: `/builtin/templates/:key.json` shipped in public/ for offline.
+ */
 export const getGetTemplateUrl = (key: string) =>
-  `/builtin/templates/${key}`;
+  `/api/templates/${encodeURIComponent(key)}`;
 
 export const getGetTemplateQueryKey = (key: string) =>
-  [`/builtin/templates/${key}`] as const;
+  [`/api/templates/${key}`] as const;
+
+/** Static fallback URL when API is unavailable. */
+export const getGetTemplateStaticUrl = (key: string) =>
+  `/builtin/templates/${encodeURIComponent(key)}.json`;
 
 export const getListProjectsQueryKey = () => ["projects"] as const;
 export const getListScenesQueryKey = (id: number) => ["scenes", id] as const;

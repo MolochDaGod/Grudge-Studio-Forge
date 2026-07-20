@@ -1,12 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts",
-  "installCommand": "pnpm install --frozen-lockfile --filter @workspace/game-forge...",
+  "buildCommand": "node scripts/vercel-prepare-static.mjs",
+  "installCommand": "echo skip-install",
   "outputDirectory": "artifacts/game-forge/dist/public",
   "framework": null,
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/editor",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!api/|builtin/|assets/|downloads\\.html|player\\.html|favicon\\.ico|favicon-.*|apple-touch-icon\\.png|logo\\.png|pwa-.*|manifest\\.webmanifest|opengraph\\.jpg|_framework/).*)",
       "destination": "/index.html"
     }
   ],
@@ -17,6 +21,13 @@
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    },
+    {
+      "source": "/favicon.ico",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" },
+        { "key": "Content-Type", "value": "image/x-icon" }
       ]
     }
   ]
