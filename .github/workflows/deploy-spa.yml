@@ -1,0 +1,109 @@
+# Build the full game-forge SPA and deploy to Vercel production.
+# Uses a temporary swap file so the Vite+Rollup graph fits on ubuntu-latest (~7 GB RAM).
+name: Deploy Forge SPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-forge-spa
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build SPA · Deploy Vercel
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable swap (16G)
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+
+      # Use package.json#packageManager only (do not set version: here —
+      # pnpm/action-setup@v4 errors on version mismatch with packageManager).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install game-forge graph
+        run: pnpm install --frozen-lockfile --filter "@workspace/game-forge..."
+
+      # Skip player prebuild here (player package not fully installed with the
+      # game-forge filter; SPA build uses vite exec and does not need prebuild).
+      # Optional: host player.html on R2 separately.
+
+      - name: Vite production build
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          BASE_PATH: /
+        # Use `exec vite` (not `run build`) so package.json prebuild is skipped.
+        run: pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
+
+      - name: Verify dist
+        run: |
+          test -f artifacts/game-forge/dist/public/index.html
+          grep -q 'id="root"' artifacts/game-forge/dist/public/index.html
+          grep -E 'type="module".*assets/' artifacts/game-forge/dist/public/index.html
+          # SPA rewrites are mandatory — without them /editor 404s on Vercel
+          test -f artifacts/game-forge/dist/public/vercel.json
+          grep -q 'rewrites' artifacts/game-forge/dist/public/vercel.json
+          # Builtin GLBs must not ship (R2 only)
+          if [ -d artifacts/game-forge/dist/public/builtin ]; then
+            echo "ERROR: dist/public/builtin must be stripped" >&2
+            exit 1
+          fi
+          du -sh artifacts/game-forge/dist/public
+          ls -la artifacts/game-forge/dist/public/assets | head
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Link dist to grudge-studio-forge (never public)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Missing VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID secrets"
+            exit 1
+          fi
+          mkdir -p artifacts/game-forge/dist/public/.vercel
+          cat > artifacts/game-forge/dist/public/.vercel/project.json <<EOF
+          {"projectId":"$VERCEL_PROJECT_ID","orgId":"$VERCEL_ORG_ID","projectName":"grudge-studio-forge"}
+          EOF
+          cat artifacts/game-forge/dist/public/.vercel/project.json
+
+      - name: Deploy prebuilt SPA to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          cd artifacts/game-forge/dist/public
+          test -f vercel.json
+          vercel deploy --prod --yes --token="$VERCEL_TOKEN" --scope grudgenexus
+
+      - name: Smoke production after deploy
+        if: success()
+        run: |
+          sleep 30
+          node scripts/smoke-forge-prod.mjs
+        env:
+          FORGE_BASE: https://forge.grudge-studio.com
+        continue-on-error: true

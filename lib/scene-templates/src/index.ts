@@ -37,13 +37,15 @@ import {
   forgeDungeonInteriorScene,
   survivalCampDemoScene,
   citySandboxScene,
+  arenaUndergroundWarsScene,
+  rtsFortRoyaleScene,
 } from "./builders.js";
 
 /** Bump when ANY built-in template's content changes so the seeder writes
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260530.1";
+export const TEMPLATES_VERSION = "20260712.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -107,6 +109,20 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
       "GTA-style low-poly city with buildings, shops, farms, airport, mountains, vehicles, and weapons. 7009 nodes, 46 materials. Third-person player with daytime lighting — great for open-world or sandbox games.",
     build: citySandboxScene,
   },
+  {
+    key: "arena-underground-wars",
+    label: "Arena — Underground Wars (AI test)",
+    description:
+      "Two-sided test arena on the Underground Wars map: player force (South) vs 10 behavior-tree enemies (North) — flank columns, center ambush, rear sentries. Built to exercise combat AI + nav agents.",
+    build: arenaUndergroundWarsScene,
+  },
+  {
+    key: "rts-fort-royale",
+    label: "RTS — Fort Royale (Warcraft-2 style)",
+    description:
+      "Real-time strategy skirmish: player peon auto-gathers gold, footman auto-engages; mirror enemy base. Creeps guard mines. Destroy the enemy town hall to win. RTS camera.",
+    build: rtsFortRoyaleScene,
+  },
 ];
 
 /** Lightweight summary surfaced over the REST API and used by the editor's
@@ -135,5 +151,17 @@ export {
   forgeDungeonInteriorScene,
   survivalCampDemoScene,
   citySandboxScene,
+  arenaUndergroundWarsScene,
+  rtsFortRoyaleScene,
   withIdScope,
 } from "./builders.js";
+
+export {
+  wallSegment,
+  wallWithDoorway,
+  archway,
+  ladder,
+  floorHoleRim,
+  structureTestKit,
+  buildStructures,
+} from "./structures.js";

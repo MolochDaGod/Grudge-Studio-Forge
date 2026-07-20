@@ -12,7 +12,18 @@ import {
 import { deserializeHullSet, type ConvexHullSet } from "@/lib/colliderBaker";
 import { getPlaySession } from "./playSession";
 import type { TriggerEvent } from "./GameBus";
-import { Suspense, forwardRef, useEffect, useLayoutEffect, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import {
+  Component,
+  Suspense,
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ErrorInfo,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import { resolveBuiltinModel, resolveModelUrl, BUILTIN_MODEL_YAW_OFFSETS } from "@/lib/builtinModels";
@@ -31,6 +42,11 @@ import {
 import { useEditor } from "@/store/editor";
 import type { SceneEntity } from "./types";
 import { ClothEntity, FlagEntity, ParticlesEntity } from "./SoftBodies";
+import {
+  useMaterialTextures,
+  applyMapsToMaterial,
+} from "@/lib/useMaterialTextures";
+import { resolveClipName } from "@/lib/animationClipResolve";
 
 interface RenderProps {
   entity: SceneEntity;
@@ -139,6 +155,7 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
   const resolved = matKind ? resolveMaterialDefaults(mat) : null;
   const transparent = resolved && resolved.opacity < 1;
   const opacity = mat.opacity ?? resolved?.opacity ?? 1;
+  const maps = useMaterialTextures(mat);
   return (
     <>
       <mesh {...meshProps}>
@@ -148,7 +165,12 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
           metalness={mat.metalness ?? 0.1}
           roughness={mat.roughness ?? 0.6}
           emissive={emissive}
-          emissiveIntensity={emissive !== "#000000" ? 0.6 : 0}
+          emissiveIntensity={emissive !== "#000000" || maps.emissiveMap ? 0.6 : 0}
+          map={maps.map ?? undefined}
+          normalMap={maps.normalMap ?? undefined}
+          roughnessMap={maps.roughnessMap ?? undefined}
+          metalnessMap={maps.metalnessMap ?? undefined}
+          emissiveMap={maps.emissiveMap ?? undefined}
           side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
           transparent={!!transparent}
           opacity={opacity}
@@ -211,6 +233,36 @@ function LightEntity({ entity, selected, onPick }: RenderProps) {
   );
 }
 
+/** Catches GLB load failures (404 / invalid JSON from SPA HTML) so a single
+ *  missing asset cannot blank the whole viewport — simple demos stay playable. */
+class ModelLoadErrorBoundary extends Component<
+  { children: ReactNode; label?: string },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.warn(
+      `[Forge] Model load failed${this.props.label ? ` (${this.props.label})` : ""}:`,
+      error.message,
+      info.componentStack?.slice(0, 200),
+    );
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <mesh>
+          <boxGeometry args={[1, 1.6, 0.6]} />
+          <meshStandardMaterial color="#884444" wireframe />
+        </mesh>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProps) {
   const url = entity.model?.url;
   if (!url) {
@@ -227,55 +279,57 @@ function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProp
     );
   }
   return (
-    <Suspense
-      fallback={
-        // Brand-gold wireframe placeholder while the GLB streams in.
-        // Color was previously "#444" (dark gray) which blended into the
-        // editor's dark background — large maps could spend 5–30 s
-        // downloading and the user couldn't tell anything was happening.
-        // Gold (#d4af37) reads cleanly against both the lit editor scene
-        // and the dark grid pattern, so it actually communicates "loading".
-        <mesh>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
-        </mesh>
-      }
-    >
-      <LoadedModel
-        url={url}
-        entityId={entity.id}
-        clip={entity.model?.clip}
-        tint={entity.model?.tint}
-        material={effectiveMaterial ?? entity.material}
-        label={entity.model?.label}
-        selected={selected}
-        onPick={onPick}
-        yawOffset={entity.model?.yawOffset}
-        // Convention: any entity literally named "Map" is treated as
-        // an environment / level mesh and drop-aligned to local Y=0
-        // so its visible floor sits flush with the invisible Ground
-        // plane templates pair it with. Cheap (one bbox per GLB load)
-        // and benefits every template that uses the same naming
-        // pattern (tps-zombies, fps-arena, all dm-*).
-        dropToGround={entity.name?.toLowerCase() === "map"}
-        // Map entities get a "walk" surface tag so spatial queries
-        // (PlayRuntime → groundProbe) can identify what they hit.
-        // Future: extend to read entity.model?.surface for water /
-        // ladder / dig zones authored at the template level.
-        surfaceTag={
-          // Prefer the explicit surface tag set on the entity (drives
-          // pathfinding + the agent FSM via userData lookups). Fall
-          // back to the legacy name="Map"→walk heuristic so older
-          // scenes that pre-date the surface field still spatially
-          // probe the same way.
-          entity.surface && entity.surface !== "None"
-            ? entity.surface.toLowerCase()
-            : entity.name?.toLowerCase() === "map"
-              ? "walk"
-              : undefined
+    <ModelLoadErrorBoundary label={entity.name ?? url}>
+      <Suspense
+        fallback={
+          // Brand-gold wireframe placeholder while the GLB streams in.
+          // Color was previously "#444" (dark gray) which blended into the
+          // editor's dark background — large maps could spend 5–30 s
+          // downloading and the user couldn't tell anything was happening.
+          // Gold (#d4af37) reads cleanly against both the lit editor scene
+          // and the dark grid pattern, so it actually communicates "loading".
+          <mesh>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color={SELECTION_COLOR} wireframe />
+          </mesh>
         }
-      />
-    </Suspense>
+      >
+        <LoadedModel
+          url={url}
+          entityId={entity.id}
+          clip={entity.model?.clip}
+          tint={entity.model?.tint}
+          material={effectiveMaterial ?? entity.material}
+          label={entity.model?.label}
+          selected={selected}
+          onPick={onPick}
+          yawOffset={entity.model?.yawOffset}
+          // Convention: any entity literally named "Map" is treated as
+          // an environment / level mesh and drop-aligned to local Y=0
+          // so its visible floor sits flush with the invisible Ground
+          // plane templates pair it with. Cheap (one bbox per GLB load)
+          // and benefits every template that uses the same naming
+          // pattern (tps-zombies, fps-arena, all dm-*).
+          dropToGround={entity.name?.toLowerCase() === "map"}
+          // Map entities get a "walk" surface tag so spatial queries
+          // (PlayRuntime → groundProbe) can identify what they hit.
+          // Future: extend to read entity.model?.surface for water /
+          // ladder / dig zones authored at the template level.
+          surfaceTag={
+            // Prefer the explicit surface tag set on the entity (drives
+            // pathfinding + the agent FSM via userData lookups). Fall
+            // back to the legacy name="Map"→walk heuristic so older
+            // scenes that pre-date the surface field still spatially
+            // probe the same way.
+            entity.surface && entity.surface !== "None"
+              ? entity.surface.toLowerCase()
+              : entity.name?.toLowerCase() === "map"
+                ? "walk"
+                : undefined
+          }
+        />
+      </Suspense>
+    </ModelLoadErrorBoundary>
   );
 }
 
@@ -542,11 +596,16 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   const currentClipNameRef = useRef<string | null>(null);
   const pickClipName = (): string | null => {
     if (!names.length) return null;
+    // Priority: agent FSM override → explicit model.clip → idle/loop heuristic.
+    // resolveClipName fuzzy-matches catalog keys (walk/run/attack) against
+    // Mixamo-style names and procedural biped clips.
     const fsmClip = readAgentClip(entityId);
-    if (fsmClip && names.includes(fsmClip)) return fsmClip;
-    if (clip && names.includes(clip)) return clip;
+    const fromFsm = resolveClipName(fsmClip, names);
+    if (fromFsm) return fromFsm;
+    const fromProp = resolveClipName(clip, names);
+    if (fromProp) return fromProp;
     return (
-      names.find((n) => /idle/i.test(n)) ??
+      resolveClipName("idle", names) ??
       names.find((n) => /loop/i.test(n)) ??
       names[0] ??
       null
@@ -555,7 +614,8 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   useFrame(() => {
     const desired = pickClipName();
     if (!desired || desired === currentClipNameRef.current) return;
-    const next = actions[desired];
+    // actions keys are exact clip names from useAnimations
+    const next = actions[desired] ?? actions[Object.keys(actions).find((k) => k === desired) ?? ""];
     if (!next) return;
     const prev = currentActionRef.current;
     if (prev && prev !== next) prev.fadeOut(0.2);
@@ -594,13 +654,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   const matRoughness = material?.roughness;
   const matEmissive = material?.emissive;
   const matOpacity = material?.opacity;
+  const matMaps = useMaterialTextures(material);
+  const hasMaps =
+    !!matMaps.map ||
+    !!matMaps.normalMap ||
+    !!matMaps.roughnessMap ||
+    !!matMaps.metalnessMap ||
+    !!matMaps.emissiveMap;
   useEffect(() => {
     const hasMaterial =
       matColor !== undefined ||
       matMetalness !== undefined ||
       matRoughness !== undefined ||
       matEmissive !== undefined ||
-      matOpacity !== undefined;
+      matOpacity !== undefined ||
+      hasMaps;
     if (!tint && !hasMaterial) return;
     const colorOverride = tint ?? matColor;
     const colorObj = colorOverride ? new THREE.Color(colorOverride) : null;
@@ -623,6 +691,7 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
             cm.emissive.copy(emissiveObj);
             cm.emissiveIntensity = 0.6;
           }
+          applyMapsToMaterial(cm, matMaps);
         }
         if (matOpacity !== undefined && matOpacity < 1) {
           cm.transparent = true;
@@ -640,7 +709,21 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     return () => {
       for (const r of restorers) r();
     };
-  }, [cloned, tint, matColor, matMetalness, matRoughness, matEmissive, matOpacity]);
+  }, [
+    cloned,
+    tint,
+    matColor,
+    matMetalness,
+    matRoughness,
+    matEmissive,
+    matOpacity,
+    hasMaps,
+    matMaps.map,
+    matMaps.normalMap,
+    matMaps.roughnessMap,
+    matMaps.metalnessMap,
+    matMaps.emissiveMap,
+  ]);
 
   // ── Label: floating sprite above the model. Repositioned each frame would
   // be ideal but a static "above bbox" placement covers 95% of cases.
@@ -910,8 +993,33 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     // which would crash every render with "undefined is not iterable".
     const isPlayerControlled =
       !!entity.controllerKind && entity.controllerKind !== "none";
+    const isCharacter =
+      isPlayerControlled ||
+      entity.layer === "Player" ||
+      entity.layer === "NPC" ||
+      (typeof entity.behavior === "string" &&
+        (entity.behavior.startsWith("player-") ||
+          entity.behavior.startsWith("enemy-") ||
+          entity.behavior === "ally" ||
+          entity.behavior === "boss" ||
+          entity.behavior === "neutral" ||
+          entity.behavior === "vendor"));
     const playerRotationLockProps: { enabledRotations?: [boolean, boolean, boolean] } =
-      isPlayerControlled ? { enabledRotations: [false, true, false] } : {};
+      isPlayerControlled || isCharacter
+        ? { enabledRotations: [false, true, false] }
+        : {};
+
+    // Projectiles / thin fast bodies: CCD prevents tunneling.
+    const enableCcd =
+      ph.ccd === true ||
+      entity.layer === "Projectile" ||
+      (typeof entity.name === "string" &&
+        entity.name.toLowerCase().includes("projectile"));
+
+    const capHalf = ph.capsuleHalfHeight ?? 0.85;
+    const capRadius = ph.capsuleRadius ?? 0.35;
+    // Center capsule so feet sit at local y=0 (halfHeight + radius).
+    const capY = capHalf + capRadius;
 
     return (
       <RigidBody
@@ -939,7 +1047,12 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
         restitution={ph.restitution ?? matResolved.restitution}
         friction={ph.friction ?? matResolved.friction}
         mass={ph.mass ?? matResolved.density / 1000}
-        linearDamping={matResolved.drag}
+        linearDamping={ph.linearDamping ?? matResolved.drag}
+        angularDamping={
+          ph.angularDamping ?? (isCharacter ? 2.5 : matResolved.drag * 0.5)
+        }
+        // CCD stops fast projectiles / thin bodies tunneling through walls.
+        ccd={enableCcd}
         userData={{
           entityId: entity.id,
           name: entity.name,
@@ -956,12 +1069,10 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
           materialBlocksAudio: matResolved.blocksAudio,
         }}
       >
-        {/* Capsule for character-shaped models, sphere for round ones.
-            Half-height 0.85, radius 0.4 ≈ a 1.7m-tall humanoid sitting on
-            its feet (matches Blake). Position offset puts the collider center
-            at y=0.85 so the capsule's base aligns with the model's pivot. */}
+        {/* Character capsule: half-height + radius ≈ 1.7 m tall humanoid.
+            Feet at local y=0. Tunable via physics.capsuleHalfHeight / capsuleRadius. */}
         {explicitForModel && colliderShape === "cylinder" && (
-          <CapsuleCollider args={[0.85, 0.4]} position={[0, 0.85, 0]} />
+          <CapsuleCollider args={[capHalf, capRadius]} position={[0, capY, 0]} />
         )}
         {explicitForModel && colliderShape === "ball" && (
           <CylinderCollider args={[0.5, 0.5]} position={[0, 0.5, 0]} />

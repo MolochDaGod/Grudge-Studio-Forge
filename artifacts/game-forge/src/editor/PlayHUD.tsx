@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useEditor } from "@/store/editor";
 import type { GameBus } from "@/scene/GameBus";
 import { RPGUnitFrame, RPGBar, RPGNotification, RPGActionSlot } from "@/ui/rpg";
@@ -22,11 +22,23 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const env = useEditor((s) => s.sceneData.environment);
   const setPlaying = useEditor((s) => s.setPlaying);
   const scoreLimit = env.scoreLimit ?? 10;
+  // Professional UI kit from https://ui.grudge-studio.com via apply_ui_kit
+  const uiKit = env.uiKit;
+  const accent = uiKit?.accent ?? "#d4af37";
+  const fontScale = uiKit?.fontScale ?? 1;
+  const layers = new Set(uiKit?.layers ?? ["unit-frame", "crosshair", "scoreboard", "notifications"]);
+  const showUnitFrame = layers.has("unit-frame") || layers.has("hud-root");
+  const showCrosshair = layers.has("crosshair") || !uiKit?.layers;
+  const showScoreboard = layers.has("scoreboard") || env.gameMode === "deathmatch";
+  const showRtsHud = env.gameMode === "rts";
+  const showActionBar = layers.has("action-bar");
 
   const [playerHealth, setPlayerHealth] = useState(100);
   const [playerMaxHealth, setPlayerMaxHealth] = useState(100);
   const [playerScore, setPlayerScore] = useState(0);
   const [enemyScore, setEnemyScore] = useState(0);
+  const [rtsGold, setRtsGold] = useState({ player: 150, enemy: 150 });
+  const [rtsHall, setRtsHall] = useState({ player: 1500, enemy: 1500 });
 
   // Damage flash — opacity decays to 0 over 0.4s.
   const [damageFlash, setDamageFlash] = useState(0);
@@ -62,6 +74,26 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
 
   useEffect(() => {
     const offs: Array<() => void> = [];
+
+    offs.push(
+      bus.on("rtsHud", (p) => {
+        const obj = p as {
+          playerGold?: number;
+          enemyGold?: number;
+          playerHallHp?: number;
+          enemyHallHp?: number;
+        } | undefined;
+        if (!obj) return;
+        setRtsGold({
+          player: typeof obj.playerGold === "number" ? obj.playerGold : 0,
+          enemy: typeof obj.enemyGold === "number" ? obj.enemyGold : 0,
+        });
+        setRtsHall({
+          player: typeof obj.playerHallHp === "number" ? obj.playerHallHp : 0,
+          enemy: typeof obj.enemyHallHp === "number" ? obj.enemyHallHp : 0,
+        });
+      }),
+    );
 
     offs.push(
       bus.on("playerHealth", (p) => {
@@ -220,7 +252,16 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const healthPct = Math.max(0, Math.min(1, playerHealth / Math.max(1, playerMaxHealth)));
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 select-none font-mono">
+    <div
+      className="pointer-events-none absolute inset-0 z-30 select-none font-mono"
+      data-ui-theme={uiKit?.theme ?? "default"}
+      style={
+        {
+          fontSize: `${fontScale * 100}%`,
+          ["--forge-ui-accent" as string]: accent,
+        } as CSSProperties
+      }
+    >
       {/* Damage flash vignette */}
       <div
         className="absolute inset-0 transition-opacity"
@@ -230,13 +271,14 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         }}
       />
 
-      {/* Aim crosshair (dive-style: white ring → red when aiming, pulse on shoot,
-          scales out + fades when hidden during respawn/win/lose). */}
-      <DiveAim
-        bus={bus}
-        hidden={respawning !== null || outcome !== null}
-        hitFlash={hitFlash}
-      />
+      {/* Aim crosshair — UI kit layer: crosshair (hidden in RTS top-down) */}
+      {showCrosshair && !showRtsHud && (
+        <DiveAim
+          bus={bus}
+          hidden={respawning !== null || outcome !== null}
+          hitFlash={hitFlash}
+        />
+      )}
       <style>{`
         @keyframes diveAimShoot {
           0% { transform: scale(1); }
@@ -247,14 +289,20 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
       `}</style>
 
       {/* Pickup counter — under health bar (top-left). Hidden until first pickup. */}
-      {pickupCount > 0 && (
+      {pickupCount > 0 && showUnitFrame && (
         <div className="absolute left-4 top-20 flex items-center gap-2 rounded bg-black/55 px-3 py-1.5 text-white shadow">
           <span className="text-[10px] uppercase tracking-wider text-white/70">Pickups</span>
-          <span className="text-base font-bold tabular-nums text-amber-300">{pickupCount}</span>
+          <span
+            className="text-base font-bold tabular-nums"
+            style={{ color: accent }}
+          >
+            {pickupCount}
+          </span>
         </div>
       )}
 
       {/* Pickup toasts — stacked above the scoreboard, fade out over PICKUP_TTL_MS. */}
+      {layers.has("notifications") || !uiKit?.layers ? (
       <div className="pointer-events-none absolute left-1/2 top-24 flex -translate-x-1/2 flex-col items-center gap-1">
         {pickupToasts.map((t) => {
           const age = Math.min(1, (Date.now() - t.ts) / PICKUP_TTL_MS);
@@ -263,16 +311,23 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           return (
             <div
               key={t.id}
-              className="rounded border border-amber-300/60 bg-black/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-amber-300 shadow"
-              style={{ opacity, transform: `translateY(${lift}px)` }}
+              className="rounded border bg-black/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest shadow"
+              style={{
+                opacity,
+                transform: `translateY(${lift}px)`,
+                borderColor: `${accent}99`,
+                color: accent,
+              }}
             >
               + {t.label}
             </div>
           );
         })}
       </div>
+      ) : null}
 
-      {/* Health bar — top left (RPG unit frame) */}
+      {/* Health bar — top left (RPG unit frame) — UI kit layer: unit-frame */}
+      {showUnitFrame && (
       <div className="absolute left-4 top-4 w-64">
         <RPGUnitFrame
           hp={playerHealth}
@@ -281,6 +336,16 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           level={1}
         />
       </div>
+      )}
+
+      {/* Optional action bar strip from UI kit */}
+      {showActionBar && (
+        <div className="absolute bottom-6 left-1/2 flex -translate-x-1/2 gap-1.5">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <RPGActionSlot key={i} hotkey={String(i + 1)} />
+          ))}
+        </div>
+      )}
 
       {/* Kill feed — top right (newest first, fades out) */}
       <div className="absolute right-4 top-4 flex w-64 flex-col gap-1">
@@ -350,14 +415,21 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         </div>
       )}
 
-      {/* Scoreboard — top center (RPG textured frame) */}
+      {/* Scoreboard — top center — UI kit layer: scoreboard */}
+      {showScoreboard && !showRtsHud && (
       <div className="absolute left-1/2 top-4 -translate-x-1/2">
         <div className="relative px-5 py-2 text-white" style={{ fontFamily: "'Rajdhani', sans-serif" }}>
           <img src={UI.general.background} alt="" draggable={false} className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill', pointerEvents: 'none' }} />
           <img src={UI.general.borderDecoration} alt="" draggable={false} className="absolute inset-0 w-full h-full" style={{ objectFit: 'fill', pointerEvents: 'none', opacity: 0.5 }} />
           <div className="relative z-10">
-            <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-amber-200/70">
-              Deathmatch — first to {scoreLimit}
+            <div
+              className="mb-1 text-center text-[10px] uppercase tracking-widest"
+              style={{ color: `${accent}b3` }}
+            >
+              {uiKit?.theme === "fps" || uiKit?.theme === "cyberpunk"
+                ? "Match"
+                : "Deathmatch"}{" "}
+              — first to {scoreLimit}
             </div>
             <div className="flex items-baseline gap-3 text-center">
               <div>
@@ -373,6 +445,31 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* RTS resource / hall HUD */}
+      {showRtsHud && (
+        <div className="absolute left-1/2 top-4 -translate-x-1/2">
+          <div className="rounded-lg border border-amber-600/40 bg-black/70 px-5 py-2 text-white shadow-lg backdrop-blur">
+            <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-amber-400/90">
+              RTS Skirmish — destroy enemy town hall
+            </div>
+            <div className="flex items-center gap-5 text-center text-sm">
+              <div>
+                <div className="text-[9px] uppercase text-sky-300">Your gold</div>
+                <div className="text-xl font-bold tabular-nums text-amber-300">{Math.floor(rtsGold.player)}</div>
+                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.player)} HP</div>
+              </div>
+              <div className="text-white/30">|</div>
+              <div>
+                <div className="text-[9px] uppercase text-red-300">Enemy gold</div>
+                <div className="text-xl font-bold tabular-nums text-red-300">{Math.floor(rtsGold.enemy)}</div>
+                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.enemy)} HP</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* RPG-style permanent-death overlay — quiet panel + Restart Scene
           button. Shown when a behavior emitted playerDied with

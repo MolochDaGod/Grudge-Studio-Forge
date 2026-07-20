@@ -588,3 +588,92 @@ export function groundProbe(
   }
   return null;
 }
+
+/**
+ * Forward (or custom direction) probe for climbable surfaces — ladders,
+ * Climb-tagged walls, Trigger climb volumes. Casts a short ray from
+ * chest height and walks the hit parent chain for `userData.surface`.
+ *
+ * Layer mask includes Terrain **and** Trigger so sensor ladders still hit.
+ */
+export function climbProbe(
+  scene: THREE.Object3D,
+  position: [number, number, number],
+  direction: [number, number, number],
+  options?: {
+    /** Height above feet for the ray origin. Default 1.1 m (chest). */
+    originHeight?: number;
+    maxDistance?: number;
+    excludeEntityIds?: readonly string[];
+  },
+): GroundProbeHit | null {
+  const originHeight = options?.originHeight ?? 1.1;
+  const maxDistance = options?.maxDistance ?? 0.85;
+  const excluded =
+    options?.excludeEntityIds && options.excludeEntityIds.length > 0
+      ? new Set(options.excludeEntityIds)
+      : null;
+
+  const dir = new THREE.Vector3(direction[0], direction[1], direction[2]);
+  if (dir.lengthSq() < 1e-8) return null;
+  dir.normalize();
+
+  SHARED_RAYCASTER.set(
+    new THREE.Vector3(position[0], position[1] + originHeight, position[2]),
+    dir,
+  );
+  SHARED_RAYCASTER.far = maxDistance;
+  const hits = SHARED_RAYCASTER.intersectObjects(scene.children, true);
+  if (hits.length === 0) return null;
+
+  const inspect = (
+    obj: THREE.Object3D,
+  ): { surface: string | null; entityId: string | null; layer: string | null } => {
+    let surface: string | null = null;
+    let entityId: string | null = null;
+    let layer: string | null = null;
+    let cur: THREE.Object3D | null = obj;
+    while (cur) {
+      const ud = cur.userData as
+        | { surface?: string; entityId?: string; layer?: string }
+        | undefined;
+      if (!surface && ud?.surface) surface = ud.surface;
+      if (!entityId && ud?.entityId) entityId = ud.entityId;
+      if (!layer && ud?.layer) layer = ud.layer;
+      if (surface && entityId && layer) break;
+      cur = cur.parent;
+    }
+    return { surface, entityId, layer };
+  };
+
+  const allowedLayers = new Set(["Terrain", "Trigger", "Default"]);
+
+  for (const hit of hits) {
+    const meta = inspect(hit.object);
+    if (excluded && meta.entityId && excluded.has(meta.entityId)) continue;
+    if (meta.entityId && meta.layer && !allowedLayers.has(meta.layer)) continue;
+    const surface = (meta.surface ?? "walk").toLowerCase();
+    if (surface !== "climb") continue;
+    return {
+      point: [hit.point.x, hit.point.y, hit.point.z],
+      distance: hit.distance,
+      normal:
+        hit.face && hit.object instanceof THREE.Mesh
+          ? (() => {
+              const n = hit.face.normal
+                .clone()
+                .transformDirection(hit.object.matrixWorld)
+                .normalize();
+              return [n.x, n.y, n.z] as [number, number, number];
+            })()
+          : [-dir.x, 0, -dir.z],
+      surface: "climb",
+      entityId: meta.entityId,
+    };
+  }
+  return null;
+}
+
+export function isClimbSurface(tag: string | null | undefined): boolean {
+  return (tag ?? "").toLowerCase() === "climb";
+}

@@ -43,9 +43,9 @@ describe("AI provider catalog", () => {
     expect(b.id).toBe("puter");
   });
 
-  it("getProvider falls back to anthropic for unknown ids", () => {
+  it("getProvider falls back to puter for unknown ids (free default)", () => {
     const fallback = getProvider("does-not-exist");
-    expect(fallback.id).toBe("server-anthropic");
+    expect(fallback.id).toBe("puter");
   });
 
   it("model ids use stable provider-prefixed keys", () => {

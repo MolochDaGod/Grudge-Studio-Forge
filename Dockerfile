@@ -11,8 +11,10 @@
 #   docker run --env-file .env -p 8080:8080 grudge-forge-api
 ###############################################################################
 
+# Node 22 LTS + pnpm 10 (pinned to match package.json packageManager)
 FROM node:22-slim AS deps
-RUN corepack enable && corepack prepare pnpm@latest --activate
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY lib/ ./lib/
@@ -33,6 +35,7 @@ COPY --from=build /app/artifacts/api-server/package.json ./
 
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV NODE_OPTIONS=--enable-source-maps
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s \

@@ -39,6 +39,7 @@ import {
   type AiAuditEntry,
 } from "@/ai/aiAuditLog";
 import { collectModelUrls, diagnoseScene, summarizeBySeverity, type Issue } from "./diagnose";
+import { autoFixScene } from "./autoFix";
 import { bounds, centroid, clusterPoints, nearestNeighborStats } from "./cluster";
 
 interface ToolDef {
@@ -140,6 +141,45 @@ const diagnoseSceneHandler: ToolHandler = async (input) => {
     data: {
       counts: summarizeBySeverity(issues),
       issues,
+    },
+  };
+};
+
+// ── auto_fix_scene ────────────────────────────────────────────────────
+const AUTO_FIX_SCENE: ToolDef = {
+  name: "auto_fix_scene",
+  description:
+    "Autonomously repair common diagnose_scene issues: add sun/ground, bump zero-intensity lights, spawn or mark a player (Grudge6 race kit preferred), rewrite toon-shooter/mutant/placeholder model URLs to assets.grudge-studio.com Grudge6 kits. Returns actions[] + remaining issues. Prefer this after diagnose_scene when severity includes errors/warns — then re-diagnose. Does not wipe the scene.",
+  input_schema: {
+    type: "object",
+    properties: {
+      deathmatch: {
+        type: "boolean",
+        description: "Also consider deathmatch-oriented remaining issues after fix.",
+      },
+      onlyRules: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional allow-list of diagnose rule ids to fix (e.g. ['no-lights','no-ground']).",
+      },
+    },
+  },
+};
+const autoFixSceneHandler: ToolHandler = async (input) => {
+  const result = autoFixScene({
+    deathmatch: input.deathmatch === true,
+    onlyRules: Array.isArray(input.onlyRules)
+      ? (input.onlyRules as string[]).map(String)
+      : undefined,
+  });
+  return {
+    ok: true,
+    data: {
+      actions: result.actions,
+      remaining: result.remaining,
+      beforeIssueCount: result.before,
+      afterIssueCount: result.after,
+      fixedCount: result.actions.length,
     },
   };
 };
@@ -556,6 +596,7 @@ function roundXYZ(p: { x: number; y: number; z: number }) {
 // ── Bundled exports ────────────────────────────────────────────────────
 export const defs: ToolDef[] = [
   DIAGNOSE_SCENE,
+  AUTO_FIX_SCENE,
   GET_ACTIVE_SCENE_META,
   GET_PROJECT_SUMMARY,
   LIST_ASSETS,
@@ -569,6 +610,7 @@ export const defs: ToolDef[] = [
 
 export const handlers: Record<string, ToolHandler> = {
   diagnose_scene: diagnoseSceneHandler,
+  auto_fix_scene: autoFixSceneHandler,
   get_active_scene_meta: getActiveSceneMetaHandler,
   get_project_summary: getProjectSummaryHandler,
   list_assets: listAssetsHandler,
@@ -580,8 +622,5 @@ export const handlers: Record<string, ToolHandler> = {
   describe_layout: describeLayoutHandler,
 };
 
-/** Tool names that mutate state. None — every tool in this folder is
- *  read-only by design (introspection / diagnostics). Exported for symmetry
- *  with `tools/scripting`, `tools/layers`, `tools/design` so `aiTools.ts`
- *  can spread destructive sets uniformly without per-folder special casing. */
-export const destructiveToolNames: string[] = [];
+/** Mutating tools in this folder (auto_fix_scene). */
+export const destructiveToolNames: string[] = ["auto_fix_scene"];

@@ -217,8 +217,14 @@ export function MenuBar({
             <MenubarItem onSelect={() => fire("gameforge:save")} data-testid="menu-file-save">
               Save Scene <MenubarShortcut>Ctrl+S</MenubarShortcut>
             </MenubarItem>
+            <MenubarItem onSelect={() => fire("gameforge:cloudSave")} data-testid="menu-file-cloud-save">
+              Cloud Save
+            </MenubarItem>
+            <MenubarItem onSelect={() => fire("gameforge:cloudOpen")} data-testid="menu-file-cloud-open">
+              Open from Cloud…
+            </MenubarItem>
             <MenubarItem onSelect={saveSnapshot} data-testid="menu-file-snapshot">
-              Save Snapshot to Cloud
+              Save Snapshot to Cloud (API)
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem onSelect={() => setImportOpen(true)} data-testid="menu-file-import-url">

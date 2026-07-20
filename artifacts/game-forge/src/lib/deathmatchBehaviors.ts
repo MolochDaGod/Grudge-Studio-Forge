@@ -114,7 +114,10 @@ exports.update = function(entity, ctx) {
     if (ctx.time.elapsed >= ctx.state.deadUntil) {
       ctx.state.dead = false;
       ctx.state.health = MAX_HEALTH;
-      const spawns = ctx.scene.findAll(function(e) { return e.name && e.name.indexOf("Spawn_") === 0; });
+      const spawns = ctx.scene.findAll(function(e) {
+        return e.behavior === "spawnpoint" ||
+          (e.name && (e.name.indexOf("Spawn_") === 0 || e.name.indexOf("PlayerSpawn") === 0));
+      });
       if (spawns.length > 0) {
         const sp = spawns[Math.floor(Math.random() * spawns.length)];
         // setPosition frame-stamps entity.id in pendingTeleportFrame for
@@ -412,7 +415,10 @@ exports.update = function(entity, ctx) {
     if (ctx.time.elapsed >= ctx.state.deadUntil) {
       ctx.state.dead = false;
       ctx.state.health = MAX_HEALTH;
-      const spawns = ctx.scene.findAll(function(e) { return e.name && e.name.indexOf("Spawn_") === 0; });
+      const spawns = ctx.scene.findAll(function(e) {
+        return e.behavior === "spawnpoint" ||
+          (e.name && (e.name.indexOf("Spawn_") === 0 || e.name.indexOf("EnemySpawn") === 0 || e.name.indexOf("PlayerSpawn") === 0));
+      });
       const target = spawns.length > 0
         ? spawns[Math.floor(Math.random() * spawns.length)].position
         : ctx.state.spawnPos;
@@ -981,8 +987,599 @@ exports.start = function(entity, ctx) {
 `;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Faction brains — ally / neutral / vendor / boss
+// ──────────────────────────────────────────────────────────────────────────────
+
+const ALLY_COMBAT = String.raw`
+function isHostileBehavior(b) {
+  return b === "enemy-deathmatch" || b === "enemy-rpg" || b === "boss";
+}
+function findNearestHostile(entity, ctx, maxDist) {
+  var best = null, bestD = maxDist || 45;
+  var all = ctx.scene.findAll(function(e) {
+    return e.id !== entity.id && isHostileBehavior(e.behavior);
+  });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    var dx = o.position[0] - entity.position[0];
+    var dz = o.position[2] - entity.position[2];
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+function findPlayer(ctx) {
+  var p = ctx.scene.find("Player");
+  if (p) return p;
+  var list = ctx.scene.findAll(function(e) {
+    return e.behavior === "player-deathmatch" || e.behavior === "player-rpg";
+  });
+  return list[0] || null;
+}
+
+const MAX_HEALTH = 120;
+const MOVE_SPEED = 5.5;
+const ATTACK_RANGE = 2.4;
+const ATTACK_COOLDOWN = 0.7;
+const ATTACK_DAMAGE = 18;
+const SENSE_RANGE = 40;
+
+exports.start = function(entity, ctx) {
+  ctx.state.health = MAX_HEALTH;
+  ctx.state.maxHealth = MAX_HEALTH;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.faction = "ally";
+  ctx.state.role = "ally";
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (ctx.state.dead) return;
+    // Ignore friendly fire from player
+    var from = fromId ? ctx.scene.findById(fromId) : null;
+    if (from && (from.behavior === "player-deathmatch" || from.behavior === "player-rpg" || from.behavior === "ally")) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, ctx.state.health - dmg);
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.scene.freeze(entity.id);
+      ctx.events.emit("kill", { killerId: fromId, victimId: entity.id, victimIsPlayer: false, faction: "ally" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var hostile = findNearestHostile(entity, ctx, SENSE_RANGE);
+  var player = findPlayer(ctx);
+  if (hostile) {
+    var dx = hostile.position[0] - entity.position[0];
+    var dz = hostile.position[2] - entity.position[2];
+    var dist = Math.sqrt(dx * dx + dz * dz) || 0.001;
+    if (dist > ATTACK_RANGE) {
+      var nx = dx / dist, nz = dz / dist;
+      ctx.scene.setPosition(entity.id, [
+        entity.position[0] + nx * MOVE_SPEED * ctx.time.delta,
+        entity.position[1],
+        entity.position[2] + nz * MOVE_SPEED * ctx.time.delta
+      ]);
+    } else if (ctx.time.elapsed - ctx.state.lastAttack >= ATTACK_COOLDOWN) {
+      ctx.state.lastAttack = ctx.time.elapsed;
+      ctx.scene.send(hostile.id, "damage", { amount: ATTACK_DAMAGE });
+      ctx.events.emit("allyAttack", { fromId: entity.id, targetId: hostile.id, amount: ATTACK_DAMAGE });
+    }
+    return;
+  }
+  // Soft follow player when no hostiles
+  if (player) {
+    var pdx = player.position[0] - entity.position[0];
+    var pdz = player.position[2] - entity.position[2];
+    var pd = Math.sqrt(pdx * pdx + pdz * pdz);
+    if (pd > 6 && pd < 50) {
+      ctx.scene.setPosition(entity.id, [
+        entity.position[0] + (pdx / pd) * MOVE_SPEED * 0.7 * ctx.time.delta,
+        entity.position[1],
+        entity.position[2] + (pdz / pd) * MOVE_SPEED * 0.7 * ctx.time.delta
+      ]);
+    }
+  }
+};
+`;
+
+const NEUTRAL_WANDER = String.raw`
+const MAX_HEALTH = 80;
+const MOVE_SPEED = 2.2;
+const ATTACK_RANGE = 2.0;
+const ATTACK_DAMAGE = 8;
+const ATTACK_COOLDOWN = 0.9;
+
+exports.start = function(entity, ctx) {
+  ctx.state.health = MAX_HEALTH;
+  ctx.state.maxHealth = MAX_HEALTH;
+  ctx.state.dead = false;
+  ctx.state.hostile = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.faction = "neutral";
+  ctx.state.role = "neutral";
+  ctx.state.wanderT = 0;
+  ctx.state.wanderDir = [Math.random() - 0.5, Math.random() - 0.5];
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, ctx.state.health - dmg);
+    ctx.state.hostile = true;
+    ctx.state.aggroId = fromId;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.scene.freeze(entity.id);
+      ctx.events.emit("kill", { killerId: fromId, victimId: entity.id, victimIsPlayer: false, faction: "neutral" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  if (ctx.state.hostile && ctx.state.aggroId) {
+    var target = ctx.scene.findById(ctx.state.aggroId);
+    if (!target) { ctx.state.hostile = false; return; }
+    var dx = target.position[0] - entity.position[0];
+    var dz = target.position[2] - entity.position[2];
+    var dist = Math.sqrt(dx * dx + dz * dz) || 0.001;
+    if (dist > ATTACK_RANGE) {
+      ctx.scene.setPosition(entity.id, [
+        entity.position[0] + (dx / dist) * MOVE_SPEED * 1.4 * ctx.time.delta,
+        entity.position[1],
+        entity.position[2] + (dz / dist) * MOVE_SPEED * 1.4 * ctx.time.delta
+      ]);
+    } else if (ctx.time.elapsed - ctx.state.lastAttack >= ATTACK_COOLDOWN) {
+      ctx.state.lastAttack = ctx.time.elapsed;
+      ctx.scene.send(target.id, "damage", { amount: ATTACK_DAMAGE });
+    }
+    return;
+  }
+  // Peaceful wander
+  ctx.state.wanderT -= ctx.time.delta;
+  if (ctx.state.wanderT <= 0) {
+    ctx.state.wanderT = 2 + Math.random() * 3;
+    ctx.state.wanderDir = [Math.random() - 0.5, Math.random() - 0.5];
+  }
+  var len = Math.sqrt(ctx.state.wanderDir[0] * ctx.state.wanderDir[0] + ctx.state.wanderDir[1] * ctx.state.wanderDir[1]) || 1;
+  ctx.scene.setPosition(entity.id, [
+    entity.position[0] + (ctx.state.wanderDir[0] / len) * MOVE_SPEED * ctx.time.delta,
+    entity.position[1],
+    entity.position[2] + (ctx.state.wanderDir[1] / len) * MOVE_SPEED * ctx.time.delta
+  ]);
+};
+`;
+
+const VENDOR = String.raw`
+exports.start = function(entity, ctx) {
+  ctx.state.faction = "vendor";
+  ctx.state.role = "vendor";
+  // Stock: parse npcLine as JSON array, or treat as shop title + default goods
+  var stock = [
+    { id: "potion", name: "Health Potion", price: 25 },
+    { id: "ammo", name: "Ammo Pack", price: 15 },
+    { id: "ration", name: "Ration", price: 10 }
+  ];
+  if (typeof entity.npcLine === "string" && entity.npcLine.trim().charAt(0) === "[") {
+    try { stock = JSON.parse(entity.npcLine); } catch (e) { /* keep default */ }
+  }
+  ctx.state.stock = stock;
+  ctx.state.title = (typeof entity.npcLine === "string" && entity.npcLine.trim().charAt(0) !== "[")
+    ? entity.npcLine
+    : (entity.name || "Vendor");
+
+  ctx.events.on("interact", function(payload) {
+    if (!payload || payload.targetId !== entity.id) return;
+    ctx.events.emit("npcDialog", {
+      fromId: entity.id,
+      name: ctx.state.title,
+      line: "Welcome, traveler. Browse my wares.",
+    });
+    ctx.events.emit("vendorOpen", {
+      vendorId: entity.id,
+      name: ctx.state.title,
+      stock: ctx.state.stock,
+    });
+  });
+};
+`;
+
+const BOSS = String.raw`
+const BASE_HEALTH = 500;
+const BASE_SPEED = 4.2;
+const BASE_DAMAGE = 35;
+const ATTACK_RANGE = 3.2;
+const ATTACK_COOLDOWN = 0.85;
+const ENRAGE_PCT = 0.3;
+
+exports.start = function(entity, ctx) {
+  ctx.state.maxHealth = BASE_HEALTH;
+  ctx.state.health = BASE_HEALTH;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.enraged = false;
+  ctx.state.faction = "enemy";
+  ctx.state.role = "boss";
+  ctx.state.spawnPos = entity.position.slice();
+  ctx.scene.on("damage", function(payload, fromId) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, ctx.state.health - dmg);
+    ctx.events.emit("bossHealth", {
+      bossId: entity.id,
+      health: ctx.state.health,
+      max: ctx.state.maxHealth,
+      enraged: ctx.state.enraged,
+    });
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.scene.freeze(entity.id);
+      ctx.events.emit("kill", { killerId: fromId, victimId: entity.id, victimIsPlayer: false, faction: "boss" });
+      ctx.events.emit("bossDefeated", { bossId: entity.id });
+    }
+  });
+  ctx.events.emit("bossHealth", { bossId: entity.id, health: BASE_HEALTH, max: BASE_HEALTH, enraged: false });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var player = ctx.scene.find("Player");
+  if (!player) {
+    var plist = ctx.scene.findAll(function(e) {
+      return e.behavior === "player-deathmatch" || e.behavior === "player-rpg";
+    });
+    player = plist[0];
+  }
+  if (!player) return;
+
+  var pct = ctx.state.health / ctx.state.maxHealth;
+  if (!ctx.state.enraged && pct <= ENRAGE_PCT) {
+    ctx.state.enraged = true;
+    ctx.events.emit("bossEnrage", { bossId: entity.id });
+  }
+  var speed = ctx.state.enraged ? BASE_SPEED * 1.45 : BASE_SPEED;
+  var damage = ctx.state.enraged ? BASE_DAMAGE * 1.5 : BASE_DAMAGE;
+
+  var dx = player.position[0] - entity.position[0];
+  var dz = player.position[2] - entity.position[2];
+  var dist = Math.sqrt(dx * dx + dz * dz) || 0.001;
+  if (dist > ATTACK_RANGE) {
+    ctx.scene.setPosition(entity.id, [
+      entity.position[0] + (dx / dist) * speed * ctx.time.delta,
+      entity.position[1],
+      entity.position[2] + (dz / dist) * speed * ctx.time.delta
+    ]);
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= ATTACK_COOLDOWN) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    ctx.scene.send(player.id, "damage", { amount: damage });
+    ctx.events.emit("bossAttack", { bossId: entity.id, amount: damage, enraged: ctx.state.enraged });
+  }
+};
+`;
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Registry
 // ──────────────────────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────────────
+// RTS skirmish — peon gather / footman fight / creep guard / match rules
+// Used by the rts-fort-royale starter (Warcraft-2-style foundation).
+// ──────────────────────────────────────────────────────────────────────────────
+
+const RTS_PEON = String.raw`
+const MOVE_SPEED = 4.2;
+const GATHER_RANGE = 3.2;
+const DEPOSIT_RANGE = 5.5;
+const GATHER_RATE = 8; // gold per second while at mine
+const CARRY_CAP = 20;
+
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function moveToward(entity, target, speed, dt) {
+  var dx = target[0] - entity.position[0];
+  var dz = target[2] - entity.position[2];
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  if (d < 0.4) return d;
+  var step = Math.min(speed * dt, d);
+  entity.position = [
+    entity.position[0] + (dx / d) * step,
+    entity.position[1],
+    entity.position[2] + (dz / d) * step,
+  ];
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  return d;
+}
+function findNearestResource(entity, ctx) {
+  var best = null, bestD = 1e9;
+  var all = ctx.scene.findAll(function(e) {
+    return e.name && (e.name.indexOf("GoldMine") === 0 || e.name.indexOf("Forest") === 0);
+  });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    var d = distXZ(entity.position, o.position);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+function findOwnHall(entity, ctx) {
+  var isPlayer = entity.layer === "Player" || (entity.name && entity.name.indexOf("Player") === 0);
+  var name = isPlayer ? "PlayerTownHall" : "EnemyTownHall";
+  return ctx.scene.find(name);
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.carrying = 0;
+  ctx.state.phase = "to_resource"; // to_resource | gather | to_hall
+  ctx.state.dead = false;
+  ctx.state.health = 40;
+  ctx.state.maxHealth = 40;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  if (ctx.state.phase === "to_resource" || ctx.state.phase === "gather") {
+    var mine = findNearestResource(entity, ctx);
+    if (!mine) return;
+    var d = moveToward(entity, mine.position, MOVE_SPEED, dt);
+    if (d <= GATHER_RANGE) {
+      ctx.state.phase = "gather";
+      ctx.state.carrying = Math.min(CARRY_CAP, (ctx.state.carrying || 0) + GATHER_RATE * dt);
+      if (ctx.state.carrying >= CARRY_CAP - 0.01) ctx.state.phase = "to_hall";
+    } else {
+      ctx.state.phase = "to_resource";
+    }
+  } else if (ctx.state.phase === "to_hall") {
+    var hall = findOwnHall(entity, ctx);
+    if (!hall) { ctx.state.phase = "to_resource"; return; }
+    var d2 = moveToward(entity, hall.position, MOVE_SPEED, dt);
+    if (d2 <= DEPOSIT_RANGE) {
+      var gold = Math.floor(ctx.state.carrying || 0);
+      if (gold > 0) {
+        ctx.events.emit("rtsGold", {
+          faction: (entity.layer === "Player") ? "player" : "enemy",
+          amount: gold,
+          fromId: entity.id,
+        });
+      }
+      ctx.state.carrying = 0;
+      ctx.state.phase = "to_resource";
+    }
+  }
+};
+`;
+
+const RTS_FOOTMAN = String.raw`
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+function isHostile(entity, other) {
+  if (!other || other.id === entity.id) return false;
+  if (other.behavior === "rts-creep") return true;
+  var n = other.name || "";
+  if (entity.layer === "Player") {
+    if (n === "EnemyTownHall") return true;
+    return other.layer === "NPC" && (
+      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
+      n.indexOf("Enemy") === 0
+    );
+  }
+  if (entity.layer === "NPC") {
+    if (n === "PlayerTownHall") return true;
+    return other.layer === "Player" && (
+      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
+      n.indexOf("Player") === 0
+    );
+  }
+  return false;
+}
+function findTarget(entity, ctx, maxDist) {
+  var best = null, bestD = maxDist || 80;
+  var all = ctx.scene.findAll(function(e) { return e.id !== entity.id; });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    if (!isHostile(entity, o)) continue;
+    // Prefer units over halls slightly by distance only
+    var d = distXZ(entity.position, o.position);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+
+exports.start = function(entity, ctx) {
+  var isPlayer = entity.layer === "Player";
+  ctx.state.health = 90;
+  ctx.state.maxHealth = 90;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.dmg = isPlayer ? 12 : 14;
+  ctx.state.range = 2.2;
+  ctx.state.speed = isPlayer ? 4.5 : 4.3;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+      ctx.events.emit("rtsUnitDied", { id: entity.id, faction: isPlayer ? "player" : "enemy" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  var target = findTarget(entity, ctx, 90);
+  if (!target) return;
+  var dx = target.position[0] - entity.position[0];
+  var dz = target.position[2] - entity.position[2];
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (d > ctx.state.range) {
+    var step = Math.min(ctx.state.speed * dt, d - ctx.state.range + 0.1);
+    entity.position = [
+      entity.position[0] + (dx / d) * step,
+      entity.position[1],
+      entity.position[2] + (dz / d) * step,
+    ];
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.75) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    ctx.scene.send(target.id, "damage", { amount: ctx.state.dmg });
+    // Town halls also take damage via name match
+    if (target.name && target.name.indexOf("TownHall") >= 0) {
+      ctx.events.emit("rtsBuildingDamage", {
+        buildingId: target.id,
+        name: target.name,
+        amount: ctx.state.dmg,
+      });
+    }
+  }
+};
+`;
+
+const RTS_CREEP = String.raw`
+function distXZ(a, b) {
+  var dx = a[0] - b[0], dz = a[2] - b[2];
+  return Math.sqrt(dx * dx + dz * dz);
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.home = entity.position.slice();
+  ctx.state.health = 80;
+  ctx.state.maxHealth = 80;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.aggro = false;
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    ctx.state.aggro = true;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health -= dmg;
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  var playerUnits = ctx.scene.findAll(function(e) {
+    return e.layer === "Player" && (e.behavior === "rts-peon" || e.behavior === "rts-footman");
+  });
+  var nearest = null, bestD = 14;
+  for (var i = 0; i < playerUnits.length; i++) {
+    var d = distXZ(entity.position, playerUnits[i].position);
+    if (d < bestD) { bestD = d; nearest = playerUnits[i]; }
+  }
+  if (nearest) ctx.state.aggro = true;
+  if (!ctx.state.aggro || !nearest) {
+    // Idle near home
+    var hx = ctx.state.home[0] - entity.position[0];
+    var hz = ctx.state.home[2] - entity.position[2];
+    var hd = Math.sqrt(hx * hx + hz * hz);
+    if (hd > 1.5) {
+      entity.position = [
+        entity.position[0] + (hx / hd) * 1.5 * dt,
+        entity.position[1],
+        entity.position[2] + (hz / hd) * 1.5 * dt,
+      ];
+    }
+    return;
+  }
+  var dx = nearest.position[0] - entity.position[0];
+  var dz = nearest.position[2] - entity.position[2];
+  var d2 = Math.sqrt(dx * dx + dz * dz) || 1;
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (d2 > 1.8) {
+    entity.position = [
+      entity.position[0] + (dx / d2) * 3.6 * dt,
+      entity.position[1],
+      entity.position[2] + (dz / d2) * 3.6 * dt,
+    ];
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.9) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    ctx.scene.send(nearest.id, "damage", { amount: 14 });
+  }
+};
+`;
+
+const GAMEMODE_RTS = String.raw`
+exports.start = function(entity, ctx) {
+  ctx.state.playerGold = 150;
+  ctx.state.enemyGold = 150;
+  ctx.state.playerHallHp = 1500;
+  ctx.state.enemyHallHp = 1500;
+  ctx.state.ended = false;
+  ctx.events.emit("rtsHud", {
+    playerGold: ctx.state.playerGold,
+    enemyGold: ctx.state.enemyGold,
+    playerHallHp: ctx.state.playerHallHp,
+    enemyHallHp: ctx.state.enemyHallHp,
+  });
+  ctx.events.on("rtsGold", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    if (payload.faction === "player") ctx.state.playerGold += payload.amount || 0;
+    else if (payload.faction === "enemy") ctx.state.enemyGold += payload.amount || 0;
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+  });
+  ctx.events.on("rtsBuildingDamage", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    var name = payload.name || "";
+    var amt = payload.amount || 0;
+    if (name.indexOf("PlayerTownHall") >= 0) ctx.state.playerHallHp = Math.max(0, ctx.state.playerHallHp - amt);
+    if (name.indexOf("EnemyTownHall") >= 0) ctx.state.enemyHallHp = Math.max(0, ctx.state.enemyHallHp - amt);
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+    if (ctx.state.playerHallHp <= 0) {
+      ctx.state.ended = true;
+      ctx.events.emit("outcome", { result: "lose" });
+    } else if (ctx.state.enemyHallHp <= 0) {
+      ctx.state.ended = true;
+      ctx.events.emit("outcome", { result: "win" });
+    }
+  });
+};
+
+exports.update = function(entity, ctx) {
+  // Pulse HUD occasionally so late-joining listeners get state
+  if (!ctx.state._lastHud || ctx.time.elapsed - ctx.state._lastHud > 1.5) {
+    ctx.state._lastHud = ctx.time.elapsed;
+    ctx.events.emit("rtsHud", {
+      playerGold: ctx.state.playerGold,
+      enemyGold: ctx.state.enemyGold,
+      playerHallHp: ctx.state.playerHallHp,
+      enemyHallHp: ctx.state.enemyHallHp,
+    });
+  }
+};
+`;
 
 export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "player-deathmatch": PLAYER_DEATHMATCH,
@@ -993,6 +1590,14 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   "player-rpg": PLAYER_RPG,
   "enemy-rpg": ENEMY_RPG,
   "npc-dialog": NPC_DIALOG,
+  ally: ALLY_COMBAT,
+  neutral: NEUTRAL_WANDER,
+  vendor: VENDOR,
+  boss: BOSS,
+  "rts-peon": RTS_PEON,
+  "rts-footman": RTS_FOOTMAN,
+  "rts-creep": RTS_CREEP,
+  "gamemode-rts": GAMEMODE_RTS,
 };
 
 /** Default physics layer per built-in behavior. Lets prefab definitions and
@@ -1010,4 +1615,40 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   "player-rpg": "Player",
   "enemy-rpg": "NPC",
   "npc-dialog": "NPC",
+  ally: "NPC",
+  neutral: "NPC",
+  vendor: "NPC",
+  boss: "NPC",
+  "rts-peon": null,
+  "rts-footman": null,
+  "rts-creep": "NPC",
+  "gamemode-rts": null,
 };
+
+/** High-level faction / ruleset catalog for AI + designers. */
+export const FACTION_RULESETS = {
+  deathmatch: {
+    id: "deathmatch",
+    description: "Player vs all enemy-deathmatch/boss. First to scoreLimit wins.",
+    player: ["player-deathmatch"],
+    hostile: ["enemy-deathmatch", "boss"],
+    friendly: ["ally"],
+    civilian: ["neutral", "vendor", "npc-dialog"],
+  },
+  rpg: {
+    id: "rpg",
+    description: "Adventure rules: permanent death, interact vendors, aggro RPG enemies.",
+    player: ["player-rpg"],
+    hostile: ["enemy-rpg", "boss"],
+    friendly: ["ally", "npc-dialog", "vendor"],
+    civilian: ["neutral"],
+  },
+  skirmish: {
+    id: "skirmish",
+    description: "Mixed forces: allies help player, neutrals ignore until struck, boss is objective.",
+    player: ["player-deathmatch", "player-rpg"],
+    hostile: ["enemy-deathmatch", "enemy-rpg", "boss"],
+    friendly: ["ally"],
+    civilian: ["neutral", "vendor", "npc-dialog"],
+  },
+} as const;

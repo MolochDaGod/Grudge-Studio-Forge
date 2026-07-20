@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_MODEL_YAW_OFFSETS, BUILTIN_MODEL_CLIPS, getRaceClips } from "../builtinModels";
+import {
+  BUILTIN_MODEL_YAW_OFFSETS,
+  BUILTIN_MODEL_CLIPS,
+  getRaceClips,
+  resolveModelUrl,
+  resolveBuiltinModel,
+} from "../builtinModels";
 import { BUILTIN_BEHAVIORS } from "../deathmatchBehaviors";
 import {
   PROCEDURAL_BIPED_CLIP_NAMES,
@@ -14,6 +20,39 @@ describe("BUILTIN_MODEL_YAW_OFFSETS", () => {
     for (const r of RACES) {
       const key = `race:${r.id}`;
       expect(BUILTIN_MODEL_YAW_OFFSETS[key], `missing yaw offset for ${key}`).toBe(Math.PI);
+    }
+  });
+});
+
+describe("RTS demo assets", () => {
+  it("maps creature:mutant to a real CDN race GLB (no SPA HTML 404 path)", () => {
+    const url = resolveBuiltinModel("builtin:creature:mutant");
+    expect(url).toBeTruthy();
+    expect(url).toMatch(/^https:\/\/assets\.grudge-studio\.com\//);
+    expect(url).toMatch(/\.glb$/);
+    // Must not request literal "creature:mutant.glb" which 404s and crashes demos
+    expect(url).not.toContain("creature:mutant");
+  });
+
+  it("rewrites absolute broken R2 mutant URLs that older SPAs already resolved", () => {
+    const broken =
+      "https://assets.grudge-studio.com/builtin/creature:mutant.glb";
+    const url = resolveModelUrl(broken);
+    expect(url).not.toContain("creature:mutant");
+    expect(url).toMatch(/\.glb$/);
+    expect(url).toMatch(/^https:\/\/assets\.grudge-studio\.com\//);
+  });
+
+  it("never returns a relative SPA path for unknown builtins (would yield HTML as GLB)", () => {
+    const url = resolveModelUrl("builtin:this-key-does-not-exist-xyz");
+    expect(url).toMatch(/^https:\/\//);
+    expect(url).not.toMatch(/index\.html/);
+  });
+
+  it("registers RTS behaviors used by rts-fort-royale", () => {
+    for (const k of ["rts-peon", "rts-footman", "rts-creep", "gamemode-rts"] as const) {
+      expect(BUILTIN_BEHAVIORS[k], `missing behavior ${k}`).toBeTruthy();
+      expect(BUILTIN_BEHAVIORS[k].length).toBeGreaterThan(50);
     }
   });
 });

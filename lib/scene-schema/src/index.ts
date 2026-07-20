@@ -47,6 +47,13 @@ export interface PhysicsComponent {
   mass?: number;
   restitution?: number;
   friction?: number;
+  /** Continuous collision detection — enable for fast projectiles / thin
+   *  colliders so they don't tunnel through walls at high speed. */
+  ccd?: boolean;
+  /** Override linear damping (falls back to material.drag when unset). */
+  linearDamping?: number;
+  /** Angular damping — high values stop props from spinning forever. */
+  angularDamping?: number;
   /** When `colliderType === "convex-decomp"`, points to the asset id
    *  holding the precomputed hull set (array of Vec3 vertex arrays). */
   collidersAssetId?: number;
@@ -55,6 +62,10 @@ export interface PhysicsComponent {
    *  `bake_convex_hulls` tool can reproduce the same decomposition. See
    *  `lib/colliderBaker.ts → BuildHullsOptions`. */
   colliderBakeOptions?: ColliderBakeOptions;
+  /** Character capsule half-height (m). Default 0.85 for humanoids. */
+  capsuleHalfHeight?: number;
+  /** Character capsule radius (m). Default 0.35. */
+  capsuleRadius?: number;
 }
 
 /** V-HACD tuning knobs surfaced in the Inspector's advanced bake panel
@@ -275,7 +286,23 @@ export type BehaviorKind =
    *  this entity, emits a `npcDialog` HUD event with the per-entity
    *  {@link SceneEntity.npcLine} (or a generic fallback). The HUD speech
    *  bubble in `PlayHUD` shows the line for a few seconds. */
-  | "npc-dialog";
+  | "npc-dialog"
+  /** Combat ally — fights hostiles (enemy-deathmatch, enemy-rpg, boss), never targets Player. Layer NPC. */
+  | "ally"
+  /** Neutral civilian — wanders; only fights after taking damage. Layer NPC. */
+  | "neutral"
+  /** Vendor merchant — interact (E via player-rpg) opens vendor HUD from npcLine stock. Layer NPC. */
+  | "vendor"
+  /** Boss enemy — high HP, heavy damage, no flee, enrages under 30 percent HP. Layer NPC. */
+  | "boss"
+  /** RTS worker — auto-gathers nearest gold resource, deposits at own town hall. */
+  | "rts-peon"
+  /** RTS melee combatant — auto-engages nearest hostile unit/building. */
+  | "rts-footman"
+  /** RTS neutral creep — guards nearby resource, aggro on approach. */
+  | "rts-creep"
+  /** RTS match controller — gold HUD, town-hall destruction win/lose. */
+  | "gamemode-rts";
 
 export interface SceneEntity {
   id: string;
@@ -408,8 +435,9 @@ export interface Environment {
   /** Mouselook sensitivity (radians per pixel, default 0.0025). */
   mouseSensitivity?: number;
   /** Game mode driving the play HUD. `deathmatch` shows the kill counter,
-   *  damage flash, hit indicators, respawn timer, win/lose banner. */
-  gameMode?: "sandbox" | "deathmatch";
+   *  damage flash, hit indicators, respawn timer, win/lose banner.
+   *  `rts` shows gold + resource strip and town-hall win/lose. */
+  gameMode?: "sandbox" | "deathmatch" | "rts";
   /** Deathmatch: score required to win (default 10). */
   scoreLimit?: number;
   /** Deathmatch: respawn delay in seconds (default 5). */
@@ -456,6 +484,69 @@ export interface Environment {
    *  cloth/flag verts; m/s velocity bias added to spawned particles).
    *  Defaults to {@link DEFAULT_WIND} when unset. */
   wind?: Vec3;
+  /**
+   * Professional game HUD / UI kit theme for Play mode.
+   * Design source of truth: https://ui.grudge-studio.com
+   * (Fantasy / Cyberpunk / FPS / RPG kits — theme, layers, export).
+   */
+  uiKit?: {
+    /** Kit theme matching ui.grudge-studio.com genres. */
+    theme?: "fantasy" | "cyberpunk" | "fps" | "rpg";
+    /**
+     * Enabled HUD layer stack (bottom → top). Known ids:
+     * hud-root, unit-frame, action-bar, minimap, chat, quest-tracker,
+     * inventory, shop, skill-tree, notifications, crosshair, scoreboard.
+     */
+    layers?: string[];
+    /** Relative font scale (1 = default). */
+    fontScale?: number;
+    /** Accent / brand color (hex). */
+    accent?: string;
+    /** Optional deep link back to a saved design on the UI kit site. */
+    designUrl?: string;
+  };
+  /**
+   * Equirectangular skybox / panorama texture URL (https, data:, or R2).
+   * When set, CelestialSky samples it as a background dome.
+   */
+  skyTexture?: string;
+  /**
+   * Procedural celestial dome: gradient sky, stars, sun, moon, aurora.
+   * When unset the viewport falls back to a solid skyColor background.
+   */
+  celestial?: {
+    /** Master enable. Default true when the object is present. */
+    enabled?: boolean;
+    /** 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset, 1 = midnight. */
+    timeOfDay?: number;
+    /** Star density / brightness (0–1). Auto-boosted at night. */
+    stars?: number;
+    /** Show sun disc + directional glow. Default true. */
+    sun?: boolean;
+    /** Show moon disc when night. Default true. */
+    moon?: boolean;
+    /** Aurora ribbon intensity 0–1 (polar night look). Default 0. */
+    aurora?: number;
+    /** Sky dome radius in world units. Default 800. */
+    radius?: number;
+    /** Top zenith color override (hex). */
+    zenithColor?: string;
+    /** Horizon color override (hex). */
+    horizonColor?: string;
+  };
+  /**
+   * Volumetric / particle weather FX (rain, snow, dust, storm, fog bank).
+   */
+  weather?: {
+    /** Preset type. `clear` disables particles. */
+    type?: "clear" | "rain" | "snow" | "dust" | "storm" | "fog";
+    /** Effect intensity 0–1 (density, opacity, wind bias). Default 0.55. */
+    intensity?: number;
+    /** Wind push for precipitation [x,y,z]. Falls back to Environment.wind. */
+    wind?: Vec3;
+    /** Particle count scale (1 = preset default). */
+    density?: number;
+  };
 }
 
 /** Gentle default wind — a light breeze blowing in +X. Picked so a
@@ -493,6 +584,21 @@ export const DEFAULT_ENV: Environment = {
   playerMoveSpeed: 6,
   mouseSensitivity: 0.0025,
   sensorLayers: [...DEFAULT_SENSOR_LAYERS],
+  /** Procedural sky enabled by default so new scenes get stars/sun/gradient. */
+  celestial: {
+    enabled: true,
+    timeOfDay: 0.55,
+    stars: 0.7,
+    sun: true,
+    moon: true,
+    aurora: 0,
+    radius: 900,
+  },
+  weather: {
+    type: "clear",
+    intensity: 0.55,
+    density: 1,
+  },
 };
 
 /** Infer a default {@link LayerName} for an entity that has no `layer`
@@ -510,8 +616,20 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   if (e.type === "plane" || lower === "map" || lower === "terrain") return "Terrain";
   if (e.controllerKind && e.controllerKind !== "none") return "Player";
   if (typeof e.behavior === "string" && e.behavior.startsWith("enemy-")) return "NPC";
-  if (e.behavior === "npc-dialog") return "NPC";
-  if (e.behavior === "spawnpoint") return "Trigger";
+  if (
+    e.behavior === "npc-dialog" ||
+    e.behavior === "ally" ||
+    e.behavior === "neutral" ||
+    e.behavior === "vendor" ||
+    e.behavior === "boss"
+  ) {
+    return "NPC";
+  }
+  if (e.behavior === "spawnpoint" || e.behavior === "pickup-trigger") return "Trigger";
+  if (e.behavior === "player-deathmatch" || e.behavior === "player-rpg") return "Player";
+  // RTS peon/footman keep their authored layer (Player vs NPC); Default if unset.
+  if (e.behavior === "rts-creep") return "NPC";
+  if (e.behavior === "gamemode-rts") return "Default";
   return "Default";
 }
 

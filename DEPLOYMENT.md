@@ -100,8 +100,8 @@ Worker: **`grudge-gameforge-web`**
 
 | Binding | Value |
 | --- | --- |
-| `ORIGIN` | `https://forge-origin.grudge-studio.com` (or the HTTPS base of the SPA) |
-| `API_ORIGIN` | `https://the-engine.up.railway.app` (or forge-api) |
+| `ORIGIN` | `https://grudge-studio-forge.vercel.app` (thin SPA shell; builtins on R2) |
+| `API_ORIGIN` | `https://grudge-api-production-0d46.up.railway.app` (or forge-api) |
 | `ASSETS_ORIGIN` | `https://assets.grudge-studio.com` |
 
 Routes (already set):
@@ -138,11 +138,31 @@ Build on the strong machine, then either:
 
 ---
 
-## Frontend — Vercel (legacy / optional)
+## Frontend — Vercel production deploy (authoritative)
 
-Native GitHub integration on project **`grudge-studio-forge`**. Default 8 GB
-builders currently OOM; only use if **Enhanced Builds** (16 GB+) are enabled
-or you deploy **prebuilt** output (`vercel deploy --prebuilt` after a local build).
+### Why git deploys were failing
+
+Vercel’s standard **8 GB** builders **OOM (SIGKILL)** while running
+`vite build` for the Forge SPA. That showed as “Failed to deploy” on every
+push from GitHub.
+
+### Fixed pipeline (use this)
+
+| Path | How |
+| --- | --- |
+| **GitHub Actions** (preferred) | `.github/workflows/deploy-spa.yml` — 16G swap, then `vercel deploy --prod` of `dist/public` |
+| **Local one-shot** | `pnpm run build:forge` then `pnpm run deploy:forge` |
+| **Vercel git build** | **Skipped** by default via `scripts/vercel-ignore-build.mjs` (stops red failed deploys). Re-enable only with Enhanced Builds + `VERCEL_FORCE_BUILD=1` |
+
+Secrets for GHA: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+
+Smoke after deploy: `pnpm run smoke:forge`.
+
+### Vercel project notes
+
+Project **`grudge-studio-forge`**. Default 8 GB builders OOM on a full Vite
+build. Use prebuilt upload (above) or enable **Enhanced Builds** (16 GB+)
+and set `VERCEL_FORCE_BUILD=1` to run `scripts/vercel-build.mjs` on Vercel.
 
 ### Vercel project settings
 
@@ -168,6 +188,24 @@ forge  CNAME  cname.vercel-dns.com  (proxied)
 
 While the Worker owns `forge.grudge-studio.com/*`, set Vercel as `ORIGIN`
 instead of attaching the domain to Vercel directly.
+
+### Free AI proxy (Groq / OpenRouter / Gemini / …)
+
+Worker: **`grudge-forge-free-ai`** · route `forge.grudge-studio.com/api/free-ai/*`
+
+| Binding | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Optional shared free Groq key |
+| `OPENROUTER_API_KEY` | Optional OpenRouter free models |
+| `GEMINI_API_KEY` | Optional Google AI Studio |
+| (etc.) | See `workers/forge-free-ai/worker.js` |
+
+Users can also paste BYOK keys in the AI Worker panel (localStorage).
+
+```bash
+# Smoke production after deploy
+node scripts/smoke-forge-prod.mjs
+```
 
 ## API Server — Railway
 
@@ -212,6 +250,11 @@ Set these in the Railway service variables:
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Claude AI assistant |
 | `CF_AI_API_TOKEN` | Cloudflare Workers AI (image gen, text gen, vision) |
+| `CF_D1_DATABASE_ID` | Cloudflare D1 database for AI brain SQL (read-only SELECT) |
+| `CF_D1_API_TOKEN` | D1 API token (falls back to `CF_AI_API_TOKEN` / `CF_API_TOKEN`) |
+| `GITHUB_TOKEN` | GitHub search rate limits for AI `search_github` tool |
+
+**AI knowledge routes** (mounted on the API under `/api/knowledge/*`): R2 list, D1 query, Postgres brain catalog, GitHub search, curated three.js/R3F/Rapier docs fetch.
 
 **Puter Auth (optional):**
 

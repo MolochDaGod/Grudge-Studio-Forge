@@ -107,6 +107,314 @@ const ent = (o: BuildOpts): SceneEntity => {
   return e;
 };
 
+/** Walkable ground plane — Terrain layer + Walk surface for nav / agents. */
+function groundPlane(opts: {
+  scale?: number;
+  color?: string;
+  y?: number;
+}): SceneEntity {
+  const g = ent({
+    name: "Ground",
+    type: "plane",
+    position: [0, opts.y ?? 0, 0],
+    rotation: [-Math.PI / 2, 0, 0],
+    scale: [opts.scale ?? 200, opts.scale ?? 200, 1],
+    color: opts.color ?? "#0a0a14",
+    roughness: 1,
+    metalness: 0,
+    fixed: true,
+  });
+  g.layer = "Terrain";
+  g.surface = "Walk";
+  return g;
+}
+
+/**
+ * Visual map mesh. Collider policy:
+ *   - `trimesh` / collideMode "trimesh" — mesh fidelity (openings/holes work)
+ *   - `collide` / collideMode "aabb" — sealed AABB (blocks doorways — avoid for towns)
+ *   - collideMode "auto" — trimesh when scale ≤ 1.25, else visual-only + ground plane
+ *   - default large maps — visual-only (pair with groundPlane + structure kit)
+ */
+function mapModel(opts: {
+  mapKey: string;
+  scale: number;
+  position?: [number, number, number];
+  rotationY?: number;
+  /** When true, attach fixed cuboid collider (AABB). Prefer trimesh for maps with doors. */
+  collide?: boolean;
+  /** When true, use trimesh so mesh holes/archways stay passable. */
+  trimesh?: boolean;
+  /** Explicit mode wins over collide/trimesh flags. */
+  collideMode?: "none" | "aabb" | "trimesh" | "auto";
+}): SceneEntity {
+  const e: SceneEntity = {
+    id: id(),
+    name: "Map",
+    type: "model",
+    model: { url: `builtin:${opts.mapKey}` },
+    transform: {
+      position: opts.position ?? [0, 0, 0],
+      rotation: [0, opts.rotationY ?? 0, 0],
+      scale: [opts.scale, opts.scale, opts.scale],
+    },
+    parentId: null,
+    layer: "Terrain",
+    surface: "Walk",
+  };
+  let mode = opts.collideMode;
+  if (!mode) {
+    if (opts.trimesh) mode = "trimesh";
+    else if (opts.collide) mode = "aabb";
+    else mode = "none";
+  }
+  if (mode === "auto") {
+    mode = opts.scale <= 1.25 ? "trimesh" : "none";
+  }
+  if (mode === "trimesh") {
+    e.physics = {
+      bodyType: "fixed",
+      colliderType: "trimesh",
+      mass: 0,
+      restitution: 0.1,
+      friction: 1,
+    };
+  } else if (mode === "aabb") {
+    e.physics = {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.1,
+      friction: 1,
+    };
+  }
+  return e;
+}
+
+/** Fixed prop (tree / building / fence) with cuboid collider + Terrain/Walk. */
+function propCollider(opts: {
+  name: string;
+  modelUrl: string;
+  position: [number, number, number];
+  rotationY?: number;
+  scale?: number | [number, number, number];
+  parentId?: string | null;
+  surface?: "Walk" | "Climb" | "None";
+}): SceneEntity {
+  const sc = opts.scale ?? 1;
+  const scale: [number, number, number] = Array.isArray(sc) ? sc : [sc, sc, sc];
+  return {
+    id: id(),
+    name: opts.name,
+    type: "model",
+    model: { url: opts.modelUrl },
+    transform: {
+      position: opts.position,
+      rotation: [0, opts.rotationY ?? 0, 0],
+      scale,
+    },
+    parentId: opts.parentId ?? null,
+    layer: "Terrain",
+    surface: opts.surface ?? "Walk",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.05,
+      friction: 0.9,
+    },
+  };
+}
+
+/** Shallow water volume — Water layer + Swim surface (sensor by default). */
+function waterVolume(opts: {
+  position: [number, number, number];
+  scale?: [number, number, number];
+  name?: string;
+}): SceneEntity {
+  return {
+    id: id(),
+    name: opts.name ?? "Water",
+    type: "box",
+    transform: {
+      position: opts.position,
+      rotation: [0, 0, 0],
+      scale: opts.scale ?? [12, 1.2, 12],
+    },
+    parentId: null,
+    material: { color: "#1a4a6e", metalness: 0.2, roughness: 0.3 },
+    layer: "Water",
+    surface: "Swim",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0,
+      friction: 0.1,
+    },
+  };
+}
+
+/** Climbable ladder / wall volume — Trigger sensor + Climb surface.
+ *  Sensors don't block the capsule, so the player can enter and climb. */
+function climbVolume(opts: {
+  position: [number, number, number];
+  scale?: [number, number, number];
+  name?: string;
+}): SceneEntity {
+  const scale = opts.scale ?? [1, 4, 0.55];
+  const [px, py, pz] = opts.position;
+  // Author position is the *base* of the ladder; volume center is mid-height.
+  const h = scale[1];
+  return {
+    id: id(),
+    name: opts.name ?? "Ladder",
+    type: "box",
+    transform: {
+      position: [px, py + h / 2, pz],
+      rotation: [0, 0, 0],
+      scale,
+    },
+    parentId: null,
+    material: { color: "#8b6914", metalness: 0.15, roughness: 0.75, opacity: 0.85 },
+    layer: "Trigger",
+    surface: "Climb",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0,
+      friction: 0,
+    },
+  };
+}
+
+/**
+ * Scatter trees, buildings, fences around a radius so starters have
+ * real obstacle colliders beyond a flat ground plane.
+ */
+function environmentKit(opts: {
+  radius: number;
+  parentId?: string | null;
+  includeWater?: boolean;
+  includeClimb?: boolean;
+}): SceneEntity[] {
+  const out: SceneEntity[] = [];
+  const r = opts.radius;
+  const parentId = opts.parentId ?? null;
+
+  // Trees (north / east / west)
+  out.push(
+    propCollider({
+      name: "Tree_N",
+      modelUrl: "builtin:nature-tree",
+      position: [0, 0, -r * 0.55],
+      scale: 1.4,
+      parentId,
+    }),
+  );
+  out.push(
+    propCollider({
+      name: "Tree_E",
+      modelUrl: "builtin:nature-tree",
+      position: [r * 0.5, 0, 0],
+      scale: 1.2,
+      rotationY: Math.PI / 3,
+      parentId,
+    }),
+  );
+  out.push(
+    propCollider({
+      name: "Tree_W",
+      modelUrl: "builtin:nature-autumn-trees",
+      position: [-r * 0.48, 0, r * 0.15],
+      scale: 0.9,
+      parentId,
+    }),
+  );
+
+  // Building / hut
+  out.push(
+    propCollider({
+      name: "Building_Hut",
+      modelUrl: "builtin:bldg-woodcutter-hut",
+      position: [r * 0.35, 0, r * 0.4],
+      scale: 1.1,
+      rotationY: -Math.PI / 5,
+      parentId,
+    }),
+  );
+
+  // Fence posts as solid cuboids (no dedicated fence GLB — use crates/boxes)
+  for (let i = 0; i < 5; i++) {
+    const t = i / 4;
+    const x = -r * 0.25 + t * r * 0.5;
+    out.push({
+      id: id(),
+      name: `Fence_${i + 1}`,
+      type: "box",
+      transform: {
+        position: [x, 0.6, r * 0.62],
+        rotation: [0, 0, 0],
+        scale: [0.25, 1.2, 0.25],
+      },
+      parentId,
+      material: { color: "#6b5344", metalness: 0, roughness: 0.9 },
+      layer: "Terrain",
+      surface: "Walk",
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.05,
+        friction: 0.95,
+      },
+    });
+  }
+  // Horizontal fence rail
+  out.push({
+    id: id(),
+    name: "Fence_Rail",
+    type: "box",
+    transform: {
+      position: [0, 0.7, r * 0.62],
+      rotation: [0, 0, 0],
+      scale: [r * 0.55, 0.15, 0.12],
+    },
+    parentId,
+    material: { color: "#5c4638", metalness: 0, roughness: 0.85 },
+    layer: "Terrain",
+    surface: "Walk",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.05,
+      friction: 0.9,
+    },
+  });
+
+  if (opts.includeWater !== false) {
+    out.push(
+      waterVolume({
+        position: [-r * 0.4, 0.4, -r * 0.35],
+        scale: [Math.max(8, r * 0.22), 1.0, Math.max(8, r * 0.22)],
+        name: "SwimPool",
+      }),
+    );
+  }
+  if (opts.includeClimb !== false) {
+    out.push(
+      climbVolume({
+        position: [r * 0.2, 3, -r * 0.45],
+        scale: [2.5, 6, 0.5],
+        name: "ClimbWall",
+      }),
+    );
+  }
+  return out;
+}
+
 /** Third-person zombie shooter sandbox inspired by YetAnotherZombieHorror
  *  and Mugen87/dive. Player rigged character with a parented rifle; the
  *  player runs the same `player-deathmatch` behavior as the dm-* maps so
@@ -576,34 +884,14 @@ export function characterShowcaseScene(): SceneData {
 export function rpgVillageScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Visible village map (no physics — handled by the invisible Ground
-  // plane below, same pattern as the deathmatch templates).
-  entities.push({
-    id: id(),
-    name: "Map",
-    type: "model",
-    model: { url: "builtin:map-deserttown" },
-    transform: {
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      scale: [0.6, 0.6, 0.6],
-    },
-    parentId: null,
-  });
+  // Village map + Terrain/Walk
+  entities.push(mapModel({ mapKey: "map-deserttown", scale: 0.6, collide: true }));
 
-  // Invisible collision ground.
-  entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#b08754",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
-    }),
-  );
+  // Walkable ground
+  entities.push(groundPlane({ scale: 200, color: "#b08754" }));
+
+  // Plaza props — trees, fences, swim/climb
+  entities.push(...environmentKit({ radius: 16, includeWater: true, includeClimb: true }));
 
   // Per-race weapon names mirror RACE_WEAPON in
   // artifacts/game-forge/src/lib/objectStoreApi.ts (kept inline here so
@@ -645,6 +933,7 @@ export function rpgVillageScene(): SceneData {
     },
     controllerKind: "thirdPerson",
     behavior: "player-rpg",
+    layer: "Player",
     parentId: null,
   });
   entities.push({
@@ -656,20 +945,35 @@ export function rpgVillageScene(): SceneData {
     parentId: playerId,
   });
 
-  // Friendlies — placed around the plaza as idle NPCs (no behavior
-  // script for v1, just visible characters with cylinder colliders).
-  // Each carries its proper per-race builtin key so EntityRenderer
-  // resolves the matching CDN GLB, with the matching weapon parented
-  // underneath (axe / mace / bow).
+  // Friendlies — dialog / vendor / ally roles around the plaza.
   const FRIENDLIES: {
     race: "dwarf" | "frost-dwarf" | "elf";
     name: string;
     pos: [number, number, number];
     line: string;
+    behavior: "npc-dialog" | "vendor" | "ally";
   }[] = [
-    { race: "dwarf", name: "Dwarf", pos: [-3.5, 0, -2.5], line: "Welcome to the village, traveler. Mind the orcs across the plaza." },
-    { race: "frost-dwarf", name: "Frost Dwarf", pos: [-4.5, 0, 1.5], line: "Cold steel and colder ale — that's the dwarven way." },
-    { race: "elf", name: "Elf", pos: [-2.5, 0, 3.5], line: "Tread softly. Even the desert stones remember." },
+    {
+      race: "dwarf",
+      name: "Dwarf_Vendor",
+      pos: [-3.5, 0, -2.5],
+      line: "Village Outfitter",
+      behavior: "vendor",
+    },
+    {
+      race: "frost-dwarf",
+      name: "Frost_Dwarf",
+      pos: [-4.5, 0, 1.5],
+      line: "Cold steel and colder ale — that's the dwarven way.",
+      behavior: "npc-dialog",
+    },
+    {
+      race: "elf",
+      name: "Elf_Ally",
+      pos: [-2.5, 0, 3.5],
+      line: "I walk with you against the orcs.",
+      behavior: "ally",
+    },
   ];
   for (const f of FRIENDLIES) {
     const npcId = id();
@@ -691,9 +995,8 @@ export function rpgVillageScene(): SceneData {
         restitution: 0.2,
         friction: 0.8,
       },
-      // Press E nearby to pop a one-line speech bubble (handled by
-      // PlayHUD's npcDialog subscriber).
-      behavior: "npc-dialog",
+      behavior: f.behavior,
+      layer: "NPC",
       npcLine: f.line,
       parentId: null,
     });
@@ -707,11 +1010,32 @@ export function rpgVillageScene(): SceneData {
     });
   }
 
-  // Enemies — orc + skeleton across the plaza, running the RPG-flavored
-  // enemy-rpg behavior (peaceful Yuka wander → only hostile when the
-  // player attacks them or gets close → melee chase, no respawn). Each
-  // holds their per-race melee weapon (club / sword).
-  const ENEMIES: { race: "orc" | "skeleton"; name: string; pos: [number, number, number] }[] = [
+  // Neutral civilian (generic character — keep one entity per race for catalog tests)
+  entities.push({
+    id: id(),
+    name: "Neutral_Merchant_Guard",
+    type: "model",
+    model: { url: ASSETS.character, tint: "#94a3b8" },
+    transform: { position: [1.5, 0, -4], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.2,
+      friction: 0.8,
+    },
+    behavior: "neutral",
+    layer: "NPC",
+    parentId: null,
+  });
+
+  // Enemies — orc + skeleton; last is boss.
+  // enemy-rpg: peaceful until provoked. boss: always hostile tank.
+  const ENEMIES: {
+    race: "orc" | "skeleton";
+    name: string;
+    pos: [number, number, number];
+  }[] = [
     { race: "orc", name: "Orc", pos: [4.5, 0, -2.0] },
     { race: "skeleton", name: "Skeleton", pos: [3.5, 0, 3.0] },
   ];
@@ -736,6 +1060,7 @@ export function rpgVillageScene(): SceneData {
         friction: 0.8,
       },
       behavior: "enemy-rpg",
+      layer: "NPC",
       parentId: null,
     });
     entities.push({
@@ -747,6 +1072,29 @@ export function rpgVillageScene(): SceneData {
       parentId: enemyId,
     });
   }
+
+  // Boss uses dedicated boss character (keeps one entity per race key for catalog)
+  entities.push({
+    id: id(),
+    name: "Village_Boss",
+    type: "model",
+    model: { url: "builtin:char-boss-orc", tint: "#a855f7" },
+    transform: {
+      position: [6, 0, 0.5],
+      rotation: [0, -Math.PI / 2, 0],
+      scale: [1.25, 1.25, 1.25],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.2,
+      friction: 0.8,
+    },
+    behavior: "boss",
+    layer: "NPC",
+    parentId: null,
+  });
 
   // Lighting — warm directional sun + soft hemisphere ambient (matches
   // the deserttown tone). The sun is encoded as a directional light
@@ -807,35 +1155,39 @@ function buildDeathmatch(opts: {
   brazierLights?: { pos: [number, number, number]; color: string; intensity: number; distance: number }[];
 }): SceneData {
   const entities: SceneEntity[] = [];
+  // Scale props relative to play radius (not map visual scale, which can be huge).
+  const propRadius = Math.min(Math.max(opts.spawnRadius * 0.9, 14), 80);
 
-  // Visible map (no physics). The big GLB drives the look; physics is handled
-  // by the invisible ground plane below so the player can't fall through.
-  entities.push({
-    id: id(),
-    name: "Map",
-    type: "model",
-    model: { url: `builtin:${opts.mapKey}` },
-    transform: {
-      position: [0, 0, 0],
-      rotation: [0, opts.mapRotationY ?? 0, 0],
-      scale: [opts.mapScale, opts.mapScale, opts.mapScale],
-    },
-    parentId: null,
-  });
-
-  // Invisible collision ground.
+  // Visible map — Terrain/Walk. Collider only when scale is modest (perf).
   entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#0a0a14",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
+    mapModel({
+      mapKey: opts.mapKey,
+      scale: opts.mapScale,
+      rotationY: opts.mapRotationY,
+      collide: opts.mapScale <= 2,
     }),
   );
+
+  // Walkable ground collider (primary locomotion surface).
+  entities.push(
+    groundPlane({
+      scale: Math.max(200, opts.spawnRadius * 4),
+      color: (opts.env.groundColor as string) ?? "#0a0a14",
+    }),
+  );
+
+  // Trees / buildings / fences / swim / climb kit
+  const kitRoot = id();
+  entities.push({
+    id: kitRoot,
+    name: "EnvironmentColliders",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Terrain",
+    surface: "None",
+  });
+  entities.push(...environmentKit({ radius: propRadius, parentId: kitRoot }));
 
   // Player.
   const playerId = id();
@@ -845,9 +1197,41 @@ function buildDeathmatch(opts: {
     type: "model",
     model: { url: ASSETS.character },
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
     controllerKind: "thirdPerson",
     behavior: "player-deathmatch",
+    layer: "Player",
+    surface: "None",
+    parentId: null,
+  });
+
+  // One combat ally
+  entities.push({
+    id: id(),
+    name: "Ally_Companion",
+    type: "model",
+    model: { url: ASSETS.character, tint: "#4ade80" },
+    transform: {
+      position: [3, 0, 2],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.1,
+      friction: 0.7,
+    },
+    behavior: "ally",
+    layer: "NPC",
+    surface: "None",
     parentId: null,
   });
 
@@ -859,32 +1243,50 @@ function buildDeathmatch(opts: {
       name: `Spawn_${i + 1}`,
       type: "empty",
       transform: {
-        position: [Math.cos(a) * opts.spawnRadius, 0, Math.sin(a) * opts.spawnRadius],
+        position: [
+          Math.cos(a) * opts.spawnRadius,
+          0,
+          Math.sin(a) * opts.spawnRadius,
+        ],
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
       },
       behavior: "spawnpoint",
+      layer: "Trigger",
+      surface: "None",
       parentId: null,
     });
   }
 
-  // Enemies.
+  // Enemies (+ optional boss as last unit when count >= 4).
   for (let i = 0; i < opts.enemyCount; i++) {
     const a = (i / opts.enemyCount) * Math.PI * 2 + Math.PI / opts.enemyCount;
     const r = opts.spawnRadius * 0.85;
     const s = 0.95 + (i % 3) * 0.05;
+    const isBoss = i === opts.enemyCount - 1 && opts.enemyCount >= 4;
     entities.push({
       id: id(),
-      name: `Enemy_${i + 1}`,
+      name: isBoss ? "Boss_Warlord" : `Enemy_${i + 1}`,
       type: "model",
-      model: { url: ASSETS.character, tint: "#ff5050" },
+      model: {
+        url: ASSETS.character,
+        tint: isBoss ? "#a855f7" : "#ff5050",
+      },
       transform: {
         position: [Math.cos(a) * r, 0, Math.sin(a) * r],
         rotation: [0, a + Math.PI, 0],
-        scale: [s, s, s],
+        scale: isBoss ? [1.35, 1.35, 1.35] : [s, s, s],
       },
-      physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0.2, friction: 0.8 },
-      behavior: "enemy-deathmatch",
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0.2,
+        friction: 0.8,
+      },
+      behavior: isBoss ? "boss" : "enemy-deathmatch",
+      layer: "NPC",
+      surface: "None",
       parentId: null,
     });
   }
@@ -896,7 +1298,12 @@ function buildDeathmatch(opts: {
         name: `Mood Light`,
         type: "light",
         position: bl.pos,
-        light: { kind: "point", color: bl.color, intensity: bl.intensity, distance: bl.distance },
+        light: {
+          kind: "point",
+          color: bl.color,
+          intensity: bl.intensity,
+          distance: bl.distance,
+        },
       }),
     );
   }
@@ -921,6 +1328,7 @@ function buildDeathmatch(opts: {
       gameMode: "deathmatch",
       scoreLimit: 10,
       respawnDelay: 5,
+      sensorLayers: ["Trigger", "Water"],
     },
   };
 }
@@ -1248,29 +1656,16 @@ export function forgeDungeonInteriorScene(): SceneData {
 export function survivalCampDemoScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // Map — use the encampment (forest camp mood)
-  entities.push({
-    id: id(),
-    name: "Map",
-    type: "model",
-    model: { url: "builtin:map-encampment" },
-    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [0.5, 0.5, 0.5] },
-    parentId: null,
-  });
-
-  // Invisible collision ground
+  // Map — encampment (forest camp mood) + Terrain/Walk
   entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [200, 200, 1],
-      color: "#2a2418",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
-    }),
+    mapModel({ mapKey: "map-encampment", scale: 0.5, collide: true }),
   );
+
+  // Walkable ground
+  entities.push(groundPlane({ scale: 200, color: "#2a2418" }));
+
+  // Trees / fences / swim / climb around camp
+  entities.push(...environmentKit({ radius: 18, includeWater: true, includeClimb: true }));
 
   // ── Camp center: tent + campfire ──
   const campId = id();
@@ -1282,15 +1677,17 @@ export function survivalCampDemoScene(): SceneData {
     parentId: null,
   });
 
-  // Survivor tent
-  entities.push({
-    id: id(),
-    name: "Tent",
-    type: "model",
-    model: { url: "builtin:prop-survivors-tent" },
-    transform: { position: [3, 0, 0], rotation: [0, -Math.PI / 4, 0], scale: [1.2, 1.2, 1.2] },
-    parentId: campId,
-  });
+  // Survivor tent (solid collider)
+  entities.push(
+    propCollider({
+      name: "Tent",
+      modelUrl: "builtin:prop-survivors-tent",
+      position: [3, 0, 0],
+      rotationY: -Math.PI / 4,
+      scale: 1.2,
+      parentId: campId,
+    }),
+  );
 
   // Campfire (animated fire VFX)
   entities.push({
@@ -1321,9 +1718,53 @@ export function survivalCampDemoScene(): SceneData {
     type: "model",
     model: { url: "builtin:char-survivor-male" },
     transform: { position: [0, 0, -3], rotation: [0, 0, 0], scale: [1, 1, 1] },
-    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
     controllerKind: "thirdPerson",
     behavior: "player-deathmatch",
+    layer: "Player",
+    parentId: null,
+  });
+
+  // Ally survivor + camp vendor
+  entities.push({
+    id: id(),
+    name: "Ally_Ranger",
+    type: "model",
+    model: { url: "builtin:char-ncr-ranger", tint: "#4ade80" },
+    transform: { position: [2, 0, -1], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.1,
+      friction: 0.7,
+    },
+    behavior: "ally",
+    layer: "NPC",
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "CampVendor",
+    type: "model",
+    model: { url: "builtin:char-bandit", tint: "#fbbf24" },
+    transform: { position: [-2.5, 0, 1.5], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.7,
+    },
+    behavior: "vendor",
+    layer: "NPC",
+    npcLine: "Camp Quartermaster",
     parentId: null,
   });
 
@@ -1454,35 +1895,20 @@ export function survivalCampDemoScene(): SceneData {
 export function citySandboxScene(): SceneData {
   const entities: SceneEntity[] = [];
 
-  // ── City map model ──
-  entities.push({
-    id: id(),
-    name: "City Map",
-    type: "model",
-    model: { url: "builtin:map-dude-theft-city" },
-    transform: {
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      // The map is authored at a very large scale (coords in the 10000s);
-      // scale it down so it fits the default Rapier world and camera.
-      scale: [0.01, 0.01, 0.01],
-    },
-    parentId: null,
-  });
-
-  // ── Collision ground ──
+  // ── City map model (visual) — Terrain/Walk for probes ──
   entities.push(
-    ent({
-      name: "Ground",
-      type: "plane",
-      rotation: [-Math.PI / 2, 0, 0],
-      scale: [500, 500, 1],
-      color: "#2a2a2a",
-      roughness: 1,
-      metalness: 0,
-      fixed: true,
+    mapModel({
+      mapKey: "map-dude-theft-city",
+      scale: 0.01,
+      collide: false,
     }),
   );
+
+  // ── Collision ground ──
+  entities.push(groundPlane({ scale: 500, color: "#2a2a2a" }));
+
+  // Street furniture colliders near spawn
+  entities.push(...environmentKit({ radius: 24, includeWater: true, includeClimb: true }));
 
   // ── Player (third-person with rifle) ──
   const playerId = id();
@@ -1492,9 +1918,53 @@ export function citySandboxScene(): SceneData {
     type: "model",
     model: { url: ASSETS.character },
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-    physics: { bodyType: "kinematicPosition", colliderType: "cylinder", mass: 1, restitution: 0, friction: 0.6 },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
     controllerKind: "thirdPerson",
     behavior: "player-deathmatch",
+    layer: "Player",
+    parentId: null,
+  });
+
+  // Neutral pedestrian + vendor for open-world feel
+  entities.push({
+    id: id(),
+    name: "Civilian",
+    type: "model",
+    model: { url: ASSETS.character, tint: "#94a3b8" },
+    transform: { position: [6, 0, 4], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.1,
+      friction: 0.7,
+    },
+    behavior: "neutral",
+    layer: "NPC",
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "StreetVendor",
+    type: "model",
+    model: { url: ASSETS.character, tint: "#fbbf24" },
+    transform: { position: [-5, 0, 3], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.7,
+    },
+    behavior: "vendor",
+    layer: "NPC",
+    npcLine: "Street Market",
     parentId: null,
   });
 
@@ -1557,4 +2027,687 @@ export function citySandboxScene(): SceneData {
       playerMoveSpeed: 8,
     },
   };
+}
+
+
+// ── Arena — Underground Wars (AI / behavior-tree test) ─────────────────
+// Mirrors the production 20260604.1 template so re-seeding API keeps
+// forge.grudge-studio.com examples working after a Railway redeploy.
+export function arenaUndergroundWarsScene(): SceneData {
+  const entities: SceneEntity[] = [];
+
+  const mapRoot = id();
+  entities.push({
+    id: mapRoot,
+    name: "Map",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Terrain",
+    surface: "Walk",
+  });
+
+  entities.push({
+    id: id(),
+    name: "MapModel",
+    type: "model",
+    model: { url: "builtin:map-underground-wars" },
+    transform: {
+      position: [-255.5, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [70, 70, 70],
+    },
+    parentId: mapRoot,
+    physics: {
+      bodyType: "fixed",
+      colliderType: "trimesh",
+      mass: 0,
+      restitution: 0.1,
+      friction: 1,
+    },
+  });
+
+  entities.push({
+    id: id(),
+    name: "SafetyFloor",
+    type: "plane",
+    transform: {
+      position: [0, -200, 0],
+      rotation: [-Math.PI / 2, 0, 0],
+      scale: [800, 800, 1],
+    },
+    parentId: mapRoot,
+    material: { color: "#05050a", metalness: 0, roughness: 1 },
+    layer: "Default",
+    surface: "None",
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.2,
+      friction: 1,
+    },
+  });
+
+  const players = id();
+  entities.push({
+    id: players,
+    name: "Players",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Player",
+  });
+
+  const playerId = id();
+  entities.push({
+    id: playerId,
+    name: "Player",
+    type: "model",
+    model: { url: "builtin:character", yawOffset: Math.PI },
+    transform: { position: [0, 0, -95], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
+    controllerKind: "thirdPerson",
+    behavior: "player-deathmatch",
+    layer: "Player",
+    parentId: players,
+  });
+
+  const playerSpawns = id();
+  entities.push({
+    id: playerSpawns,
+    name: "Player Spawns",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Trigger",
+  });
+  const pSpawnPos: [number, number, number][] = [
+    [-45, 0, -100],
+    [0, 0, -110],
+    [45, 0, -100],
+    [-25, 0, -80],
+    [25, 0, -80],
+  ];
+  pSpawnPos.forEach((pos, i) => {
+    entities.push({
+      id: id(),
+      name: `PlayerSpawn_${i + 1}`,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      layer: "Trigger",
+      parentId: playerSpawns,
+    });
+  });
+
+  const enemySpawns = id();
+  entities.push({
+    id: enemySpawns,
+    name: "Enemy Spawns",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "Trigger",
+  });
+  const eSpawnPos: [number, number, number][] = [
+    [-45, 0, 100],
+    [0, 0, 110],
+    [45, 0, 100],
+    [-25, 0, 80],
+    [25, 0, 80],
+  ];
+  eSpawnPos.forEach((pos, i) => {
+    entities.push({
+      id: id(),
+      name: `EnemySpawn_${i + 1}`,
+      type: "empty",
+      transform: { position: pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      behavior: "spawnpoint",
+      layer: "Trigger",
+      parentId: enemySpawns,
+    });
+  });
+
+  const enemies = id();
+  entities.push({
+    id: enemies,
+    name: "Enemies",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+    layer: "NPC",
+  });
+
+  type EnemySpec = {
+    name: string;
+    pos: [number, number, number];
+    behavior: "enemy-deathmatch" | "boss";
+    speed: number;
+    tint: string;
+    scale?: number;
+  };
+  const enemySpecs: EnemySpec[] = [
+    { name: "East_Grunt_1", pos: [-50, 0, 70], behavior: "enemy-deathmatch", speed: 5, tint: "#ff5050" },
+    { name: "East_Skirmisher", pos: [-55, 0, 95], behavior: "enemy-deathmatch", speed: 6, tint: "#ff7070" },
+    { name: "East_Grunt_2", pos: [-45, 0, 115], behavior: "enemy-deathmatch", speed: 5, tint: "#ff5050" },
+    { name: "West_Grunt_1", pos: [50, 0, 70], behavior: "enemy-deathmatch", speed: 5, tint: "#ff5050" },
+    { name: "West_Skirmisher", pos: [55, 0, 95], behavior: "enemy-deathmatch", speed: 6, tint: "#ff7070" },
+    { name: "West_Grunt_2", pos: [45, 0, 115], behavior: "enemy-deathmatch", speed: 5, tint: "#ff5050" },
+    { name: "Center_Ambusher_1", pos: [15, 0, 45], behavior: "enemy-deathmatch", speed: 6.5, tint: "#f97316" },
+    { name: "Center_Ambusher_2", pos: [-15, 0, 45], behavior: "enemy-deathmatch", speed: 6.5, tint: "#f97316" },
+    { name: "Rear_Sentry_1", pos: [20, 0, 120], behavior: "enemy-deathmatch", speed: 4.5, tint: "#ef4444" },
+    {
+      name: "Boss_Warlord",
+      pos: [-20, 0, 120],
+      behavior: "boss",
+      speed: 4.5,
+      tint: "#a855f7",
+      scale: 1.4,
+    },
+  ];
+  for (const e of enemySpecs) {
+    const sc = e.scale ?? 1;
+    entities.push({
+      id: id(),
+      name: e.name,
+      type: "model",
+      model: { url: "builtin:character", tint: e.tint },
+      transform: {
+        position: e.pos,
+        rotation: [0, Math.PI, 0],
+        scale: [sc, sc, sc],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0.2,
+        friction: 0.8,
+      },
+      behavior: e.behavior,
+      layer: "NPC",
+      navAgent: { speed: e.speed, radius: 0.4 },
+      parentId: enemies,
+    });
+  }
+
+  // Player-side ally on south flank
+  entities.push({
+    id: id(),
+    name: "Ally_Vanguard",
+    type: "model",
+    model: { url: "builtin:character", tint: "#4ade80" },
+    transform: {
+      position: [8, 0, -80],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0.1,
+      friction: 0.7,
+    },
+    behavior: "ally",
+    layer: "NPC",
+    navAgent: { speed: 5.5, radius: 0.4 },
+    parentId: null,
+  });
+
+  const lighting = id();
+  entities.push({
+    id: lighting,
+    name: "Lighting",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+  const lights: { pos: [number, number, number]; color: string; intensity: number; distance: number }[] = [
+    { pos: [0, 30, -90], color: "#7fb0ff", intensity: 14, distance: 160 },
+    { pos: [0, 30, 90], color: "#ff8a6b", intensity: 14, distance: 160 },
+    { pos: [0, 40, 0], color: "#cfe0ff", intensity: 10, distance: 200 },
+  ];
+  for (const L of lights) {
+    entities.push({
+      id: id(),
+      name: "Mood Light",
+      type: "light",
+      transform: { position: L.pos, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: lighting,
+      light: {
+        kind: "point",
+        color: L.color,
+        intensity: L.intensity,
+        distance: L.distance,
+      },
+    });
+  }
+
+  const logic = id();
+  entities.push({
+    id: logic,
+    name: "GameLogic",
+    type: "empty",
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    parentId: null,
+  });
+  entities.push({
+    id: id(),
+    name: "GameManager",
+    type: "empty",
+    transform: { position: [0, -50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+    behavior: "gamemode-deathmatch",
+    parentId: logic,
+  });
+
+  return {
+    entities,
+    environment: {
+      ...DEFAULT_ENV,
+      skyColor: "#1a1320",
+      groundColor: "#241b29",
+      ambientIntensity: 0.5,
+      sunIntensity: 0.7,
+      cameraMode: "thirdPerson",
+      cameraTargetEntityId: playerId,
+      gameMode: "deathmatch",
+      scoreLimit: 10,
+    },
+  };
+}
+
+// ── RTS — Fort Royale skirmish (Warcraft-2 style foundation) ─────────────
+// Clean, error-free demo: plane ground (no unsupported terrain type),
+// toon-rts race units (CDN), skeleton-alias creeps, RTS behaviors for
+// peon gather / footman fight / creep aggro / town-hall win condition.
+export function rtsFortRoyaleScene(): SceneData {
+  return withIdScope("rts-fort-royale", () => {
+    const entities: SceneEntity[] = [];
+
+    // Large walkable ground (avoids invalid EntityType "terrain")
+    entities.push({
+      id: id(),
+      name: "Ground",
+      type: "plane",
+      transform: {
+        position: [0, 0, 0],
+        rotation: [-Math.PI / 2, 0, 0],
+        scale: [400, 400, 1],
+      },
+      parentId: null,
+      material: { color: "#3d5c3a", metalness: 0, roughness: 0.95 },
+      layer: "Terrain",
+      surface: "Walk",
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+    });
+
+    // Optional fort decoration (map GLB is large; soft-fail via builtin resolve)
+    entities.push({
+      id: id(),
+      name: "FortDecoration",
+      type: "model",
+      model: { url: "builtin:map-fort-royale" },
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      parentId: null,
+      layer: "Default",
+      surface: "None",
+    });
+
+    // ── Player base (SW) ──────────────────────────────────────────────
+    const playerBase = id();
+    entities.push({
+      id: playerBase,
+      name: "PlayerBase",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "Player",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerTownHall",
+      type: "box",
+      transform: {
+        position: [-40, 4, -40],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      material: { color: "#3a6ea8", roughness: 0.85, metalness: 0.05 },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: playerBase,
+      layer: "Player",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerPeon",
+      type: "model",
+      model: { url: "builtin:race:warrior" },
+      raceId: "warrior",
+      transform: {
+        position: [-32, 0, -40],
+        rotation: [0, 0, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: playerBase,
+      layer: "Player",
+      behavior: "rts-peon",
+    });
+    entities.push({
+      id: id(),
+      name: "PlayerFootman",
+      type: "model",
+      model: { url: "builtin:race:warrior" },
+      raceId: "warrior",
+      transform: {
+        position: [-32, 0, -32],
+        rotation: [0, 0, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: playerBase,
+      layer: "Player",
+      behavior: "rts-footman",
+    });
+
+    // ── Enemy base (NE) ───────────────────────────────────────────────
+    const enemyBase = id();
+    entities.push({
+      id: enemyBase,
+      name: "EnemyBase",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "NPC",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyTownHall",
+      type: "box",
+      transform: {
+        position: [40, 4, 40],
+        rotation: [0, 0, 0],
+        scale: [8, 8, 8],
+      },
+      material: { color: "#a83a3a", roughness: 0.85, metalness: 0.05 },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyPeon",
+      type: "model",
+      model: { url: "builtin:race:orc", tint: "#ff6060" },
+      raceId: "orc",
+      transform: {
+        position: [32, 0, 40],
+        rotation: [0, Math.PI, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+      behavior: "rts-peon",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyFootman",
+      type: "model",
+      model: { url: "builtin:race:orc", tint: "#ff5050" },
+      raceId: "orc",
+      transform: {
+        position: [32, 0, 32],
+        rotation: [0, Math.PI, 0],
+        scale: [0.95, 0.95, 0.95],
+      },
+      physics: {
+        bodyType: "kinematicPosition",
+        colliderType: "cylinder",
+        mass: 1,
+        restitution: 0,
+        friction: 0.6,
+      },
+      parentId: enemyBase,
+      layer: "NPC",
+      behavior: "rts-footman",
+    });
+
+    // ── Resources ─────────────────────────────────────────────────────
+    const resources = id();
+    entities.push({
+      id: resources,
+      name: "Resources",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+    });
+    entities.push({
+      id: id(),
+      name: "GoldMine_PlayerSide",
+      type: "box",
+      transform: {
+        position: [-18, 1.5, -18],
+        rotation: [0, 0, 0],
+        scale: [4, 3, 4],
+      },
+      material: {
+        color: "#e0b840",
+        emissive: "#553f10",
+        roughness: 0.6,
+        metalness: 0.7,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+    entities.push({
+      id: id(),
+      name: "GoldMine_EnemySide",
+      type: "box",
+      transform: {
+        position: [18, 1.5, 18],
+        rotation: [0, 0, 0],
+        scale: [4, 3, 4],
+      },
+      material: {
+        color: "#e0b840",
+        emissive: "#553f10",
+        roughness: 0.6,
+        metalness: 0.7,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+    entities.push({
+      id: id(),
+      name: "Forest_Mid",
+      type: "cylinder",
+      transform: {
+        position: [0, 3, 0],
+        rotation: [0, 0, 0],
+        scale: [3, 6, 3],
+      },
+      material: {
+        color: "#3d6b3d",
+        emissive: "#0a1408",
+        roughness: 0.6,
+        metalness: 0.05,
+      },
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+      parentId: resources,
+      layer: "Default",
+    });
+
+    // ── Creeps (skeleton alias for creature:mutant — always loads) ────
+    const camps = id();
+    entities.push({
+      id: camps,
+      name: "NeutralCamps",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+      layer: "NPC",
+    });
+    const creepSpots: [number, number, number][] = [
+      [-14, 0, -18],
+      [-22, 0, -18],
+      [14, 0, 18],
+      [22, 0, 18],
+      [-4, 0, 4],
+      [4, 0, -4],
+    ];
+    creepSpots.forEach((pos, i) => {
+      entities.push({
+        id: id(),
+        name: `Creep_${i + 1}`,
+        type: "model",
+        model: { url: "builtin:creature:mutant", tint: "#a0a0ff" },
+        raceId: "skeleton",
+        transform: {
+          position: pos,
+          rotation: [0, 0, 0],
+          scale: [0.9, 0.9, 0.9],
+        },
+        physics: {
+          bodyType: "kinematicPosition",
+          colliderType: "cylinder",
+          mass: 1,
+          restitution: 0.05,
+          friction: 1,
+        },
+        parentId: camps,
+        layer: "NPC",
+        behavior: "rts-creep",
+      });
+    });
+
+    // ── Lighting + match controller ───────────────────────────────────
+    const lighting = id();
+    entities.push({
+      id: lighting,
+      name: "Lighting",
+      type: "empty",
+      transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      parentId: null,
+    });
+    for (const L of [
+      { pos: [-40, 12, -40] as [number, number, number], color: "#88aaff" },
+      { pos: [40, 12, 40] as [number, number, number], color: "#ff8866" },
+      { pos: [0, 14, 0] as [number, number, number], color: "#ffe8c0" },
+    ]) {
+      entities.push({
+        id: id(),
+        name: "Brazier",
+        type: "light",
+        transform: {
+          position: L.pos,
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+        },
+        parentId: lighting,
+        light: {
+          kind: "point",
+          color: L.color,
+          intensity: 12,
+          distance: 60,
+        },
+      });
+    }
+
+    entities.push({
+      id: id(),
+      name: "GameManager",
+      type: "empty",
+      transform: {
+        position: [0, -50, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+      parentId: null,
+      behavior: "gamemode-rts",
+    });
+
+    return {
+      entities,
+      environment: {
+        ...DEFAULT_ENV,
+        skyColor: "#1a1410",
+        groundColor: "#2a1f14",
+        ambientIntensity: 0.5,
+        sunIntensity: 0.85,
+        cameraMode: "rts",
+        cameraTargetEntityId: null,
+        gameMode: "rts",
+        playerMoveSpeed: 6,
+      },
+    };
+  });
 }

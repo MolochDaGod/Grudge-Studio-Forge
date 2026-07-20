@@ -595,6 +595,25 @@ const BEHAVIOR_DOCS: Record<
     description:
       "Score tracker for player vs. enemy kills; emits win/lose when scoreLimit is reached. Attach to a hidden empty named 'GameManager'.",
   },
+  "rts-peon": {
+    description:
+      "RTS worker: auto-moves to nearest GoldMine/Forest, gathers, deposits at own TownHall. Emits rtsGold for the match HUD.",
+    recommendedLayer: "Player",
+  },
+  "rts-footman": {
+    description:
+      "RTS melee unit: auto-engages nearest hostile peon/footman/creep/enemy town hall. Emits rtsBuildingDamage on halls.",
+    recommendedLayer: "Player",
+  },
+  "rts-creep": {
+    description:
+      "Neutral camp guard: idles near spawn, aggroes on nearby player RTS units.",
+    recommendedLayer: "NPC",
+  },
+  "gamemode-rts": {
+    description:
+      "RTS match controller: tracks gold + town-hall HP, emits rtsHud and win/lose. Attach to a hidden empty named GameManager.",
+  },
   spawnpoint: {
     description:
       "Pure marker — lets player/enemy behaviors find spawn points by behavior tag.",
@@ -618,6 +637,26 @@ const BEHAVIOR_DOCS: Record<
   "npc-dialog": {
     description:
       "Friendly NPC: listens for the player-rpg E-key 'interact' event and pops a one-line speech bubble in the HUD. Configure the line via SceneEntity.npcLine; falls back to '...' if unset.",
+    recommendedLayer: "NPC",
+  },
+  ally: {
+    description:
+      "Combat ally brain: seeks nearest hostile (enemy-deathmatch / enemy-rpg / boss), melee-fights them, soft-follows the player when idle. Ignores friendly fire from player.",
+    recommendedLayer: "NPC",
+  },
+  neutral: {
+    description:
+      "Civilian ruleset: wanders peacefully until damaged, then retaliates against the attacker. No deathmatch scoring side-effects required.",
+    recommendedLayer: "NPC",
+  },
+  vendor: {
+    description:
+      "Merchant: on player-rpg interact, emits npcDialog + vendorOpen with stock (default potions/ammo, or JSON array in npcLine).",
+    recommendedLayer: "NPC",
+  },
+  boss: {
+    description:
+      "Boss strategy: 500 HP, heavy melee, never flees, enrages under 30% HP (speed+damage). Emits bossHealth / bossEnrage / bossDefeated.",
     recommendedLayer: "NPC",
   },
 };

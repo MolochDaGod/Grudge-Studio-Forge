@@ -62,15 +62,40 @@ router.post(
   "/projects",
   withDbErrors(async (req, res) => {
     const body = CreateProjectBody.parse(req.body);
-    const [project] = await db
-      .insert(projectsTable)
-      .values({ name: body.name, description: body.description ?? "" })
-      .returning();
-    res.status(201).json({
-      ...project,
-      createdAt: project.createdAt.toISOString(),
-      updatedAt: project.updatedAt.toISOString(),
-    });
+    try {
+      const [project] = await db
+        .insert(projectsTable)
+        .values({ name: body.name, description: body.description ?? "" })
+        .returning();
+      res.status(201).json({
+        ...project,
+        createdAt: project.createdAt.toISOString(),
+        updatedAt: project.updatedAt.toISOString(),
+      });
+    } catch (err) {
+      // Common after manual inserts / restore: serial sequence behind max(id)
+      // → unique_violation on forge_projects_pkey. Realign and retry once.
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code?: unknown }).code)
+          : "";
+      if (code === "23505") {
+        await db.execute(
+          sql`SELECT setval(pg_get_serial_sequence('forge_projects','id'), COALESCE((SELECT MAX(id) FROM forge_projects), 1))`,
+        );
+        const [project] = await db
+          .insert(projectsTable)
+          .values({ name: body.name, description: body.description ?? "" })
+          .returning();
+        res.status(201).json({
+          ...project,
+          createdAt: project.createdAt.toISOString(),
+          updatedAt: project.updatedAt.toISOString(),
+        });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

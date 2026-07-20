@@ -69,3 +69,4 @@ _*.log
 _tmp_*
 build*.log
 *-debug-*.log
+.env*

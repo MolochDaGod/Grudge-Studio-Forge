@@ -99,6 +99,20 @@ export interface MaterialComponent {
    *  the per-kind default. */
   opacity?: number;
 
+  // ── Texture maps (https / data / /builtin relative URLs) ──
+  /** Albedo / diffuse map. Applied as MeshStandardMaterial.map. */
+  mapUrl?: string;
+  /** Tangent-space normal map. */
+  normalMapUrl?: string;
+  /** Roughness map (grayscale). */
+  roughnessMapUrl?: string;
+  /** Metalness map (grayscale). */
+  metalnessMapUrl?: string;
+  /** Emissive map. */
+  emissiveMapUrl?: string;
+  /** UV repeat for all maps on this material. Default [1,1]. */
+  mapRepeat?: [number, number];
+
   // ── Physical overrides ──
   /** Override per-kind density (kg/m³). */
   density?: number;

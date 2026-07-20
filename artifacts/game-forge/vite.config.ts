@@ -26,6 +26,84 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * `src/lib/prefetch.ts` (or the user opens a project), the chunks are
  * either already in cache or in flight.
  */
+/**
+ * Production deploys should NOT ship public/builtin (hundreds of MB of GLBs).
+ * Those load from R2 (assets.grudge-studio.com/builtin). Strip after copy.
+ * Also guarantee vercel.json SPA rewrites exist (prebuilt dist deploys).
+ */
+function stripHeavyPublicAssets(): Plugin {
+  return {
+    name: "strip-heavy-public-assets",
+    apply: "build",
+    async closeBundle() {
+      const { rm, writeFile, stat, copyFile, access } = await import("node:fs/promises");
+      const publicDir = path.resolve(import.meta.dirname, "dist/public");
+      const builtinDir = path.join(publicDir, "builtin");
+      try {
+        await rm(builtinDir, { recursive: true, force: true });
+        console.log("[build] stripped dist/public/builtin (use R2 CDN at runtime)");
+      } catch {
+        /* folder may not exist */
+      }
+
+      // SPA rewrites — without this, /editor 404s on Vercel static deploys.
+      const vercelJson = path.join(publicDir, "vercel.json");
+      const vercelSrc = path.resolve(import.meta.dirname, "public/vercel.json");
+      try {
+        await access(vercelSrc);
+        await copyFile(vercelSrc, vercelJson);
+        console.log("[build] copied public/vercel.json → dist/public/");
+      } catch {
+        const fallback = {
+          rewrites: [
+            {
+              source:
+                "/((?!assets/|ui/|_framework/|favicon|logo|pwa|manifest|player\\.html|downloads\\.html|sw\\.js|opengraph|apple-touch).*)",
+              destination: "/index.html",
+            },
+          ],
+          headers: [
+            {
+              source: "/index.html",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "no-cache, no-store, must-revalidate",
+                },
+              ],
+            },
+            {
+              source: "/assets/(.*)",
+              headers: [
+                {
+                  key: "Cache-Control",
+                  value: "public, max-age=31536000, immutable",
+                },
+              ],
+            },
+          ],
+        };
+        await writeFile(vercelJson, JSON.stringify(fallback, null, 2), "utf8");
+        console.log("[build] wrote fallback dist/public/vercel.json");
+      }
+
+      // Oversized single-file player bloats every SPA deploy — warn loudly.
+      try {
+        const player = path.join(publicDir, "player.html");
+        const st = await stat(player);
+        const mb = st.size / (1024 * 1024);
+        if (mb > 2) {
+          console.warn(
+            `[build] player.html is ${mb.toFixed(1)} MB — consider hosting on R2 (assets…/forge/player.html) to shrink SPA deploys`,
+          );
+        }
+      } catch {
+        /* optional */
+      }
+    },
+  };
+}
+
 function preloadViewportCandidate(): Plugin {
   const TARGET_CHUNK_NAMES = new Set(["viewportPreload"]);
   return {
@@ -81,6 +159,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     preloadViewportCandidate(),
+    stripHeavyPublicAssets(),
     /**
      * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
      * statement inside `@dimforge/rapier3d` natively, emitting the binary as
@@ -171,10 +250,10 @@ export default defineConfig({
       // Cap the number of files Rollup opens in parallel. The default
       // (os.cpus().length × 20) creates huge in-memory queues when bundling
       // heavy deps like Three.js on CI containers with limited RAM.
-      // 2 is required for Vercel hobby/pro 8 GB builders — 5 still OOMs.
+      // 1 keeps peak RSS lowest for local/CI prebuilt deploys (8–16 GB hosts).
       // NOTE: this must be at the top level of rollupOptions, NOT inside
       // output — Rollup ignores it if placed inside the output block.
-      maxParallelFileOps: 2,
+      maxParallelFileOps: 1,
       output: {
         /**
          * Split the heavy vendor libraries into their own chunks so:

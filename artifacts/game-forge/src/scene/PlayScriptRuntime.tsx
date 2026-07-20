@@ -415,12 +415,24 @@ export function PlayScriptRuntime({
       if (isRagdolled) {
         // skip — ragdoll owns this body now.
       } else if (bg && "setLinvel" in bg) {
-        // Preserve the body's current Y so gravity / jumps stay intact.
+        // Preserve Y for gravity / jumps — unless the agent is climbing
+        // (tick returns non-zero velocity[1] for Climb state).
         const cur = bg.linvel();
-        bg.setLinvel({ x: velocity[0], y: cur.y, z: velocity[2] }, true);
+        const climbY = Math.abs(velocity[1]) > 1e-4;
+        bg.setLinvel(
+          {
+            x: velocity[0],
+            y: climbY ? velocity[1] : cur.y,
+            z: velocity[2],
+          },
+          true,
+        );
       } else if (bg) {
         bg.position.x += velocity[0] * delta;
         bg.position.z += velocity[2] * delta;
+        if (Math.abs(velocity[1]) > 1e-4) {
+          bg.position.y += velocity[1] * delta;
+        }
       }
       if (reached) actor.send({ type: "stop" });
     }
@@ -626,14 +638,56 @@ export function PlayScriptRuntime({
       return out;
     };
 
-    for (const entity of sceneData.entities) {
+    const isRtsMode = sceneData.environment?.gameMode === "rts";
+
+    // Live production rts-fort-royale (20260604.1) has gameMode=rts + named
+    // units but no BehaviorKind / GameManager. Materialize a controller and
+    // iterate a shallow copy so play mode is never "units freeze, zero gold".
+    const playEntities: SceneEntity[] = (() => {
+      if (!isRtsMode) return sceneData.entities;
+      const list = sceneData.entities.slice();
+      if (!list.some((e) => e.name === "GameManager" || e.behavior === "gamemode-rts")) {
+        list.push({
+          id: "__rts_gamemanager__",
+          name: "GameManager",
+          type: "empty",
+          transform: {
+            position: [0, -50, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+          behavior: "gamemode-rts",
+        });
+      }
+      return list;
+    })();
+
+    for (const entity of playEntities) {
       // Resolve up to two compiled scripts: the built-in behavior (if any)
       // and the user-attached scriptId. Both run, behavior first, so the
       // user can layer custom logic on top of a stock player/enemy.
-      const behaviorSrc = entity.behavior ? BUILTIN_BEHAVIORS[entity.behavior] : null;
+      //
+      // RTS production templates (pre-20260712) stamped `rts` metadata and
+      // names but no BehaviorKind — infer so peon/footman/creep still run.
+      let behaviorKey = entity.behavior as keyof typeof BUILTIN_BEHAVIORS | undefined;
+      if (!behaviorKey && isRtsMode) {
+        const n = entity.name ?? "";
+        if (n.includes("Peon")) behaviorKey = "rts-peon";
+        else if (n.includes("Footman")) behaviorKey = "rts-footman";
+        else if (
+          entity.type === "model" &&
+          (n.includes("Mutant") || n.includes("Creep") || n.startsWith("Camp_"))
+        ) {
+          behaviorKey = "rts-creep";
+        } else if (n === "GameManager") {
+          behaviorKey = "gamemode-rts";
+        }
+      }
+
+      const behaviorSrc = behaviorKey ? BUILTIN_BEHAVIORS[behaviorKey] : null;
       const userScript = entity.scriptId ? scriptMap.get(entity.scriptId) : null;
       const behaviorCompiled: Compiled | null =
-        behaviorSrc && entity.behavior ? getCompiledBehavior(entity.behavior, behaviorSrc) : null;
+        behaviorSrc && behaviorKey ? getCompiledBehavior(behaviorKey, behaviorSrc) : null;
       const userCompiled: Compiled | null = userScript ? getCompiledScript(userScript) : null;
 
       if (!behaviorCompiled && !userCompiled) continue;
@@ -718,7 +772,7 @@ export function PlayScriptRuntime({
       // We MUST register start before the first inbox flush, otherwise any
       // message addressed to this entity on frame N would be dropped because
       // the handler hasn't been registered yet.
-      const startedKey = `${entity.id}:${entity.behavior ?? ""}:${entity.scriptId ?? ""}`;
+      const startedKey = `${entity.id}:${behaviorKey ?? entity.behavior ?? ""}:${entity.scriptId ?? ""}`;
       try {
         if (!startedRef.current.has(startedKey)) {
           // Seed env-tunable knobs into per-entity state before start() so

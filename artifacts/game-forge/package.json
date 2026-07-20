@@ -59,6 +59,7 @@
     "@workspace/desktop-bridge": "workspace:*",
     "@workspace/object-storage-web": "workspace:*",
     "@workspace/scene-schema": "workspace:*",
+    "@workspace/scene-templates": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
