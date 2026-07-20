@@ -2,16 +2,25 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=10.12.0"
+  },
   "scripts": {
-    "preinstall": "node -e \"if(!/pnpm/.test(process.env.npm_config_user_agent||'')){console.error('Use pnpm instead');process.exit(1)}\"",
+    "preinstall": "node -e \"if(!/pnpm/.test(process.env.npm_config_user_agent||'')){console.error('Use pnpm instead of npm/yarn. Enable: corepack enable && corepack prepare pnpm@10.32.1 --activate');process.exit(1)}\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "test": "pnpm -r --workspace-concurrency=4 --if-present run test",
-    "smoke:forge": "node scripts/smoke-forge-resources.mjs",
+    "dev:api": "pnpm --filter @workspace/api-server run dev",
+    "dev:forge": "pnpm --filter @workspace/game-forge run dev",
+    "build:forge": "pnpm --filter @workspace/game-forge run build",
+    "deploy:forge": "node scripts/deploy-forge-vercel.mjs",
+    "smoke:forge": "node scripts/smoke-forge-prod.mjs",
     "make:favicon": "node scripts/make-favicon.mjs"
   },
-  "private": true,
   "devDependencies": {
     "@esbuild/win32-x64": "0.27.3",
     "@rollup/rollup-win32-x64-msvc": "4.59.0",

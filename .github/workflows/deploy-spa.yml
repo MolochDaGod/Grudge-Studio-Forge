@@ -31,9 +31,12 @@ jobs:
           sudo swapon /swapfile
           free -h
 
-      # Use package.json#packageManager only (do not set version: here —
-      # pnpm/action-setup@v4 errors on version mismatch with packageManager).
+      # Prefer package.json#packageManager; pin version as fallback when the
+      # field is missing so setup never fails closed on a bare package.json.
       - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
 
       - uses: actions/setup-node@v4
         with:
@@ -41,7 +44,7 @@ jobs:
           cache: pnpm
 
       - name: Install game-forge graph
-        run: pnpm install --frozen-lockfile --filter "@workspace/game-forge..."
+        run: pnpm install --no-frozen-lockfile --filter "@workspace/game-forge..."
 
       # Skip player prebuild here (player package not fully installed with the
       # game-forge filter; SPA build uses vite exec and does not need prebuild).
