@@ -37,8 +37,23 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
   const [playerMaxHealth, setPlayerMaxHealth] = useState(100);
   const [playerScore, setPlayerScore] = useState(0);
   const [enemyScore, setEnemyScore] = useState(0);
-  const [rtsGold, setRtsGold] = useState({ player: 150, enemy: 150 });
-  const [rtsHall, setRtsHall] = useState({ player: 1500, enemy: 1500 });
+  const [rtsGold, setRtsGold] = useState({ player: 250, enemy: 250 });
+  const [rtsWood, setRtsWood] = useState({ player: 100, enemy: 100 });
+  const [rtsFood, setRtsFood] = useState({ player: 0, playerMax: 13, enemy: 0, enemyMax: 13 });
+  const [rtsHall, setRtsHall] = useState({ player: 1800, enemy: 1800, playerMax: 1800, enemyMax: 1800 });
+  const [rtsMessage, setRtsMessage] = useState<string | null>("Select units · Right-click to order");
+  const [rtsSelection, setRtsSelection] = useState<{
+    id: string;
+    name: string;
+    kind: string;
+    health: number;
+    maxHealth: number;
+    faction: string;
+    carrying?: number;
+    carryKind?: string | null;
+    trainOptions?: Array<{ id: string; label: string; gold: number; wood: number; food: number }>;
+    training?: { unitId: string; label: string; left: number; total: number } | null;
+  } | null>(null);
 
   // Damage flash — opacity decays to 0 over 0.4s.
   const [damageFlash, setDamageFlash] = useState(0);
@@ -80,17 +95,76 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
         const obj = p as {
           playerGold?: number;
           enemyGold?: number;
+          playerWood?: number;
+          enemyWood?: number;
+          playerFood?: number;
+          playerFoodMax?: number;
+          enemyFood?: number;
+          enemyFoodMax?: number;
           playerHallHp?: number;
           enemyHallHp?: number;
+          playerHallMax?: number;
+          enemyHallMax?: number;
+          message?: string | null;
         } | undefined;
         if (!obj) return;
         setRtsGold({
           player: typeof obj.playerGold === "number" ? obj.playerGold : 0,
           enemy: typeof obj.enemyGold === "number" ? obj.enemyGold : 0,
         });
+        setRtsWood({
+          player: typeof obj.playerWood === "number" ? obj.playerWood : 0,
+          enemy: typeof obj.enemyWood === "number" ? obj.enemyWood : 0,
+        });
+        setRtsFood({
+          player: typeof obj.playerFood === "number" ? obj.playerFood : 0,
+          playerMax: typeof obj.playerFoodMax === "number" ? obj.playerFoodMax : 13,
+          enemy: typeof obj.enemyFood === "number" ? obj.enemyFood : 0,
+          enemyMax: typeof obj.enemyFoodMax === "number" ? obj.enemyFoodMax : 13,
+        });
         setRtsHall({
           player: typeof obj.playerHallHp === "number" ? obj.playerHallHp : 0,
           enemy: typeof obj.enemyHallHp === "number" ? obj.enemyHallHp : 0,
+          playerMax: typeof obj.playerHallMax === "number" ? obj.playerHallMax : 1800,
+          enemyMax: typeof obj.enemyHallMax === "number" ? obj.enemyHallMax : 1800,
+        });
+        if (typeof obj.message === "string") setRtsMessage(obj.message);
+        else if (obj.message === null) setRtsMessage(null);
+      }),
+    );
+    offs.push(
+      bus.on("rtsSelection", (p) => {
+        if (!p) {
+          setRtsSelection(null);
+          return;
+        }
+        const obj = p as {
+          id?: string;
+          name?: string;
+          kind?: string;
+          health?: number;
+          maxHealth?: number;
+          faction?: string;
+          carrying?: number;
+          carryKind?: string | null;
+          trainOptions?: Array<{ id: string; label: string; gold: number; wood: number; food: number }>;
+          training?: { unitId: string; label: string; left: number; total: number } | null;
+        };
+        if (!obj.id || !obj.name) {
+          setRtsSelection(null);
+          return;
+        }
+        setRtsSelection({
+          id: obj.id,
+          name: obj.name,
+          kind: obj.kind || "unit",
+          health: typeof obj.health === "number" ? obj.health : 0,
+          maxHealth: typeof obj.maxHealth === "number" ? obj.maxHealth : 1,
+          faction: obj.faction || "player",
+          carrying: obj.carrying,
+          carryKind: obj.carryKind,
+          trainOptions: obj.trainOptions,
+          training: obj.training ?? null,
         });
       }),
     );
@@ -168,6 +242,13 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
     );
     offs.push(bus.on("win", () => setOutcome("win")));
     offs.push(bus.on("lose", () => setOutcome("lose")));
+    offs.push(
+      bus.on("outcome", (p) => {
+        const obj = p as { result?: string } | undefined;
+        if (obj?.result === "win") setOutcome("win");
+        else if (obj?.result === "lose") setOutcome("lose");
+      }),
+    );
     offs.push(
       bus.on("npcDialog", (p) => {
         const obj = p as { name?: string; line?: string } | undefined;
@@ -447,28 +528,199 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
       </div>
       )}
 
-      {/* RTS resource / hall HUD */}
+      {/* RTS full skirmish HUD */}
       {showRtsHud && (
-        <div className="absolute left-1/2 top-4 -translate-x-1/2">
-          <div className="rounded-lg border border-amber-600/40 bg-black/70 px-5 py-2 text-white shadow-lg backdrop-blur">
-            <div className="mb-1 text-center text-[10px] uppercase tracking-widest text-amber-400/90">
-              RTS Skirmish — destroy enemy town hall
-            </div>
-            <div className="flex items-center gap-5 text-center text-sm">
-              <div>
-                <div className="text-[9px] uppercase text-sky-300">Your gold</div>
-                <div className="text-xl font-bold tabular-nums text-amber-300">{Math.floor(rtsGold.player)}</div>
-                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.player)} HP</div>
-              </div>
-              <div className="text-white/30">|</div>
-              <div>
-                <div className="text-[9px] uppercase text-red-300">Enemy gold</div>
-                <div className="text-xl font-bold tabular-nums text-red-300">{Math.floor(rtsGold.enemy)}</div>
-                <div className="text-[9px] text-white/50">Hall {Math.floor(rtsHall.enemy)} HP</div>
+        <>
+          {/* Top resource strip */}
+          <div className="pointer-events-none absolute left-1/2 top-3 z-20 w-[min(920px,96vw)] -translate-x-1/2">
+            <div className="relative overflow-hidden rounded-lg border border-amber-500/35 bg-black/75 px-4 py-2 text-white shadow-xl backdrop-blur-md">
+              <img
+                src={UI.general.background}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 h-full w-full opacity-40"
+                style={{ objectFit: "fill" }}
+              />
+              <div className="relative z-10">
+                <div
+                  className="mb-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.2em]"
+                  style={{ color: accent }}
+                >
+                  Fort Royale Skirmish — destroy the enemy town hall
+                </div>
+                <div className="grid grid-cols-3 items-center gap-3 text-sm">
+                  {/* Player resources */}
+                  <div className="flex flex-wrap items-center justify-start gap-3">
+                    <RtsStat label="Gold" value={Math.floor(rtsGold.player)} color="#fbbf24" />
+                    <RtsStat label="Wood" value={Math.floor(rtsWood.player)} color="#86efac" />
+                    <RtsStat
+                      label="Food"
+                      value={`${Math.floor(rtsFood.player)}/${Math.floor(rtsFood.playerMax)}`}
+                      color="#7dd3fc"
+                    />
+                  </div>
+                  {/* Hall HP bars */}
+                  <div className="space-y-1.5">
+                    <RtsHpBar
+                      label="Your Hall"
+                      value={rtsHall.player}
+                      max={rtsHall.playerMax}
+                      color="#34d399"
+                    />
+                    <RtsHpBar
+                      label="Enemy Hall"
+                      value={rtsHall.enemy}
+                      max={rtsHall.enemyMax}
+                      color="#f87171"
+                    />
+                  </div>
+                  {/* Enemy resources (scouting intel) */}
+                  <div className="flex flex-wrap items-center justify-end gap-3 opacity-90">
+                    <RtsStat label="E.Gold" value={Math.floor(rtsGold.enemy)} color="#fca5a5" />
+                    <RtsStat label="E.Wood" value={Math.floor(rtsWood.enemy)} color="#fca5a5" />
+                    <RtsStat
+                      label="E.Food"
+                      value={`${Math.floor(rtsFood.enemy)}/${Math.floor(rtsFood.enemyMax)}`}
+                      color="#fca5a5"
+                    />
+                  </div>
+                </div>
+                {rtsMessage && (
+                  <div className="mt-1.5 text-center text-[11px] text-white/70">{rtsMessage}</div>
+                )}
               </div>
             </div>
           </div>
-        </div>
+
+          {/* Bottom command panel */}
+          <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 w-[min(720px,96vw)] -translate-x-1/2">
+            <div className="pointer-events-auto relative overflow-hidden rounded-lg border border-amber-500/30 bg-black/80 px-4 py-3 text-white shadow-xl backdrop-blur-md">
+              <img
+                src={UI.general.background}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 h-full w-full opacity-30"
+                style={{ objectFit: "fill" }}
+              />
+              <div className="relative z-10">
+                {!rtsSelection ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs text-white/70">
+                      <span className="font-semibold text-amber-300">Controls:</span>{" "}
+                      LMB select · RMB move / attack / gather ·{" "}
+                      <kbd className="rounded bg-white/10 px-1">1</kbd> military ·{" "}
+                      <kbd className="rounded bg-white/10 px-1">2</kbd> workers · WASD pan · wheel zoom
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-white/40">
+                      No selection
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+                    {/* Portrait / info */}
+                    <div className="flex min-w-[180px] items-center gap-3">
+                      <div
+                        className="flex h-14 w-14 shrink-0 items-center justify-center rounded border border-amber-500/40 bg-gradient-to-br from-amber-900/40 to-black/60 text-lg font-bold"
+                        style={{ color: accent }}
+                      >
+                        {rtsSelection.kind === "building" || rtsSelection.kind === "tower"
+                          ? "🏛"
+                          : rtsSelection.kind.includes("peon") || rtsSelection.name.includes("Peon")
+                            ? "⛏"
+                            : rtsSelection.kind.includes("archer") || rtsSelection.name.includes("Archer")
+                              ? "🏹"
+                              : "⚔"}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-amber-100">
+                          {rtsSelection.name.replace(/_/g, " ")}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-white/45">
+                          {rtsSelection.kind} · {rtsSelection.faction}
+                        </div>
+                        <div className="mt-1 h-1.5 w-36 overflow-hidden rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-emerald-400 transition-all"
+                            style={{
+                              width: `${Math.max(0, Math.min(100, (rtsSelection.health / Math.max(1, rtsSelection.maxHealth)) * 100))}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="mt-0.5 text-[10px] tabular-nums text-white/55">
+                          {Math.floor(rtsSelection.health)} / {Math.floor(rtsSelection.maxHealth)} HP
+                          {typeof rtsSelection.carrying === "number" && rtsSelection.carrying > 0
+                            ? ` · carrying ${Math.floor(rtsSelection.carrying)} ${rtsSelection.carryKind || "gold"}`
+                            : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Train / actions */}
+                    <div className="flex flex-1 flex-wrap items-center gap-2">
+                      {rtsSelection.trainOptions && rtsSelection.trainOptions.length > 0 ? (
+                        rtsSelection.trainOptions.map((opt) => {
+                          const canAfford =
+                            rtsGold.player >= (opt.gold || 0) &&
+                            rtsWood.player >= (opt.wood || 0) &&
+                            rtsFood.player + (opt.food || 1) <= rtsFood.playerMax;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              disabled={!canAfford || rtsSelection.faction !== "player"}
+                              onClick={() => {
+                                bus.emit("rtsHudCommand", {
+                                  action: "train",
+                                  unitId: opt.id,
+                                });
+                              }}
+                              className="rounded border border-amber-500/40 bg-amber-950/50 px-3 py-2 text-left text-xs transition hover:bg-amber-800/40 disabled:cursor-not-allowed disabled:opacity-40"
+                              data-testid={`rts-train-${opt.id}`}
+                            >
+                              <div className="font-semibold text-amber-100">{opt.label}</div>
+                              <div className="text-[10px] text-white/55">
+                                {opt.gold > 0 ? `${opt.gold}g ` : ""}
+                                {opt.wood > 0 ? `${opt.wood}w ` : ""}
+                                {opt.food > 0 ? `${opt.food} food` : ""}
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => bus.emit("rtsHudCommand", { action: "stop" })}
+                          className="rounded border border-white/20 bg-white/5 px-3 py-2 text-xs uppercase tracking-wider text-white/80 hover:bg-white/10"
+                          data-testid="rts-stop"
+                        >
+                          Stop
+                        </button>
+                      )}
+                      {rtsSelection.training && (
+                        <div className="ml-auto min-w-[140px] text-right text-[11px] text-amber-200/90">
+                          Training {rtsSelection.training.label}…
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className="h-full rounded-full bg-amber-400 transition-all"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, (1 - rtsSelection.training.left / Math.max(0.01, rtsSelection.training.total)) * 100))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Mini legend / objective */}
+          <div className="pointer-events-none absolute bottom-3 right-3 z-10 hidden rounded border border-white/10 bg-black/55 px-2 py-1.5 text-[10px] text-white/60 backdrop-blur md:block">
+            Objective: raze enemy Town Hall
+          </div>
+        </>
       )}
 
       {/* RPG-style permanent-death overlay — quiet panel + Restart Scene
@@ -532,7 +784,11 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
               {outcome === "win" ? "Victory" : "Defeated"}
             </div>
             <div className="mt-3 text-base text-white/70">
-              Final score — You {playerScore} : Enemies {enemyScore}
+              {showRtsHud
+                ? outcome === "win"
+                  ? "Enemy town hall destroyed"
+                  : "Your town hall was destroyed"
+                : `Final score — You ${playerScore} : Enemies ${enemyScore}`}
             </div>
             <div className="mt-6 text-xs uppercase tracking-widest text-white/50">
               Stop play mode to restart
@@ -540,6 +796,52 @@ export function PlayHUD({ bus }: { bus: GameBus }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function RtsStat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  color: string;
+}) {
+  return (
+    <div className="text-left">
+      <div className="text-[9px] uppercase tracking-wider text-white/45">{label}</div>
+      <div className="text-base font-bold tabular-nums" style={{ color }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function RtsHpBar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+}) {
+  const pct = Math.max(0, Math.min(100, (value / Math.max(1, max)) * 100));
+  return (
+    <div>
+      <div className="mb-0.5 flex justify-between text-[9px] uppercase tracking-wider text-white/50">
+        <span>{label}</span>
+        <span className="tabular-nums">
+          {Math.floor(value)}/{Math.floor(max)}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
+      </div>
     </div>
   );
 }

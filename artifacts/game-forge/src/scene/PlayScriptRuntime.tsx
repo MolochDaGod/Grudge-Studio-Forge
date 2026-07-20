@@ -152,6 +152,7 @@ export function PlayScriptRuntime({
       layer: entity.layer ?? "Default",
       npcLine: entity.npcLine,
       raceId: entity.raceId,
+      behavior: entity.behavior,
     };
     const bodyOrGroup = bodyRefs.current.get(entity.id);
     if (bodyOrGroup) {
@@ -630,6 +631,101 @@ export function PlayScriptRuntime({
         layerMask,
         materialFilter,
       );
+    const castScreenRay = (maxDistance: number) => {
+      const mx = mouseRef.state.x;
+      const my = mouseRef.state.y;
+      const w = Math.max(1, gl.domElement.clientWidth || 1);
+      const h = Math.max(1, gl.domElement.clientHeight || 1);
+      const ndc = new THREE.Vector2((mx / w) * 2 - 1, -(my / h) * 2 + 1);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, camera);
+      const origin: [number, number, number] = [
+        ray.ray.origin.x,
+        ray.ray.origin.y,
+        ray.ray.origin.z,
+      ];
+      const direction: [number, number, number] = [
+        ray.ray.direction.x,
+        ray.ray.direction.y,
+        ray.ray.direction.z,
+      ];
+      const hit = raycastEntities(
+        threeScene,
+        origin,
+        direction,
+        maxDistance,
+        undefined,
+        undefined,
+        undefined,
+      );
+      if (hit) return hit;
+      // Ground-plane fallback (y = 0) so move orders land on open terrain.
+      const dy = direction[1];
+      if (Math.abs(dy) < 1e-6) return null;
+      const t = -origin[1] / dy;
+      if (t <= 0 || t > maxDistance) return null;
+      return {
+        entityId: null,
+        point: [
+          origin[0] + direction[0] * t,
+          0,
+          origin[2] + direction[2] * t,
+        ] as [number, number, number],
+        distance: t,
+        normal: [0, 1, 0] as [number, number, number],
+      };
+    };
+    const spawnEntity = (spec: {
+      name: string;
+      position: [number, number, number];
+      rotation?: [number, number, number];
+      scale?: [number, number, number];
+      modelUrl?: string;
+      raceId?: string;
+      layer?: string;
+      behavior?: string;
+      tint?: string;
+      parentId?: string | null;
+    }): string | null => {
+      const newId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID().slice(0, 8)
+          : `spawn-${Math.random().toString(36).slice(2, 10)}`;
+      const entity: SceneEntity = {
+        id: newId,
+        name: spec.name,
+        type: spec.modelUrl ? "model" : "box",
+        transform: {
+          position: spec.position,
+          rotation: spec.rotation ?? [0, 0, 0],
+          scale: spec.scale ?? [1, 1, 1],
+        },
+        parentId: spec.parentId ?? null,
+        layer: (spec.layer as SceneEntity["layer"]) ?? "Default",
+        raceId: spec.raceId,
+        behavior: spec.behavior as SceneEntity["behavior"],
+        physics: {
+          bodyType: "kinematicPosition",
+          colliderType: "cylinder",
+          mass: 1,
+          restitution: 0,
+          friction: 0.6,
+        },
+      };
+      if (spec.modelUrl) {
+        entity.model = {
+          url: spec.modelUrl,
+          ...(spec.tint ? { tint: spec.tint } : {}),
+        };
+      }
+      useEditor.setState((s) => ({
+        sceneData: {
+          ...s.sceneData,
+          entities: [...s.sceneData.entities, entity],
+        },
+      }));
+      return newId;
+    };
     const findEntitiesByLayer = (name: string): ScriptEntity[] => {
       const out: ScriptEntity[] = [];
       for (const e of sceneData.entities) {
@@ -672,9 +768,14 @@ export function PlayScriptRuntime({
       let behaviorKey = entity.behavior as keyof typeof BUILTIN_BEHAVIORS | undefined;
       if (!behaviorKey && isRtsMode) {
         const n = entity.name ?? "";
-        if (n.includes("Peon")) behaviorKey = "rts-peon";
-        else if (n.includes("Footman")) behaviorKey = "rts-footman";
-        else if (
+        if (n.includes("Peon") || n.includes("Worker")) behaviorKey = "rts-peon";
+        else if (n.includes("Footman") || n.includes("Grunt")) behaviorKey = "rts-footman";
+        else if (n.includes("Archer") || n.includes("Ranger")) behaviorKey = "rts-archer";
+        else if (n.includes("TownHall") || n.includes("Barracks") || n.includes("Farm") || n.includes("Mill") || n.includes("LumberMill")) {
+          behaviorKey = "rts-building";
+        } else if (n.includes("Tower") || n.includes("Watchtower")) {
+          behaviorKey = "rts-tower";
+        } else if (
           entity.type === "model" &&
           (n.includes("Mutant") || n.includes("Creep") || n.startsWith("Camp_"))
         ) {
@@ -709,6 +810,7 @@ export function PlayScriptRuntime({
         findEntityById,
         setEntityPosition,
         castRay,
+        castScreenRay,
         findEntitiesByLayer,
         cameraPosition,
         cameraDirection,
@@ -716,6 +818,7 @@ export function PlayScriptRuntime({
         bus: session.bus,
         states: session.states,
         triggers: session.triggers,
+        spawn: spawnEntity,
         despawn: (id: string) => {
           // Bypass the command stack — play-mode despawns shouldn't bloat
           // the editor undo history. The store's `removeEntity` is the

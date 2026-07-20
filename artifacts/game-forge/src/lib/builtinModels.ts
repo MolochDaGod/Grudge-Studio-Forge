@@ -155,9 +155,26 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
   "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
   "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
-  // Template aliases (rts-fort-royale etc.)
+  // Template aliases (rts-fort-royale creeps / bosses)
   "creature:mutant": ensureBaseUrl("builtin/char-distortus-rex.glb"),
+  "creature:creep": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
   "creature:boss-orc": ensureBaseUrl("builtin/char-boss-orc.glb"),
+  // RTS building pack — orc settlement + battle towers on the public CDN
+  // (same assets used by RTS-Grudge). Durable `builtin:rts-bldg-*` keys so
+  // scenes never bake raw CDN paths.
+  "rts-bldg-townhall": "https://assets.grudge-studio.com/models/orc_settlement/Tavern.glb",
+  "rts-bldg-barracks": "https://assets.grudge-studio.com/models/orc_settlement/Smithy.glb",
+  "rts-bldg-farm": "https://assets.grudge-studio.com/models/orc_settlement/Dwelling_Hut.glb",
+  "rts-bldg-mill": "https://assets.grudge-studio.com/models/orc_settlement/Brewery.glb",
+  "rts-bldg-alchemy": "https://assets.grudge-studio.com/models/orc_settlement/Alchemist_House.glb",
+  "rts-bldg-bakery": "https://assets.grudge-studio.com/models/orc_settlement/Bakery.glb",
+  "rts-bldg-tent": "https://assets.grudge-studio.com/models/orc_settlement/Tent_Large.glb",
+  "rts-bldg-prison": "https://assets.grudge-studio.com/models/orc_settlement/Prison.glb",
+  "rts-bldg-fountain": "https://assets.grudge-studio.com/models/orc_settlement/Fountain_Large.glb",
+  "rts-tower-archer": "https://assets.grudge-studio.com/models/battle_towers/Archer_Tower_L1.glb",
+  "rts-tower-fire": "https://assets.grudge-studio.com/models/battle_towers/Fire_Tower_L1.glb",
+  "rts-tower-ballista": "https://assets.grudge-studio.com/models/battle_towers/Ballista_Tower_L1.glb",
+  "rts-tower-cannon": "https://assets.grudge-studio.com/models/battle_towers/Cannon_Tower_L1.glb",
 };
 
 /** Per-builtin-model Y rotation offset (radians) applied at render time

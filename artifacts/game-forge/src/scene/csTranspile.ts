@@ -54,6 +54,10 @@ export interface ScriptEntity {
    *  `ctx.races` to size max health, movement speed, and per-hit damage
    *  from the race's `baseStats`. Undefined for non-character entities. */
   raceId?: string;
+  /** Built-in behavior key when set (e.g. `"rts-peon"`, `"spawnpoint"`).
+   *  Surfaced so scripts can filter peers without re-reading the editor
+   *  store — deathmatch + RTS behaviors depend on this. */
+  behavior?: string;
 }
 
 /** Per-race tuning surfaced to scripts via {@link ScriptContext.races}.
@@ -217,6 +221,25 @@ export interface ScriptContext {
        *  `{ requireBlocksAudio: true }`. */
       materialFilter?: MaterialRayFilter,
     ) => RaycastHit | null;
+    /** Cast a ray from the active camera through the current pointer
+     *  (NDC from `ctx.input.mouse`). Used by RTS selection / ground orders.
+     *  When no mesh is hit, falls back to a y=0 ground plane intersection so
+     *  move-orders still land on open terrain. */
+    castScreenRay: (maxDistance?: number) => RaycastHit | null;
+    /** Spawn a new entity mid-play (appends to the live scene store, no undo).
+     *  Returns the new entity id, or null on failure. Used by RTS production. */
+    spawn: (spec: {
+      name: string;
+      position: [number, number, number];
+      rotation?: [number, number, number];
+      scale?: [number, number, number];
+      modelUrl?: string;
+      raceId?: string;
+      layer?: string;
+      behavior?: string;
+      tint?: string;
+      parentId?: string | null;
+    }) => string | null;
     /** Return every entity whose `layer` matches `name`. Cheap pre-filter
      *  for AI perception loops ("nearest NPC", "any Trigger overlapping
      *  the player"). */

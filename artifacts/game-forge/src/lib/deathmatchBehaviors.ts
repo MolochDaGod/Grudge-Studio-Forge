@@ -1258,21 +1258,13 @@ exports.update = function(entity, ctx) {
 `;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Registry
+// RTS skirmish — selection, orders, economy, production, combat
+// Used by the rts-fort-royale starter (Warcraft-style foundation).
 // ──────────────────────────────────────────────────────────────────────────────
 
-// ──────────────────────────────────────────────────────────────────────────────
-// RTS skirmish — peon gather / footman fight / creep guard / match rules
-// Used by the rts-fort-royale starter (Warcraft-2-style foundation).
-// ──────────────────────────────────────────────────────────────────────────────
-
-const RTS_PEON = String.raw`
-const MOVE_SPEED = 4.2;
-const GATHER_RANGE = 3.2;
-const DEPOSIT_RANGE = 5.5;
-const GATHER_RATE = 8; // gold per second while at mine
-const CARRY_CAP = 20;
-
+/** Shared helpers inlined into each RTS behavior string (no module imports
+ *  inside String.raw behavior sources). Keep this small and pure JS. */
+const RTS_SHARED_PREAMBLE = String.raw`
 function distXZ(a, b) {
   var dx = a[0] - b[0], dz = a[2] - b[2];
   return Math.sqrt(dx * dx + dz * dz);
@@ -1281,7 +1273,7 @@ function moveToward(entity, target, speed, dt) {
   var dx = target[0] - entity.position[0];
   var dz = target[2] - entity.position[2];
   var d = Math.sqrt(dx * dx + dz * dz) || 1;
-  if (d < 0.4) return d;
+  if (d < 0.35) return d;
   var step = Math.min(speed * dt, d);
   entity.position = [
     entity.position[0] + (dx / d) * step,
@@ -1291,11 +1283,120 @@ function moveToward(entity, target, speed, dt) {
   entity.rotation = [0, Math.atan2(dx, dz), 0];
   return d;
 }
-function findNearestResource(entity, ctx) {
+function isPlayerSide(entity) {
+  return entity.layer === "Player" || (entity.name && entity.name.indexOf("Player") === 0);
+}
+function factionOf(entity) {
+  return isPlayerSide(entity) ? "player" : "enemy";
+}
+function isRtsUnit(e) {
+  if (!e) return false;
+  var b = e.behavior || "";
+  return b === "rts-peon" || b === "rts-footman" || b === "rts-archer" || b === "rts-creep";
+}
+function isRtsBuilding(e) {
+  if (!e) return false;
+  var b = e.behavior || "";
+  if (b === "rts-building" || b === "rts-tower") return true;
+  var n = e.name || "";
+  return n.indexOf("TownHall") >= 0 || n.indexOf("Barracks") >= 0 ||
+    n.indexOf("Farm") >= 0 || n.indexOf("Mill") >= 0 || n.indexOf("Tower") >= 0;
+}
+function isHostile(entity, other) {
+  if (!other || other.id === entity.id) return false;
+  if (other.behavior === "rts-creep") {
+    // Creeps are hostile to both armies
+    return isRtsUnit(entity) || isRtsBuilding(entity);
+  }
+  if (entity.behavior === "rts-creep") {
+    return isRtsUnit(other) || isRtsBuilding(other);
+  }
+  var aPlayer = isPlayerSide(entity);
+  var bPlayer = isPlayerSide(other);
+  if (aPlayer === bPlayer) return false;
+  return isRtsUnit(other) || isRtsBuilding(other);
+}
+function findHostile(entity, ctx, maxDist) {
+  var best = null, bestD = maxDist || 80;
+  var all = ctx.scene.findAll(function(e) { return e.id !== entity.id; });
+  for (var i = 0; i < all.length; i++) {
+    var o = all[i];
+    if (!isHostile(entity, o)) continue;
+    var d = distXZ(entity.position, o.position);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  return best;
+}
+function dealDamage(ctx, target, amount) {
+  if (!target) return;
+  ctx.scene.send(target.id, "damage", { amount: amount });
+  if (isRtsBuilding(target)) {
+    ctx.events.emit("rtsBuildingDamage", {
+      buildingId: target.id,
+      name: target.name,
+      amount: amount,
+      faction: factionOf(target),
+    });
+  }
+}
+function bindDamage(entity, ctx, onDeath) {
+  ctx.scene.on("damage", function(payload) {
+    if (ctx.state.dead) return;
+    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
+    ctx.state.health = Math.max(0, (ctx.state.health || 0) - dmg);
+    if (ctx.state.health <= 0) {
+      ctx.state.dead = true;
+      ctx.state.health = 0;
+      entity.position = [entity.position[0], entity.position[1] - 80, entity.position[2]];
+      if (onDeath) onDeath();
+    }
+  });
+  ctx.scene.on("rtsOrder", function(payload) {
+    if (ctx.state.dead || !payload) return;
+    ctx.state.order = payload;
+    ctx.state.selected = true;
+  });
+  ctx.scene.on("rtsSelect", function(payload) {
+    ctx.state.selected = !!(payload && payload.selected);
+  });
+  ctx.scene.on("rtsStop", function() {
+    ctx.state.order = { type: "stop" };
+  });
+}
+function emitUnitHud(entity, ctx) {
+  if (!ctx.state.selected) return;
+  ctx.events.emit("rtsSelection", {
+    id: entity.id,
+    name: entity.name,
+    kind: entity.behavior || "unit",
+    health: ctx.state.health || 0,
+    maxHealth: ctx.state.maxHealth || 1,
+    faction: factionOf(entity),
+    carrying: ctx.state.carrying || 0,
+    carryKind: ctx.state.carryKind || null,
+  });
+}
+`;
+
+const RTS_PEON = RTS_SHARED_PREAMBLE + String.raw`
+const MOVE_SPEED = 4.4;
+const GATHER_RANGE = 3.4;
+const DEPOSIT_RANGE = 6;
+const GATHER_RATE = 9;
+const CARRY_CAP = 20;
+
+function findNearestResource(entity, ctx, preferWood) {
   var best = null, bestD = 1e9;
   var all = ctx.scene.findAll(function(e) {
-    return e.name && (e.name.indexOf("GoldMine") === 0 || e.name.indexOf("Forest") === 0);
+    if (!e.name) return false;
+    if (preferWood) return e.name.indexOf("Forest") === 0 || e.name.indexOf("Tree") === 0;
+    return e.name.indexOf("GoldMine") === 0 || e.name.indexOf("Gold") === 0;
   });
+  if (all.length === 0) {
+    all = ctx.scene.findAll(function(e) {
+      return e.name && (e.name.indexOf("GoldMine") === 0 || e.name.indexOf("Forest") === 0);
+    });
+  }
   for (var i = 0; i < all.length; i++) {
     var o = all[i];
     var d = distXZ(entity.position, o.position);
@@ -1304,38 +1405,81 @@ function findNearestResource(entity, ctx) {
   return best;
 }
 function findOwnHall(entity, ctx) {
-  var isPlayer = entity.layer === "Player" || (entity.name && entity.name.indexOf("Player") === 0);
-  var name = isPlayer ? "PlayerTownHall" : "EnemyTownHall";
+  var name = isPlayerSide(entity) ? "PlayerTownHall" : "EnemyTownHall";
   return ctx.scene.find(name);
+}
+function resourceKind(node) {
+  if (!node || !node.name) return "gold";
+  if (node.name.indexOf("Forest") === 0 || node.name.indexOf("Tree") === 0) return "wood";
+  return "gold";
 }
 
 exports.start = function(entity, ctx) {
   ctx.state.carrying = 0;
-  ctx.state.phase = "to_resource"; // to_resource | gather | to_hall
+  ctx.state.carryKind = "gold";
+  ctx.state.phase = "idle";
   ctx.state.dead = false;
-  ctx.state.health = 40;
-  ctx.state.maxHealth = 40;
-  ctx.scene.on("damage", function(payload) {
-    if (ctx.state.dead) return;
-    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
-    ctx.state.health -= dmg;
-    if (ctx.state.health <= 0) {
-      ctx.state.dead = true;
-      ctx.state.health = 0;
-      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
-    }
+  ctx.state.health = 45;
+  ctx.state.maxHealth = 45;
+  ctx.state.selected = false;
+  ctx.state.order = null;
+  ctx.state.autoGather = true;
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsUnitDied", { id: entity.id, faction: factionOf(entity), kind: "peon" });
   });
 };
 
 exports.update = function(entity, ctx) {
   if (ctx.state.dead) return;
   var dt = ctx.time.delta;
+  var order = ctx.state.order;
+
+  // Enemy peons always auto-gather; player peons auto until ordered.
+  if (order && order.type === "move") {
+    var dMove = moveToward(entity, [order.x, 0, order.z], MOVE_SPEED, dt);
+    if (dMove < 0.5) ctx.state.order = null;
+    emitUnitHud(entity, ctx);
+    return;
+  }
+  if (order && order.type === "attack" && order.targetId) {
+    var atk = ctx.scene.findById(order.targetId);
+    if (atk && isHostile(entity, atk)) {
+      var da = moveToward(entity, atk.position, MOVE_SPEED, dt);
+      if (da < 2.0 && ctx.time.elapsed - (ctx.state.lastAttack || 0) > 1.1) {
+        ctx.state.lastAttack = ctx.time.elapsed;
+        dealDamage(ctx, atk, 4);
+      }
+      emitUnitHud(entity, ctx);
+      return;
+    }
+    ctx.state.order = null;
+  }
+  if (order && order.type === "gather" && order.targetId) {
+    var node = ctx.scene.findById(order.targetId);
+    if (node) {
+      ctx.state.resourceId = node.id;
+      ctx.state.phase = "to_resource";
+      ctx.state.order = null;
+    }
+  }
+  if (order && order.type === "stop") {
+    ctx.state.order = null;
+    ctx.state.phase = "idle";
+  }
+
+  if (ctx.state.phase === "idle" && (ctx.state.autoGather || !isPlayerSide(entity))) {
+    ctx.state.phase = "to_resource";
+  }
+
   if (ctx.state.phase === "to_resource" || ctx.state.phase === "gather") {
-    var mine = findNearestResource(entity, ctx);
-    if (!mine) return;
+    var mine = ctx.state.resourceId ? ctx.scene.findById(ctx.state.resourceId) : null;
+    if (!mine) mine = findNearestResource(entity, ctx, false);
+    if (!mine) { ctx.state.phase = "idle"; emitUnitHud(entity, ctx); return; }
+    ctx.state.resourceId = mine.id;
     var d = moveToward(entity, mine.position, MOVE_SPEED, dt);
     if (d <= GATHER_RANGE) {
       ctx.state.phase = "gather";
+      ctx.state.carryKind = resourceKind(mine);
       ctx.state.carrying = Math.min(CARRY_CAP, (ctx.state.carrying || 0) + GATHER_RATE * dt);
       if (ctx.state.carrying >= CARRY_CAP - 0.01) ctx.state.phase = "to_hall";
     } else {
@@ -1346,11 +1490,12 @@ exports.update = function(entity, ctx) {
     if (!hall) { ctx.state.phase = "to_resource"; return; }
     var d2 = moveToward(entity, hall.position, MOVE_SPEED, dt);
     if (d2 <= DEPOSIT_RANGE) {
-      var gold = Math.floor(ctx.state.carrying || 0);
-      if (gold > 0) {
-        ctx.events.emit("rtsGold", {
-          faction: (entity.layer === "Player") ? "player" : "enemy",
-          amount: gold,
+      var amt = Math.floor(ctx.state.carrying || 0);
+      if (amt > 0) {
+        ctx.events.emit("rtsResource", {
+          faction: factionOf(entity),
+          kind: ctx.state.carryKind || "gold",
+          amount: amt,
           fromId: entity.id,
         });
       }
@@ -1358,74 +1503,60 @@ exports.update = function(entity, ctx) {
       ctx.state.phase = "to_resource";
     }
   }
+  emitUnitHud(entity, ctx);
 };
 `;
 
-const RTS_FOOTMAN = String.raw`
-function distXZ(a, b) {
-  var dx = a[0] - b[0], dz = a[2] - b[2];
-  return Math.sqrt(dx * dx + dz * dz);
-}
-function isHostile(entity, other) {
-  if (!other || other.id === entity.id) return false;
-  if (other.behavior === "rts-creep") return true;
-  var n = other.name || "";
-  if (entity.layer === "Player") {
-    if (n === "EnemyTownHall") return true;
-    return other.layer === "NPC" && (
-      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
-      n.indexOf("Enemy") === 0
-    );
-  }
-  if (entity.layer === "NPC") {
-    if (n === "PlayerTownHall") return true;
-    return other.layer === "Player" && (
-      other.behavior === "rts-footman" || other.behavior === "rts-peon" ||
-      n.indexOf("Player") === 0
-    );
-  }
-  return false;
-}
-function findTarget(entity, ctx, maxDist) {
-  var best = null, bestD = maxDist || 80;
-  var all = ctx.scene.findAll(function(e) { return e.id !== entity.id; });
-  for (var i = 0; i < all.length; i++) {
-    var o = all[i];
-    if (!isHostile(entity, o)) continue;
-    // Prefer units over halls slightly by distance only
-    var d = distXZ(entity.position, o.position);
-    if (d < bestD) { bestD = d; best = o; }
-  }
-  return best;
-}
-
+const RTS_FOOTMAN = RTS_SHARED_PREAMBLE + String.raw`
 exports.start = function(entity, ctx) {
-  var isPlayer = entity.layer === "Player";
-  ctx.state.health = 90;
-  ctx.state.maxHealth = 90;
+  var player = isPlayerSide(entity);
+  ctx.state.health = 100;
+  ctx.state.maxHealth = 100;
   ctx.state.dead = false;
   ctx.state.lastAttack = -999;
-  ctx.state.dmg = isPlayer ? 12 : 14;
-  ctx.state.range = 2.2;
-  ctx.state.speed = isPlayer ? 4.5 : 4.3;
-  ctx.scene.on("damage", function(payload) {
-    if (ctx.state.dead) return;
-    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
-    ctx.state.health -= dmg;
-    if (ctx.state.health <= 0) {
-      ctx.state.dead = true;
-      ctx.state.health = 0;
-      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
-      ctx.events.emit("rtsUnitDied", { id: entity.id, faction: isPlayer ? "player" : "enemy" });
-    }
+  ctx.state.dmg = player ? 14 : 13;
+  ctx.state.range = 2.3;
+  ctx.state.speed = player ? 4.6 : 4.4;
+  ctx.state.selected = false;
+  ctx.state.order = null;
+  ctx.state.autoEngage = true;
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsUnitDied", { id: entity.id, faction: factionOf(entity), kind: "footman" });
   });
 };
 
 exports.update = function(entity, ctx) {
   if (ctx.state.dead) return;
   var dt = ctx.time.delta;
-  var target = findTarget(entity, ctx, 90);
-  if (!target) return;
+  var order = ctx.state.order;
+  var target = null;
+
+  if (order && order.type === "move") {
+    var dMove = moveToward(entity, [order.x, 0, order.z], ctx.state.speed, dt);
+    if (dMove < 0.5) ctx.state.order = null;
+    // opportunistic engage while moving
+    var near = findHostile(entity, ctx, 8);
+    if (near) target = near;
+    else { emitUnitHud(entity, ctx); return; }
+  } else if (order && order.type === "attack" && order.targetId) {
+    target = ctx.scene.findById(order.targetId);
+    if (!target) ctx.state.order = null;
+  } else if (order && order.type === "attack-move") {
+    target = findHostile(entity, ctx, 22) || null;
+    if (!target) {
+      moveToward(entity, [order.x, 0, order.z], ctx.state.speed, dt);
+      emitUnitHud(entity, ctx);
+      return;
+    }
+  } else if (order && order.type === "stop") {
+    ctx.state.order = null;
+  }
+
+  if (!target && ctx.state.autoEngage) {
+    target = findHostile(entity, ctx, isPlayerSide(entity) ? 28 : 55);
+  }
+  if (!target) { emitUnitHud(entity, ctx); return; }
+
   var dx = target.position[0] - entity.position[0];
   var dz = target.position[2] - entity.position[2];
   var d = Math.sqrt(dx * dx + dz * dz) || 1;
@@ -1437,69 +1568,118 @@ exports.update = function(entity, ctx) {
       entity.position[1],
       entity.position[2] + (dz / d) * step,
     ];
-  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.75) {
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.7) {
     ctx.state.lastAttack = ctx.time.elapsed;
-    ctx.scene.send(target.id, "damage", { amount: ctx.state.dmg });
-    // Town halls also take damage via name match
-    if (target.name && target.name.indexOf("TownHall") >= 0) {
-      ctx.events.emit("rtsBuildingDamage", {
-        buildingId: target.id,
-        name: target.name,
-        amount: ctx.state.dmg,
-      });
-    }
+    dealDamage(ctx, target, ctx.state.dmg);
   }
+  emitUnitHud(entity, ctx);
 };
 `;
 
-const RTS_CREEP = String.raw`
-function distXZ(a, b) {
-  var dx = a[0] - b[0], dz = a[2] - b[2];
-  return Math.sqrt(dx * dx + dz * dz);
-}
-
+const RTS_ARCHER = RTS_SHARED_PREAMBLE + String.raw`
 exports.start = function(entity, ctx) {
-  ctx.state.home = entity.position.slice();
-  ctx.state.health = 80;
-  ctx.state.maxHealth = 80;
+  var player = isPlayerSide(entity);
+  ctx.state.health = 70;
+  ctx.state.maxHealth = 70;
   ctx.state.dead = false;
   ctx.state.lastAttack = -999;
-  ctx.state.aggro = false;
-  ctx.scene.on("damage", function(payload) {
-    if (ctx.state.dead) return;
-    ctx.state.aggro = true;
-    var dmg = (payload && typeof payload.amount === "number") ? payload.amount : 10;
-    ctx.state.health -= dmg;
-    if (ctx.state.health <= 0) {
-      ctx.state.dead = true;
-      ctx.state.health = 0;
-      entity.position = [entity.position[0], entity.position[1] - 50, entity.position[2]];
-    }
+  ctx.state.dmg = player ? 11 : 10;
+  ctx.state.range = 12;
+  ctx.state.speed = player ? 4.2 : 4.0;
+  ctx.state.selected = false;
+  ctx.state.order = null;
+  ctx.state.autoEngage = true;
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsUnitDied", { id: entity.id, faction: factionOf(entity), kind: "archer" });
   });
 };
 
 exports.update = function(entity, ctx) {
   if (ctx.state.dead) return;
   var dt = ctx.time.delta;
-  var playerUnits = ctx.scene.findAll(function(e) {
-    return e.layer === "Player" && (e.behavior === "rts-peon" || e.behavior === "rts-footman");
+  var order = ctx.state.order;
+  var target = null;
+
+  if (order && order.type === "move") {
+    var dMove = moveToward(entity, [order.x, 0, order.z], ctx.state.speed, dt);
+    if (dMove < 0.5) ctx.state.order = null;
+    emitUnitHud(entity, ctx);
+    return;
+  }
+  if (order && order.type === "attack" && order.targetId) {
+    target = ctx.scene.findById(order.targetId);
+    if (!target) ctx.state.order = null;
+  } else if (order && order.type === "stop") {
+    ctx.state.order = null;
+  }
+  if (!target && ctx.state.autoEngage) {
+    target = findHostile(entity, ctx, isPlayerSide(entity) ? 30 : 50);
+  }
+  if (!target) { emitUnitHud(entity, ctx); return; }
+
+  var dx = target.position[0] - entity.position[0];
+  var dz = target.position[2] - entity.position[2];
+  var d = Math.sqrt(dx * dx + dz * dz) || 1;
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (d > ctx.state.range) {
+    var step = Math.min(ctx.state.speed * dt, d - ctx.state.range + 0.2);
+    entity.position = [
+      entity.position[0] + (dx / d) * step,
+      entity.position[1],
+      entity.position[2] + (dz / d) * step,
+    ];
+  } else if (d < 5) {
+    // Keep preferred range — step back slightly
+    entity.position = [
+      entity.position[0] - (dx / d) * 2.5 * dt,
+      entity.position[1],
+      entity.position[2] - (dz / d) * 2.5 * dt,
+    ];
+  }
+  if (d <= ctx.state.range && ctx.time.elapsed - ctx.state.lastAttack >= 0.95) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    dealDamage(ctx, target, ctx.state.dmg);
+  }
+  emitUnitHud(entity, ctx);
+};
+`;
+
+const RTS_CREEP = RTS_SHARED_PREAMBLE + String.raw`
+exports.start = function(entity, ctx) {
+  ctx.state.home = entity.position.slice();
+  ctx.state.health = 90;
+  ctx.state.maxHealth = 90;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.aggro = false;
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsUnitDied", { id: entity.id, faction: "neutral", kind: "creep" });
+    // Bounty for whoever is nearby (player bias)
+    ctx.events.emit("rtsResource", { faction: "player", kind: "gold", amount: 15, fromId: entity.id });
   });
-  var nearest = null, bestD = 14;
-  for (var i = 0; i < playerUnits.length; i++) {
-    var d = distXZ(entity.position, playerUnits[i].position);
-    if (d < bestD) { bestD = d; nearest = playerUnits[i]; }
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  var units = ctx.scene.findAll(function(e) {
+    return e.behavior === "rts-peon" || e.behavior === "rts-footman" || e.behavior === "rts-archer";
+  });
+  var nearest = null, bestD = 16;
+  for (var i = 0; i < units.length; i++) {
+    var d = distXZ(entity.position, units[i].position);
+    if (d < bestD) { bestD = d; nearest = units[i]; }
   }
   if (nearest) ctx.state.aggro = true;
   if (!ctx.state.aggro || !nearest) {
-    // Idle near home
     var hx = ctx.state.home[0] - entity.position[0];
     var hz = ctx.state.home[2] - entity.position[2];
     var hd = Math.sqrt(hx * hx + hz * hz);
     if (hd > 1.5) {
       entity.position = [
-        entity.position[0] + (hx / hd) * 1.5 * dt,
+        entity.position[0] + (hx / hd) * 1.6 * dt,
         entity.position[1],
-        entity.position[2] + (hz / hd) * 1.5 * dt,
+        entity.position[2] + (hz / hd) * 1.6 * dt,
       ];
     }
     return;
@@ -1508,75 +1688,524 @@ exports.update = function(entity, ctx) {
   var dz = nearest.position[2] - entity.position[2];
   var d2 = Math.sqrt(dx * dx + dz * dz) || 1;
   entity.rotation = [0, Math.atan2(dx, dz), 0];
-  if (d2 > 1.8) {
+  if (d2 > 1.9) {
     entity.position = [
-      entity.position[0] + (dx / d2) * 3.6 * dt,
+      entity.position[0] + (dx / d2) * 3.7 * dt,
       entity.position[1],
-      entity.position[2] + (dz / d2) * 3.6 * dt,
+      entity.position[2] + (dz / d2) * 3.7 * dt,
     ];
-  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.9) {
+  } else if (ctx.time.elapsed - ctx.state.lastAttack >= 0.85) {
     ctx.state.lastAttack = ctx.time.elapsed;
-    ctx.scene.send(nearest.id, "damage", { amount: 14 });
+    ctx.scene.send(nearest.id, "damage", { amount: 15 });
+  }
+};
+`;
+
+const RTS_BUILDING = RTS_SHARED_PREAMBLE + String.raw`
+function buildingMaxHp(name) {
+  if (name.indexOf("TownHall") >= 0) return 1800;
+  if (name.indexOf("Barracks") >= 0) return 900;
+  if (name.indexOf("Farm") >= 0) return 500;
+  if (name.indexOf("Mill") >= 0) return 700;
+  return 800;
+}
+function buildingTrainOptions(name) {
+  if (name.indexOf("TownHall") >= 0) return [
+    { id: "peon", label: "Worker", gold: 50, wood: 0, food: 1, time: 4, behavior: "rts-peon", racePlayer: "dwarf", raceEnemy: "orc" }
+  ];
+  if (name.indexOf("Barracks") >= 0) return [
+    { id: "footman", label: "Footman", gold: 75, wood: 0, food: 2, time: 5, behavior: "rts-footman", racePlayer: "warrior", raceEnemy: "orc" },
+    { id: "archer", label: "Archer", gold: 60, wood: 25, food: 2, time: 5.5, behavior: "rts-archer", racePlayer: "elf", raceEnemy: "skeleton" }
+  ];
+  return [];
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.health = buildingMaxHp(entity.name || "");
+  ctx.state.maxHealth = ctx.state.health;
+  ctx.state.dead = false;
+  ctx.state.selected = false;
+  ctx.state.queue = [];
+  ctx.state.trainLeft = 0;
+  ctx.state.trainSpec = null;
+  ctx.state.rally = [
+    entity.position[0] + (isPlayerSide(entity) ? 6 : -6),
+    entity.position[1],
+    entity.position[2] + (isPlayerSide(entity) ? 6 : -6),
+  ];
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsBuildingDestroyed", {
+      id: entity.id,
+      name: entity.name,
+      faction: factionOf(entity),
+    });
+  });
+  ctx.scene.on("rtsTrain", function(payload) {
+    if (!ctx.state.selected || ctx.state.dead || !payload) return;
+    var opts = buildingTrainOptions(entity.name || "");
+    var spec = null;
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].id === payload.unitId) { spec = opts[i]; break; }
+    }
+    if (!spec) return;
+    ctx.events.emit("rtsTrainRequest", {
+      buildingId: entity.id,
+      buildingName: entity.name,
+      faction: factionOf(entity),
+      spec: spec,
+    });
+  });
+  ctx.scene.on("rtsBeginTrain", function(payload) {
+    if (!payload || payload.buildingId !== entity.id || ctx.state.dead) return;
+    ctx.state.trainSpec = payload.spec;
+    ctx.state.trainLeft = payload.spec.time || 4;
+  });
+  ctx.scene.on("rtsSetRally", function(payload) {
+    if (!ctx.state.selected || !payload) return;
+    ctx.state.rally = [payload.x, 0, payload.z];
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var dt = ctx.time.delta;
+  if (ctx.state.trainSpec && ctx.state.trainLeft > 0) {
+    ctx.state.trainLeft -= dt;
+    if (ctx.state.trainLeft <= 0) {
+      var spec = ctx.state.trainSpec;
+      ctx.state.trainSpec = null;
+      ctx.state.trainLeft = 0;
+      var player = isPlayerSide(entity);
+      var race = player ? spec.racePlayer : spec.raceEnemy;
+      var tint = player ? undefined : "#ff6060";
+      var spawnName = (player ? "Player" : "Enemy") + (spec.id === "peon" ? "Peon" : spec.id === "archer" ? "Archer" : "Footman") + "_" + Math.floor(ctx.time.elapsed);
+      var id = ctx.scene.spawn({
+        name: spawnName,
+        position: [ctx.state.rally[0], 0, ctx.state.rally[2]],
+        scale: [0.95, 0.95, 0.95],
+        modelUrl: "builtin:race:" + race,
+        raceId: race,
+        layer: player ? "Player" : "NPC",
+        behavior: spec.behavior,
+        tint: tint,
+      });
+      if (id) {
+        ctx.events.emit("rtsUnitTrained", {
+          id: id,
+          kind: spec.id,
+          faction: player ? "player" : "enemy",
+          food: spec.food || 1,
+        });
+      }
+    }
+  }
+  if (ctx.state.selected) {
+    ctx.events.emit("rtsSelection", {
+      id: entity.id,
+      name: entity.name,
+      kind: "building",
+      health: ctx.state.health,
+      maxHealth: ctx.state.maxHealth,
+      faction: factionOf(entity),
+      trainOptions: buildingTrainOptions(entity.name || ""),
+      training: ctx.state.trainSpec ? {
+        unitId: ctx.state.trainSpec.id,
+        label: ctx.state.trainSpec.label,
+        left: Math.max(0, ctx.state.trainLeft),
+        total: ctx.state.trainSpec.time || 4,
+      } : null,
+    });
+  }
+};
+`;
+
+const RTS_TOWER = RTS_SHARED_PREAMBLE + String.raw`
+exports.start = function(entity, ctx) {
+  ctx.state.health = 650;
+  ctx.state.maxHealth = 650;
+  ctx.state.dead = false;
+  ctx.state.lastAttack = -999;
+  ctx.state.dmg = 16;
+  ctx.state.range = 16;
+  ctx.state.selected = false;
+  bindDamage(entity, ctx, function() {
+    ctx.events.emit("rtsBuildingDestroyed", {
+      id: entity.id,
+      name: entity.name,
+      faction: factionOf(entity),
+    });
+  });
+};
+
+exports.update = function(entity, ctx) {
+  if (ctx.state.dead) return;
+  var target = findHostile(entity, ctx, ctx.state.range);
+  if (!target) {
+    if (ctx.state.selected) {
+      ctx.events.emit("rtsSelection", {
+        id: entity.id, name: entity.name, kind: "tower",
+        health: ctx.state.health, maxHealth: ctx.state.maxHealth,
+        faction: factionOf(entity),
+      });
+    }
+    return;
+  }
+  var dx = target.position[0] - entity.position[0];
+  var dz = target.position[2] - entity.position[2];
+  entity.rotation = [0, Math.atan2(dx, dz), 0];
+  if (ctx.time.elapsed - ctx.state.lastAttack >= 1.05) {
+    ctx.state.lastAttack = ctx.time.elapsed;
+    dealDamage(ctx, target, ctx.state.dmg);
+  }
+  if (ctx.state.selected) {
+    ctx.events.emit("rtsSelection", {
+      id: entity.id, name: entity.name, kind: "tower",
+      health: ctx.state.health, maxHealth: ctx.state.maxHealth,
+      faction: factionOf(entity),
+    });
   }
 };
 `;
 
 const GAMEMODE_RTS = String.raw`
-exports.start = function(entity, ctx) {
-  ctx.state.playerGold = 150;
-  ctx.state.enemyGold = 150;
-  ctx.state.playerHallHp = 1500;
-  ctx.state.enemyHallHp = 1500;
-  ctx.state.ended = false;
+var UNIT_FOOD = { peon: 1, footman: 2, archer: 2 };
+
+function countFood(ctx, faction) {
+  var layer = faction === "player" ? "Player" : "NPC";
+  var used = 0;
+  var units = ctx.scene.findAll(function(e) {
+    return e.layer === layer && (
+      e.behavior === "rts-peon" || e.behavior === "rts-footman" || e.behavior === "rts-archer"
+    );
+  });
+  for (var i = 0; i < units.length; i++) {
+    var b = units[i].behavior;
+    if (b === "rts-peon") used += 1;
+    else used += 2;
+  }
+  return used;
+}
+function countFarms(ctx, faction) {
+  var prefix = faction === "player" ? "Player" : "Enemy";
+  var farms = ctx.scene.findAll(function(e) {
+    return e.name && e.name.indexOf(prefix + "Farm") === 0;
+  });
+  return 5 + farms.length * 4; // hall provides 5, each farm +4
+}
+function emitHud(ctx) {
   ctx.events.emit("rtsHud", {
     playerGold: ctx.state.playerGold,
+    playerWood: ctx.state.playerWood,
+    playerFood: countFood(ctx, "player"),
+    playerFoodMax: countFarms(ctx, "player"),
     enemyGold: ctx.state.enemyGold,
+    enemyWood: ctx.state.enemyWood,
+    enemyFood: countFood(ctx, "enemy"),
+    enemyFoodMax: countFarms(ctx, "enemy"),
     playerHallHp: ctx.state.playerHallHp,
     enemyHallHp: ctx.state.enemyHallHp,
+    playerHallMax: ctx.state.playerHallMax,
+    enemyHallMax: ctx.state.enemyHallMax,
+    selectedId: ctx.state.selectedId || null,
+    selectedIds: ctx.state.selectedIds || [],
+    message: ctx.state.message || null,
   });
+}
+function clearSelection(ctx) {
+  var prev = ctx.state.selectedIds || [];
+  for (var i = 0; i < prev.length; i++) {
+    ctx.scene.send(prev[i], "rtsSelect", { selected: false });
+  }
+  ctx.state.selectedIds = [];
+  ctx.state.selectedId = null;
+  ctx.events.emit("rtsSelection", null);
+}
+function selectEntity(ctx, id, additive) {
+  if (!additive) clearSelection(ctx);
+  var e = ctx.scene.findById(id);
+  if (!e) return;
+  if (!isPlayerSide(e) && e.behavior !== "rts-creep") {
+    // Allow inspecting enemy buildings briefly
+  }
+  if (!ctx.state.selectedIds) ctx.state.selectedIds = [];
+  if (ctx.state.selectedIds.indexOf(id) < 0) ctx.state.selectedIds.push(id);
+  ctx.state.selectedId = id;
+  ctx.scene.send(id, "rtsSelect", { selected: true });
+}
+function isPlayerSide(entity) {
+  return entity.layer === "Player" || (entity.name && entity.name.indexOf("Player") === 0);
+}
+function isSelectablePlayer(e) {
+  if (!e || !isPlayerSide(e)) return false;
+  var b = e.behavior || "";
+  return b === "rts-peon" || b === "rts-footman" || b === "rts-archer" ||
+    b === "rts-building" || b === "rts-tower";
+}
+function isOrderablePlayer(e) {
+  if (!e || !isPlayerSide(e)) return false;
+  var b = e.behavior || "";
+  return b === "rts-peon" || b === "rts-footman" || b === "rts-archer";
+}
+
+exports.start = function(entity, ctx) {
+  ctx.state.playerGold = 250;
+  ctx.state.playerWood = 100;
+  ctx.state.enemyGold = 250;
+  ctx.state.enemyWood = 100;
+  ctx.state.playerHallHp = 1800;
+  ctx.state.enemyHallHp = 1800;
+  ctx.state.playerHallMax = 1800;
+  ctx.state.enemyHallMax = 1800;
+  ctx.state.ended = false;
+  ctx.state.selectedIds = [];
+  ctx.state.selectedId = null;
+  ctx.state.leftWasDown = false;
+  ctx.state.rightWasDown = false;
+  ctx.state.message = "Select units · Right-click to move / attack / gather";
+  ctx.state.enemyAiTimer = 8;
+  ctx.state.enemyWave = 0;
+  emitHud(ctx);
+
+  ctx.events.on("rtsResource", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    var kind = payload.kind || "gold";
+    var amt = payload.amount || 0;
+    if (payload.faction === "player") {
+      if (kind === "wood") ctx.state.playerWood += amt;
+      else ctx.state.playerGold += amt;
+    } else if (payload.faction === "enemy") {
+      if (kind === "wood") ctx.state.enemyWood += amt;
+      else ctx.state.enemyGold += amt;
+    }
+    emitHud(ctx);
+  });
+  // Back-compat for older peon scripts
   ctx.events.on("rtsGold", function(payload) {
     if (ctx.state.ended || !payload) return;
     if (payload.faction === "player") ctx.state.playerGold += payload.amount || 0;
     else if (payload.faction === "enemy") ctx.state.enemyGold += payload.amount || 0;
-    ctx.events.emit("rtsHud", {
-      playerGold: ctx.state.playerGold,
-      enemyGold: ctx.state.enemyGold,
-      playerHallHp: ctx.state.playerHallHp,
-      enemyHallHp: ctx.state.enemyHallHp,
-    });
+    emitHud(ctx);
   });
   ctx.events.on("rtsBuildingDamage", function(payload) {
     if (ctx.state.ended || !payload) return;
     var name = payload.name || "";
     var amt = payload.amount || 0;
-    if (name.indexOf("PlayerTownHall") >= 0) ctx.state.playerHallHp = Math.max(0, ctx.state.playerHallHp - amt);
-    if (name.indexOf("EnemyTownHall") >= 0) ctx.state.enemyHallHp = Math.max(0, ctx.state.enemyHallHp - amt);
-    ctx.events.emit("rtsHud", {
-      playerGold: ctx.state.playerGold,
-      enemyGold: ctx.state.enemyGold,
-      playerHallHp: ctx.state.playerHallHp,
-      enemyHallHp: ctx.state.enemyHallHp,
-    });
+    if (name.indexOf("PlayerTownHall") >= 0) {
+      ctx.state.playerHallHp = Math.max(0, ctx.state.playerHallHp - amt);
+    }
+    if (name.indexOf("EnemyTownHall") >= 0) {
+      ctx.state.enemyHallHp = Math.max(0, ctx.state.enemyHallHp - amt);
+    }
+    emitHud(ctx);
     if (ctx.state.playerHallHp <= 0) {
       ctx.state.ended = true;
+      ctx.events.emit("lose", { reason: "townhall" });
       ctx.events.emit("outcome", { result: "lose" });
     } else if (ctx.state.enemyHallHp <= 0) {
       ctx.state.ended = true;
+      ctx.events.emit("win", { reason: "townhall" });
       ctx.events.emit("outcome", { result: "win" });
+    }
+  });
+  ctx.events.on("rtsBuildingDestroyed", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    if (payload.name && payload.name.indexOf("TownHall") >= 0) {
+      if (payload.faction === "player") {
+        ctx.state.playerHallHp = 0;
+        ctx.state.ended = true;
+        ctx.events.emit("lose", { reason: "townhall" });
+        ctx.events.emit("outcome", { result: "lose" });
+      } else if (payload.faction === "enemy") {
+        ctx.state.enemyHallHp = 0;
+        ctx.state.ended = true;
+        ctx.events.emit("win", { reason: "townhall" });
+        ctx.events.emit("outcome", { result: "win" });
+      }
+    }
+    emitHud(ctx);
+  });
+  ctx.events.on("rtsTrainRequest", function(payload) {
+    if (ctx.state.ended || !payload || !payload.spec) return;
+    var faction = payload.faction || "player";
+    var spec = payload.spec;
+    var gold = faction === "player" ? ctx.state.playerGold : ctx.state.enemyGold;
+    var wood = faction === "player" ? ctx.state.playerWood : ctx.state.enemyWood;
+    var food = countFood(ctx, faction);
+    var foodMax = countFarms(ctx, faction);
+    if (gold < (spec.gold || 0) || wood < (spec.wood || 0)) {
+      if (faction === "player") {
+        ctx.state.message = "Not enough resources";
+        emitHud(ctx);
+      }
+      return;
+    }
+    if (food + (spec.food || 1) > foodMax) {
+      if (faction === "player") {
+        ctx.state.message = "Need more farms (food cap)";
+        emitHud(ctx);
+      }
+      return;
+    }
+    if (faction === "player") {
+      ctx.state.playerGold -= spec.gold || 0;
+      ctx.state.playerWood -= spec.wood || 0;
+    } else {
+      ctx.state.enemyGold -= spec.gold || 0;
+      ctx.state.enemyWood -= spec.wood || 0;
+    }
+    ctx.scene.send(payload.buildingId, "rtsBeginTrain", { buildingId: payload.buildingId, spec: spec });
+    if (faction === "player") ctx.state.message = "Training " + (spec.label || "unit") + "…";
+    emitHud(ctx);
+  });
+  ctx.events.on("rtsHudCommand", function(payload) {
+    if (ctx.state.ended || !payload) return;
+    if (payload.action === "train" && payload.unitId && ctx.state.selectedId) {
+      ctx.scene.send(ctx.state.selectedId, "rtsTrain", { unitId: payload.unitId });
+    }
+    if (payload.action === "stop" && ctx.state.selectedIds) {
+      for (var i = 0; i < ctx.state.selectedIds.length; i++) {
+        ctx.scene.send(ctx.state.selectedIds[i], "rtsStop", {});
+      }
     }
   });
 };
 
 exports.update = function(entity, ctx) {
-  // Pulse HUD occasionally so late-joining listeners get state
-  if (!ctx.state._lastHud || ctx.time.elapsed - ctx.state._lastHud > 1.5) {
-    ctx.state._lastHud = ctx.time.elapsed;
-    ctx.events.emit("rtsHud", {
-      playerGold: ctx.state.playerGold,
-      enemyGold: ctx.state.enemyGold,
-      playerHallHp: ctx.state.playerHallHp,
-      enemyHallHp: ctx.state.enemyHallHp,
+  if (ctx.state.ended) return;
+  var mouse = ctx.input.mouse;
+  var left = !!mouse.left;
+  var right = !!mouse.right;
+  var leftClick = left && !ctx.state.leftWasDown;
+  var rightClick = right && !ctx.state.rightWasDown;
+  ctx.state.leftWasDown = left;
+  ctx.state.rightWasDown = right;
+
+  // Hotkeys: 1 = select all military, 2 = select workers, A = attack-move mode flag
+  if (ctx.input.keys["1"] && !ctx.state.key1) {
+    clearSelection(ctx);
+    var mil = ctx.scene.findAll(function(e) {
+      return isPlayerSide(e) && (e.behavior === "rts-footman" || e.behavior === "rts-archer");
     });
+    for (var m = 0; m < mil.length; m++) selectEntity(ctx, mil[m].id, true);
+    ctx.state.message = "Selected military (" + mil.length + ")";
+    emitHud(ctx);
+  }
+  ctx.state.key1 = !!ctx.input.keys["1"];
+  if (ctx.input.keys["2"] && !ctx.state.key2) {
+    clearSelection(ctx);
+    var wrk = ctx.scene.findAll(function(e) {
+      return isPlayerSide(e) && e.behavior === "rts-peon";
+    });
+    for (var w = 0; w < wrk.length; w++) selectEntity(ctx, wrk[w].id, true);
+    ctx.state.message = "Selected workers (" + wrk.length + ")";
+    emitHud(ctx);
+  }
+  ctx.state.key2 = !!ctx.input.keys["2"];
+
+  if (leftClick) {
+    var hit = ctx.scene.castScreenRay(600);
+    if (hit && hit.entityId) {
+      var picked = ctx.scene.findById(hit.entityId);
+      if (picked && isSelectablePlayer(picked)) {
+        selectEntity(ctx, picked.id, !!(ctx.input.keys["Shift"] || ctx.input.keys["ShiftLeft"]));
+        ctx.state.message = "Selected " + (picked.name || "unit");
+        emitHud(ctx);
+      } else if (picked && (picked.behavior === "rts-building" || picked.behavior === "rts-tower")) {
+        selectEntity(ctx, picked.id, false);
+        emitHud(ctx);
+      } else {
+        clearSelection(ctx);
+        emitHud(ctx);
+      }
+    } else {
+      clearSelection(ctx);
+      emitHud(ctx);
+    }
+  }
+
+  if (rightClick && ctx.state.selectedIds && ctx.state.selectedIds.length > 0) {
+    var hitR = ctx.scene.castScreenRay(600);
+    if (hitR) {
+      var target = hitR.entityId ? ctx.scene.findById(hitR.entityId) : null;
+      var order = null;
+      if (target && target.behavior === "rts-creep") {
+        order = { type: "attack", targetId: target.id };
+        ctx.state.message = "Attack creep";
+      } else if (target && !isPlayerSide(target) && (target.behavior === "rts-peon" || target.behavior === "rts-footman" || target.behavior === "rts-archer" || target.behavior === "rts-building" || target.behavior === "rts-tower" || (target.name && target.name.indexOf("Enemy") === 0))) {
+        order = { type: "attack", targetId: target.id };
+        ctx.state.message = "Attack " + (target.name || "enemy");
+      } else if (target && (target.name && (target.name.indexOf("GoldMine") === 0 || target.name.indexOf("Forest") === 0 || target.name.indexOf("Tree") === 0))) {
+        order = { type: "gather", targetId: target.id };
+        ctx.state.message = "Gather resources";
+      } else {
+        order = { type: "move", x: hitR.point[0], z: hitR.point[2] };
+        ctx.state.message = "Moving";
+      }
+      // Rally point for buildings
+      for (var s = 0; s < ctx.state.selectedIds.length; s++) {
+        var sel = ctx.scene.findById(ctx.state.selectedIds[s]);
+        if (!sel) continue;
+        if (sel.behavior === "rts-building" || sel.behavior === "rts-tower") {
+          ctx.scene.send(sel.id, "rtsSetRally", { x: hitR.point[0], z: hitR.point[2] });
+        } else if (isOrderablePlayer(sel)) {
+          ctx.scene.send(sel.id, "rtsOrder", order);
+        }
+      }
+      emitHud(ctx);
+    }
+  }
+
+  // Enemy AI — train + periodic attack-move toward player hall
+  ctx.state.enemyAiTimer -= ctx.time.delta;
+  if (ctx.state.enemyAiTimer <= 0) {
+    ctx.state.enemyAiTimer = 10 + Math.random() * 4;
+    ctx.state.enemyWave = (ctx.state.enemyWave || 0) + 1;
+    var barracks = ctx.scene.find("EnemyBarracks");
+    var hall = ctx.scene.find("EnemyTownHall");
+    var trainBuilding = barracks || hall;
+    if (trainBuilding && ctx.state.enemyGold >= 75) {
+      var unitId = ctx.state.enemyWave % 3 === 0 ? "archer" : (ctx.state.enemyWave % 2 === 0 ? "footman" : "peon");
+      if (unitId === "peon" && hall) {
+        ctx.events.emit("rtsTrainRequest", {
+          buildingId: hall.id,
+          buildingName: hall.name,
+          faction: "enemy",
+          spec: { id: "peon", label: "Worker", gold: 50, wood: 0, food: 1, time: 4, behavior: "rts-peon", racePlayer: "dwarf", raceEnemy: "orc" },
+        });
+      } else if (barracks) {
+        var spec = unitId === "archer"
+          ? { id: "archer", label: "Archer", gold: 60, wood: 25, food: 2, time: 5.5, behavior: "rts-archer", racePlayer: "elf", raceEnemy: "skeleton" }
+          : { id: "footman", label: "Footman", gold: 75, wood: 0, food: 2, time: 5, behavior: "rts-footman", racePlayer: "warrior", raceEnemy: "orc" };
+        ctx.events.emit("rtsTrainRequest", {
+          buildingId: barracks.id,
+          buildingName: barracks.name,
+          faction: "enemy",
+          spec: spec,
+        });
+      }
+    }
+    // Push military toward player town hall every other wave
+    if (ctx.state.enemyWave % 2 === 0) {
+      var pHall = ctx.scene.find("PlayerTownHall");
+      if (pHall) {
+        var army = ctx.scene.findAll(function(e) {
+          return e.layer === "NPC" && (e.behavior === "rts-footman" || e.behavior === "rts-archer");
+        });
+        for (var a = 0; a < army.length; a++) {
+          ctx.scene.send(army[a].id, "rtsOrder", {
+            type: "attack-move",
+            x: pHall.position[0],
+            z: pHall.position[2],
+            targetId: pHall.id,
+          });
+        }
+      }
+    }
+  }
+
+  if (!ctx.state._lastHud || ctx.time.elapsed - ctx.state._lastHud > 1.0) {
+    ctx.state._lastHud = ctx.time.elapsed;
+    emitHud(ctx);
   }
 };
 `;
@@ -1596,7 +2225,10 @@ export const BUILTIN_BEHAVIORS: Record<BehaviorKind, string> = {
   boss: BOSS,
   "rts-peon": RTS_PEON,
   "rts-footman": RTS_FOOTMAN,
+  "rts-archer": RTS_ARCHER,
   "rts-creep": RTS_CREEP,
+  "rts-building": RTS_BUILDING,
+  "rts-tower": RTS_TOWER,
   "gamemode-rts": GAMEMODE_RTS,
 };
 
@@ -1621,7 +2253,10 @@ export const BEHAVIOR_DEFAULT_LAYERS: Record<BehaviorKind, LayerName | null> = {
   boss: "NPC",
   "rts-peon": null,
   "rts-footman": null,
+  "rts-archer": null,
   "rts-creep": "NPC",
+  "rts-building": null,
+  "rts-tower": null,
   "gamemode-rts": null,
 };
 

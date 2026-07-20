@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BUILTIN_MODELS,
   BUILTIN_MODEL_YAW_OFFSETS,
   BUILTIN_MODEL_CLIPS,
   getRaceClips,
@@ -50,9 +51,28 @@ describe("RTS demo assets", () => {
   });
 
   it("registers RTS behaviors used by rts-fort-royale", () => {
-    for (const k of ["rts-peon", "rts-footman", "rts-creep", "gamemode-rts"] as const) {
+    for (const k of [
+      "rts-peon",
+      "rts-footman",
+      "rts-archer",
+      "rts-creep",
+      "rts-building",
+      "rts-tower",
+      "gamemode-rts",
+    ] as const) {
       expect(BUILTIN_BEHAVIORS[k], `missing behavior ${k}`).toBeTruthy();
       expect(BUILTIN_BEHAVIORS[k].length).toBeGreaterThan(50);
+    }
+  });
+
+  it("registers CDN RTS building keys", () => {
+    for (const k of [
+      "rts-bldg-townhall",
+      "rts-bldg-barracks",
+      "rts-bldg-farm",
+      "rts-tower-archer",
+    ] as const) {
+      expect(BUILTIN_MODELS[k], `missing model ${k}`).toMatch(/^https:\/\//);
     }
   });
 });

@@ -45,7 +45,7 @@ import {
  *  a fresh, immutable, versioned object key. The previous version's
  *  files are intentionally left in place so older `?scene=…` links keep
  *  resolving. Format: yyyymmdd.n */
-export const TEMPLATES_VERSION = "20260712.1";
+export const TEMPLATES_VERSION = "20260720.1";
 
 export interface TemplateManifestEntry {
   /** URL-safe key — also the object-storage filename. */
@@ -118,9 +118,9 @@ export const SCENE_TEMPLATES: TemplateManifestEntry[] = [
   },
   {
     key: "rts-fort-royale",
-    label: "RTS — Fort Royale (Warcraft-2 style)",
+    label: "RTS — Fort Royale Skirmish",
     description:
-      "Real-time strategy skirmish: player peon auto-gathers gold, footman auto-engages; mirror enemy base. Creeps guard mines. Destroy the enemy town hall to win. RTS camera.",
+      "Full RTS skirmish: settlement buildings, battle towers, workers/footmen/archers, gold + wood economy, train units from Town Hall & Barracks, select + right-click orders, enemy AI waves. Destroy the enemy town hall to win.",
     build: rtsFortRoyaleScene,
   },
 ];

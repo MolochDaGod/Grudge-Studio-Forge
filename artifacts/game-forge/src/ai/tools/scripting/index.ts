@@ -597,22 +597,37 @@ const BEHAVIOR_DOCS: Record<
   },
   "rts-peon": {
     description:
-      "RTS worker: auto-moves to nearest GoldMine/Forest, gathers, deposits at own TownHall. Emits rtsGold for the match HUD.",
+      "RTS worker: gathers gold/wood under orders (or auto when idle), deposits at Town Hall. Select + right-click mine/forest.",
     recommendedLayer: "Player",
   },
   "rts-footman": {
     description:
-      "RTS melee unit: auto-engages nearest hostile peon/footman/creep/enemy town hall. Emits rtsBuildingDamage on halls.",
+      "RTS melee unit: move/attack orders, auto-engages hostiles. Emits building damage on halls.",
+    recommendedLayer: "Player",
+  },
+  "rts-archer": {
+    description:
+      "RTS ranged unit: keeps distance, attacks at range under orders or auto-engage.",
     recommendedLayer: "Player",
   },
   "rts-creep": {
     description:
-      "Neutral camp guard: idles near spawn, aggroes on nearby player RTS units.",
+      "Neutral camp guard: idles near spawn, aggroes on nearby player RTS units, gold bounty on death.",
     recommendedLayer: "NPC",
+  },
+  "rts-building": {
+    description:
+      "RTS production building (Town Hall / Barracks / Farm / Mill). Select to train units; right-click sets rally.",
+    recommendedLayer: "Player",
+  },
+  "rts-tower": {
+    description:
+      "RTS defensive tower: auto-attacks nearby hostile units and buildings.",
+    recommendedLayer: "Player",
   },
   "gamemode-rts": {
     description:
-      "RTS match controller: tracks gold + town-hall HP, emits rtsHud and win/lose. Attach to a hidden empty named GameManager.",
+      "RTS match controller: selection, right-click orders, gold/wood/food economy, production, enemy AI, win/lose. Attach to GameManager empty.",
   },
   spawnpoint: {
     description:

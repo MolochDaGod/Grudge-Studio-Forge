@@ -2324,15 +2324,106 @@ export function arenaUndergroundWarsScene(): SceneData {
   };
 }
 
-// ── RTS — Fort Royale skirmish (Warcraft-2 style foundation) ─────────────
-// Clean, error-free demo: plane ground (no unsupported terrain type),
-// toon-rts race units (CDN), skeleton-alias creeps, RTS behaviors for
-// peon gather / footman fight / creep aggro / town-hall win condition.
+// ── RTS — Fort Royale skirmish (full Warcraft-style foundation) ─────────
+// Real settlement buildings + battle towers (CDN), toon-rts race units,
+// gold mines + forests, creeps, production buildings, RTS camera + HUD.
+const RTS_CDN = {
+  townhall: "builtin:rts-bldg-townhall",
+  barracks: "builtin:rts-bldg-barracks",
+  farm: "builtin:rts-bldg-farm",
+  mill: "builtin:rts-bldg-mill",
+  tent: "builtin:rts-bldg-tent",
+  alchemy: "builtin:rts-bldg-alchemy",
+  fountain: "builtin:rts-bldg-fountain",
+  tower: "builtin:rts-tower-archer",
+  fireTower: "builtin:rts-tower-fire",
+  ballista: "builtin:rts-tower-ballista",
+} as const;
+
+function rtsUnit(opts: {
+  name: string;
+  race: string;
+  position: [number, number, number];
+  layer: "Player" | "NPC";
+  behavior: SceneEntity["behavior"];
+  parentId: string;
+  tint?: string;
+  yaw?: number;
+  scale?: number;
+}): SceneEntity {
+  const s = opts.scale ?? 0.95;
+  return {
+    id: id(),
+    name: opts.name,
+    type: "model",
+    model: {
+      url: `builtin:race:${opts.race}`,
+      ...(opts.tint ? { tint: opts.tint } : {}),
+    },
+    raceId: opts.race,
+    transform: {
+      position: opts.position,
+      rotation: [0, opts.yaw ?? 0, 0],
+      scale: [s, s, s],
+    },
+    physics: {
+      bodyType: "kinematicPosition",
+      colliderType: "cylinder",
+      mass: 1,
+      restitution: 0,
+      friction: 0.6,
+    },
+    parentId: opts.parentId,
+    layer: opts.layer,
+    behavior: opts.behavior,
+  };
+}
+
+function rtsBuilding(opts: {
+  name: string;
+  modelUrl: string;
+  position: [number, number, number];
+  layer: "Player" | "NPC";
+  parentId: string;
+  behavior?: SceneEntity["behavior"];
+  tint?: string;
+  scale?: number | [number, number, number];
+  yaw?: number;
+}): SceneEntity {
+  const sc = opts.scale ?? 2.4;
+  const scale: [number, number, number] = Array.isArray(sc) ? sc : [sc, sc, sc];
+  return {
+    id: id(),
+    name: opts.name,
+    type: "model",
+    model: {
+      url: opts.modelUrl,
+      ...(opts.tint ? { tint: opts.tint } : {}),
+    },
+    transform: {
+      position: opts.position,
+      rotation: [0, opts.yaw ?? 0, 0],
+      scale,
+    },
+    physics: {
+      bodyType: "fixed",
+      colliderType: "cuboid",
+      mass: 0,
+      restitution: 0.1,
+      friction: 1,
+    },
+    parentId: opts.parentId,
+    layer: opts.layer,
+    behavior: opts.behavior ?? "rts-building",
+    surface: "Walk",
+  };
+}
+
 export function rtsFortRoyaleScene(): SceneData {
   return withIdScope("rts-fort-royale", () => {
     const entities: SceneEntity[] = [];
 
-    // Large walkable ground (avoids invalid EntityType "terrain")
+    // ── Terrain ───────────────────────────────────────────────────────
     entities.push({
       id: id(),
       name: "Ground",
@@ -2340,36 +2431,47 @@ export function rtsFortRoyaleScene(): SceneData {
       transform: {
         position: [0, 0, 0],
         rotation: [-Math.PI / 2, 0, 0],
-        scale: [400, 400, 1],
+        scale: [320, 320, 1],
       },
       parentId: null,
-      material: { color: "#3d5c3a", metalness: 0, roughness: 0.95 },
+      material: { color: "#3f6b3a", metalness: 0, roughness: 0.92 },
       layer: "Terrain",
       surface: "Walk",
       physics: {
         bodyType: "fixed",
         colliderType: "cuboid",
         mass: 0,
-        restitution: 0.1,
+        restitution: 0.05,
         friction: 1,
       },
     });
-
-    // Optional fort decoration (map GLB is large; soft-fail via builtin resolve)
-    entities.push({
-      id: id(),
-      name: "FortDecoration",
-      type: "model",
-      model: { url: "builtin:map-fort-royale" },
-      transform: {
-        position: [0, 0, 0],
-        rotation: [0, 0, 0],
-        scale: [8, 8, 8],
-      },
-      parentId: null,
-      layer: "Default",
-      surface: "None",
-    });
+    // Subtle dirt patches at bases
+    for (const [x, z, color] of [
+      [-42, -42, "#5a4a32"],
+      [42, 42, "#4a3228"],
+    ] as const) {
+      entities.push({
+        id: id(),
+        name: "BasePad",
+        type: "cylinder",
+        transform: {
+          position: [x, 0.02, z],
+          rotation: [0, 0, 0],
+          scale: [22, 0.04, 22],
+        },
+        parentId: null,
+        material: { color, roughness: 1, metalness: 0 },
+        layer: "Terrain",
+        surface: "Walk",
+        physics: {
+          bodyType: "fixed",
+          colliderType: "cuboid",
+          mass: 0,
+          restitution: 0,
+          friction: 1,
+        },
+      });
+    }
 
     // ── Player base (SW) ──────────────────────────────────────────────
     const playerBase = id();
@@ -2381,70 +2483,118 @@ export function rtsFortRoyaleScene(): SceneData {
       parentId: null,
       layer: "Player",
     });
-    entities.push({
-      id: id(),
-      name: "PlayerTownHall",
-      type: "box",
-      transform: {
-        position: [-40, 4, -40],
-        rotation: [0, 0, 0],
-        scale: [8, 8, 8],
-      },
-      material: { color: "#3a6ea8", roughness: 0.85, metalness: 0.05 },
-      physics: {
-        bodyType: "fixed",
-        colliderType: "cuboid",
-        mass: 0,
-        restitution: 0.1,
-        friction: 1,
-      },
-      parentId: playerBase,
-      layer: "Player",
-    });
-    entities.push({
-      id: id(),
-      name: "PlayerPeon",
-      type: "model",
-      model: { url: "builtin:race:warrior" },
-      raceId: "warrior",
-      transform: {
-        position: [-32, 0, -40],
-        rotation: [0, 0, 0],
-        scale: [0.95, 0.95, 0.95],
-      },
-      physics: {
-        bodyType: "kinematicPosition",
-        colliderType: "cylinder",
-        mass: 1,
-        restitution: 0,
-        friction: 0.6,
-      },
-      parentId: playerBase,
-      layer: "Player",
-      behavior: "rts-peon",
-    });
-    entities.push({
-      id: id(),
-      name: "PlayerFootman",
-      type: "model",
-      model: { url: "builtin:race:warrior" },
-      raceId: "warrior",
-      transform: {
-        position: [-32, 0, -32],
-        rotation: [0, 0, 0],
-        scale: [0.95, 0.95, 0.95],
-      },
-      physics: {
-        bodyType: "kinematicPosition",
-        colliderType: "cylinder",
-        mass: 1,
-        restitution: 0,
-        friction: 0.6,
-      },
-      parentId: playerBase,
-      layer: "Player",
-      behavior: "rts-footman",
-    });
+    entities.push(
+      rtsBuilding({
+        name: "PlayerTownHall",
+        modelUrl: RTS_CDN.townhall,
+        position: [-44, 0, -44],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 2.8,
+        yaw: Math.PI / 6,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerBarracks",
+        modelUrl: RTS_CDN.barracks,
+        position: [-30, 0, -48],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 2.2,
+        yaw: -0.3,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerFarm_1",
+        modelUrl: RTS_CDN.farm,
+        position: [-52, 0, -32],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 2.0,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerFarm_2",
+        modelUrl: RTS_CDN.farm,
+        position: [-56, 0, -40],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 1.9,
+        yaw: 0.8,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerMill",
+        modelUrl: RTS_CDN.mill,
+        position: [-36, 0, -30],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 2.1,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerTower",
+        modelUrl: RTS_CDN.tower,
+        position: [-24, 0, -36],
+        layer: "Player",
+        parentId: playerBase,
+        behavior: "rts-tower",
+        scale: 1.6,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerTent",
+        modelUrl: RTS_CDN.tent,
+        position: [-50, 0, -50],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 1.8,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "PlayerFountain",
+        modelUrl: RTS_CDN.fountain,
+        position: [-40, 0, -36],
+        layer: "Player",
+        parentId: playerBase,
+        scale: 1.4,
+      }),
+    );
+
+    // Player starting army
+    const pUnits: Array<{
+      name: string;
+      race: string;
+      pos: [number, number, number];
+      behavior: SceneEntity["behavior"];
+    }> = [
+      { name: "PlayerPeon_1", race: "dwarf", pos: [-38, 0, -38], behavior: "rts-peon" },
+      { name: "PlayerPeon_2", race: "dwarf", pos: [-36, 0, -40], behavior: "rts-peon" },
+      { name: "PlayerPeon_3", race: "dwarf", pos: [-40, 0, -36], behavior: "rts-peon" },
+      { name: "PlayerFootman_1", race: "warrior", pos: [-28, 0, -34], behavior: "rts-footman" },
+      { name: "PlayerFootman_2", race: "warrior", pos: [-26, 0, -38], behavior: "rts-footman" },
+      { name: "PlayerArcher_1", race: "elf", pos: [-32, 0, -28], behavior: "rts-archer" },
+    ];
+    for (const u of pUnits) {
+      entities.push(
+        rtsUnit({
+          name: u.name,
+          race: u.race,
+          position: u.pos,
+          layer: "Player",
+          behavior: u.behavior,
+          parentId: playerBase,
+          yaw: Math.PI / 4,
+        }),
+      );
+    }
 
     // ── Enemy base (NE) ───────────────────────────────────────────────
     const enemyBase = id();
@@ -2456,70 +2606,116 @@ export function rtsFortRoyaleScene(): SceneData {
       parentId: null,
       layer: "NPC",
     });
-    entities.push({
-      id: id(),
-      name: "EnemyTownHall",
-      type: "box",
-      transform: {
-        position: [40, 4, 40],
-        rotation: [0, 0, 0],
-        scale: [8, 8, 8],
-      },
-      material: { color: "#a83a3a", roughness: 0.85, metalness: 0.05 },
-      physics: {
-        bodyType: "fixed",
-        colliderType: "cuboid",
-        mass: 0,
-        restitution: 0.1,
-        friction: 1,
-      },
-      parentId: enemyBase,
-      layer: "NPC",
-    });
-    entities.push({
-      id: id(),
-      name: "EnemyPeon",
-      type: "model",
-      model: { url: "builtin:race:orc", tint: "#ff6060" },
-      raceId: "orc",
-      transform: {
-        position: [32, 0, 40],
-        rotation: [0, Math.PI, 0],
-        scale: [0.95, 0.95, 0.95],
-      },
-      physics: {
-        bodyType: "kinematicPosition",
-        colliderType: "cylinder",
-        mass: 1,
-        restitution: 0,
-        friction: 0.6,
-      },
-      parentId: enemyBase,
-      layer: "NPC",
-      behavior: "rts-peon",
-    });
-    entities.push({
-      id: id(),
-      name: "EnemyFootman",
-      type: "model",
-      model: { url: "builtin:race:orc", tint: "#ff5050" },
-      raceId: "orc",
-      transform: {
-        position: [32, 0, 32],
-        rotation: [0, Math.PI, 0],
-        scale: [0.95, 0.95, 0.95],
-      },
-      physics: {
-        bodyType: "kinematicPosition",
-        colliderType: "cylinder",
-        mass: 1,
-        restitution: 0,
-        friction: 0.6,
-      },
-      parentId: enemyBase,
-      layer: "NPC",
-      behavior: "rts-footman",
-    });
+    const enemyTint = "#ff5555";
+    entities.push(
+      rtsBuilding({
+        name: "EnemyTownHall",
+        modelUrl: RTS_CDN.townhall,
+        position: [44, 0, 44],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 2.8,
+        yaw: Math.PI + Math.PI / 6,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyBarracks",
+        modelUrl: RTS_CDN.barracks,
+        position: [30, 0, 48],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 2.2,
+        yaw: Math.PI - 0.3,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyFarm_1",
+        modelUrl: RTS_CDN.farm,
+        position: [52, 0, 32],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 2.0,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyFarm_2",
+        modelUrl: RTS_CDN.farm,
+        position: [56, 0, 40],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 1.9,
+        yaw: 1.2,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyMill",
+        modelUrl: RTS_CDN.mill,
+        position: [36, 0, 30],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 2.1,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyTower",
+        modelUrl: RTS_CDN.fireTower,
+        position: [24, 0, 36],
+        layer: "NPC",
+        parentId: enemyBase,
+        behavior: "rts-tower",
+        scale: 1.6,
+        tint: enemyTint,
+      }),
+    );
+    entities.push(
+      rtsBuilding({
+        name: "EnemyAlchemy",
+        modelUrl: RTS_CDN.alchemy,
+        position: [48, 0, 52],
+        layer: "NPC",
+        parentId: enemyBase,
+        scale: 2.0,
+        tint: enemyTint,
+      }),
+    );
+
+    const eUnits: Array<{
+      name: string;
+      race: string;
+      pos: [number, number, number];
+      behavior: SceneEntity["behavior"];
+    }> = [
+      { name: "EnemyPeon_1", race: "orc", pos: [38, 0, 38], behavior: "rts-peon" },
+      { name: "EnemyPeon_2", race: "orc", pos: [36, 0, 40], behavior: "rts-peon" },
+      { name: "EnemyPeon_3", race: "orc", pos: [40, 0, 36], behavior: "rts-peon" },
+      { name: "EnemyFootman_1", race: "orc", pos: [28, 0, 34], behavior: "rts-footman" },
+      { name: "EnemyFootman_2", race: "orc", pos: [26, 0, 38], behavior: "rts-footman" },
+      { name: "EnemyArcher_1", race: "skeleton", pos: [32, 0, 28], behavior: "rts-archer" },
+    ];
+    for (const u of eUnits) {
+      entities.push(
+        rtsUnit({
+          name: u.name,
+          race: u.race,
+          position: u.pos,
+          layer: "NPC",
+          behavior: u.behavior,
+          parentId: enemyBase,
+          tint: enemyTint,
+          yaw: Math.PI + Math.PI / 4,
+        }),
+      );
+    }
 
     // ── Resources ─────────────────────────────────────────────────────
     const resources = id();
@@ -2530,83 +2726,80 @@ export function rtsFortRoyaleScene(): SceneData {
       transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
       parentId: null,
     });
-    entities.push({
-      id: id(),
-      name: "GoldMine_PlayerSide",
-      type: "box",
-      transform: {
-        position: [-18, 1.5, -18],
-        rotation: [0, 0, 0],
-        scale: [4, 3, 4],
-      },
-      material: {
-        color: "#e0b840",
-        emissive: "#553f10",
-        roughness: 0.6,
-        metalness: 0.7,
-      },
-      physics: {
-        bodyType: "fixed",
-        colliderType: "cuboid",
-        mass: 0,
-        restitution: 0.1,
-        friction: 1,
-      },
-      parentId: resources,
-      layer: "Default",
-    });
-    entities.push({
-      id: id(),
-      name: "GoldMine_EnemySide",
-      type: "box",
-      transform: {
-        position: [18, 1.5, 18],
-        rotation: [0, 0, 0],
-        scale: [4, 3, 4],
-      },
-      material: {
-        color: "#e0b840",
-        emissive: "#553f10",
-        roughness: 0.6,
-        metalness: 0.7,
-      },
-      physics: {
-        bodyType: "fixed",
-        colliderType: "cuboid",
-        mass: 0,
-        restitution: 0.1,
-        friction: 1,
-      },
-      parentId: resources,
-      layer: "Default",
-    });
-    entities.push({
-      id: id(),
-      name: "Forest_Mid",
-      type: "cylinder",
-      transform: {
-        position: [0, 3, 0],
-        rotation: [0, 0, 0],
-        scale: [3, 6, 3],
-      },
-      material: {
-        color: "#3d6b3d",
-        emissive: "#0a1408",
-        roughness: 0.6,
-        metalness: 0.05,
-      },
-      physics: {
-        bodyType: "fixed",
-        colliderType: "cuboid",
-        mass: 0,
-        restitution: 0.1,
-        friction: 1,
-      },
-      parentId: resources,
-      layer: "Default",
+    // Gold mines — crystal gems prop + gold pad
+    for (const [name, pos] of [
+      ["GoldMine_PlayerSide", [-16, 0, -20] as [number, number, number]],
+      ["GoldMine_EnemySide", [16, 0, 20] as [number, number, number]],
+      ["GoldMine_Center", [0, 0, 0] as [number, number, number]],
+    ] as const) {
+      entities.push({
+        id: id(),
+        name,
+        type: "model",
+        model: { url: "builtin:prop-crystal-gems" },
+        transform: {
+          position: pos,
+          rotation: [0, 0, 0],
+          scale: [1.6, 1.6, 1.6],
+        },
+        physics: {
+          bodyType: "fixed",
+          colliderType: "cuboid",
+          mass: 0,
+          restitution: 0.1,
+          friction: 1,
+        },
+        parentId: resources,
+        layer: "Default",
+        material: {
+          color: "#e0b840",
+          emissive: "#664408",
+          roughness: 0.4,
+          metalness: 0.75,
+        },
+      });
+    }
+    // Forests — nature tree clusters (wood gather nodes)
+    const forestSpots: [number, number, number, number][] = [
+      [-8, 0, 12, 0],
+      [-4, 0, 16, 1.2],
+      [0, 0, 14, 0.4],
+      [8, 0, -12, 2.1],
+      [4, 0, -16, 0.8],
+      [0, 0, -14, 1.6],
+      [-22, 0, 8, 0.3],
+      [22, 0, -8, 2.4],
+      [-12, 0, 0, 1.0],
+      [12, 0, 0, 2.0],
+    ];
+    forestSpots.forEach((spot, i) => {
+      const [x, y, z, yaw] = spot;
+      entities.push({
+        id: id(),
+        name: `Forest_${i + 1}`,
+        type: "model",
+        model: {
+          url: i % 2 === 0 ? "builtin:nature-tree" : "builtin:nature-autumn-trees",
+        },
+        transform: {
+          position: [x, y, z],
+          rotation: [0, yaw, 0],
+          scale: [1.8, 1.8, 1.8],
+        },
+        physics: {
+          bodyType: "fixed",
+          colliderType: "cuboid",
+          mass: 0,
+          restitution: 0.05,
+          friction: 0.9,
+        },
+        parentId: resources,
+        layer: "Terrain",
+        surface: "Walk",
+      });
     });
 
-    // ── Creeps (skeleton alias for creature:mutant — always loads) ────
+    // ── Neutral creeps ────────────────────────────────────────────────
     const camps = id();
     entities.push({
       id: camps,
@@ -2618,38 +2811,53 @@ export function rtsFortRoyaleScene(): SceneData {
     });
     const creepSpots: [number, number, number][] = [
       [-14, 0, -18],
-      [-22, 0, -18],
+      [-18, 0, -14],
       [14, 0, 18],
-      [22, 0, 18],
-      [-4, 0, 4],
-      [4, 0, -4],
+      [18, 0, 14],
+      [-2, 0, 2],
+      [2, 0, -2],
+      [-10, 0, 10],
+      [10, 0, -10],
     ];
     creepSpots.forEach((pos, i) => {
-      entities.push({
-        id: id(),
-        name: `Creep_${i + 1}`,
-        type: "model",
-        model: { url: "builtin:creature:mutant", tint: "#a0a0ff" },
-        raceId: "skeleton",
-        transform: {
+      entities.push(
+        rtsUnit({
+          name: `Creep_${i + 1}`,
+          race: "skeleton",
           position: pos,
-          rotation: [0, 0, 0],
-          scale: [0.9, 0.9, 0.9],
-        },
-        physics: {
-          bodyType: "kinematicPosition",
-          colliderType: "cylinder",
-          mass: 1,
-          restitution: 0.05,
-          friction: 1,
-        },
-        parentId: camps,
-        layer: "NPC",
-        behavior: "rts-creep",
-      });
+          layer: "NPC",
+          behavior: "rts-creep",
+          parentId: camps,
+          tint: "#a8a8ff",
+          scale: 0.9,
+        }),
+      );
     });
 
-    // ── Lighting + match controller ───────────────────────────────────
+    // Mid-map ballista ruin (neutral scenery + hazard flavor)
+    entities.push({
+      id: id(),
+      name: "RuinedBallista",
+      type: "model",
+      model: { url: RTS_CDN.ballista },
+      transform: {
+        position: [0, 0, 8],
+        rotation: [0, Math.PI / 3, 0],
+        scale: [1.3, 1.3, 1.3],
+      },
+      parentId: null,
+      layer: "Terrain",
+      surface: "None",
+      physics: {
+        bodyType: "fixed",
+        colliderType: "cuboid",
+        mass: 0,
+        restitution: 0.1,
+        friction: 1,
+      },
+    });
+
+    // ── Lighting ──────────────────────────────────────────────────────
     const lighting = id();
     entities.push({
       id: lighting,
@@ -2658,14 +2866,30 @@ export function rtsFortRoyaleScene(): SceneData {
       transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
       parentId: null,
     });
+    entities.push({
+      id: id(),
+      name: "Sun",
+      type: "light",
+      transform: {
+        position: [40, 60, 20],
+        rotation: [-0.9, 0.4, 0],
+        scale: [1, 1, 1],
+      },
+      parentId: lighting,
+      light: {
+        kind: "directional",
+        color: "#fff2d6",
+        intensity: 1.35,
+      },
+    });
     for (const L of [
-      { pos: [-40, 12, -40] as [number, number, number], color: "#88aaff" },
-      { pos: [40, 12, 40] as [number, number, number], color: "#ff8866" },
-      { pos: [0, 14, 0] as [number, number, number], color: "#ffe8c0" },
+      { name: "PlayerCampfire", pos: [-40, 4, -40] as [number, number, number], color: "#88aaff", i: 14 },
+      { name: "EnemyCampfire", pos: [40, 4, 40] as [number, number, number], color: "#ff7744", i: 14 },
+      { name: "MidGlow", pos: [0, 8, 0] as [number, number, number], color: "#ffe8c0", i: 8 },
     ]) {
       entities.push({
         id: id(),
-        name: "Brazier",
+        name: L.name,
         type: "light",
         transform: {
           position: L.pos,
@@ -2676,11 +2900,40 @@ export function rtsFortRoyaleScene(): SceneData {
         light: {
           kind: "point",
           color: L.color,
-          intensity: 12,
-          distance: 60,
+          intensity: L.i,
+          distance: 55,
         },
       });
     }
+    // Campfire VFX near each hall
+    entities.push({
+      id: id(),
+      name: "PlayerFireVfx",
+      type: "model",
+      model: { url: "builtin:vfx-stylized-fire" },
+      transform: {
+        position: [-38, 0, -48],
+        rotation: [0, 0, 0],
+        scale: [0.6, 0.6, 0.6],
+      },
+      parentId: playerBase,
+      layer: "Default",
+      surface: "None",
+    });
+    entities.push({
+      id: id(),
+      name: "EnemyFireVfx",
+      type: "model",
+      model: { url: "builtin:vfx-stylized-fire" },
+      transform: {
+        position: [38, 0, 48],
+        rotation: [0, 0, 0],
+        scale: [0.6, 0.6, 0.6],
+      },
+      parentId: enemyBase,
+      layer: "Default",
+      surface: "None",
+    });
 
     entities.push({
       id: id(),
@@ -2695,18 +2948,46 @@ export function rtsFortRoyaleScene(): SceneData {
       behavior: "gamemode-rts",
     });
 
+    // Focus camera near player base
+    const camFocus = id();
+    entities.push({
+      id: camFocus,
+      name: "CameraFocus",
+      type: "empty",
+      transform: {
+        position: [-36, 0, -36],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+      parentId: null,
+    });
+
     return {
       entities,
       environment: {
         ...DEFAULT_ENV,
-        skyColor: "#1a1410",
-        groundColor: "#2a1f14",
-        ambientIntensity: 0.5,
-        sunIntensity: 0.85,
+        skyColor: "#6eb0e0",
+        groundColor: "#3f6b3a",
+        ambientIntensity: 0.55,
+        sunIntensity: 1.15,
         cameraMode: "rts",
-        cameraTargetEntityId: null,
+        cameraTargetEntityId: camFocus,
         gameMode: "rts",
         playerMoveSpeed: 6,
+        fog: { color: "#8ec4e8", near: 80, far: 220 },
+        uiKit: {
+          theme: "fantasy",
+          layers: [
+            "hud-root",
+            "unit-frame",
+            "action-bar",
+            "minimap",
+            "notifications",
+            "scoreboard",
+          ],
+          accent: "#d4af37",
+          fontScale: 1,
+        },
       },
     };
   });

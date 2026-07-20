@@ -109,6 +109,7 @@ export function makeContext(opts: {
     layerMask: string[] | undefined,
     materialFilter?: MaterialRayFilter,
   ) => RaycastHit | null;
+  castScreenRay: (maxDistance: number) => RaycastHit | null;
   findEntitiesByLayer: (name: string) => ScriptEntity[];
   cameraPosition: () => [number, number, number];
   cameraDirection: () => [number, number, number];
@@ -117,6 +118,18 @@ export function makeContext(opts: {
   states: EntityStates;
   triggers: TriggerInbox;
   despawn: (id: string) => boolean;
+  spawn: (spec: {
+    name: string;
+    position: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+    modelUrl?: string;
+    raceId?: string;
+    layer?: string;
+    behavior?: string;
+    tint?: string;
+    parentId?: string | null;
+  }) => string | null;
   freeze: (id: string) => void;
   unfreeze: (id: string) => void;
   ragdoll: (
@@ -165,6 +178,7 @@ export function makeContext(opts: {
       setPosition: opts.setEntityPosition,
       castRay: (origin, direction, maxDistance, excludeIds, layerMask, materialFilter) =>
         opts.castRay(origin, direction, maxDistance ?? 200, excludeIds, layerMask, materialFilter),
+      castScreenRay: (maxDistance) => opts.castScreenRay(maxDistance ?? 500),
       findEntitiesByLayer: opts.findEntitiesByLayer,
       send: (targetId, event, payload) =>
         opts.inboxes.send(targetId, event, payload, fromId),
@@ -173,6 +187,7 @@ export function makeContext(opts: {
       onEnterTrigger: (handler) => opts.triggers.registerEnter(fromId, handler),
       onExitTrigger: (handler) => opts.triggers.registerExit(fromId, handler),
       despawn: (id) => opts.despawn(id),
+      spawn: (spec) => opts.spawn(spec),
       cameraPosition: opts.cameraPosition,
       cameraDirection: opts.cameraDirection,
       freeze: opts.freeze,

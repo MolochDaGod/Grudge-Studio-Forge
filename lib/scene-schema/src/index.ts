@@ -295,13 +295,19 @@ export type BehaviorKind =
   | "vendor"
   /** Boss enemy — high HP, heavy damage, no flee, enrages under 30 percent HP. Layer NPC. */
   | "boss"
-  /** RTS worker — auto-gathers nearest gold resource, deposits at own town hall. */
+  /** RTS worker — gathers gold/wood under orders (or auto when idle). */
   | "rts-peon"
-  /** RTS melee combatant — auto-engages nearest hostile unit/building. */
+  /** RTS melee combatant — engages hostiles under orders (or auto when idle). */
   | "rts-footman"
+  /** RTS ranged combatant — engages at range under orders. */
+  | "rts-archer"
   /** RTS neutral creep — guards nearby resource, aggro on approach. */
   | "rts-creep"
-  /** RTS match controller — gold HUD, town-hall destruction win/lose. */
+  /** RTS production / town building — selectable, trains units, has HP. */
+  | "rts-building"
+  /** RTS defensive tower — auto-attacks nearby hostiles. */
+  | "rts-tower"
+  /** RTS match controller — selection, orders, economy, production, win/lose. */
   | "gamemode-rts";
 
 export interface SceneEntity {
@@ -627,8 +633,9 @@ export function inferDefaultLayer(e: Pick<SceneEntity,
   }
   if (e.behavior === "spawnpoint" || e.behavior === "pickup-trigger") return "Trigger";
   if (e.behavior === "player-deathmatch" || e.behavior === "player-rpg") return "Player";
-  // RTS peon/footman keep their authored layer (Player vs NPC); Default if unset.
+  // RTS peon/footman/archer/building keep authored layer (Player vs NPC).
   if (e.behavior === "rts-creep") return "NPC";
+  if (e.behavior === "rts-tower") return "NPC";
   if (e.behavior === "gamemode-rts") return "Default";
   return "Default";
 }
