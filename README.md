@@ -1,141 +1,159 @@
 # Grudge GameForge
 
-Three.js scene editor, physics engine & AI-assisted game builder — by [Grudge Studio](https://grudge-studio.com).
+Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting runtime — by [Grudge Studio](https://grudge-studio.com).
 
-**Web Editor** → [`forge.grudge-studio.com`](https://forge.grudge-studio.com)
-**Landing Page** → [`forge.grudge-studio.com`](https://forge.grudge-studio.com) (root `/`)
-**GitHub** → [`MolochDaGod/Grudge-Studio-Forge`](https://github.com/MolochDaGod/Grudge-Studio-Forge)
-**AI Skill** → [`.agents/skills/forge-editor/SKILL.md`](.agents/skills/forge-editor/SKILL.md)
+| | |
+|---|---|
+| **Production editor** | [forge.grudge-studio.com](https://forge.grudge-studio.com) |
+| **GitHub** | [MolochDaGod/Grudge-Studio-Forge](https://github.com/MolochDaGod/Grudge-Studio-Forge) |
+| **Branch** | `main` (auto-deploy SPA + CI) |
+| **AI skill** | [`.agents/skills/forge-editor/SKILL.md`](.agents/skills/forge-editor/SKILL.md) |
+| **Hybrid C# docs** | [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) |
+| **Deploy guide** | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
+
+## Production status (current)
+
+| Surface | Stack | Deploy |
+|---|---|---|
+| Editor SPA (`artifacts/game-forge`) | Three **0.184** catalog · R3F · Rapier · Monaco · Blazor WASM packs | **Vercel** → `forge.grudge-studio.com` |
+| API (`artifacts/api-server`) | Express · Drizzle · Postgres | **Railway** (proxied via CF Worker `/api/*`) |
+| Player (`artifacts/player`) | Same Three + R3F + Rapier as editor | Bundled / published with SPA |
+| Desktop | Electron 33 | GitHub Releases |
+| Assets CDN | Builtin GLBs + fleet bake | `assets.grudge-studio.com` (R2) |
+
+**Hard rules (production):**
+
+- **One 3D engine:** Three.js + Rapier only (no Babylon / Havok on the play path).
+- **`three@0.184.0`** pinned in the pnpm workspace catalog — every scene/game package uses `"three": "catalog:"`.
+- **Scripting hybrid:** JS `exports.start/update` for designers; C# live-edit via transpile; production packs via Blazor WASM attach/tick.
+- **Babylon runtime** is excluded from the workspace (`!lib/babylon-runtime`) so it cannot install by accident.
 
 ## Features
 
-- **Visual Scene Editor** — hierarchy panel, property inspector, transform gizmos, asset browser, drag-and-drop
-- **Three.js + R3F** — full React Three Fiber pipeline with postprocessing (SSAO, bloom, ACES, SMAA)
-- **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting — all configurable in-editor
-- **4 AI Providers** — Claude (server), Puter AI (free, 9 models), Ollama (offline, 4 local models), Cloudflare Workers AI (image/text/vision)
-- **Inline AI Assistant** — contextual AI prompt bar in every bottom-panel tab (Console, Assets, Scripts, Prefabs, Nodes, Layers)
-- **Visual Scripting** — @xyflow node graph with AI prompt-to-graph generation + drag-and-drop from Assets/Hierarchy
-- **Monaco Code Editor** — embedded TypeScript editor for custom scripts and behaviors with 15 built-in templates
-- **Asset Pipeline** — browser-side FBX/OBJ/STL→GLB via three-stdlib + fflate ZIP + `@gltf-transform` meshopt; desktop Assimp/glTF-Transform; **fleet production bake** via ObjectStore `grudge-convert` → R2
-- **Animation Library** — 22-clip catalog (locomotion, combat, emote, utility) with Mixamo patterns
-- **GitHub Project Sync** — push/pull projects to GitHub repos via Git tree API
-- **Project Conventions** — UUID v4, PascalCase/camelCase/kebab-case naming, project audit scoring
-- **Scene Templates** — 5 built-in starter scenes (3× deathmatch, RPG village, dungeon interior)
-- **30+ Builtin Models** — characters, monsters, VFX, maps ready to drag into any scene
-- **R3F Player Runtime** — same Three + R3F + Rapier stack as the editor (`artifacts/player`)
-- **Hybrid C# packs** — live edit via transpile; production `// @forge-pack: Spin|Bob|Strafe` → Blazor WASM attach/tick
-- **Recast Navmesh** — client-side baking with Yuka AI agent pathfinding
-- **Puter Auth** — session-less server; Puter SDK client-side with server-verified tokens
-- **1-Click Offline Setup** — install Ollama + models + start editor with one command
-- **Desktop App** — Electron 33, FBX import, glTF-Transform, auto-updater
+- **Visual Scene Editor** — hierarchy, inspector, transform gizmos, asset browser, drag-and-drop
+- **Three.js + R3F** — React Three Fiber, postprocessing (SSAO, bloom, ACES, SMAA)
+- **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting, layer matrix
+- **4 AI providers** — Claude (server), Puter AI, Ollama (offline), Cloudflare Workers AI
+- **Inline AI** — contextual prompt bar on Console / Assets / Scripts / Prefabs / Nodes / Layers
+- **Visual scripting** — @xyflow node graph + AI prompt-to-graph
+- **Monaco scripts** — JS templates + **Blazor pack** templates (Spin / Bob / Strafe)
+- **Hybrid C#** — see below
+- **Asset pipeline** — browser FBX/OBJ/STL→GLB; desktop Assimp; fleet bake via `grudge-convert` → R2
+- **Animation library** — 22-clip Mixamo-pattern catalog
+- **RTS / skirmish** — Fort Royale-style modes with units, buildings, economy HUD
+- **GitHub project sync** — scenes + scripts as a project tree
+- **Scene templates** — deathmatch, RPG village, dungeon interior
+- **30+ builtin models** — characters, VFX, maps under `public/builtin/`
+- **R3F player runtime** — same stack as the editor (`artifacts/player`)
+- **Recast + Yuka** — navmesh bake and AI agents
+- **Puter + Grudge ID** — auth / publish paths for fleet games
 
-## AI System
+## Hybrid C# scripting (production)
 
-15-turn tool loop with cooldown at turns 14–15. 15K token response cap. 70+ editor tools.
+Canonical model — full detail in [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md):
 
-| Provider | Models | Auth | Offline? |
-|---|---|---|---|
-| **Anthropic Claude** | Sonnet 4.6, Haiku 4.5 | Server API key | No |
-| **Ollama** | qwen2.5-coder:7b, llama3.2, codellama:13b, deepseek-coder-v2:16b | None (local) | **Yes** |
-| **Puter AI** | Claude 3.5/3.7, GPT-4o, Gemini 2.0, Llama 3.3, DeepSeek | Client token | No |
-| **CF Workers AI** | FLUX, Phoenix, SDXL, Llama 3.1, LLaVA | Server token | No |
-
-## Builtin Assets (30+)
-
-| Category | Assets | Examples |
+| Mode | When | Runtime |
 |---|---|---|
-| Characters | 10 | Blake, 6 race rigs, Boss Orc, Distortus Rex, Lava Sancho, Crow |
-| VFX | 12 | Fire Hurricane, Explosions A/B, Fire Anim, Freeze, Tornado, Circuits |
-| Maps | 8 | Cyberpunk, Encampment, Fort Royale, Desert Town, Chinese Market, Winter Base |
-| Props | Rifle, forge-scene (822-mesh dungeon) |
+| **JS** | `language: "js"` | `exports.start` / `exports.update` + `ctx` |
+| **C# transpile** | `language: "cs"` without pack headers | Unity-flavoured subset → JS (fast live edit) |
+| **C# Blazor packs** | `// @forge-runtime: blazor` + pack/assembly | `GameForgeRuntime.wasm` → `RegisterBuiltin` → **Attach** → **Tick** |
 
-Full manifest: [`public/builtin/asset-manifest.json`](artifacts/game-forge/public/builtin/asset-manifest.json)
+**Built-in production packs** (shipped in `public/_framework/`):
 
-## Tech Stack
+| Pack | Behaviour |
+|---|---|
+| `Spin` | Y-axis spin |
+| `Bob` | Vertical bob |
+| `Strafe` | WASD/arrows via C# `Input` + JS `SetKey` bridge |
+
+```csharp
+// @forge-runtime: blazor
+// @forge-pack: Spin
+```
+
+Rebuild WASM after C# host changes:
+
+```bash
+bash csharp/GameForgeRuntime/build.sh
+# → artifacts/game-forge/public/_framework/
+```
+
+If WASM is stale, packs fall back to JS equivalents so play mode still works.
+
+## Tech stack
 
 | Layer | Tech |
 |---|---|
-| 3D Engine | **Three.js 0.184** (workspace catalog/override), **R3F 9**, drei, three-mesh-bvh, three-stdlib |
-| Physics | **Rapier 3D 0.19** (WASM), @react-three/rapier — only physics engine (no Havok/Babylon) |
-| Play runtime | `@workspace/player` — R3F + Rapier + EffectsRig (not Babylon) |
-| AI Pathfinding | Yuka 0.7, recast-navigation 0.43 (WASM navmesh baking) |
-| Scripting | **JS** `start/update` + **hybrid C#** (transpile live / Blazor packs Spin·Bob·Strafe) — see `docs/HYBRID_CSHARP.md` |
-| State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
-| AI | Anthropic Claude SDK + Puter AI + Ollama + CF Workers AI |
-| UI | Radix UI, Tailwind CSS 4, shadcn/ui, cmdk, Framer Motion |
-| Code Editor | Monaco Editor (TypeScript / C#) |
-| Node Graph | @xyflow/react |
-| Backend | Express 5, Drizzle ORM, PostgreSQL, Pino logger |
-| Storage | Cloudflare R2 (native S3 via @aws-sdk/client-s3) |
-| Auth | Puter SDK (client) + server-to-server whoami verification |
-| Desktop | Electron 33, electron-builder, glTF-Transform, AssimpJS |
-| Build | Vite 7, pnpm 10 workspaces, esbuild, TypeScript 5.9 |
-| Test | Vitest, @testing-library/react, happy-dom |
+| 3D | **Three.js 0.184** (catalog), R3F 9, drei, three-mesh-bvh, three-stdlib |
+| Physics | Rapier 0.19 + `@react-three/rapier` only |
+| Play | `@workspace/player` — R3F + Rapier + EffectsRig |
+| Pathfinding | Yuka 0.7, recast-navigation 0.43 |
+| Scripting | JS + hybrid C# (transpile / Blazor packs) |
+| State | Zustand, Immer, Miniplex, XState |
+| AI | Anthropic · Puter · Ollama · CF Workers AI |
+| UI | Radix, Tailwind 4, shadcn, cmdk, Framer Motion |
+| Editor | Monaco |
+| Graph | @xyflow/react |
+| API | Express 5, Drizzle, PostgreSQL |
+| Storage | Cloudflare R2 |
+| Desktop | Electron 33 |
+| Build | Vite 7, **pnpm 10**, TypeScript 5.9 |
+| Test | Vitest, Testing Library, happy-dom |
 
-## Local Development
+## Local development
 
 ```bash
-# Prerequisites: Node.js 24+, pnpm 10+
+# Prerequisites: Node.js 20+ (24 OK), pnpm 10+
 pnpm install
 
-# Run editor + API server
-pnpm --filter @workspace/api-server run dev
-pnpm --filter @workspace/game-forge run dev
+pnpm --filter @workspace/api-server run dev   # API :8080
+pnpm --filter @workspace/game-forge run dev   # Editor :5173
 
-# 1-click offline (installs Ollama + models + starts everything)
+# Offline (Ollama + models)
 pwsh -File scripts/setup-offline.ps1    # Windows
 bash scripts/setup-offline.sh           # Mac/Linux
 
-# Typecheck + test
-pnpm run typecheck    # All 6 packages
-pnpm run test         # 365 tests
+pnpm run typecheck
+pnpm run test
 ```
 
 ## Deployment
 
 | Artifact | Target | URL |
 |---|---|---|
-| game-forge (SPA) | Vercel | `forge.grudge-studio.com` |
+| game-forge SPA | Vercel (or prebuilt static + CF Worker) | `forge.grudge-studio.com` |
+| api-server | Railway + CF Worker proxy | `forge.grudge-studio.com/api/*` |
 | game-forge-desktop | GitHub Releases | `.exe` installer |
+| Builtin / fleet assets | Cloudflare R2 | `assets.grudge-studio.com` |
 
-**Backend**: Puter KV + FS (user-pays, $0 infra cost). No api-server or database needed.
-**AI**: Puter AI (9 free models, client-side) + Ollama (offline, local).
-**Builtin assets**: Static R2 CDN at `assets.grudge-studio.com`.
+- Push to **`main`** triggers SPA CI / Vercel (and related workflows).
+- Large SPA builds: prefer ≥16 GB RAM host or the VPS build scripts in `DEPLOYMENT.md` if Vercel OOM.
+- `_framework/*.wasm` is served with correct MIME + cache headers (`vercel.json`).
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for the full deployment guide including offline/online/hybrid modes.
+Full guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-## AI Skill for Developers
+## AI skill for agents
 
-The project includes a comprehensive AI skill at [`.agents/skills/forge-editor/SKILL.md`](.agents/skills/forge-editor/SKILL.md) that gives any AI agent working on this codebase instant knowledge of:
-
-- Full monorepo structure (9 lib + 5 artifact packages)
-- Every key file path and its purpose
-- AI system architecture (providers, tool loop, cooldown)
-- Script API shape (`exports.start/update`, `ctx.scene/events/state`)
-- How to add new tools, templates, models, and scripts
-- Deployment stack and environment variables
-- Tech stack reference
-
-Alongside it ships a catalog of focused 3D / engine skills under [`.agents/skills/`](.agents/skills/):
+[`.agents/skills/forge-editor/SKILL.md`](.agents/skills/forge-editor/SKILL.md) covers monorepo layout, AI tools, **hybrid script API**, templates, and deploy.
 
 | Skill | Coverage |
 |---|---|
-| `animation-and-skinned-meshes` | SkeletonUtils.clone, mixer / actions, shared-skeleton crowds, cross-fades |
-| `spatial-queries-and-surfaces` | Raycasts, shape casts, 8-dir probe fan, surface tagging |
-| `threejs-controls` | Transform / Orbit / Map / Fly / Drag arbitration |
-| `threejs-asset-io` | GLTF / FBX / OBJ / STL, meshopt vs Draco vs KTX2, the canonical pipeline |
-| `threejs-html-overlays` | CSS2DRenderer + drei `<Html />` for labels, sector pins, damage numbers |
-| `rapier-physics-patterns` | Kinematic controller, joints, instancing, heightfields — mapped to our 10 layers |
-| `threejs-positional-audio` | Listener-on-camera, perfect-timing, directional cones, FFT visualizers |
-| `threejs-volume-rendering` | `Data3DTexture` + `RaymarchingBox` (clouds) + `VolumeNodeMaterial` (god rays) |
-| `threejs-tsl` | TSL fundamentals, VFX (tornado / flames), GLSL→TSL transpiler workflow |
+| `animation-and-skinned-meshes` | SkeletonUtils.clone, mixers, crowds, cross-fades |
+| `spatial-queries-and-surfaces` | Raycasts, probes, surface tags |
+| `threejs-controls` | Orbit / Transform / Map arbitration |
+| `threejs-asset-io` | GLTF / FBX / meshopt pipeline |
+| `threejs-html-overlays` | CSS2D / drei Html labels |
+| `rapier-physics-patterns` | Controllers, joints, heightfields, layers |
+| `threejs-positional-audio` | Listener, timing, cones |
+| `threejs-volume-rendering` | Volumes, god rays |
+| `threejs-tsl` | TSL / WebGPU materials |
 
 ## Part of Grudge Studio
 
-- **[grudge-studio.com](https://grudge-studio.com)** — Platform hub
-- **[dash.grudge-studio.com](https://dash.grudge-studio.com)** — Admin dashboard
-- **[grudgewarlords.com](https://grudgewarlords.com)** — Grudge Warlords game client
-- **[forge.grudge-studio.com](https://forge.grudge-studio.com)** — GameForge editor (this project)
+- [grudge-studio.com](https://grudge-studio.com) — platform hub  
+- [dash.grudge-studio.com](https://dash.grudge-studio.com) — admin  
+- [grudgewarlords.com](https://grudgewarlords.com) — Warlords client  
+- [forge.grudge-studio.com](https://forge.grudge-studio.com) — GameForge (this repo)  
 
 ---
 
