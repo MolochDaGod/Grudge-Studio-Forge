@@ -10,34 +10,40 @@
   "theme_color": "#0a0a0f",
   "icons": [
     {
-      "src": "https://assets.grudge-studio.com/forge/favicon-32.png",
+      "src": "/favicon-32.png",
       "sizes": "32x32",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://assets.grudge-studio.com/forge/pwa-192.png",
+      "src": "/pwa-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://assets.grudge-studio.com/forge/apple-touch-icon.png",
+      "src": "/apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://assets.grudge-studio.com/forge/pwa-512.png",
+      "src": "/pwa-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "https://assets.grudge-studio.com/forge/logo.png",
+      "src": "/pwa-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "categories": ["games", "developer", "graphics"],
@@ -61,7 +67,7 @@
       },
       "icons": [
         {
-          "src": "https://assets.grudge-studio.com/forge/favicon-32.png",
+          "src": "/favicon-32.png",
           "sizes": "32x32",
           "type": "image/png"
         }

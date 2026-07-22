@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Grudge Forge — Game Editor</title>
-    <!-- Icons on assets CDN so they never 522 when forge origin is down -->
-    <link rel="icon" href="https://assets.grudge-studio.com/forge/favicon.ico" sizes="32x32" />
-    <link rel="icon" href="https://assets.grudge-studio.com/forge/favicon-32.png" type="image/png" sizes="32x32" />
-    <link rel="icon" href="https://assets.grudge-studio.com/forge/favicon-16.png" type="image/png" sizes="16x16" />
-    <link rel="apple-touch-icon" href="https://assets.grudge-studio.com/forge/apple-touch-icon.png" />
+    <!-- First-party icons ship with the SPA (public/) so favicon works even if CDN is down -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0a0a0f" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -17,7 +17,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta property="og:title" content="Grudge Forge — Game Editor" />
     <meta property="og:description" content="Browser-based 3D game editor with physics, AI scripting, RPG UI, 100+ builtin models, and the Grudge Studio asset library." />
-    <meta property="og:image" content="https://assets.grudge-studio.com/forge/logo.png" />
+    <meta property="og:image" content="/logo.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link

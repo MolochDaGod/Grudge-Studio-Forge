@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import {
   Box, Cpu, Layers, Wand2, Download, ArrowRight, Zap,
   Globe, Wifi, WifiOff, MonitorPlay, Gamepad2, Code2,
-  Sparkles, Shield, Palette, ChevronRight,
+  Shield, Palette, ChevronRight,
 } from "lucide-react";
 
 const FONTS = {
@@ -137,17 +137,31 @@ export function LandingPage() {
         }}
       >
         <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center">
-              <Sparkles className="w-3.5 h-3.5 text-[#050608]" />
-            </div>
-            <span
-              style={{ fontFamily: FONTS.display }}
-              className="text-sm font-bold tracking-[3px] bg-gradient-to-r from-amber-400 via-amber-200 to-amber-400 bg-clip-text text-transparent"
-            >
-              GRUDGE FORGE
+          <a
+            href="/"
+            className="flex items-center gap-2.5 group"
+            aria-label="Grudge Studio Forge home"
+          >
+            <img
+              src="/logo.png"
+              alt="Grudge Studio"
+              width={32}
+              height={32}
+              className="size-8 rounded-md object-contain shadow-[0_0_20px_rgba(246,201,69,0.25)] group-hover:shadow-[0_0_28px_rgba(246,201,69,0.4)] transition-shadow"
+              decoding="async"
+            />
+            <span className="flex flex-col leading-none items-start">
+              <span
+                style={{ fontFamily: FONTS.display }}
+                className="text-sm font-bold tracking-[2px] bg-gradient-to-r from-amber-400 via-amber-200 to-amber-400 bg-clip-text text-transparent"
+              >
+                GRUDGE FORGE
+              </span>
+              <span className="text-[9px] uppercase tracking-[0.2em] text-white/35 mt-0.5">
+                Grudge Studio
+              </span>
             </span>
-          </div>
+          </a>
           <div className="flex items-center gap-3">
             <a
               href="https://github.com/MolochDaGod/Grudge-Studio-Forge"

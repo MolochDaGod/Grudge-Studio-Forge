@@ -457,14 +457,17 @@ export function Toolbar({
         <img
           src="/logo.png"
           alt="Grudge Studio"
-          className="size-7 rounded-sm transition-shadow group-hover:gold-glow-sm"
+          width={28}
+          height={28}
+          className="size-7 rounded-sm object-contain shrink-0 transition-shadow group-hover:gold-glow-sm"
+          decoding="async"
         />
         <span className="flex flex-col leading-none items-start">
           <span className="font-display text-[15px] font-bold brand-gold tracking-wider">
-            STUDIO FORGE
+            GRUDGE FORGE
           </span>
           <span className="font-heading text-[8px] uppercase tracking-[0.22em] text-muted-foreground -mt-0.5">
-            Grudge GameForge
+            Grudge Studio
           </span>
         </span>
       </button>
