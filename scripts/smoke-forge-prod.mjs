@@ -133,6 +133,63 @@ for (const path of ["/editor", "/projects/demo-smoke"]) {
   }
 }
 
+// 7. Edge health (grudge-gameforge-web)
+{
+  const { r, text } = await get("/__edge/health");
+  if (r.status === 200) {
+    try {
+      const j = JSON.parse(text);
+      if (j.ok && j.service === "grudge-gameforge-web") {
+        ok(
+          "GET /__edge/health",
+          `spa=${j.probes?.spa?.ok} forgeApi=${j.probes?.forgeApi?.ok} blazor=${j.probes?.blazorBoot?.ok}`,
+        );
+      } else {
+        fail("GET /__edge/health", `ok=${j.ok} service=${j.service}`);
+      }
+    } catch {
+      fail("GET /__edge/health", "invalid JSON (SPA fallback?)");
+    }
+  } else {
+    fail("GET /__edge/health", `status=${r.status}`);
+  }
+}
+
+// 8. API liveness (healthz is canonical; /health may 404 on older API workers)
+{
+  const { r, text } = await get("/api/healthz");
+  if (r.status === 200 && text.includes("ok")) {
+    ok("GET /api/healthz", text.slice(0, 40));
+  } else {
+    fail("GET /api/healthz", `status=${r.status} body=${text.slice(0, 60)}`);
+  }
+}
+
+// 9. Hybrid Blazor runtime (WASM + boot json)
+{
+  const boot = await get("/_framework/blazor.boot.json");
+  if (boot.r.status === 200 && boot.text.includes("GameForgeRuntime")) {
+    try {
+      const j = JSON.parse(boot.text);
+      ok(
+        "GET /_framework/blazor.boot.json",
+        `main=${j.mainAssemblyName} hash=${(j.resources?.hash || "").slice(0, 24)}…`,
+      );
+    } catch {
+      fail("GET /_framework/blazor.boot.json", "invalid JSON");
+    }
+  } else {
+    fail("GET /_framework/blazor.boot.json", `status=${boot.r.status}`);
+  }
+  const wasm = await get("/_framework/GameForgeRuntime.wasm", { method: "HEAD" });
+  const ct = wasm.r.headers.get("content-type") || "";
+  if (wasm.r.status === 200 && (ct.includes("wasm") || ct.includes("octet-stream") || ct === "")) {
+    ok("HEAD /_framework/GameForgeRuntime.wasm", `ct=${ct || "n/a"}`);
+  } else {
+    fail("HEAD /_framework/GameForgeRuntime.wasm", `status=${wasm.r.status} ct=${ct}`);
+  }
+}
+
 const failed = checks.filter((c) => !c.pass);
 console.log(
   `\n${checks.length - failed.length}/${checks.length} passed` +
