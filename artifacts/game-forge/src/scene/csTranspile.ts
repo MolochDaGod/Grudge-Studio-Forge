@@ -1,29 +1,25 @@
 /**
- * Lightweight C# → JS transpiler for the play-mode runtime.
+ * Lightweight C# → JS transpiler for the **hybrid** live-edit path.
  *
- * GameForge ships with two C# script paths:
+ * ## Canonical hybrid model (production)
  *
- *   1. **Blazor WebAssembly compile** (production) — the user runs
- *      `dotnet publish -c Release` against the `csharp/GameForgeRuntime`
- *      project (scaffolded next to this artifact). The resulting
- *      `.dll`/`.wasm` is dropped in `public/_framework/` and loaded by
- *      `loadBlazorRuntime()` below. That is the real Blazor path the user
- *      asked for, and it works with the full C# language surface.
+ * | Path | Trigger | Runtime |
+ * |------|---------|---------|
+ * | **Transpile** (this file) | `language: "cs"` source *without* pack headers | Unity-flavoured subset → JS |
+ * | **Blazor attach/tick** | `// @forge-runtime: blazor` + `@forge-pack` / `@forge-assembly` | GameForgeRuntime.wasm |
  *
- *   2. **Live transpile** (this file, used in the browser editor) — for
- *      the in-editor play-mode preview we transpile a Unity-flavoured
- *      C# subset into JS so users can iterate without a `dotnet` build.
- *      Supported subset:
- *        - `public class X : MonoBehaviour { ... }`
- *        - `public override void Start()` / `Update(float dt)`
- *        - `Transform.Position.X|Y|Z`, `Transform.Rotation.X|Y|Z`
- *        - `Input.GetKey("ArrowUp")`
- *        - `Debug.Log(...)`, `var`, `float`, `int`, `bool`
- *        - basic arithmetic and `if/else/for/while`
+ * Built-in packs (WASM): **Spin**, **Bob**, **Strafe** — see `csHybrid.ts`.
+ * Rebuild: `bash csharp/GameForgeRuntime/build.sh`
  *
- * Anything outside that subset will throw a transpile error in the
- * console panel and the user can switch to the JS runtime or do the
- * full Blazor compile.
+ * Transpile subset:
+ *   - `public class X : MonoBehaviour { ... }`
+ *   - `public override void Start()` / `Update(float dt)`
+ *   - `Transform.Position.X|Y|Z`, `Transform.Rotation.X|Y|Z`
+ *   - `Input.GetKey("ArrowUp")`
+ *   - `Debug.Log(...)`, `var`, `float`, `int`, `bool`
+ *   - basic arithmetic and `if/else/for/while`
+ *
+ * Outside that subset → transpile error; use a prebuilt pack or JS.
  */
 
 import type { TriggerEvent } from "./GameBus";
@@ -473,15 +469,14 @@ export function compileCSharp(source: string): CompiledScript {
 }
 
 /**
- * Detects whether a precompiled Blazor WASM runtime is dropped into
- * `public/_framework/`. If so, future versions can hand off C# scripts
- * to the real .NET runtime instead of the JS transpiler. For now this
- * is a stub that always returns false — the user does the dotnet build
- * locally and replaces this loader.
+ * Detects whether production GameForgeRuntime.wasm is served from
+ * `public/_framework/` (hybrid Blazor attach/tick path).
  */
 export async function blazorRuntimeAvailable(): Promise<boolean> {
   try {
-    const r = await fetch(`${import.meta.env.BASE_URL}_framework/blazor.boot.json`, { method: "HEAD" });
+    const base = import.meta.env.BASE_URL ?? "/";
+    const root = base.endsWith("/") ? base : `${base}/`;
+    const r = await fetch(`${root}_framework/blazor.boot.json`, { method: "HEAD" });
     return r.ok;
   } catch {
     return false;

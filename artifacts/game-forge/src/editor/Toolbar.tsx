@@ -296,15 +296,14 @@ export function Toolbar({
   }, [prefabsForPlay, setPlayerPrefabResolver]);
 
   /**
-   * Toolbar Play button. Just warms the Blazor runtime in the background
-   * (so the user's first script frame doesn't pay the JIT cost) and
-   * delegates to `setPlaying(true)`. The auto-spawn for a default
-   * Player prefab is handled inside the store — see
-   * `setPlaying`/`playerPrefabResolver` — so this entry path stays in
-   * lock-step with the `P` hotkey.
+   * Toolbar Play button. Prefetches Blazor WASM (hybrid C# packs) so Attach
+   * is ready, then `setPlaying(true)`. Auto-spawn for Player prefab is in
+   * the store (`setPlaying` / `playerPrefabResolver`) — same as `P` hotkey.
    */
   const onPressPlay = () => {
-    void import("@/scene/PlayRuntime").then((m) => m.warmBlazorRuntime());
+    void import("@/scene/PlayRuntime").then((m) => {
+      void m.ensureBlazorRuntime();
+    });
     setPlaying(true);
   };
 

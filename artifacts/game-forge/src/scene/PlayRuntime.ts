@@ -5,11 +5,16 @@ import { compileCSharp, type CompiledScript, type ScriptEntity, type ScriptConte
 import type { StatsEngine } from "./StatsEngine";
 import { RACES } from "@/lib/races";
 import { loadBlazorRuntime } from "./blazorRuntime";
+import { parseCsHybridMeta, type CsHybridMeta } from "./csHybrid";
 import type { Script } from "@workspace/api-client-react";
 import type { EntityInboxes, EntityStates, GameBus, TriggerInbox } from "./GameBus";
 import { spawnAgent, type AgentActor } from "./agentRuntime";
 
-export type Compiled = CompiledScript & { error?: string };
+export type Compiled = CompiledScript & {
+  error?: string;
+  /** When set, play loop uses Blazor attach/tick instead of JS start/update. */
+  blazor?: CsHybridMeta;
+};
 
 const cache = new Map<string, Compiled>();
 
@@ -29,10 +34,21 @@ export function getRaceStats(raceId: string | null | undefined): RaceStats | und
 }
 
 let blazorWarmed = false;
+
+/**
+ * Warm Blazor WASM in the background (Toolbar play). Prefer
+ * {@link ensureBlazorRuntime} when hybrid packs are present so Attach is ready.
+ */
 export function warmBlazorRuntime(): void {
   if (blazorWarmed) return;
   blazorWarmed = true;
   void loadBlazorRuntime();
+}
+
+/** Awaitable ready gate for hybrid Blazor packs (production attach/tick). */
+export function ensureBlazorRuntime(): Promise<Awaited<ReturnType<typeof loadBlazorRuntime>>> {
+  blazorWarmed = true;
+  return loadBlazorRuntime();
 }
 
 function compileJs(code: string): Compiled {
@@ -53,7 +69,23 @@ function compileJs(code: string): Compiled {
   }
 }
 
-function compileCs(code: string): Compiled {
+/**
+ * Hybrid C# compile:
+ * - blazor pack directives → marker for attach/tick (no transpile body)
+ * - otherwise → subset transpile for live edit/preview
+ */
+function compileCs(code: string, scriptName = "Script"): Compiled {
+  const meta = parseCsHybridMeta(code, scriptName);
+  if (meta.mode === "blazor") {
+    if (!meta.pack && !meta.assemblyBase64) {
+      return {
+        error:
+          "C# hybrid blazor mode requires // @forge-pack: Spin|Bob|Strafe or // @forge-assembly: <base64>",
+        blazor: meta,
+      };
+    }
+    return { blazor: meta };
+  }
   try {
     return compileCSharp(code);
   } catch (err) {
@@ -62,14 +94,27 @@ function compileCs(code: string): Compiled {
 }
 
 export function getCompiledScript(script: Script): Compiled {
-  const key = `${script.id}:${script.language}:${script.code.length}:${script.code.slice(0, 32)}`;
+  const key = `${script.id}:${script.language}:${script.code.length}:${script.code.slice(0, 48)}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const compiled = script.language === "cs" ? compileCs(script.code) : compileJs(script.code);
+  const compiled =
+    script.language === "cs"
+      ? compileCs(script.code, script.name || `Script${script.id}`)
+      : compileJs(script.code);
   cache.set(key, compiled);
   // bound cache
   if (cache.size > 64) cache.delete(cache.keys().next().value!);
   return compiled;
+}
+
+/** True when any project script requests the real Blazor path. */
+export function projectNeedsBlazor(scripts: Script[] | undefined): boolean {
+  if (!scripts?.length) return false;
+  for (const s of scripts) {
+    if (s.language !== "cs") continue;
+    if (parseCsHybridMeta(s.code, s.name).mode === "blazor") return true;
+  }
+  return false;
 }
 
 /** Compile a built-in behavior source string (deathmatch behaviors). Cached

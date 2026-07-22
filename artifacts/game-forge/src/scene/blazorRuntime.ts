@@ -26,6 +26,9 @@ export interface ScriptHostExports {
   GameForge: {
     ScriptHost: {
       Boot: () => string;
+      /** Hybrid production packs (Spin, Bob, Strafe) — no assembly base64. */
+      RegisterBuiltin: (scriptName: string) => boolean;
+      ListBuiltins: () => string;
       RegisterScriptType: (scriptName: string, assemblyBase64: string) => boolean;
       AttachScript: (
         entityId: string,

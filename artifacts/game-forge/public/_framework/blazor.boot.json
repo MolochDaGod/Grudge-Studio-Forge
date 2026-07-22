@@ -1,44 +1,45 @@
 {
   "mainAssemblyName": "GameForgeRuntime",
   "resources": {
-    "hash": "sha256-rm6RaQG15H+gXRXaJEiXWRwpEDUbBeUHq/WjiISQLbo=",
+    "hash": "sha256-ZJJbrE+BgYAt/R2oshzan+ue3ZDozzgADK+9npONz2w=",
     "jsModuleNative": {
-      "dotnet.native.8.0.26.6j9srt32w0.js": "sha256-nElGk+CZFyq0PbPm4JU8avD6lER7x9Z1C54BK7qY12Q="
+      "dotnet.native.js": "sha256-nElGk+CZFyq0PbPm4JU8avD6lER7x9Z1C54BK7qY12Q="
     },
     "jsModuleRuntime": {
-      "dotnet.runtime.8.0.26.uxd0v68kuh.js": "sha256-HuKpYzsYoQBMbqMPjy15HX+ShsypvOKN9uGvoA7P/+o="
+      "dotnet.runtime.js": "sha256-HuKpYzsYoQBMbqMPjy15HX+ShsypvOKN9uGvoA7P/+o="
     },
     "wasmNative": {
       "dotnet.native.wasm": "sha256-s2/s2HkJfsLLhPUvCJwiFsRUqPX4xG9g3t57WxxFR98="
     },
+    "coreAssembly": {},
     "assembly": {
-      "GameForgeRuntime.wasm": "sha256-r79iFwzMIHnjmkKgLcUSi0j4z23QEtKWiWchNREvNMI=",
-      "Microsoft.AspNetCore.Components.Web.wasm": "sha256-eusdphx1pINaQNYYj9NgxU5JEHo+3YcPEuw52+KLHkM=",
-      "Microsoft.AspNetCore.Components.WebAssembly.wasm": "sha256-73/Qx7Hkv95ty6CyoHJGBv64xL/7FLwW92yfhYDYMrE=",
-      "Microsoft.AspNetCore.Components.wasm": "sha256-84g5yhYP6ZDfOdygC+fJgl8d8jxMWB8MpwOis2XpK3Y=",
-      "Microsoft.Extensions.Configuration.Abstractions.wasm": "sha256-87sn2TYqgdZ95sXmavjKEzoEfMgHnYQ9LOvnMX+aZcI=",
-      "Microsoft.Extensions.Configuration.Json.wasm": "sha256-/VUEfhgVp9FCU1rXnSNAI1mtW6EO5DpkV/5UNWDR/es=",
-      "Microsoft.Extensions.Configuration.wasm": "sha256-jYqHUZ07UYWc8POk7xhas6xQYH7t1qoTcylqoDqncJk=",
-      "Microsoft.Extensions.DependencyInjection.Abstractions.wasm": "sha256-eJYighHTs0M+OtkQvNUrSqeP9AMKaZpKjfUtjVSmr9k=",
-      "Microsoft.Extensions.DependencyInjection.wasm": "sha256-T/+qPF0RWC8dfbLNFgoTfla+JM2H3eY5L17aqODwzFc=",
-      "Microsoft.Extensions.Logging.Abstractions.wasm": "sha256-tlpTt19bgpNBbVBvqaijZBCbSxBMQeVnTDpmLvlgZDY=",
-      "Microsoft.Extensions.Logging.wasm": "sha256-gRNqDIITN9/LJz459bgijHJ1O+l5fzsybyrFhw0Iqa4=",
-      "Microsoft.Extensions.Options.wasm": "sha256-AvS2waPIRRIxveVi6b3f6zCAfJcLSlnLjTmVjA5ije4=",
-      "Microsoft.Extensions.Primitives.wasm": "sha256-opoh5mb9g1OUt3obpwrrOvmcQ+5UbUJPcBRMoP63AhU=",
-      "Microsoft.JSInterop.WebAssembly.wasm": "sha256-2bohIT7/qEC9nPtjBrESwyddQ86eqIfABSFaK7lb55A=",
-      "Microsoft.JSInterop.wasm": "sha256-r9dkR5134QvSR5zRWncgwA3QgGc2mbiRwhPteP2xbpk=",
-      "System.Collections.Concurrent.wasm": "sha256-81l6/6acRFS4cv0ocWzKbGABq2pAAop3dDwd1TGpdms=",
-      "System.Collections.wasm": "sha256-1ypgXYqdiiYYA6wVHAg4gC+Vt0bu/d4KtjdYGKMvmA4=",
-      "System.ComponentModel.wasm": "sha256-w++bxZN8S4zVT+TQXmquKYhde6Xq4b7h6dZ1aFOYyoc=",
-      "System.Console.wasm": "sha256-AQvP/j3+s1E173cfM57ZZCaOFMEJcZI4Blsr3Rj3zuE=",
-      "System.Linq.wasm": "sha256-XidtWuD1FrpL4qIZQvzoy6+pVx21ag8IPFJUNxYoFiM=",
-      "System.Memory.wasm": "sha256-+inofFSHyFz/s7S/mWfr2xIPpDSxlJ83MFAWv8HEMg8=",
-      "System.Private.CoreLib.wasm": "sha256-RgT/nES0V6GFbGj0uyW74ZJ4hazY57N5BTjEldu6bgo=",
-      "System.Private.Uri.wasm": "sha256-GW3rIpOXg4/P1+aD6aWeVwb7Xdz1NMaXOkQgKR8EPPA=",
-      "System.Runtime.InteropServices.JavaScript.wasm": "sha256-9dLzcWJQKw9/VjPf0NCZM0EqLQtH2auLcB8mtEPd6vQ=",
-      "System.Runtime.wasm": "sha256-nhlHgs1nsBlCPfkNT+WhIrnGW2qU9SubRwKctdEl15I=",
-      "System.Text.Encodings.Web.wasm": "sha256-TLC9Q3qm1akEii5UmAMsZN7EqOhnrkdHw8XxoiqQeOw=",
-      "System.Text.Json.wasm": "sha256-+5PqFK7Y+xn9KqyZ9Tjv2oacZWDLm6vU8bN6hbKmL3g="
+      "Microsoft.AspNetCore.Components.wasm": "sha256-bTPLtFp9Pt/iu2+/9UsblDzVPitAwWmDyD6N09s4anc=",
+      "Microsoft.AspNetCore.Components.Web.wasm": "sha256-3t38/y5uDfWzYITxoW+JlZHKHKlxzEs3d+ZXjEkPVwQ=",
+      "Microsoft.AspNetCore.Components.WebAssembly.wasm": "sha256-mC1+QK2SfB9c18CAbV9wrYTqZvoHhRaMoioGt2f2W+Q=",
+      "Microsoft.Extensions.Configuration.wasm": "sha256-od574rRtVVRJj+24jbl8j3GdQFpxlJOpSx+pEMw1Q18=",
+      "Microsoft.Extensions.Configuration.Abstractions.wasm": "sha256-XR+WUfg8LtnrwdXFBnV+qO3ROyp6cYCfl1AZajIAheM=",
+      "Microsoft.Extensions.Configuration.Json.wasm": "sha256-Nbv4DDWJLbUri+9QrX+3vnA2FV/Qux8Jm1buTARMlBs=",
+      "Microsoft.Extensions.DependencyInjection.wasm": "sha256-gPl1KWGxLIxxQgQ9BG1m/niMzqZGG651efBdnDY3kDc=",
+      "Microsoft.Extensions.DependencyInjection.Abstractions.wasm": "sha256-l7/UqcoeZTMw79vb4mHjIBWuaY+WEIbOFJK4jwIqnQQ=",
+      "Microsoft.Extensions.Logging.wasm": "sha256-KCdgvZvpkT0QTlCjj/PtlVlJnNw1mDlJAtaRSWXz0YM=",
+      "Microsoft.Extensions.Logging.Abstractions.wasm": "sha256-3/Dzo2zKFhFL9/qCgGD/km/WPVyswExnKk5TRwvoDJg=",
+      "Microsoft.Extensions.Options.wasm": "sha256-PvO3dTlJIjknazcOBKphk9KeIA8+yEFyqVYaa9euCt4=",
+      "Microsoft.Extensions.Primitives.wasm": "sha256-jLo6FXr+jliGEvOzNn1Q59o7Nu9X7gMB626shZ36H0A=",
+      "Microsoft.JSInterop.wasm": "sha256-/a2ywBVO60H6ZjqSD/C34ynDNuDMyoatYefSNc+dBaU=",
+      "Microsoft.JSInterop.WebAssembly.wasm": "sha256-Jwrlf0VPydOWncfsAvk569TQrosh6ro1Xkc8HzvG2nQ=",
+      "System.Collections.Concurrent.wasm": "sha256-//MCg9m04Zo6+cg11tEa7ivb3eFzQBUSDMrPV1ROBZQ=",
+      "System.Collections.wasm": "sha256-54zc08BMiRti9SwRtIyv7VWd9O2G9LQQc/anGayc8cg=",
+      "System.ComponentModel.wasm": "sha256-Kb7hdl6dKgHlWyXzGYr2Mo6jLQGRYtOIVlEf3Dmnj04=",
+      "System.Console.wasm": "sha256-VW8eFHYCH3iXW5f6srQwS7I6ZorOYiU2h5ruYBh2Q7U=",
+      "System.Linq.wasm": "sha256-lEAGdwdBKTgimrMVDYWAHQ4CeGWIhJ8aXxz9spc4ocw=",
+      "System.Memory.wasm": "sha256-Kleae0lQNAgLQJOqgk0Bk8pHKwOLk9TyQU0ooh95onQ=",
+      "System.Private.Uri.wasm": "sha256-OTF814CHNr1bHVALMuyN+OTQErG5Ij6+OREtZrgQdDc=",
+      "System.Runtime.InteropServices.JavaScript.wasm": "sha256-cz+DGhReTycEDfOOwZ3lVM4k/74zjObVQr7r3PDgGeo=",
+      "System.Runtime.wasm": "sha256-kUXoZh81PT/Is8EMQERLecnn+Yf+qcrzPm/LW+iCp+Q=",
+      "System.Text.Encodings.Web.wasm": "sha256-SOoylFHpIE5Hm3rgALSgvajSjYR3rmg8Tk+0swkyqus=",
+      "System.Text.Json.wasm": "sha256-CMYLg/b2yr0Q1mmbjvo89XSSpI/khi7fHFtyaCxOKwE=",
+      "System.Private.CoreLib.wasm": "sha256-yGlaM17Lmp1Xp+0jxPKc7N7f0ed0UcUISjhjIwe4/i8=",
+      "GameForgeRuntime.wasm": "sha256-fQdAElLj9p4HxmQwcCpLl148x/9+giVFfJvR9y8Vfi4="
     }
   },
   "cacheBootResources": true,

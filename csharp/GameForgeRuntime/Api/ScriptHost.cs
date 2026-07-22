@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
+using GameForge.Behaviours;
 
 namespace GameForge;
 
@@ -9,11 +10,44 @@ public static partial class ScriptHost
     private static readonly Dictionary<string, MonoBehaviour> _instances = new();
     private static readonly Dictionary<string, Type> _scriptTypes = new();
 
+    /// <summary>
+    /// Built-in production packs shipped inside GameForgeRuntime.wasm.
+    /// Hybrid model: live C# source → JS transpile; these packs → real Attach/Tick.
+    /// </summary>
+    private static readonly Dictionary<string, Type> Builtins = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Spin"] = typeof(SpinBehaviour),
+        ["Bob"] = typeof(BobBehaviour),
+        ["Strafe"] = typeof(StrafeBehaviour),
+    };
+
     [JSExport]
     public static string Boot()
     {
-        return $"GameForge .NET runtime ready (.NET {Environment.Version})";
+        return $"GameForge .NET runtime ready (.NET {Environment.Version}; builtins={string.Join(",", Builtins.Keys)})";
     }
+
+    /// <summary>Register a built-in pack by name (Spin, Bob, Strafe). No base64 needed.</summary>
+    [JSExport]
+    public static bool RegisterBuiltin(string scriptName)
+    {
+        if (string.IsNullOrWhiteSpace(scriptName))
+        {
+            Debug.LogError("RegisterBuiltin: empty name.");
+            return false;
+        }
+        if (!Builtins.TryGetValue(scriptName.Trim(), out var type))
+        {
+            Debug.LogError($"RegisterBuiltin: unknown pack '{scriptName}'. Known: {string.Join(", ", Builtins.Keys)}");
+            return false;
+        }
+        _scriptTypes[scriptName.Trim()] = type;
+        return true;
+    }
+
+    /// <summary>Comma-separated builtin pack ids for JS catalog.</summary>
+    [JSExport]
+    public static string ListBuiltins() => string.Join(",", Builtins.Keys);
 
     [JSExport]
     public static bool RegisterScriptType(string scriptName, string assemblyBase64)

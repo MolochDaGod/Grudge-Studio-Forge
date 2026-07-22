@@ -23,6 +23,7 @@ Three.js scene editor, physics engine & AI-assisted game builder — by [Grudge 
 - **Scene Templates** — 5 built-in starter scenes (3× deathmatch, RPG village, dungeon interior)
 - **30+ Builtin Models** — characters, monsters, VFX, maps ready to drag into any scene
 - **R3F Player Runtime** — same Three + R3F + Rapier stack as the editor (`artifacts/player`)
+- **Hybrid C# packs** — live edit via transpile; production `// @forge-pack: Spin|Bob|Strafe` → Blazor WASM attach/tick
 - **Recast Navmesh** — client-side baking with Yuka AI agent pathfinding
 - **Puter Auth** — session-less server; Puter SDK client-side with server-verified tokens
 - **1-Click Offline Setup** — install Ollama + models + start editor with one command
@@ -54,14 +55,15 @@ Full manifest: [`public/builtin/asset-manifest.json`](artifacts/game-forge/publi
 
 | Layer | Tech |
 |---|---|
-| 3D Engine | **Three.js 0.184** (workspace override), **R3F 9**, drei, three-mesh-bvh, three-stdlib |
+| 3D Engine | **Three.js 0.184** (workspace catalog/override), **R3F 9**, drei, three-mesh-bvh, three-stdlib |
 | Physics | **Rapier 3D 0.19** (WASM), @react-three/rapier — only physics engine (no Havok/Babylon) |
 | Play runtime | `@workspace/player` — R3F + Rapier + EffectsRig (not Babylon) |
 | AI Pathfinding | Yuka 0.7, recast-navigation 0.43 (WASM navmesh baking) |
+| Scripting | **JS** `start/update` + **hybrid C#** (transpile live / Blazor packs Spin·Bob·Strafe) — see `docs/HYBRID_CSHARP.md` |
 | State | Zustand 5, Immer, Miniplex 2 (ECS), XState 5 |
 | AI | Anthropic Claude SDK + Puter AI + Ollama + CF Workers AI |
 | UI | Radix UI, Tailwind CSS 4, shadcn/ui, cmdk, Framer Motion |
-| Code Editor | Monaco Editor (TypeScript) |
+| Code Editor | Monaco Editor (TypeScript / C#) |
 | Node Graph | @xyflow/react |
 | Backend | Express 5, Drizzle ORM, PostgreSQL, Pino logger |
 | Storage | Cloudflare R2 (native S3 via @aws-sdk/client-s3) |

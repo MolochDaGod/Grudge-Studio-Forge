@@ -25,15 +25,22 @@ import * as THREE from "three";
 import { useEditor } from "@/store/editor";
 import type { Script } from "@workspace/api-client-react";
 import {
+  ensureBlazorRuntime,
   getCompiledBehavior,
   getCompiledScript,
   groundProbe,
   makeContext,
+  projectNeedsBlazor,
   raycastEntities,
   reconcileAgents,
   tickAgentSurfaces,
   type Compiled,
 } from "@/scene/PlayRuntime";
+import {
+  disposeBlazorScriptSession,
+  getBlazorScriptSession,
+  type BlazorScriptSession,
+} from "@/scene/blazorScriptSession";
 import { type AgentActor } from "@/scene/agentRuntime";
 import {
   loadNavmesh,
@@ -82,6 +89,9 @@ export function PlayScriptRuntime({
 
   const startedRef = useRef<Set<string>>(new Set());
   const elapsedRef = useRef(0);
+  /** Hybrid Blazor session (attach/tick) — only for @forge-runtime: blazor packs. */
+  const blazorSessionRef = useRef<BlazorScriptSession | null>(null);
+  const blazorReadyRef = useRef(false);
   // ── Per-entity nav-agent actors ────────────────────────────────────
   // We spawn one XState v5 actor per entity carrying a `navAgent`
   // component the moment ScriptedEntities sees it, hold the actors in
@@ -116,6 +126,22 @@ export function PlayScriptRuntime({
   useEffect(() => {
     startedRef.current.clear();
     elapsedRef.current = 0;
+    blazorReadyRef.current = false;
+
+    // Hybrid: await real .NET runtime when any script is a Blazor pack.
+    if (projectNeedsBlazor(scripts)) {
+      const session = getBlazorScriptSession((level, msg) => pushLog(level, `[Blazor] ${msg}`));
+      blazorSessionRef.current = session;
+      void session.ensureReady().then((rt) => {
+        blazorReadyRef.current = !!rt;
+        if (rt) pushLog("info", `[Blazor] ${rt.banner}`);
+        else pushLog("warn", "[Blazor] WASM not loaded — blazor packs will fail until _framework is published");
+      });
+    } else {
+      // Still warm for first hybrid attach later in the session.
+      void ensureBlazorRuntime();
+    }
+
     return () => {
       // Tear down every spawned agent actor so the XState services
       // don't keep holding references to closures that captured this
@@ -129,9 +155,12 @@ export function PlayScriptRuntime({
       }
       agentsRef.current.clear();
       loadedNavRef.current = { assetId: null, promise: null, loaded: null };
+      disposeBlazorScriptSession();
+      blazorSessionRef.current = null;
+      blazorReadyRef.current = false;
       resetPlaySession();
     };
-  }, []);
+  }, [scripts, pushLog]);
 
   const scriptMap = useMemo(() => {
     const m = new Map<number, Script>();
@@ -876,6 +905,9 @@ export function PlayScriptRuntime({
       // message addressed to this entity on frame N would be dropped because
       // the handler hasn't been registered yet.
       const startedKey = `${entity.id}:${behaviorKey ?? entity.behavior ?? ""}:${entity.scriptId ?? ""}`;
+      const blazorMeta = userCompiled?.blazor;
+      const useBlazor = !!blazorMeta && blazorMeta.mode === "blazor" && !userCompiled?.error;
+
       try {
         if (!startedRef.current.has(startedKey)) {
           // Seed env-tunable knobs into per-entity state before start() so
@@ -889,14 +921,92 @@ export function PlayScriptRuntime({
             ctx.state.scoreLimit = sceneData.environment.scoreLimit;
           }
           if (behaviorCompiled?.start) behaviorCompiled.start(scriptEntity, ctx);
-          if (userCompiled?.start && !userCompiled.error) userCompiled.start(scriptEntity, ctx);
+
+          // Hybrid Blazor: register pack + AttachScript (real .NET Start).
+          if (useBlazor && blazorMeta) {
+            const bSession =
+              blazorSessionRef.current ??
+              getBlazorScriptSession((level, msg) => pushLog(level, `[Blazor] ${msg}`));
+            blazorSessionRef.current = bSession;
+            if (!bSession.isReady()) {
+              // ensureReady is async — skip until next frames after warm.
+              void bSession.ensureReady().then((rt) => {
+                blazorReadyRef.current = !!rt;
+              });
+            } else {
+              const regOk = bSession.register(blazorMeta);
+              const typeName = blazorMeta.pack || blazorMeta.scriptTypeName;
+              if (regOk) {
+                bSession.attach(entity.id, entity.name, typeName, {
+                  position: scriptEntity.position,
+                  rotation: [
+                    scriptEntity.rotation[0] * (180 / Math.PI),
+                    scriptEntity.rotation[1] * (180 / Math.PI),
+                    scriptEntity.rotation[2] * (180 / Math.PI),
+                  ],
+                  scale: scriptEntity.scale,
+                });
+              } else {
+                pushLog("error", `[${entity.name}] Blazor register failed for ${typeName}`, {
+                  scriptId: entity.scriptId ?? null,
+                  entityId: entity.id,
+                });
+              }
+            }
+          } else if (userCompiled?.start && !userCompiled.error) {
+            userCompiled.start(scriptEntity, ctx);
+          }
           startedRef.current.add(startedKey);
         }
+
         // Now that start() has registered any scene.on() handlers, flush
         // pending inbox messages so they're delivered before update().
         session.inboxes.flush(entity.id);
         if (behaviorCompiled?.update) behaviorCompiled.update(scriptEntity, ctx);
-        if (userCompiled?.update && !userCompiled.error) userCompiled.update(scriptEntity, ctx);
+
+        if (useBlazor && blazorMeta) {
+          const bSession = blazorSessionRef.current;
+          if (bSession?.isReady()) {
+            // Re-attach if register completed after first frames
+            if (!startedRef.current.has(`${startedKey}:blazor-ok`)) {
+              const regOk = bSession.register(blazorMeta);
+              const typeName = blazorMeta.pack || blazorMeta.scriptTypeName;
+              if (regOk) {
+                bSession.attach(entity.id, entity.name, typeName, {
+                  position: scriptEntity.position,
+                  rotation: [
+                    scriptEntity.rotation[0] * (180 / Math.PI),
+                    scriptEntity.rotation[1] * (180 / Math.PI),
+                    scriptEntity.rotation[2] * (180 / Math.PI),
+                  ],
+                  scale: scriptEntity.scale,
+                });
+                startedRef.current.add(`${startedKey}:blazor-ok`);
+              }
+            }
+            bSession.syncKeys(keysRef.current);
+            // C# Transform uses degrees; Three.js Euler uses radians.
+            const toCs: [number, number, number] = [
+              scriptEntity.rotation[0] * (180 / Math.PI),
+              scriptEntity.rotation[1] * (180 / Math.PI),
+              scriptEntity.rotation[2] * (180 / Math.PI),
+            ];
+            const next = bSession.tick(entity.id, delta, {
+              position: scriptEntity.position,
+              rotation: toCs,
+              scale: scriptEntity.scale,
+            });
+            scriptEntity.position = next.position;
+            scriptEntity.rotation = [
+              next.rotation[0] * (Math.PI / 180),
+              next.rotation[1] * (Math.PI / 180),
+              next.rotation[2] * (Math.PI / 180),
+            ];
+            scriptEntity.scale = next.scale;
+          }
+        } else if (userCompiled?.update && !userCompiled.error) {
+          userCompiled.update(scriptEntity, ctx);
+        }
       } catch (err) {
         pushLog("error", `[${entity.name}] ${(err as Error).message}`, {
           scriptId: entity.scriptId ?? null,
@@ -929,6 +1039,17 @@ export function PlayScriptRuntime({
               y: scriptEntity.position[1],
               z: scriptEntity.position[2],
             });
+            // Euler write-back for Blazor packs that rotate (Spin).
+            if (useBlazor && "setNextKinematicRotation" in body && typeof body.setRotation === "function") {
+              const e = new THREE.Euler(
+                scriptEntity.rotation[0],
+                scriptEntity.rotation[1],
+                scriptEntity.rotation[2],
+                "YXZ",
+              );
+              const q = new THREE.Quaternion().setFromEuler(e);
+              body.setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }, true);
+            }
           }
         } else {
           bodyOrGroup.position.set(...scriptEntity.position);

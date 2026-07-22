@@ -53,6 +53,42 @@ exports.update = function(entity, ctx) {
     },
   },
   {
+    key: "blazor-spin",
+    name: "Blazor Pack: Spin",
+    description:
+      "Production hybrid C# pack — real .NET Attach/Tick via GameForgeRuntime.wasm (not JS transpile).",
+    params: [],
+    render: () => `// @forge-runtime: blazor
+// @forge-pack: Spin
+// Hybrid production pack. Rebuild: bash csharp/GameForgeRuntime/build.sh
+using GameForge;
+public class SpinProxy : MonoBehaviour { }
+`,
+  },
+  {
+    key: "blazor-bob",
+    name: "Blazor Pack: Bob",
+    description: "Production hybrid C# pack — vertical bob (WASM MonoBehaviour).",
+    params: [],
+    render: () => `// @forge-runtime: blazor
+// @forge-pack: Bob
+using GameForge;
+public class BobProxy : MonoBehaviour { }
+`,
+  },
+  {
+    key: "blazor-strafe",
+    name: "Blazor Pack: Strafe",
+    description: "Production hybrid C# pack — WASD strafe via C# Input + SetKey bridge.",
+    params: [],
+    render: () => `// @forge-runtime: blazor
+// @forge-pack: Strafe
+using GameForge;
+public class StrafeProxy : MonoBehaviour { }
+`,
+  },
+
+  {
     key: "seek-player",
     name: "Seek Player",
     description:

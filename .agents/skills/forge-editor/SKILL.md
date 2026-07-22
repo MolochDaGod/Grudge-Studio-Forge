@@ -56,12 +56,18 @@ Grudge-Studio-Forge/
 - IDs: nanoid(8) for existing entities, UUID v4 via `projectConventions.ts` for new ones
 - `lib/builtinModels.ts` — GLB asset registry (resolves `builtin:` scheme)
 
-### Script System
+### Script System (hybrid — canonical)
 - `editor/ScriptEditor.tsx` — Monaco editor with script CRUD
-- `ai/tools/scripting/templates.ts` — 15 script templates (spin, seek, wander, damage, patrol, pickup, trigger-zone, log, health, resource-node, quest, inventory, day-night, projectile)
-- Script shape: `exports.start(entity, ctx)` / `exports.update(entity, ctx)`
-- ctx members: ctx.scene (find/spawn/despawn/send), ctx.events (emit/on), ctx.state, ctx.time (delta/elapsed), ctx.keys, ctx.log
+- `ai/tools/scripting/templates.ts` — JS templates + **Blazor pack** templates (`blazor-spin` / `blazor-bob` / `blazor-strafe`)
+- **JS scripts:** `exports.start(entity, ctx)` / `exports.update(entity, ctx)`
+- **C# hybrid:**
+  - **Default (live edit):** Unity-flavoured subset → JS via `csTranspile.ts` (no WASM required)
+  - **Production packs:** `// @forge-runtime: blazor` + `// @forge-pack: Spin|Bob|Strafe` → real .NET `RegisterBuiltin` → `AttachScript` → `TickEntity` each frame (`blazorScriptSession.ts`)
+  - **Mod packs:** `// @forge-assembly: <base64 dll>` → `RegisterScriptType` then attach/tick
+- Builtins live in `csharp/GameForgeRuntime/Behaviours/`; rebuild: `bash csharp/GameForgeRuntime/build.sh` → `public/_framework/`
+- ctx members (JS): ctx.scene, ctx.events, ctx.state, ctx.time, ctx.input, ctx.log
 - Drag entity from Hierarchy → Scripts tab auto-creates & attaches script
+- See `scene/csHybrid.ts` for directive grammar
 
 ### Node Graph (Visual Scripting)
 - `editor/NodesPanel.tsx` — @xyflow/react visual node editor
