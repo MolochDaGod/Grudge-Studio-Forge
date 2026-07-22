@@ -17,7 +17,9 @@ ORIGIN = "https://grudge-studio-forge.vercel.app"
 API_ORIGIN = "https://grudge-api-production-0d46.up.railway.app"
 # Optional fleet CDN
 ASSETS_ORIGIN = "https://assets.grudge-studio.com"
+# GameForge JSON API worker (Hono/D1-or-Postgres edge) — used for health probes
+FORGE_API_ORIGIN = "https://grudge-gameforge-api.grudge.workers.dev"
 # Optional: if free-ai is not on a separate route, set to workers.dev URL
-# FREE_AI_ORIGIN = "https://grudge-forge-free-ai.<account>.workers.dev"
+# FREE_AI_ORIGIN = "https://grudge-forge-free-ai.grudge.workers.dev"
 
 # Secrets: none required for proxy. free-ai keys live on grudge-forge-free-ai.

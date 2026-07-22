@@ -140,14 +140,18 @@ export default {
       const origin = (env.ORIGIN || "").replace(/\/$/, "");
       const api = (env.API_ORIGIN || "").replace(/\/$/, "");
       const assets = (env.ASSETS_ORIGIN || "").replace(/\/$/, "");
-      // Same-host /api/* is often a *separate* CF worker (grudge-gameforge-api),
-      // not API_ORIGIN — probe public hostname first.
-      const publicApiBase = `${url.protocol}//${url.host}`;
+      // Never probe the same hostname (self-fetch loops → 522 on CF).
+      // Forge JSON API is the separate worker grudge-gameforge-api.
+      const forgeApi =
+        (env.FORGE_API_ORIGIN || "https://grudge-gameforge-api.grudge.workers.dev").replace(
+          /\/$/,
+          "",
+        );
 
-      const [spa, publicApi, originApi, blazorBoot] = await Promise.all([
+      const [spa, forgeApiHealth, originApi, blazorBoot] = await Promise.all([
         origin ? probe(`${origin}/`) : Promise.resolve({ ok: false, error: "ORIGIN unset" }),
-        probe(`${publicApiBase}/api/healthz`).then(async (r) =>
-          r.ok ? r : probe(`${publicApiBase}/api/health`),
+        probe(`${forgeApi}/api/healthz`).then(async (r) =>
+          r.ok ? r : probe(`${forgeApi}/api/health`),
         ),
         api
           ? probe(`${api}/api/healthz`).then(async (r) =>
@@ -159,7 +163,7 @@ export default {
           : Promise.resolve({ ok: false, error: "ORIGIN unset" }),
       ]);
 
-      const healthy = Boolean(spa.ok && publicApi.ok);
+      const healthy = Boolean(spa.ok && forgeApiHealth.ok);
       return json(
         {
           ok: healthy,
@@ -172,9 +176,9 @@ export default {
           },
           probes: {
             spa,
-            /** Live forge.grudge-studio.com/api (gameforge-api worker or proxy). */
-            publicApi,
-            /** Optional Railway fallback binding (may be a different service). */
+            /** GameForge JSON API worker (not self-host — avoids CF 522 loop). */
+            forgeApi: forgeApiHealth,
+            /** Optional Railway binding (may be a different fleet service). */
             apiOrigin: originApi,
             blazorBoot,
           },
