@@ -120,16 +120,27 @@ pnpm run test
 
 ## Deployment
 
-| Artifact | Target | URL |
+| Artifact | How | URL |
 |---|---|---|
-| game-forge SPA | Vercel (or prebuilt static + CF Worker) | `forge.grudge-studio.com` |
-| api-server | Railway + CF Worker proxy | `forge.grudge-studio.com/api/*` |
-| game-forge-desktop | GitHub Releases | `.exe` installer |
-| Builtin / fleet assets | Cloudflare R2 | `assets.grudge-studio.com` |
+| Editor SPA | GHA **Deploy Forge SPA** → Vercel prebuilt (`grudge-studio-forge`) | origin `*.vercel.app` |
+| Public host | CF Worker **`grudge-gameforge-web`** (`ORIGIN` = Vercel) | https://forge.grudge-studio.com |
+| JSON API | CF Worker **`grudge-gameforge-api`** | `forge…/api/*` |
+| Free AI | CF Worker **`grudge-forge-free-ai`** | `forge…/api/free-ai/*` |
+| Assets | R2 CDN | https://assets.grudge-studio.com |
+| Desktop | GHA **Release** on `v*` tags | GitHub Releases |
 
-- Push to **`main`** triggers SPA CI / Vercel (and related workflows).
-- Large SPA builds: prefer ≥16 GB RAM host or the VPS build scripts in `DEPLOYMENT.md` if Vercel OOM.
-- `_framework/*.wasm` is served with correct MIME + cache headers (`vercel.json`).
+**Ship checklist**
+
+```bash
+# After push to main — wait for Deploy Forge SPA, then:
+curl -s https://forge.grudge-studio.com/__edge/health | jq .ok
+node scripts/smoke-forge-prod.mjs
+```
+
+- Push **`main`** → CI + SPA deploy (not raw Vercel git build — OOM risk).
+- Hybrid C# needs `_framework/` in the SPA dist (verified in GHA).
+- Edge + workers: [`DEPLOYMENT.md`](./DEPLOYMENT.md) · [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md)
+- Blazor packs: [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md)
 
 Full guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
 

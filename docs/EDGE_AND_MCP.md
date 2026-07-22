@@ -60,3 +60,31 @@ wrangler deploy
 ```
 
 If all providers show `"false"` on `/api/free-ai/status`, no server keys are set — BYOK via `X-Api-Key` still works.
+
+## Production smoke
+
+```bash
+node scripts/smoke-forge-prod.mjs
+# Covers: SPA shell, /editor rewrite, free-ai, projects, templates,
+# R2 builtin, __edge/health, /api/healthz, blazor.boot.json, GameForgeRuntime.wasm
+```
+
+GitHub Action: **Smoke Forge Production** runs after successful **Deploy Forge SPA**.
+
+## SPA deploy (Vercel origin)
+
+Workflow **Deploy Forge SPA** (`.github/workflows/deploy-spa.yml`):
+
+1. `pnpm install --filter @workspace/game-forge...`
+2. Vite build with 12G heap + 24G swap
+3. Verify `dist/public` has `vercel.json` + **`_framework/blazor.boot.json`** + WASM
+4. `vercel deploy --prebuilt` of `dist/public` → `grudge-studio-forge`
+
+Edge worker `ORIGIN` must stay `https://grudge-studio-forge.vercel.app` (or the current production host).
+
+After deploy, hashes must match local hybrid rebuild:
+
+```bash
+curl -s https://forge.grudge-studio.com/_framework/blazor.boot.json | jq -r .resources.hash
+# should match artifacts/game-forge/public/_framework/blazor.boot.json
+```
