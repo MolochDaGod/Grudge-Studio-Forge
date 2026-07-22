@@ -96,7 +96,17 @@ TLS: **Full (strict)** + Cloudflare origin cert on the VPS (see
 
 ### 3. Point `forge.grudge-studio.com` at the origin
 
-Worker: **`grudge-gameforge-web`**
+Worker: **`grudge-gameforge-web`** (source: `workers/gameforge-web/`)
+
+Edge probes (after deploy):
+
+```bash
+curl -s https://forge.grudge-studio.com/__edge/health
+curl -s https://forge.grudge-studio.com/api/health    # alias → /api/healthz
+curl -s https://forge.grudge-studio.com/api/healthz
+```
+
+MCP + worker ops: see [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md).
 
 | Binding | Value |
 | --- | --- |

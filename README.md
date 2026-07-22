@@ -10,6 +10,7 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 | **AI skill** | [`.agents/skills/forge-editor/SKILL.md`](.agents/skills/forge-editor/SKILL.md) |
 | **Hybrid C# docs** | [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) |
 | **Deploy guide** | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
+| **Edge + MCP** | [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) |
 
 ## Production status (current)
 

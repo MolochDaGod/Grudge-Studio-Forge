@@ -1,0 +1,23 @@
+name = "grudge-gameforge-web"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+# Production route: forge.grudge-studio.com/* (configure in dashboard or via routes below).
+# Keep routes commented until you confirm zone id / don't double-bind free-ai.
+
+# [[routes]]
+# pattern = "forge.grudge-studio.com/*"
+# zone_name = "grudge-studio.com"
+
+[vars]
+# SPA origin — Vercel project or prebuilt static host
+ORIGIN = "https://grudge-studio-forge.vercel.app"
+# Forge api-server on Railway (must serve /api/*)
+API_ORIGIN = "https://grudge-api-production-0d46.up.railway.app"
+# Optional fleet CDN
+ASSETS_ORIGIN = "https://assets.grudge-studio.com"
+# Optional: if free-ai is not on a separate route, set to workers.dev URL
+# FREE_AI_ORIGIN = "https://grudge-forge-free-ai.<account>.workers.dev"
+
+# Secrets: none required for proxy. free-ai keys live on grudge-forge-free-ai.
