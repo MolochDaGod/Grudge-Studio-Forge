@@ -74,6 +74,10 @@ jobs:
           # SPA rewrites are mandatory — without them /editor 404s on Vercel
           test -f artifacts/game-forge/dist/public/vercel.json
           grep -q 'rewrites' artifacts/game-forge/dist/public/vercel.json
+          # Hybrid C# packs — Blazor WASM must ship with the SPA
+          test -f artifacts/game-forge/dist/public/_framework/blazor.boot.json
+          test -f artifacts/game-forge/dist/public/_framework/GameForgeRuntime.wasm
+          test -f artifacts/game-forge/dist/public/_framework/dotnet.js
           # Builtin GLBs must not ship (R2 only)
           if [ -d artifacts/game-forge/dist/public/builtin ]; then
             echo "ERROR: dist/public/builtin must be stripped" >&2
@@ -81,6 +85,7 @@ jobs:
           fi
           du -sh artifacts/game-forge/dist/public
           ls -la artifacts/game-forge/dist/public/assets | head
+          ls artifacts/game-forge/dist/public/_framework | head
 
       - name: Install Vercel CLI
         run: npm i -g vercel@latest

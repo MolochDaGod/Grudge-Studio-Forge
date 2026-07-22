@@ -36,10 +36,14 @@ function stripHeavyPublicAssets(): Plugin {
     name: "strip-heavy-public-assets",
     apply: "build",
     async closeBundle() {
-      const { rm, writeFile, stat, copyFile, access } = await import("node:fs/promises");
-      const publicDir = path.resolve(import.meta.dirname, "dist/public");
+      const { rm, writeFile, stat, copyFile, access, mkdir } = await import("node:fs/promises");
+      // Prefer process.cwd() (package root under pnpm filter). import.meta.dirname
+      // can point at Vite's compiled config temp dir on CI and miss dist/public.
+      const packageRoot = process.cwd();
+      const publicDir = path.resolve(packageRoot, "dist/public");
       const builtinDir = path.join(publicDir, "builtin");
       try {
+        await mkdir(publicDir, { recursive: true });
         await rm(builtinDir, { recursive: true, force: true });
         console.log("[build] stripped dist/public/builtin (use R2 CDN at runtime)");
       } catch {
@@ -48,7 +52,7 @@ function stripHeavyPublicAssets(): Plugin {
 
       // SPA rewrites — without this, /editor 404s on Vercel static deploys.
       const vercelJson = path.join(publicDir, "vercel.json");
-      const vercelSrc = path.resolve(import.meta.dirname, "public/vercel.json");
+      const vercelSrc = path.resolve(packageRoot, "public/vercel.json");
       try {
         await access(vercelSrc);
         await copyFile(vercelSrc, vercelJson);
@@ -81,10 +85,28 @@ function stripHeavyPublicAssets(): Plugin {
                 },
               ],
             },
+            {
+              source: "/_framework/(.*).wasm",
+              headers: [
+                { key: "Content-Type", value: "application/wasm" },
+                { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+              ],
+            },
           ],
         };
+        await mkdir(publicDir, { recursive: true });
         await writeFile(vercelJson, JSON.stringify(fallback, null, 2), "utf8");
         console.log("[build] wrote fallback dist/public/vercel.json");
+      }
+
+      // Hybrid Blazor packs — must ship with SPA or RegisterBuiltin is unavailable.
+      try {
+        await access(path.join(publicDir, "_framework", "blazor.boot.json"));
+        console.log("[build] _framework/blazor.boot.json present (hybrid C# packs)");
+      } catch {
+        console.warn(
+          "[build] WARNING: dist/public/_framework/blazor.boot.json missing — hybrid Blazor packs will fall back to JS",
+        );
       }
 
       // Oversized single-file player bloats every SPA deploy — warn loudly.
