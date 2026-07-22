@@ -140,9 +140,15 @@ export default {
       const origin = (env.ORIGIN || "").replace(/\/$/, "");
       const api = (env.API_ORIGIN || "").replace(/\/$/, "");
       const assets = (env.ASSETS_ORIGIN || "").replace(/\/$/, "");
+      // Same-host /api/* is often a *separate* CF worker (grudge-gameforge-api),
+      // not API_ORIGIN — probe public hostname first.
+      const publicApiBase = `${url.protocol}//${url.host}`;
 
-      const [spa, apiHealth, blazorBoot] = await Promise.all([
+      const [spa, publicApi, originApi, blazorBoot] = await Promise.all([
         origin ? probe(`${origin}/`) : Promise.resolve({ ok: false, error: "ORIGIN unset" }),
+        probe(`${publicApiBase}/api/healthz`).then(async (r) =>
+          r.ok ? r : probe(`${publicApiBase}/api/health`),
+        ),
         api
           ? probe(`${api}/api/healthz`).then(async (r) =>
               r.ok ? r : probe(`${api}/api/health`),
@@ -153,7 +159,7 @@ export default {
           : Promise.resolve({ ok: false, error: "ORIGIN unset" }),
       ]);
 
-      const healthy = Boolean(spa.ok && apiHealth.ok);
+      const healthy = Boolean(spa.ok && publicApi.ok);
       return json(
         {
           ok: healthy,
@@ -166,12 +172,15 @@ export default {
           },
           probes: {
             spa,
-            api: apiHealth,
+            /** Live forge.grudge-studio.com/api (gameforge-api worker or proxy). */
+            publicApi,
+            /** Optional Railway fallback binding (may be a different service). */
+            apiOrigin: originApi,
             blazorBoot,
           },
           hybrid: {
             blazorBootOk: Boolean(blazorBoot.ok),
-            note: "Blazor packs need public/_framework from latest main deploy",
+            note: "Compare blazorBoot sample hash to local public/_framework after hybrid C# deploys",
           },
         },
         healthy ? 200 : 503,
