@@ -39,9 +39,6 @@ catalog:
   vite: ^7.3.2
   wouter: ^3.3.5
   zod: 3.25.76
-  # Fleet Three.js pin — all scene/game packages should use this major.
-  three: 0.184.0
-  '@types/three': 0.184.0
 
 minimumReleaseAge: 1440
 
