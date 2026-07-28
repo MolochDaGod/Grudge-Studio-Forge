@@ -108,6 +108,11 @@ import {
   handlers as uiToolHandlers,
   destructiveToolNames as uiDestructiveTools,
 } from "@/ai/tools/ui";
+import {
+  defs as batchGenerateToolDefs,
+  handlers as batchGenerateToolHandlers,
+  destructiveToolNames as batchGenerateDestructiveTools,
+} from "@/ai/tools/batchGenerate";
 
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -134,6 +139,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...knowledgeDestructiveTools,
   ...motionDestructiveTools,
   ...uiDestructiveTools,
+  ...batchGenerateDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1207,6 +1213,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: uiToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ── Optional batch_generate (multi texture/skybox/lore/primitives) ────
+  // Not the fleet deploy path — content fill only. See batchGenerate/.
+  ...batchGenerateToolDefs.map((def) => ({
+    def,
+    exec: batchGenerateToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1314,6 +1327,8 @@ export function buildSystemPrompt(): string {
     `- Puter cloud: cloud_save_project, list_my_puter_projects, publish_to_puter — if "Sign in with Puter", tell the user; do not retry endlessly.`,
     `- Design polish: diagnose_scene → polish_scene; arrange_entities for patterns; apply_palette / apply_lighting_preset; frame_camera + capture_viewport before declaring creative work done.`,
     `- CF Workers AI: generate_texture / generate_skybox (auto-sets skyTexture) / lore tools when the user wants generated art — results land in R2 when projectId is set.`,
+    `- OPTIONAL batch_generate: multi-job texture|skybox|lore|primitives packs (cap 12 jobs, concurrency 2). Use when the user wants many textures/props at once. Not for fleet publish/deploy — that remains a separate P0 path.`,
+    `- Deploy SSOT: list_game_deployments (PublishChannel, L0–L9, API systems). list_forge_best_practices for editor tips. Never bundle_in_spa; never Replit storage; player state = Railway not Forge API.`,
     `- After changes, summarize in 1–2 plain sentences.`,
     `- Do NOT call clear_scene unless the user explicitly asks to wipe / reset / start over.`,
     ``,

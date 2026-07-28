@@ -35,12 +35,24 @@ export function BestPracticesSubMenu({
         {tips.map((tip, i) => (
           <ContextMenuItem
             key={i}
-            onClick={() => pushLog("info", `Tip · ${tip.title} — ${tip.detail}`)}
+            onClick={() => {
+              pushLog("info", `Tip · ${tip.title} — ${tip.detail}`);
+              if (tip.href) {
+                try {
+                  window.open(tip.href, "_blank", "noopener,noreferrer");
+                } catch {
+                  /* ignore popup blockers */
+                }
+              }
+            }}
             className="flex flex-col items-start gap-0.5 py-1.5 cursor-default"
           >
             <span className="text-xs font-medium leading-tight">{tip.title}</span>
             <span className="text-[10px] text-muted-foreground leading-snug whitespace-normal">
               {tip.detail}
+              {tip.href ? (
+                <span className="block mt-0.5 text-accent/80 truncate">docs ↗</span>
+              ) : null}
             </span>
           </ContextMenuItem>
         ))}
