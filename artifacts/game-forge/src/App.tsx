@@ -78,7 +78,7 @@ function EditorShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Published-scene auto-loader.
+  // Published-scene auto-loader + Pipeline pack import.
   //
   // When someone opens a Puter-hosted scene, the bootstrapper redirects
   // here with `?scene=<absolute-url>`. We fetch the JSON, install it into
@@ -87,58 +87,233 @@ function EditorShell() {
   // refresh doesn't re-fetch (and so the user can keep editing without
   // a stale URL). Failures only log; we never block the editor on a
   // bad shared URL.
+  //
+  // Pipeline (grudge-pipeline.vercel.app) can also:
+  //   • ?asset=<cdn-glb-url>&edit=1 — spawn a single model entity
+  //   • ?awaitImport=1&from=pipeline — postMessage handshake for full pack
+  //     { entities, environment, scripts[], assets[] }
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const sceneUrl = params.get("scene");
-    if (!sceneUrl) return;
+    const assetUrl = params.get("asset");
+    const awaitImport =
+      params.get("awaitImport") === "1" || params.get("from") === "pipeline";
     // ?edit=1 (or edit=true) keeps the editor editable — do not auto-enter play.
     // Used by gameopen / fleet deep links for AI-assisted authoring.
     const editMode =
       params.get("edit") === "1" ||
       params.get("edit") === "true" ||
-      params.get("mode") === "edit";
+      params.get("mode") === "edit" ||
+      awaitImport;
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(sceneUrl, { mode: "cors" });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+
+    const applyScene = (
+      data: {
+        entities?: unknown;
+        environment?: unknown;
+        _pipelinePack?: { scripts?: unknown[]; assets?: unknown[]; name?: string };
+      },
+      label: string,
+    ) => {
+      if (!data || !Array.isArray(data.entities)) {
+        throw new Error("Scene JSON missing 'entities' array");
+      }
+      const store = useEditor.getState();
+      store.setSceneData({
+        entities: data.entities as never,
+        environment: (data.environment as never) ?? {},
+      });
+      const packName = data._pipelinePack?.name;
+      store.setSceneName(
+        packName
+          ? String(packName)
+          : editMode
+            ? "Loaded Scene (Edit)"
+            : label || "Published Scene",
+      );
+      store.setPlaying(!editMode);
+      const scripts = data._pipelinePack?.scripts;
+      const assets = data._pipelinePack?.assets;
+      if (Array.isArray(scripts) && scripts.length) {
+        try {
+          localStorage.setItem(
+            "gameforge:pipelineScripts",
+            JSON.stringify(scripts),
+          );
+        } catch {
+          /* private mode */
         }
-        const data = (await res.json()) as { entities?: unknown; environment?: unknown };
-        if (cancelled) return;
-        if (!data || !Array.isArray(data.entities)) {
-          throw new Error("Scene JSON missing 'entities' array");
-        }
-        const store = useEditor.getState();
-        // command-stack: bypass — load of a published scene from URL is a
-        // wholesale scene replace, not an undoable user edit.
-        store.setSceneData({
-          entities: data.entities as never,
-          environment: (data.environment as never) ?? {},
-        });
-        store.setSceneName(editMode ? "Loaded Scene (Edit)" : "Published Scene");
-        store.setPlaying(!editMode);
         store.pushLog(
           "info",
-          `Loaded scene from ${sceneUrl}${editMode ? " · edit mode (AI + inspector ready)" : " · play mode"}`,
+          `Pipeline pack: ${scripts.length} script(s) stored (AI / Script panel). Assets: ${Array.isArray(assets) ? assets.length : 0}`,
+        );
+      }
+      store.pushLog(
+        "info",
+        `Loaded ${data.entities.length} entities · ${editMode ? "edit mode" : "play mode"} · ${label}`,
+      );
+    };
+
+    // ── postMessage from grudge-pipeline (full pack with scripts + assets) ──
+    const onPipelineMsg = (ev: MessageEvent) => {
+      if (cancelled) return;
+      const data = ev.data;
+      if (!data || data.type !== "grudge:pipeline:import-scene") return;
+      // Trust pipeline production origin + localhost for dev
+      const okOrigin =
+        typeof ev.origin === "string" &&
+        (ev.origin.includes("grudge-pipeline") ||
+          ev.origin.includes("localhost") ||
+          ev.origin.includes("127.0.0.1") ||
+          ev.origin.endsWith(".vercel.app"));
+      if (!okOrigin) return;
+      try {
+        const pack = data.pack as {
+          name?: string;
+          scene?: { entities?: unknown; environment?: unknown };
+          scripts?: unknown[];
+          assets?: unknown[];
+        };
+        const scene = pack?.scene;
+        if (!scene || !Array.isArray(scene.entities)) {
+          throw new Error("pipeline pack missing scene.entities");
+        }
+        applyScene(
+          {
+            entities: scene.entities,
+            environment: scene.environment,
+            _pipelinePack: {
+              name: pack.name,
+              scripts: pack.scripts,
+              assets: pack.assets,
+            },
+          },
+          "pipeline postMessage",
+        );
+        // ACK so pipeline stops retrying
+        try {
+          (ev.source as Window | null)?.postMessage?.(
+            { type: "grudge:forge:import-ack", ok: true },
+            ev.origin,
+          );
+        } catch {
+          /* */
+        }
+      } catch (err) {
+        pushLog("error", `Pipeline import failed: ${(err as Error).message}`);
+      }
+    };
+    window.addEventListener("message", onPipelineMsg);
+    // Tell opener we're ready
+    try {
+      window.opener?.postMessage?.(
+        { type: "grudge:forge:ready" },
+        "*",
+      );
+    } catch {
+      /* */
+    }
+
+    // ── Single asset deep link ──
+    if (assetUrl && !sceneUrl) {
+      try {
+        const id = `ent-pipeline-${Date.now().toString(36)}`;
+        applyScene(
+          {
+            entities: [
+              {
+                id: "ent-ground",
+                name: "Ground",
+                type: "plane",
+                transform: {
+                  position: [0, 0, 0],
+                  rotation: [-Math.PI / 2, 0, 0],
+                  scale: [60, 60, 1],
+                },
+                parentId: null,
+                material: { color: "#2a3530", metalness: 0, roughness: 1 },
+                physics: {
+                  bodyType: "fixed",
+                  colliderType: "cuboid",
+                  mass: 0,
+                  restitution: 0.2,
+                  friction: 1,
+                },
+                layer: "Terrain",
+                surface: "Walk",
+              },
+              {
+                id,
+                name: params.get("meshName") || "Pipeline Asset",
+                type: "model",
+                model: { url: assetUrl },
+                transform: {
+                  position: [0, 0, 0],
+                  rotation: [0, 0, 0],
+                  scale: [1, 1, 1],
+                },
+                parentId: null,
+                layer: "Default",
+                surface: "None",
+              },
+            ],
+            environment: {
+              skyColor: "#9ec8e8",
+              ambientIntensity: 0.5,
+              sunIntensity: 1.1,
+              gravity: [0, -9.81, 0],
+            },
+          },
+          assetUrl,
         );
       } catch (err) {
-        if (!cancelled) {
-          pushLog("error", `Failed to load shared scene: ${(err as Error).message}`);
-        }
-      } finally {
-        // Strip ?scene= / ?edit= so a refresh keeps the now-live scene rather
-        // than re-fetching (and the URL stays clean for the user).
-        const url = new URL(window.location.href);
-        url.searchParams.delete("scene");
-        url.searchParams.delete("edit");
-        url.searchParams.delete("mode");
-        window.history.replaceState({}, "", url.toString());
+        pushLog("error", `Asset import failed: ${(err as Error).message}`);
       }
-    })();
+    }
+
+    // ── Remote / hosted scene URL ──
+    if (sceneUrl && /^https?:\/\//i.test(sceneUrl)) {
+      (async () => {
+        try {
+          const res = await fetch(sceneUrl, { mode: "cors" });
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          const data = (await res.json()) as {
+            entities?: unknown;
+            environment?: unknown;
+            _pipelinePack?: { scripts?: unknown[]; assets?: unknown[]; name?: string };
+          };
+          if (cancelled) return;
+          applyScene(data, sceneUrl);
+        } catch (err) {
+          if (!cancelled) {
+            pushLog("error", `Failed to load shared scene: ${(err as Error).message}`);
+          }
+        } finally {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("scene");
+          url.searchParams.delete("edit");
+          url.searchParams.delete("mode");
+          url.searchParams.delete("asset");
+          url.searchParams.delete("awaitImport");
+          window.history.replaceState({}, "", url.toString());
+        }
+      })();
+    } else if (assetUrl || awaitImport) {
+      // Strip one-shot params after handling asset / handshake setup
+      const url = new URL(window.location.href);
+      url.searchParams.delete("asset");
+      url.searchParams.delete("awaitImport");
+      // keep edit briefly for UX; strip from so refresh is clean
+      url.searchParams.delete("from");
+      window.history.replaceState({}, "", url.toString());
+    }
+
     return () => {
       cancelled = true;
+      window.removeEventListener("message", onPipelineMsg);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
