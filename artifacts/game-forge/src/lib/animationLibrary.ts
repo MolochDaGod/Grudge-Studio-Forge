@@ -1,6 +1,10 @@
 /**
  * Built-in animation catalog for the Forge editor.
  *
+ * Fleet SSOT for combat kits / blends: `@/lib/grudgeStudioFleet`
+ * (`combatSkillKit`, `LocomotionCore`). This catalog remains the
+ * inspector/AI picker for Mixamo + R2 clip keys.
+ *
  * The AI tool `apply_animation` and the inspector's animation picker
  * reference this catalog by key. Each entry describes a clip with its
  * source URL (R2, Mixamo pattern, or builtin), duration, loop mode,
@@ -15,6 +19,8 @@
  * at runtime by the ModelRenderer via the Mixamo REST API (requires
  * the user to be signed in to Mixamo). For offline use, download the
  * FBX from Mixamo and convert it to GLB via the asset converter.
+ *
+ * Weapon skill ids for play: forgeCombatKit("sword_shield" | "mace_1h" | …)
  */
 
 export interface AnimationClip {
@@ -195,6 +201,47 @@ export const ANIMATION_CATALOG: AnimationClip[] = [
     skeleton: "humanoid",
     description: "Stagger backwards when taking damage.",
     source: "mixamo://Hit Reaction",
+  },
+  // Fleet weapon-skill keys (map to combatSkillKit / LocomotionCore roles)
+  {
+    key: "fleet-ss-slash",
+    name: "Fleet: Sword Slash",
+    category: "combat",
+    duration: 0.6,
+    loop: false,
+    skeleton: "humanoid",
+    description: "sword_shield ss_slash — play via forgeCombatKit + LocomotionCore.",
+    source: "fleet:sword_shield/ss_slash",
+  },
+  {
+    key: "fleet-mace-swing",
+    name: "Fleet: Mace Swing",
+    category: "combat",
+    duration: 0.6,
+    loop: false,
+    skeleton: "humanoid",
+    description: "mace_1h mace_swing (Raidriar retarget path).",
+    source: "fleet:mace_1h/mace_swing",
+  },
+  {
+    key: "fleet-dash-slide",
+    name: "Fleet: Dash Slide",
+    category: "combat",
+    duration: 0.9,
+    loop: false,
+    skeleton: "humanoid",
+    description: "dash pack mobility skill — locomotionSkill blend.",
+    source: "fleet:dash/dash_slide",
+  },
+  {
+    key: "fleet-parry",
+    name: "Fleet: Parry",
+    category: "combat",
+    duration: 0.4,
+    loop: false,
+    skeleton: "humanoid",
+    description: "block pack parry — full-body timed window.",
+    source: "fleet:block/parry",
   },
 
   // ── Emotes ─────────────────────────────────────────────────────────

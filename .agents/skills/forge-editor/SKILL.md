@@ -106,13 +106,54 @@ Grudge-Studio-Forge/
 - `pages/LandingPage.tsx` — dark cinematic design at `/`
 - wouter routing: `/` = landing, `/editor` (or any other path) = editor (lazy-loaded)
 
+## three.js editor parity (genuine Forge)
+
+**SSOT:** `docs/THREEJS_EDITOR_PARITY.md` — review vs [mrdoob/three.js/editor](https://github.com/mrdoob/three.js/tree/master/editor) + [docs](https://threejs.org/docs/) + [manual](https://threejs.org/manual/).
+
+| three.js editor | Forge |
+|-----------------|--------|
+| `Editor` + signals | Zustand `store/editor.ts` + entity `SceneData` |
+| Command history | `lib/commands.ts` (+ AI `makeAITurnCommand`) |
+| Loader multi-format | `lib/assetConverter.ts` + `fileKind.ts` → meshopt GLB |
+| toJSON project | `.gfscene.json` + GitHub pack (not raw ObjectLoader by default) |
+| Viewport helpers | R3F Viewport + `threeDevtools.ts` bridge |
+| Sidebar / Menubar | Hierarchy, Inspector, MenuBar |
+| **Plus** | Rapier, AI Worker (70+ tools), fleet R2 deploy |
+
+**Agent rules when editing the editor:**
+
+1. User/AI scene mutations → **CommandStack** only.  
+2. 3D import → convert to **meshopt GLB** + `.meta.json`; scenes as **`.gfscene.json`**.  
+3. SI metres, sRGB color management, dispose GPU resources.  
+4. Deploy via **`DEPLOYMENT.md`** (no Replit object paths).  
+5. Surface tips via `lib/bestPractices.ts` / AI tool `list_forge_best_practices`.  
+6. Deploy channels via `lib/gameDeployments.ts` / AI `list_game_deployments` — **docs/GAME_DEPLOYMENT_DEFINITIONS.md**.  
+7. Skills: `threejs-asset-io`, `threejs-controls`, `rapier-physics-patterns` as needed.
+
+### Purged (never recommend)
+
+| Purged | Use instead |
+|--------|-------------|
+| `bundle_in_spa` | `r2_user_assets` + CDN |
+| Replit object storage | Forge R2 upload |
+| `api.grudge-studio.com` as player SSOT | Railway same-origin `/api/*` |
+| batch_generate as fleet deploy | `fleet_satellite` + onboarding |
+
+### File → scene pipeline
+
+| Kind | Pipeline |
+|------|----------|
+| glb/gltf/fbx/obj/stl/zip | Implemented convert → R2 |
+| .gfscene.json | Live scene import |
+| ply/dae/usdz | Classified, planned (desktop Assimp interim) |
+
 ## Deployment
-- **Frontend SPA**: Vercel (native GitHub integration, auto-deploy on push)
+- **Frontend SPA**: CF Worker → origin / high-RAM build (`scripts/build-spa.*`) — see **DEPLOYMENT.md**
 - **API Server**: Railway (Docker, `Dockerfile` in repo root)
 - **DNS/CDN/Storage**: Cloudflare (R2, Workers AI, DNS for grudge-studio.com)
-- **Desktop**: Local build via electron-builder
+- **Desktop**: Local build via electron-builder + GitHub Releases
 - **Offline**: Ollama + setup scripts (pwsh/bash)
-- GitHub used ONLY for repo hosting + CI checks (no Pages, no Releases workflow)
+- GitHub: repo hosting + CI + desktop Releases
 
 ## Common Tasks
 
@@ -120,6 +161,13 @@ Grudge-Studio-Forge/
 1. Add tool def + executor in `lib/aiTools.ts` (or a sub-module in `ai/tools/<area>/`)
 2. If destructive, add name to `DESTRUCTIVE_TOOLS` set
 3. Tool definitions are JSON schema — shipped with every AI request
+
+### Optional next step — `batch_generate` (shipped, not P0 deploy)
+- Module: `artifacts/game-forge/src/ai/tools/batchGenerate/`
+- Tool name: `batch_generate` — multi-job CF texture / skybox / lore + primitive packs (grid/ring/line/scatter/cluster)
+- Caps: 12 jobs, 48 primitives/job, concurrency 1–4 (default 2)
+- **Not** fleet one-click ship / `@grudge-studio/*` wiring — those remain the deploy P0 slice
+- AI system prompt marks it optional; use when filling many surfaces/props at once
 
 ### Adding a new script template
 1. Add entry to `SCRIPT_TEMPLATES` array in `ai/tools/scripting/templates.ts`

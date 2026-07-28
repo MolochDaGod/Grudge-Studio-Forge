@@ -1,4 +1,4 @@
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+﻿import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, Stats, TransformControls } from "@react-three/drei";
 import { EffectsRig } from "@/scene/EffectsRig";
 import { CelestialSky } from "@/scene/CelestialSky";
@@ -34,6 +34,7 @@ import { buildTree } from "@/lib/hierarchy";
 import type { SceneEntity, EntityType } from "@/scene/types";
 import { DEFAULT_GRAVITY, DEFAULT_FOG } from "@workspace/scene-schema";
 import { getPlaySession, resetPlaySession } from "@/scene/playSession";
+import { forgePhysicsDebugEnabled } from "@/lib/physicsDebugGate";
 import { PlayHUD } from "@/editor/PlayHUD";
 import {
   ContextMenu,
@@ -84,7 +85,7 @@ interface RenderNodeProps {
  *  IMPORTANT: We forward refs to EntityRenderer's *actual transformed group*
  *  (not a separate wrapper). If we wrapped in a tracking group, TransformControls
  *  would mutate the wrapper while EntityRenderer kept its inner group anchored
- *  to entity.transform — the gizmo and the visual mesh would diverge after the
+ *  to entity.transform â€” the gizmo and the visual mesh would diverge after the
  *  first drag. Forwarding directly keeps the gizmo, mesh, and store in sync. */
 function RenderNode({
   entity,
@@ -146,7 +147,7 @@ function RenderNode({
  *  progress, plus a short trailing-edge window AFTER the drag ends.
  *
  *  Why: when the user releases the mouse over the gizmo, three.js still
- *  fires a synthetic `click` against whatever mesh is under the cursor —
+ *  fires a synthetic `click` against whatever mesh is under the cursor â€”
  *  almost always the ground. That used to trigger `selectEntity(ground)`
  *  immediately after every gizmo move/rotate/scale, kicking the user
  *  out of their selection. We gate both the per-mesh `onPick` and the
@@ -156,7 +157,7 @@ function RenderNode({
  *  150 ms is empirically enough to swallow the trailing event without
  *  noticeably delaying a real follow-up click on a different entity.  */
 // Gate moved to ./gizmoDragGate so Viewport.tsx exports only its React
-// component (Fast Refresh requires consistent component exports — a
+// component (Fast Refresh requires consistent component exports â€” a
 // non-component named export here was breaking HMR).
 
 function SceneEditMode({
@@ -190,7 +191,7 @@ function SceneEditMode({
     removeEventListener: (type: string, fn: (e: { value: boolean }) => void) => void;
   } | null>(null);
 
-  // Live modifier state — read inside `onObjectChange` (which has no
+  // Live modifier state â€” read inside `onObjectChange` (which has no
   // KeyboardEvent context) to decide whether the dragged entity should
   // ground-snap. Updated on every keydown/keyup/blur so a modifier
   // released mid-drag immediately stops snapping.
@@ -214,12 +215,12 @@ function SceneEditMode({
     };
   }, []);
 
-  // The whole r3f scene — needed for the ground-snap raycast.
+  // The whole r3f scene â€” needed for the ground-snap raycast.
   const { scene: threeScene } = useThree();
 
   // Listen for TransformControls' `dragging-changed` event so we know
   // exactly when a gizmo drag begins and ends. The drei wrapper forwards
-  // the underlying three.js event verbatim — `e.value` is the new
+  // the underlying three.js event verbatim â€” `e.value` is the new
   // dragging boolean.
   useEffect(() => {
     const ctl = transformControlsRef.current;
@@ -248,7 +249,7 @@ function SceneEditMode({
           childrenByParent={childrenByParent}
           selectedId={selectedId}
           onPick={(id: string) => {
-            // Trailing click after a gizmo drag — ignore so we don't
+            // Trailing click after a gizmo drag â€” ignore so we don't
             // bounce the selection onto the ground/wall under the cursor.
             if (isGizmoSwallowingClick()) return;
             selectEntity(id);
@@ -283,7 +284,7 @@ function SceneEditMode({
                   ctrlKey: modKeysRef.current.ctrl,
                 })
               ) {
-                // Don't snap terrain TO terrain — if the dragged
+                // Don't snap terrain TO terrain â€” if the dragged
                 // entity itself carries a walkable surface tag
                 // (typically stamped on a DESCENDANT, e.g. the cloned
                 // model root for a Map entity), the user is
@@ -328,12 +329,14 @@ function ScenePlayMode() {
   const projectId = useEditor((s) => s.projectId);
   // Memoise so <Physics> doesn't tear down + recreate the world (and orphan
   // every RigidBody ref) every time a parent re-renders. The `?? [...]` would
-  // otherwise allocate a fresh tuple on every render → new prop reference →
+  // otherwise allocate a fresh tuple on every render â†’ new prop reference â†’
   // forced remount of the entire physics tree.
   const gravity = useMemo<[number, number, number]>(
     () => (envGravity ?? DEFAULT_GRAVITY) as [number, number, number],
     [envGravity],
   );
+  // Fleet SSOT: ?physicsDebug=1 or localStorage grudge_physics_debug=1
+  const physicsDebug = useMemo(() => forgePhysicsDebugEnabled(), []);
   const bodyRefs = useRef<Map<string, RapierRigidBody | THREE.Group>>(new Map());
   // Source scripts via react-query in the editor; the standalone player
   // passes its own pre-loaded `scripts` array into PlayScriptRuntime.
@@ -342,7 +345,7 @@ function ScenePlayMode() {
   });
 
   return (
-    <Physics gravity={gravity}>
+    <Physics gravity={gravity} debug={physicsDebug}>
       <PlayScriptRuntime bodyRefs={bodyRefs} scripts={scripts} />
       <PlayCameraController bodyRefs={bodyRefs} />
     </Physics>
@@ -356,7 +359,7 @@ function Lights() {
   // even when the directional sun is weak (cyberpunk neon, overcast winter,
   // covered interiors). Inspired by Mugen87/dive's lighting setup. We tie
   // it to env.skyColor / env.groundColor / env.ambientIntensity so that
-  // tuning the environment in the inspector still works as before — the
+  // tuning the environment in the inspector still works as before â€” the
   // hemisphere just rides on top of the existing ambient + sun pair.
   // When celestial.timeOfDay is set, the directional sun tracks the same
   // arc as the sky shader disc so day/night lighting stays coherent.
@@ -415,11 +418,11 @@ function ClickToDeselect() {
  * Mounted inside the R3F Canvas (so it can grab `gl.domElement`) and only
  * during play. Requests pointer-lock on click, tracks the lock state via
  * the native `pointerlockchange` event, and pushes that state up via
- * `onChange` so a sibling DOM overlay can render the "Click to capture ·
+ * `onChange` so a sibling DOM overlay can render the "Click to capture Â·
  * ESC to release" hint when unlocked.
  *
  * Browser semantics:
- *   - Pressing ESC natively releases the lock — no manual ESC handler.
+ *   - Pressing ESC natively releases the lock â€” no manual ESC handler.
  *   - The lock survives until ESC, tab blur, or `document.exitPointerLock()`.
  *   - Each click while unlocked re-requests the lock; the browser may
  *     ratelimit re-requests after a manual user release within ~1.5s
@@ -437,7 +440,7 @@ function PointerLockBridge({ onChange }: { onChange: (locked: boolean) => void }
         // Modern browsers return a Promise; older ones return undefined.
         if (p && typeof (p as Promise<void>).catch === "function") {
           (p as Promise<void>).catch(() => {
-            /* user-initiated cooldown or denied — handled by overlay state */
+            /* user-initiated cooldown or denied â€” handled by overlay state */
           });
         }
       } catch {
@@ -513,7 +516,7 @@ function FocusCameraController() {
     (target as THREE.Object3D).updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(target);
     if (box.isEmpty() || !Number.isFinite(box.min.x)) {
-      // Empties / lights have no geometry — fall back to a unit AABB at
+      // Empties / lights have no geometry â€” fall back to a unit AABB at
       // the object's world position so we at least frame SOMETHING
       // sensible.
       const wp = new THREE.Vector3();
@@ -555,11 +558,11 @@ function FocusCameraController() {
     if (!t) return;
     const now = performance.now();
     const k = Math.min(1, (now - t.startTime) / t.duration);
-    // Ease-out cubic — fast departure, soft arrival; feels responsive
+    // Ease-out cubic â€” fast departure, soft arrival; feels responsive
     // without overshooting the entity.
     const e = 1 - Math.pow(1 - k, 3);
     camera.position.lerpVectors(t.startCam, t.endCam, e);
-    // reason: see above — narrow drei's loosely-typed `controls` to the
+    // reason: see above â€” narrow drei's loosely-typed `controls` to the
     // OrbitControls subset.
     const c = controls as unknown as { target?: THREE.Vector3; update?: () => void } | null;
     if (c?.target) c.target.lerpVectors(t.startTarget, t.endTarget, e);
@@ -574,7 +577,7 @@ function FocusCameraController() {
  * Catches render-time exceptions from anything inside the 3D viewport (the
  * `<Canvas>`, scripts, post-processing, GLB loaders, etc.) and shows a
  * contained fallback in the viewport pane instead of letting the whole editor
- * shell — toolbar, hierarchy, inspector — go down with it. The "Reload
+ * shell â€” toolbar, hierarchy, inspector â€” go down with it. The "Reload
  * viewport" button bumps a key so the boundary remounts the entire subtree.
  *
  * React requires class components for error boundaries; there is no hook
@@ -599,7 +602,7 @@ interface ViewportErrorBoundaryProps {
    * deterministic crash. The parent keeps the latch.
    */
   autoRetryAvailable: boolean;
-  /** Silent recovery hook — parent should bump the viewport epoch. */
+  /** Silent recovery hook â€” parent should bump the viewport epoch. */
   onAutoRetry: () => void;
 }
 class ViewportErrorBoundary extends Component<
@@ -622,7 +625,7 @@ class ViewportErrorBoundary extends Component<
     console.error("[Viewport] render error:", error, info.componentStack);
 
     // Most viewport crashes we've actually observed in the wild are transient
-    // init-races inside R3F / @react-three/postprocessing / Rapier — a fresh
+    // init-races inside R3F / @react-three/postprocessing / Rapier â€” a fresh
     // mount of the Canvas subtree clears them. Try once silently before
     // surfacing the manual "Viewport crashed" UI so the user doesn't have to
     // babysit a one-shot HMR / context-restore glitch.
@@ -645,7 +648,7 @@ class ViewportErrorBoundary extends Component<
       // a brief blank instead of a flash of the crash UI before recovery.
       // Gate on `autoRetryRequested` (not `autoRetryAvailable`) so we only
       // suppress the UI once componentDidCatch has actually scheduled the
-      // retry — otherwise the brief window between getDerivedStateFromError
+      // retry â€” otherwise the brief window between getDerivedStateFromError
       // and componentDidCatch could render null without a recovery path.
       if (this.autoRetryRequested) {
         return null;
@@ -660,7 +663,7 @@ class ViewportErrorBoundary extends Component<
               {this.state.error.message}
             </p>
             <p className="text-xs text-muted-foreground">
-              The rest of the editor is still usable — open the console for the
+              The rest of the editor is still usable â€” open the console for the
               full stack, then reload the viewport once you've fixed the issue.
             </p>
             <button
@@ -720,7 +723,7 @@ function WebGLUnavailable({ reason, onRetry }: { reason: string; onRetry: () => 
         <p className="text-xs text-muted-foreground font-mono break-words">{reason}</p>
         <p className="text-xs text-muted-foreground">
           Your browser couldn't acquire a WebGL context. This usually clears up
-          on its own — try the retry button. If it persists, close other tabs
+          on its own â€” try the retry button. If it persists, close other tabs
           using 3D / video, or reload the page.
         </p>
         <button
@@ -760,11 +763,11 @@ export function Viewport() {
   // intended content.
   const sceneEntitiesCount = useEditor((s) => s.sceneData.entities.length);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
-  // Dismissable picker — user can X-out the "Pick a starting template"
+  // Dismissable picker â€” user can X-out the "Pick a starting template"
   // overlay if they want to build from scratch instead. Auto-resets the
   // moment the scene becomes non-empty (so loading a template, adding a
-  // primitive, etc.) and re-arms when the scene goes empty again — that
-  // way "File → New" still surfaces the picker on a fresh scene.
+  // primitive, etc.) and re-arms when the scene goes empty again â€” that
+  // way "File â†’ New" still surfaces the picker on a fresh scene.
   const [pickerDismissed, setPickerDismissed] = useState(false);
   useEffect(() => {
     if (sceneEntitiesCount > 0 && pickerDismissed) setPickerDismissed(false);
@@ -794,7 +797,7 @@ export function Viewport() {
     templateLoader.start(tpl.key, tpl.label);
   };
 
-  // (No auto-load on first boot — opens straight into the empty-scene
+  // (No auto-load on first boot â€” opens straight into the empty-scene
   // picker so the user chooses what to play instead of being dropped into
   // a hard-coded demo. Manual triggers stay available via the picker
   // overlay and the Toolbar / File menu.)
@@ -819,7 +822,7 @@ export function Viewport() {
   // Hover bookkeeping for the floating Material info chip. We track the
   // hovered entity id in state (the chip re-renders on change) and the
   // pointer's screen position in a ref + state so the chip follows the
-  // cursor without re-rendering 60×/sec when nothing is hovered.
+  // cursor without re-rendering 60Ã—/sec when nothing is hovered.
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -879,16 +882,16 @@ export function Viewport() {
   const [viewportEpoch, setViewportEpoch] = useState(0);
   // Tracks whether we've already spent the boundary's silent auto-retry budget
   // for the current page session. Without this latch a deterministic crash
-  // inside the Canvas tree would loop forever: boundary catches → onAutoRetry
-  // → key bump → fresh boundary (autoRetryRequested resets) → catches again →
+  // inside the Canvas tree would loop forever: boundary catches â†’ onAutoRetry
+  // â†’ key bump â†’ fresh boundary (autoRetryRequested resets) â†’ catches again â†’
   // repeat. We grant exactly one silent retry per page load; the user's
   // explicit "Reload viewport" click re-grants it (treated as a fresh attempt
-  // because the user has had a chance to fix something — typically by editing
+  // because the user has had a chance to fix something â€” typically by editing
   // a script or removing a problematic entity).
   const [autoRetryUsed, setAutoRetryUsed] = useState(false);
   const [webgl, setWebgl] = useState(() => probeWebGL());
   // Tracks whether the canvas currently holds pointer-lock during play.
-  // Drives the dive-style "Click to capture · ESC to release" overlay below.
+  // Drives the dive-style "Click to capture Â· ESC to release" overlay below.
   // Reset to false on play stop via the effect further down.
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   useEffect(() => {
@@ -905,14 +908,14 @@ export function Viewport() {
   }, [prefabs]);
 
   const hint = !isPlaying
-    ? "Edit — LMB orbit · MMB/RMB pan · wheel zoom · F focus · right-click menu"
+    ? "Edit â€” LMB orbit Â· MMB/RMB pan Â· wheel zoom Â· F focus Â· right-click menu"
     : cameraMode === "rts"
-      ? "▶ RTS — WASD/edge pan · MMB drag pan · wheel zoom"
+      ? "â–¶ RTS â€” WASD/edge pan Â· MMB drag pan Â· wheel zoom"
       : cameraMode === "thirdPerson"
-        ? "▶ Third-person — WASD move · wheel zoom · near ladder: W/S climb · Space detach"
+        ? "â–¶ Third-person â€” WASD move Â· wheel zoom Â· near ladder: W/S climb Â· Space detach"
         : cameraMode === "firstPerson"
-          ? "▶ First-person — click lock · WASD · near ladder: W/S climb · Space detach · Esc release"
-          : "▶ PLAY MODE — physics & scripts running";
+          ? "â–¶ First-person â€” click lock Â· WASD Â· near ladder: W/S climb Â· Space detach Â· Esc release"
+          : "â–¶ PLAY MODE â€” physics & scripts running";
 
   const spawnFromHotbar = (slotIndex: number) => {
     const id = hotbar[slotIndex];
@@ -987,7 +990,7 @@ export function Viewport() {
           className="relative w-full h-full bg-background grid-pattern overflow-hidden"
           // Capture phase: runs BEFORE r3f's bubble-phase raycast on the
           // <canvas>. Resets the hover snapshot so a right-click on empty
-          // space (no intersection → no per-entity handler fires) opens
+          // space (no intersection â†’ no per-entity handler fires) opens
           // the empty-space menu instead of acting on the previous hit.
           onContextMenuCapture={() => {
             lastContextEntityIdRef.current = null;
@@ -1039,14 +1042,14 @@ export function Viewport() {
               style={isPlaying ? { cursor: "none" } : undefined}
             >
               {isPlaying && <PointerLockBridge onChange={setIsPointerLocked} />}
-              <DevtoolsBridge label="Forge · Scene" />
+              <DevtoolsBridge label="Forge Â· Scene" />
               <ViewportBridge />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
               {/*
-                Fog far plane was 80 units — at the new 2.5–3× map
+                Fog far plane was 80 units â€” at the new 2.5â€“3Ã— map
                 scale (arenas span ~120 units) that wall of fog
                 started right behind the player and hid the entire
-                map. Pushed near→far to 80→320 so fog only kisses the
+                map. Pushed nearâ†’far to 80â†’320 so fog only kisses the
                 horizon instead of swallowing the playable area.
               */}
               <fog
@@ -1135,7 +1138,7 @@ export function Viewport() {
             <span className={isPlaying ? "text-accent" : ""}>{hint}</span>
           </div>
 
-          {/* Floating Material info chip — appears in edit mode while
+          {/* Floating Material info chip â€” appears in edit mode while
               hovering an entity. Shows the resolved Material kind, the
               three occlusion flags (sight / projectiles / audio), and
               the inheritance source when the kind came from an ancestor.
@@ -1163,7 +1166,7 @@ export function Viewport() {
                     ? "blocks bullets"
                     : "lets bullets through",
                   hoverInfo.blocksAudio ? "blocks audio" : "lets audio through",
-                ].join(" · ")}
+                ].join(" Â· ")}
               </div>
               <div className="text-[10px] text-muted-foreground/80 mt-0.5">
                 {hoverInfo.isOwn
@@ -1179,7 +1182,7 @@ export function Viewport() {
 
           {isPlaying && <PlayHUD bus={getPlaySession().bus} />}
 
-          {/* Click-to-capture overlay — appears whenever play is active and the
+          {/* Click-to-capture overlay â€” appears whenever play is active and the
               pointer isn't currently locked. Dive-style: a thin centered card
               with the keybind hint. The Canvas underneath catches the click
               via PointerLockBridge, so this overlay is purely decorative
@@ -1194,7 +1197,7 @@ export function Viewport() {
                   Click to capture mouse
                 </div>
                 <div className="mt-1 text-[11px] text-white/60">
-                  ESC to release · WASD to move · LMB to fire · RMB to aim
+                  ESC to release Â· WASD to move Â· LMB to fire Â· RMB to aim
                 </div>
               </div>
             </div>
@@ -1238,7 +1241,7 @@ export function Viewport() {
                       Couldn't load templates from the server.
                     </div>
                     <div className="text-muted-foreground mb-2">
-                      The template list will refresh automatically — or you can
+                      The template list will refresh automatically â€” or you can
                       retry now.
                     </div>
                     <button
@@ -1252,7 +1255,7 @@ export function Viewport() {
                   </div>
                 ) : templateManifest.length === 0 ? (
                   <div className="text-xs text-muted-foreground py-2">
-                    Loading templates…
+                    Loading templatesâ€¦
                   </div>
                 ) : (
                   <ul className="space-y-1.5">
@@ -1314,7 +1317,7 @@ export function Viewport() {
               onClick={() => onEntityRename(contextEntity.id, contextEntity.name)}
               data-testid="context-menu-entity-rename"
             >
-              Rename…
+              Renameâ€¦
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => cmdDuplicateEntity(contextEntity.id)}
@@ -1381,7 +1384,7 @@ export function Viewport() {
           disabled={!projectId}
           onClick={() => window.dispatchEvent(new CustomEvent("gameforge:openMapGen"))}
         >
-          <Wand2 className="size-3.5 mr-2" /> Generate map…
+          <Wand2 className="size-3.5 mr-2" /> Generate mapâ€¦
         </ContextMenuItem>
         <ContextMenuSeparator />
         <BestPracticesSubMenu context="viewport" label="Scene best practices" />

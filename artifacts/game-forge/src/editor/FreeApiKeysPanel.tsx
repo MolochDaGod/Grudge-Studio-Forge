@@ -77,8 +77,11 @@ export function FreeApiKeysPanel({ compact }: { compact?: boolean }) {
         </Button>
       </div>
       <p className="text-muted-foreground leading-snug">
-        Keys never go to our Anthropic account. The free-ai proxy forwards them
-        only to the provider you pick. Puter works without any key.
+        Production has no shared free keys (BYOK only). Paste a Groq / OpenRouter
+        / Gemini free key here — it stays in this browser and is sent only as{" "}
+        <code className="text-[10px]">X-Api-Key</code> to{" "}
+        <code className="text-[10px]">/api/free-ai/chat</code>. Puter works with
+        no key.
       </p>
       <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
         {ORDER.map((id) => {

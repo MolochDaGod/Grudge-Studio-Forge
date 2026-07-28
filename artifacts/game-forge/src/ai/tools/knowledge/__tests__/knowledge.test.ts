@@ -18,10 +18,31 @@ describe("knowledge tools module", () => {
       "search_github",
       "list_docs",
       "fetch_doc_url",
+      "list_forge_best_practices",
+      "list_game_deployments",
       "knowledge_status",
     ]) {
       expect(names.has(n)).toBe(true);
     }
+  });
+
+  it("list_forge_best_practices returns tips offline", async () => {
+    const r = await handlers.list_forge_best_practices!({ context: "viewport" });
+    expect(r.ok).toBe(true);
+    expect((r.data as { count: number }).count).toBeGreaterThan(0);
+  });
+
+  it("list_game_deployments refuses purged channel", async () => {
+    const r = await handlers.list_game_deployments!({ channel: "bundle_in_spa" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("list_game_deployments recommends save channels", async () => {
+    const r = await handlers.list_game_deployments!({ goal: "save" });
+    expect(r.ok).toBe(true);
+    const rec = (r.data as { recommendedChannels: string[] }).recommendedChannels;
+    expect(rec).toContain("forge_api_save");
+    expect(rec).toContain("r2_user_assets");
   });
 
   it("is entirely non-destructive", () => {

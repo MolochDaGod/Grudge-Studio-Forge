@@ -43,6 +43,165 @@ async function getJson(path: string): Promise<ToolResult> {
   }
 }
 
+/** Local Forge best-practices (no network) — three.js editor parity + deploy. */
+const LIST_BEST_PRACTICES: ToolDef = {
+  name: "list_forge_best_practices",
+  description:
+    "List curated Forge editor best practices (active only) + purged anti-patterns. " +
+    "Optional context: viewport | scene | import | export | deploy | ai | devtools | physics | model | texture | hdri | weapon | item | enemy | quest | project-asset. " +
+    "Optional uiSurface: hierarchy | publish_dialog | drop_zone | ai_worker | … for correct assignment. " +
+    "Use before large scene edits, import pipelines, or deploy advice.",
+  input_schema: {
+    type: "object",
+    properties: {
+      context: {
+        type: "string",
+        description: "Optional BestPracticeContext filter",
+      },
+      uiSurface: {
+        type: "string",
+        description: "Optional UI surface key for CONTEXT_ASSIGNMENT",
+      },
+      includePurged: {
+        type: "boolean",
+        description: "If true, include PURGED_PRACTICES anti-patterns list",
+      },
+    },
+  },
+};
+
+async function listBestPracticesHandler(
+  input: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    const {
+      getBestPractices,
+      allBestPracticesFlat,
+      listBestPracticeContexts,
+      practicesForUiSurface,
+      PURGED_PRACTICES,
+    } = await import("@/lib/bestPractices");
+    const ctx = typeof input.context === "string" ? input.context : "";
+    const uiSurface = typeof input.uiSurface === "string" ? input.uiSurface : "";
+    const includePurged = input.includePurged === true;
+
+    if (uiSurface) {
+      const tips = practicesForUiSurface(uiSurface);
+      return {
+        ok: true,
+        data: {
+          uiSurface,
+          count: tips.length,
+          tips,
+          parityDoc: "docs/THREEJS_EDITOR_PARITY.md",
+          deployDoc: "docs/GAME_DEPLOYMENT_DEFINITIONS.md",
+          purged: includePurged ? PURGED_PRACTICES : undefined,
+        },
+      };
+    }
+    if (ctx) {
+      const tips = getBestPractices(ctx as Parameters<typeof getBestPractices>[0]);
+      return {
+        ok: true,
+        data: {
+          context: ctx,
+          count: tips.length,
+          tips,
+          parityDoc: "docs/THREEJS_EDITOR_PARITY.md",
+          deployDoc: "docs/GAME_DEPLOYMENT_DEFINITIONS.md",
+          purged: includePurged ? PURGED_PRACTICES : undefined,
+        },
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        contexts: listBestPracticeContexts(),
+        count: allBestPracticesFlat().length,
+        tips: allBestPracticesFlat(),
+        parityDoc: "docs/THREEJS_EDITOR_PARITY.md",
+        deployDoc: "docs/GAME_DEPLOYMENT_DEFINITIONS.md",
+        threejsEditor: "https://github.com/mrdoob/three.js/tree/master/editor",
+        threejsDocs: "https://threejs.org/docs/",
+        threejsManual: "https://threejs.org/manual/",
+        purged: includePurged ? PURGED_PRACTICES : undefined,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Typed fleet/Forge deployment definitions (channels, APIs, L-patterns). */
+const LIST_GAME_DEPLOYMENTS: ToolDef = {
+  name: "list_game_deployments",
+  description:
+    "Return SSOT game deployment definitions: SurfaceClass, PublishChannel, API systems, L0–L9 patterns. " +
+    "Use when choosing how to save/playtest/ship a scene or game. Refuses purged channels (bundle_in_spa, dead api tunnel). " +
+    "Optional goal: save | playtest | fleet_game | share_link | backup for channel recommendations.",
+  input_schema: {
+    type: "object",
+    properties: {
+      goal: {
+        type: "string",
+        description: "save | playtest | fleet_game | share_link | backup",
+      },
+      channel: {
+        type: "string",
+        description: "Optional PublishChannel to validate (assert allowed)",
+      },
+    },
+  },
+};
+
+async function listGameDeploymentsHandler(
+  input: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    const {
+      gameDeploymentSnapshot,
+      recommendChannelsForGoal,
+      assertPublishChannelAllowed,
+      activePublishChannels,
+      activeApiSystems,
+    } = await import("@/lib/gameDeployments");
+
+    const goal = typeof input.goal === "string" ? input.goal : "";
+    const channel = typeof input.channel === "string" ? input.channel : "";
+
+    if (channel) {
+      const check = assertPublishChannelAllowed(channel);
+      return {
+        ok: check.ok,
+        data: check,
+        error: check.error,
+      };
+    }
+
+    const snap = gameDeploymentSnapshot();
+    const recommended =
+      goal === "save" ||
+      goal === "playtest" ||
+      goal === "fleet_game" ||
+      goal === "share_link" ||
+      goal === "backup"
+        ? recommendChannelsForGoal(goal)
+        : undefined;
+
+    return {
+      ok: true,
+      data: {
+        ...snap,
+        recommendedChannels: recommended,
+        activeChannelIds: activePublishChannels().map((c) => c.id),
+        activeApiIds: activeApiSystems().map((a) => a.id),
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function postJson(path: string, body: unknown): Promise<ToolResult> {
   try {
     const res = await fetch(apiUrl(path), {
@@ -330,6 +489,8 @@ export const defs: ToolDef[] = [
   SEARCH_GITHUB,
   LIST_DOCS,
   FETCH_DOC,
+  LIST_BEST_PRACTICES,
+  LIST_GAME_DEPLOYMENTS,
   KNOWLEDGE_STATUS,
 ];
 
@@ -341,6 +502,8 @@ export const handlers: Record<string, ToolHandler> = {
   search_github: searchGithubHandler,
   list_docs: listDocsHandler,
   fetch_doc_url: fetchDocHandler,
+  list_forge_best_practices: listBestPracticesHandler,
+  list_game_deployments: listGameDeploymentsHandler,
   knowledge_status: knowledgeStatusHandler,
 };
 

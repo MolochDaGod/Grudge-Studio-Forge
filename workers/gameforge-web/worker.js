@@ -191,15 +191,32 @@ export default {
       );
     }
 
-    // ── API health alias (forge CF API worker + Railway both used in fleet) ──
-    // Prefer /api/healthz (GameForge api-server / Hono worker), fall back to /api/health.
+    // ── API health alias ────────────────────────────────────────────────
+    // Prefer Forge JSON API worker (/api/healthz), then Railway API_ORIGIN.
+    // Live grudge-gameforge-api historically only exposed /api/healthz (not /health).
     if (path === "/api/health" || path === "/api/health/") {
-      if (!env.API_ORIGIN) return json({ error: "API_ORIGIN unset" }, 500);
-      let res = await proxyTo(request, env.API_ORIGIN, { rewritePath: "/api/healthz" });
-      if (res.status === 404) {
-        res = await proxyTo(request, env.API_ORIGIN, { rewritePath: "/api/health" });
+      const forgeApi = (env.FORGE_API_ORIGIN || "").replace(/\/+$/, "");
+      const rail = (env.API_ORIGIN || "").replace(/\/+$/, "");
+      const tryOrigins = [forgeApi, rail].filter(Boolean);
+      let last = null;
+      for (const origin of tryOrigins) {
+        for (const rewrite of ["/api/healthz", "/api/health"]) {
+          try {
+            const res = await proxyTo(request, origin, { rewritePath: rewrite });
+            if (res.ok) {
+              return applySecurityHeaders(res, { "Cache-Control": "no-store" });
+            }
+            last = res;
+          } catch {
+            /* try next */
+          }
+        }
       }
-      return applySecurityHeaders(res, { "Cache-Control": "no-store" });
+      if (last) return applySecurityHeaders(last, { "Cache-Control": "no-store" });
+      return json(
+        { status: "ok", service: "grudge-gameforge-web", note: "edge alias (upstream unreachable)" },
+        200,
+      );
     }
 
     // ── Free AI is a separate worker route in CF; if traffic hits this

@@ -1,3 +1,7 @@
+/**
+ * Contextual best practices for Forge (three.js editor + docs aligned).
+ * SSOT review: docs/THREEJS_EDITOR_PARITY.md
+ */
 export type BestPracticeContext =
   | "viewport"
   | "weapon"
@@ -7,11 +11,28 @@ export type BestPracticeContext =
   | "model"
   | "texture"
   | "hdri"
-  | "project-asset";
+  | "project-asset"
+  | "scene"
+  | "export"
+  | "import"
+  | "deploy"
+  | "ai"
+  | "devtools"
+  | "physics";
 
 export type BestPractice = {
   title: string;
   detail: string;
+  /** Optional deep link (three.js docs / manual / Forge docs). */
+  href?: string;
+  /**
+   * active = current SSOT
+   * deprecated = still shown with caution
+   * purged = never return from getBestPractices (kept only in PURGED_PRACTICES log)
+   */
+  status?: "active" | "deprecated" | "purged";
+  /** If this tip replaces an older one, name it for agents. */
+  replaces?: string;
 };
 
 const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
@@ -24,7 +45,14 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
     {
       title: "Bake static lights — point lights are expensive",
       detail:
-        "Use one directional sun + a few point lights for hero objects. Disable shadow casting on small props.",
+        "Use one directional sun + a few point lights for hero objects. Disable shadow casting on small props. Matches three.js lighting cost guidance.",
+      href: "https://threejs.org/manual/en/lights.html",
+    },
+    {
+      title: "sRGB color space on the renderer",
+      detail:
+        "WebGLRenderer.outputColorSpace must be SRGBColorSpace; color textures use SRGBColorSpace. Linear workflows without this look washed or too dark.",
+      href: "https://threejs.org/docs/#manual/en/introduction/Color-management",
     },
     {
       title: "Use the editor camera in play mode for debugging",
@@ -34,7 +62,178 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
     {
       title: "P toggles play, Esc stops, Space is yours (jump)",
       detail:
-        "The editor never binds Space, so user scripts can use it as the jump key. Use F to focus selection, W/E/R to switch translate/rotate/scale gizmos.",
+        "The editor never binds Space, so user scripts can use it as the jump key. Use F to focus selection, W/E/R to switch translate/rotate/scale gizmos (same as three.js editor).",
+    },
+    {
+      title: "Resize updates aspect + setSize",
+      detail:
+        "On window/container resize, update camera.aspect, updateProjectionMatrix(), and renderer.setSize — classic three.js responsive pattern.",
+      href: "https://threejs.org/manual/en/responsive.html",
+    },
+  ],
+  scene: [
+    {
+      title: "Edits go through the command stack",
+      detail:
+        "Like three.js editor History: every user/AI mutation should CommandStack.push so undo/redo works. Avoid silent setState for scene mutations.",
+      href: "https://github.com/mrdoob/three.js/tree/master/editor",
+    },
+    {
+      title: ".gfscene.json is the game SSOT",
+      detail:
+        "Forge scenes are entity graphs (physics, scripts, layers), not raw Object3D trees. Use three.js Editor JSON only for interop exports.",
+    },
+    {
+      title: "SI units — 1 unit = 1 metre",
+      detail:
+        "Humanoid height ~1.8 m. Scale props relative to the human yardstick; never fit weapons to 1.8 m height.",
+    },
+    {
+      title: "One hierarchy, clear names",
+      detail:
+        "PascalCase entity names; keep empties as locators; expose GLB children as proxies instead of duplicating meshes.",
+    },
+  ],
+  import: [
+    {
+      title: "Canonical mesh is meshopt GLB",
+      detail:
+        "Drop FBX/OBJ/STL/glTF/ZIP — AssetDropZone converts via three-stdlib + GLTFExporter + gltf-transform meshopt. Production kits live on R2.",
+      href: "https://threejs.org/docs/#examples/en/exporters/GLTFExporter",
+    },
+    {
+      title: "ZIP OBJ needs MTL + textures together",
+      detail:
+        "Pack .obj + .mtl + maps in one ZIP so the converter can resolve relative texture paths via LoadingManager blob URLs.",
+    },
+    {
+      title: "Validate bad GLBs before debugging Forge",
+      detail:
+        "Use the Khronos glTF Validator when import fails mysteriously — often the file, not the editor.",
+      href: "https://github.khronos.org/glTF-Validator/",
+    },
+    {
+      title: "Import .gfscene.json for full scenes",
+      detail:
+        "Scene JSON replaces the live scene graph. Prefer GitHub sync or File open for multi-file projects.",
+    },
+  ],
+  export: [
+    {
+      title: "Embed images in GLB for CDN",
+      detail:
+        "GLTFExporter binary + embedImages avoids broken external texture URLs after publish.",
+    },
+    {
+      title: "Pass animations explicitly when exporting clones",
+      detail:
+        "SkeletonUtils.clone + export: pass animations:[] options — exporter does not auto-discover detached clips.",
+    },
+    {
+      title: "Strip helpers before bake",
+      detail:
+        "Grid, gizmos, SkeletonHelper, and debug colliders must not ship in production GLBs.",
+    },
+    {
+      title: "Write .meta.json sidecars",
+      detail:
+        "Library needs triangle/bone/clip counts without re-parsing the binary every time.",
+    },
+  ],
+  deploy: [
+    {
+      title: "Assign a PublishChannel — never vague “publish”",
+      detail:
+        "Use forge_api_save + r2_user_assets for durable editor work; puter_host/player_embed for L7 playtest; fleet_satellite for real games. See gameDeployments.ts / docs/GAME_DEPLOYMENT_DEFINITIONS.md.",
+      replaces: "bundle_in_spa / vague publish",
+    },
+    {
+      title: "Forge API ≠ Railway player SSOT",
+      detail:
+        "Forge /api/projects|scenes saves editor control-plane data. Characters/bag/island write Railway grudge-api (L-PLAYER). Do not mix.",
+    },
+    {
+      title: "Build SPA on ≥16 GB RAM",
+      detail:
+        "Vercel 8 GB containers OOM on R3F+Monaco+Rapier. Use scripts/build-spa.sh then origin + CF Worker (DEPLOYMENT.md).",
+    },
+    {
+      title: "No Replit object paths (purged host)",
+      detail:
+        "replit.app /api/storage/objects/ is dead. Re-upload via Forge R2 (r2_user_assets).",
+      replaces: "replit storage",
+    },
+    {
+      title: "Scenes must reference durable URLs",
+      detail:
+        "builtin: and assets.grudge-studio.com (or /api/storage object paths) only — never blob: or localhost in saved scenes.",
+    },
+    {
+      title: "Smoke after deploy",
+      detail:
+        "Run scripts/smoke-forge-prod.mjs / probe-live-forge.mjs against forge.grudge-studio.com. Games: verify /api/health + CDN HEAD.",
+    },
+    {
+      title: "Live multiplayer uses L2–L4 — not Vercel alone for WS",
+      detail:
+        "WebSockets need co-located process (L2), CF edge proxy (L3), or dedicated Railway room (L4). Vercel rewrites cannot upgrade WS.",
+    },
+  ],
+  ai: [
+    {
+      title: "AI tools are undoable turns",
+      detail:
+        "Each mutating tool snapshots scene before/after and pushes makeAITurnCommand — same undo stack as human edits.",
+    },
+    {
+      title: "Diagnose before mass rewrite",
+      detail:
+        "Run diagnose / autoFix tools before batch_generate or multi-entity deletes.",
+    },
+    {
+      title: "Confirm destructive tools",
+      detail:
+        "Clear scene, mass delete, and rewrites need explicit user confirmation (DESTRUCTIVE_TOOLS).",
+    },
+    {
+      title: "Prefer design tools for lighting/camera",
+      detail:
+        "Use ai/tools/design (lighting, camera, layouts, palette) instead of inventing raw entity spam.",
+    },
+  ],
+  devtools: [
+    {
+      title: "Install three.js Developer Tools",
+      detail:
+        "Chrome extension + Forge __THREE_DEVTOOLS__ bridge (lib/threeDevtools.ts). Observe each viewport scene/renderer on mount.",
+      href: "https://github.com/threejs/devtools",
+    },
+    {
+      title: "Helpers like three.js View menu",
+      detail:
+        "Toggle grid, light helpers, skeleton helpers, and camera helpers when debugging transforms and skinned meshes.",
+    },
+    {
+      title: "History labels must be readable",
+      detail:
+        "Command.label shows in undo UI — AI and gizmos should set clear names (Move Box_01, Assign material cloth).",
+    },
+  ],
+  physics: [
+    {
+      title: "Rapier layers — one matrix",
+      detail:
+        "Use the Forge layer matrix (Default/Terrain/Player/NPC/Item/Projectile/Trigger/Water). Don't invent ad-hoc collision groups.",
+    },
+    {
+      title: "Static world = fixed bodies",
+      detail:
+        "Terrain and buildings should be fixed; only interactive props dynamic. Prefer convex-decomp for non-convex dynamics.",
+    },
+    {
+      title: "CCD for fast projectiles",
+      detail:
+        "Enable continuous collision detection on thin/fast colliders to prevent tunneling.",
     },
   ],
   weapon: [
@@ -153,18 +352,104 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
   ],
   "project-asset": [
     {
-      title: "Delete unused assets before publishing",
+      title: "Store meshes on R2 — not inside the SPA bundle",
       detail:
-        "Project assets are bundled into the published build. Remove unused .glb / textures to keep download size small.",
+        "Upload via Asset Drop / R2 (user-assets/<projectId>/…). Scenes reference CDN or /api/storage paths. PURGED: shipping production GLBs inside Vite dist.",
+      replaces: "Project assets are bundled into the published build",
     },
     {
-      title: "Re-host glTFs from your own URL for reliability",
+      title: "Delete unused R2 assets to cut cost",
       detail:
-        "Third-party CDNs go down. Upload critical models via the Upload File button so your published game doesn't break if a CDN moves.",
+        "Remove unused .glb / textures from the project library so player downloads and R2 storage stay small — not because they are Vite-bundled.",
+    },
+    {
+      title: "Re-host third-party glTFs on assets.grudge-studio.com or project R2",
+      detail:
+        "External CDNs go down. Prefer fleet CDN or Upload File so published scenes keep resolving.",
+    },
+    {
+      title: "Always write .meta.json sidecars for 3D uploads",
+      detail:
+        "Library and AI tools need triangle/bone/clip counts without re-parsing every GLB.",
     },
   ],
 };
 
+/** Explicitly purged tips (never returned) — for audit / AI “what not to do”. */
+export const PURGED_PRACTICES: Array<{
+  was: string;
+  reason: string;
+  replaceWith: string;
+}> = [
+  {
+    was: "Project assets are bundled into the published build",
+    reason: "Fleet L0/L-BIN: binaries live on R2 CDN, not Vite dist",
+    replaceWith: "Store meshes on R2 — not inside the SPA bundle",
+  },
+  {
+    was: "Use api.grudge-studio.com as character SSOT",
+    reason: "Old CF tunnel purged; Railway same-origin /api/* is L-PLAYER",
+    replaceWith: "Forge API ≠ Railway player SSOT",
+  },
+  {
+    was: "Replit object storage for models",
+    reason: "Origin dead; scene.bin loads fail",
+    replaceWith: "No Replit object paths (purged host)",
+  },
+  {
+    was: "batch_generate = fleet deploy",
+    reason: "batch_generate is content fill only",
+    replaceWith: "Assign a PublishChannel — never vague publish",
+  },
+];
+
 export function getBestPractices(ctx: BestPracticeContext): BestPractice[] {
-  return BEST_PRACTICES[ctx] ?? [];
+  return (BEST_PRACTICES[ctx] ?? []).filter((t) => t.status !== "purged");
+}
+
+/** All contexts that have tips (for Help menu / AI knowledge). */
+export function listBestPracticeContexts(): BestPracticeContext[] {
+  return Object.keys(BEST_PRACTICES) as BestPracticeContext[];
+}
+
+/** Flat list for AI system prompts / knowledge tools (active only). */
+export function allBestPracticesFlat(): Array<BestPractice & { context: BestPracticeContext }> {
+  const out: Array<BestPractice & { context: BestPracticeContext }> = [];
+  for (const ctx of listBestPracticeContexts()) {
+    for (const tip of getBestPractices(ctx)) {
+      out.push({ ...tip, context: ctx });
+    }
+  }
+  return out;
+}
+
+/** Map UI surfaces → practice contexts (correct assignment). */
+export const CONTEXT_ASSIGNMENT: Record<string, BestPracticeContext[]> = {
+  hierarchy: ["scene"],
+  inspector: ["scene", "physics", "model"],
+  viewport: ["viewport", "devtools", "physics"],
+  asset_browser_model: ["model", "import", "project-asset"],
+  asset_browser_texture: ["texture", "project-asset"],
+  asset_browser_weapon: ["weapon"],
+  asset_browser_item: ["item"],
+  asset_browser_enemy: ["enemy"],
+  asset_browser_quest: ["quest"],
+  drop_zone: ["import", "project-asset"],
+  publish_dialog: ["deploy", "export", "project-asset"],
+  ai_worker: ["ai", "scene", "deploy"],
+  menu_file: ["export", "import", "deploy"],
+};
+
+export function practicesForUiSurface(surface: string): BestPractice[] {
+  const ctxs = CONTEXT_ASSIGNMENT[surface] ?? [];
+  const seen = new Set<string>();
+  const out: BestPractice[] = [];
+  for (const c of ctxs) {
+    for (const tip of getBestPractices(c)) {
+      if (seen.has(tip.title)) continue;
+      seen.add(tip.title);
+      out.push(tip);
+    }
+  }
+  return out;
 }

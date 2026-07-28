@@ -1,0 +1,18 @@
+﻿name = "grudge-gameforge-api"
+main = "index.js"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "grudge-assets"
+
+[vars]
+R2_BUCKET_ASSETS = "grudge-assets"
+OBJECT_STORAGE_PUBLIC_URL = "https://assets.grudge-studio.com"
+TEMPLATES_VERSION = "20260602.1"
+
+[[routes]]
+pattern = "forge.grudge-studio.com/api/*"
+zone_name = "grudge-studio.com"

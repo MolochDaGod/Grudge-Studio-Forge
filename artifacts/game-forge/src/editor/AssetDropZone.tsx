@@ -4,7 +4,13 @@ import { useCreateAsset, getListAssetsQueryKey, getGetProjectSummaryQueryKey } f
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
 import { inspectGlb, type GlbInfo } from "@/lib/glbInspect";
-import { classifyDroppedFile, CONVERTIBLE_3D_KINDS, type DroppedFileKind } from "@/lib/fileKind";
+import {
+  classifyDroppedFile,
+  CONVERTIBLE_3D_KINDS,
+  PLANNED_3D_KINDS,
+  FILE_KIND_PIPELINE,
+  type DroppedFileKind,
+} from "@/lib/fileKind";
 import { GlbInspectorDialog, type InspectorPayload } from "./GlbInspectorDialog";
 import type { SceneData } from "@/scene/types";
 import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2, Boxes, FileArchive } from "lucide-react";
@@ -115,6 +121,18 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
       const kind = classifyDroppedFile(file);
       if (!kind) {
         pushLog("warn", `Unsupported file: ${file.name}`);
+        return;
+      }
+
+      if (PLANNED_3D_KINDS.has(kind)) {
+        const pipe = FILE_KIND_PIPELINE[kind];
+        pushLog(
+          "warn",
+          `${file.name}: ${pipe.label} not converted in-browser yet (${pipe.pipeline}). Convert to GLB offline/desktop, or use FBX/OBJ/STL/glTF.`,
+        );
+        window.alert(
+          `${pipe.label} support is planned.\n\n${pipe.pipeline}\n\nFor now export as GLB or FBX from your DCC tool.`,
+        );
         return;
       }
 

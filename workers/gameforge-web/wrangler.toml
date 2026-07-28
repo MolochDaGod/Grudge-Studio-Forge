@@ -3,12 +3,23 @@ main = "worker.js"
 compatibility_date = "2025-09-01"
 workers_dev = true
 
-# Production route: forge.grudge-studio.com/* (configure in dashboard or via routes below).
-# Keep routes commented until you confirm zone id / don't double-bind free-ai.
+# Production routes (dashboard also has forge.grudge-studio.com/* → this worker
+# and forge.grudge-studio.com/api/* → grudge-gameforge-api). More-specific paths
+# win: pin /api/health here so the alias works even if the API worker is stale.
 
-# [[routes]]
-# pattern = "forge.grudge-studio.com/*"
-# zone_name = "grudge-studio.com"
+# Catch-all SPA (api/* is more specific on grudge-gameforge-api).
+[[routes]]
+pattern = "forge.grudge-studio.com/*"
+zone_name = "grudge-studio.com"
+
+# Explicit health so this worker owns the alias even if /api/* is on the API worker.
+[[routes]]
+pattern = "forge.grudge-studio.com/api/health"
+zone_name = "grudge-studio.com"
+
+[[routes]]
+pattern = "forge.grudge-studio.com/api/health/"
+zone_name = "grudge-studio.com"
 
 [vars]
 # SPA origin — Vercel project or prebuilt static host

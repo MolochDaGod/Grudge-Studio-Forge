@@ -70,3 +70,7 @@ _tmp_*
 build*.log
 *-debug-*.log
 .env*
+
+# Accidental nested clone
+/Grudge-Studio-Forge/
+
