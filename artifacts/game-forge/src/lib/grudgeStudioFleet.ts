@@ -1,46 +1,37 @@
-﻿/**
- * Fleet bridge for @grudge-studio/* (optional).
+/**
+ * Fleet bridge stubs for Forge (no hard @grudge-studio/* dependency).
  *
- * Production SPA does **not** require monorepo file: installs.
- * Use npm optionalDependencies ^0.2.0 when packages are published.
- * Physics debug: always available via ./physicsDebugGate (no SDK).
+ * Optional packages may be installed via optionalDependencies (^0.2.0) when
+ * published. Production SPA / CI must typecheck without them.
  *
- * Host owns: R3F scene, Rapier world, camera.
+ * Physics debug: always available via ./physicsDebugGate.
  */
 
 export { forgePhysicsDebugEnabled } from "./physicsDebugGate";
 
 export const FORGE_DEFAULT_ANIM_PACK = "sword_shield";
 
-/** True when optional @grudge-studio/sdk is resolvable at runtime */
+/**
+ * Detect optional SDK at runtime only (never a static import — CI has no package).
+ */
 export async function grudgeStudioSdkAvailable(): Promise<boolean> {
   try {
-    await import("@grudge-studio/sdk");
+    // Dynamic string keeps tsc from resolving the optional package.
+    const id = ["@", "grudge-studio", "/", "sdk"].join("");
+    await import(/* @vite-ignore */ id);
     return true;
   } catch {
     return false;
   }
 }
 
-/**
- * Lazy pack summary — returns null if @grudge-studio/assets not installed.
- */
+/** Placeholder until optional @grudge-studio/assets is installed in this workspace. */
 export async function forgePackSummary(animPackId = FORGE_DEFAULT_ANIM_PACK): Promise<{
   id: string;
-  label?: string;
   note: string;
 } | null> {
-  try {
-    const assets = await import("@grudge-studio/assets");
-    const getAnimPack = (assets as { getAnimPack?: (id: string) => { id: string; label?: string; skeleton?: string; bakeStatus?: string; skills?: { skillId: string }[]; clips?: Record<string, unknown> } }).getAnimPack;
-    if (!getAnimPack) return { id: animPackId, note: "assets package missing getAnimPack" };
-    const pack = getAnimPack(animPackId);
-    return {
-      id: pack.id,
-      label: pack.label,
-      note: "ok",
-    };
-  } catch {
-    return null;
-  }
+  return {
+    id: animPackId,
+    note: "optional @grudge-studio/assets not required for SPA; use fleet monorepo for pack introspect",
+  };
 }
