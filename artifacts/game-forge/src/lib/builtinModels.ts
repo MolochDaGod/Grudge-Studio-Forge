@@ -122,6 +122,9 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "vfx-stylized-fire-tornado": ensureBaseUrl("builtin/vfx-stylized-fire-tornado.glb"),
   // Maps
   "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
+  /** Production open-world lobby (full multipack scene on CDN). */
+  "map-pirate-islands-scene":
+    "https://assets.grudge-studio.com/models/lobby/pirate-islands/scene.glb",
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
   // Chicken Gun maps — hosted on R2 CDN (too large to ship in git)
@@ -276,6 +279,14 @@ export function resolveBuiltinModel(url: string): string | null {
  *  catch-all would return `index.html` and drei would try to parse it as
  *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error. */
 export function resolveModelUrl(url: string): string {
+  if (!url || typeof url !== "string") {
+    throw new Error("resolveModelUrl: empty model url");
+  }
+  // Guard pathological junk before loaders (LoadingManager.resolveURL can
+  // stack-overflow when path + relative url loop via a broken modifier).
+  if (url.length > 4096) {
+    throw new Error(`resolveModelUrl: url too long (${url.length})`);
+  }
   const builtin = resolveBuiltinModel(url);
   if (builtin) return builtin;
   if (url.startsWith("builtin:")) {
@@ -286,5 +297,6 @@ export function resolveModelUrl(url: string): string {
   }
   if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
   const base = import.meta.env.BASE_URL || "/";
+  if (base !== "/" && url.startsWith(base)) return url;
   return `${base}${url.replace(/^\/+/, "")}`;
 }

@@ -108,12 +108,6 @@ import {
   handlers as uiToolHandlers,
   destructiveToolNames as uiDestructiveTools,
 } from "@/ai/tools/ui";
-import {
-  defs as batchGenerateToolDefs,
-  handlers as batchGenerateToolHandlers,
-  destructiveToolNames as batchGenerateDestructiveTools,
-} from "@/ai/tools/batchGenerate";
-
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
  *  running any of these so the AI can never wipe / overwrite without sign-off.
@@ -139,7 +133,6 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...knowledgeDestructiveTools,
   ...motionDestructiveTools,
   ...uiDestructiveTools,
-  ...batchGenerateDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1213,13 +1206,6 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: uiToolHandlers[def.name] as ToolExecutor,
   })),
-
-  // ── Optional batch_generate (multi texture/skybox/lore/primitives) ────
-  // Not the fleet deploy path — content fill only. See batchGenerate/.
-  ...batchGenerateToolDefs.map((def) => ({
-    def,
-    exec: batchGenerateToolHandlers[def.name] as ToolExecutor,
-  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1300,7 +1286,7 @@ export function buildSystemPrompt(): string {
     `- When the user asks "how does X work in three/r3f/rapier?" or for examples: research first (list_docs → fetch_doc_url and/or search_github), then build a minimal working version in the scene.`,
     `- Blazor C# scripts: the editor ships a Blazor WASM runtime + C#→JS transpile path for MonoBehaviour-style scripts (public/_framework, scene/csTranspile). Prefer JS script templates (list_script_templates) unless the user explicitly wants C#; when writing C#, stick to Vector3/Transform/Time/Debug APIs documented in csharp/GameForgeRuntime.`,
     `- Node graph / visual blocks: use the Nodes panel tools when available; compile graphs to scene entities. Treat node-graph + AI as the "block LLM" layer for non-coders.`,
-    `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch (score), rpg (interact/vendors), skirmish (mixed). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders. Trees/buildings/fences → Terrain+Walk fixed cuboid; water pools → Water+Swim; climb walls → Terrain+Climb.`,
+    `- Faction AI brains (attach_behavior / list_builtin_behaviors): player-deathmatch | player-rpg | enemy-deathmatch | enemy-rpg | ally | neutral | animal | wander-zone | vendor | boss | npc-dialog | spawnpoint | pickup-trigger | gamemode-deathmatch. Rulesets: deathmatch, rpg, skirmish, openWorld. Localized wander (threejs-games style): place wander-zone empties with wanderZone.kind (animal|camp|town|island) + radius; agents set wanderZone.zoneEntityId or own wanderZone.radius. Animals hard-leash; enemies/neutrals soft-leash when calm (chase may leave). Always set layer (Player/NPC/Terrain/Trigger/Water) + surface (Walk/Climb/Swim) on environment colliders.`,
     `- Texture & motion (do these end-to-end): generate_texture({ prompt, entityIds:[id], mapRepeat:[4,4] }) auto-applies albedo; or generate_texture then set_material_map({ entityId, url }). list_animations → apply_animation({ entityId, clip:'walk'|'run'|'idle'|'attack'|'death' }) plays immediately (fuzzy match + procedural biped). set_physics for Rapier bodyType/collider/ccd/capsule. set_wind + set_soft_body for cloth/flag/particles.`,
     `- Sky / weather / skybox (GPU shaders in viewport): list_atmosphere_presets → apply_atmosphere_preset({ preset:'thunderstorm'|'midnight-stars'|'aurora-night'|'golden-sunset'|… }) for full moods. set_celestial({ timeOfDay:0–1, stars, sun, moon, aurora }) for day/night. set_weather({ type:'rain'|'snow'|'dust'|'storm'|'fog'|'clear', intensity }). generate_skybox({ prompt, apply:true }) paints equirect skyTexture on the dome; set_sky_texture / clearSkyTexture to manage maps. Requires Cinematic render quality (not Performance).`,
     `- Professional UI layers (https://ui.grudge-studio.com): ALWAYS use list_ui_kits / browse_ui_kit when building HUDs, inventories, shops, skill trees, or deathmatch chrome. apply_ui_kit({ theme:'fantasy'|'cyberpunk'|'fps'|'rpg', layers:[...] }) stamps Environment.uiKit for PlayHUD. list_ui_layers for stack ids; list_ui_assets for /ui/rpg-mmo/ texture paths. Puter sign-in on the UI kit site saves designs — designUrl can be stored on uiKit.`,

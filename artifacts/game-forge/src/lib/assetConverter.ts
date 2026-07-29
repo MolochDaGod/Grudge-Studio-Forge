@@ -381,10 +381,31 @@ async function convertToGlb(
               createdUrls.push(url);
             }
           }
+          // Harden against LoadingManager.resolveURL recursion: never call
+          // resolveURL from inside the modifier, skip already-absolute URLs,
+          // and only rewrite bare texture basenames present in the ZIP.
           mtlLoader.manager.setURLModifier((url) => {
-            const key = url.split("/").pop()?.toLowerCase() ?? url;
-            return blobUrls.get(key) ?? url;
+            if (!url) return url;
+            // Absolute / data / already-rewritten — return as-is (no re-entry).
+            if (
+              url.startsWith("blob:") ||
+              url.startsWith("data:") ||
+              url.startsWith("http://") ||
+              url.startsWith("https://") ||
+              url.startsWith("//")
+            ) {
+              return url;
+            }
+            const bare = url
+              .split(/[?#]/)[0]
+              .split(/[/\\]/)
+              .pop()
+              ?.toLowerCase();
+            if (!bare) return url;
+            return blobUrls.get(bare) ?? url;
           });
+          // Empty resource path: materials are resolved only via blob map.
+          // Passing a non-empty path can double-prefix relative map_Kd names.
           const materials = mtlLoader.parse(mtlText, "");
           materials.preload();
           loader.setMaterials(materials);

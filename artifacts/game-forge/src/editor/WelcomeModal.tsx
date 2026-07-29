@@ -64,24 +64,29 @@ export function WelcomeModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-5 text-[#d4af37]" />
-            Welcome to Grudge GameForge
+            Free Three.js editor · Grudge Forge
           </DialogTitle>
           <DialogDescription>
-            Build interactive 3D scenes in your browser. Sign in with Puter
-            to enable cloud saves, free Puter AI models, and one-click
-            publishing — or continue without signing in to try it out.
+            Customized free three.js / R3F editor for Grudge Studio. Sign in
+            with Puter for cloud saves, free Puter AI, and one-click publish —
+            or continue as guest. Help → Best Services lists every free +
+            fleet integration (CDN, Poly Haven, Groq, Ollama…).
           </DialogDescription>
         </DialogHeader>
 
         <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-5 py-1">
           <li>
-            Cloud saves &amp; cross-device project sync via your Puter drive.
+            Scene editor DNA: hierarchy, inspector, gizmos, undo — three.js
+            editor parity with Rapier physics.
           </li>
           <li>
-            Free access to Puter-hosted Claude / GPT-4o / Gemini / Llama in
-            the AI Worker panel.
+            Free AI: Puter models, BYOK Groq / OpenRouter / Gemini, or local
+            Ollama — no paid Anthropic key required.
           </li>
-          <li>One-click publish to a shareable <code>*.puter.site</code> URL.</li>
+          <li>
+            Assets: Poly Haven CC0 + Grudge CDN / ObjectStore · publish to{" "}
+            <code>*.puter.site</code> or fleet play.
+          </li>
         </ul>
 
         {error && (

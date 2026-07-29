@@ -76,11 +76,24 @@ const AI_PROVIDERS = [
   { name: "Ollama (Local)", hint: "Offline · full privacy", color: "#6bdc8b" },
 ];
 
+/** Best free + fleet services — see lib/bestServices.ts SSOT */
+const BEST_SERVICES_LANDING = [
+  { name: "Grudge ID + Puter", hint: "SSO · free cloud FS / AI / publish", color: "#f6c945", url: "https://id.grudge-studio.com" },
+  { name: "Assets CDN + ObjectStore", hint: "R2 binaries · JSON catalogs", color: "#6aa9ff", url: "https://assets.grudge-studio.com" },
+  { name: "Poly Haven CC0", hint: "Models · textures · HDRIs in editor", color: "#21d4ff", url: "https://polyhaven.com" },
+  { name: "AI free tier stack", hint: "Puter · Groq · OpenRouter · Gemini · Ollama", color: "#a78bfa", url: "https://forge.grudge-studio.com/editor" },
+  { name: "Character Foundry", hint: "Create heroes · airship cinema", color: "#ff6b57", url: "https://character.grudge-studio.com" },
+  { name: "Grudge Pipeline", hint: "Ingest · bake · R2 · open packs in Forge", color: "#f0a030", url: "https://grudge-pipeline.vercel.app/" },
+  { name: "UI Editor + Open", hint: "HUD packs · fleet play launcher", color: "#6bdc8b", url: "https://ui.grudge-studio.com" },
+  { name: "three.js + R3F + Rapier", hint: "Official docs · physics · editor DNA", color: "#e879f9", url: "https://threejs.org/docs/" },
+  { name: "Warlords client", hint: "Live play handoff from Foundry", color: "#ff8a3d", url: "https://client.grudge-studio.com" },
+];
+
 const STATS = [
   { value: "100+", label: "Builtin 3D models (R2)" },
   { value: "20+", label: "AI models (free + local)" },
   { value: "0", label: "Install for web editor" },
-  { value: "7+", label: "Scene templates" },
+  { value: "Free", label: "Customized Three.js editor" },
 ];
 
 export function LandingPage() {
@@ -199,7 +212,7 @@ export function LandingPage() {
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/5 mb-6">
             <Zap className="w-3 h-3 text-amber-400" />
             <span className="text-[10px] text-amber-400/80 tracking-wider uppercase font-semibold">
-              v0.1.0 · Offline AI · Asset Pipeline
+              Free · Customized Three.js Editor · Best Services Wired
             </span>
           </div>
 
@@ -208,18 +221,19 @@ export function LandingPage() {
             className="text-5xl md:text-7xl font-black tracking-wide mb-4 leading-[1.1]"
           >
             <span className="bg-gradient-to-b from-white via-[#e8ecf4] to-[#8a93a8] bg-clip-text text-transparent">
-              Build Games
+              Free Three.js Editor
             </span>
             <br />
             <span className="bg-gradient-to-r from-amber-400 via-amber-200 to-amber-400 bg-clip-text text-transparent">
-              In Your Browser
+              Customized for Grudge
             </span>
           </h1>
 
           <p className="text-white/40 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            Three.js scene editor with AI-assisted game building, Rapier 3D physics,
-            and a full asset pipeline — runs online or{" "}
-            <span className="text-white/60 font-medium">completely offline</span> with Ollama.
+            Browser-native scene editor built on three.js DNA — R3F, Rapier, AI Worker,
+            Poly Haven, and the full Grudge fleet (CDN, ObjectStore, Foundry, Open).
+            Use free tiers or go{" "}
+            <span className="text-white/60 font-medium">fully offline</span> with Ollama.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -300,6 +314,45 @@ export function LandingPage() {
                 <h3 className="text-xs font-semibold text-white/80 mb-1">{f.title}</h3>
                 <p className="text-[11px] text-white/30 leading-relaxed">{f.desc}</p>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Best services ── */}
+      <section className="relative py-16 px-6 border-y border-white/[0.04]" style={{ background: "rgba(255,255,255,0.01)" }}>
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
+            <h2
+              style={{ fontFamily: FONTS.display }}
+              className="text-2xl font-bold mb-2 tracking-wide"
+            >
+              All Best Services
+            </h2>
+            <p className="text-white/30 text-sm max-w-xl mx-auto">
+              Free AI, CC0 assets, Grudge fleet identity/CDN, and open three.js stack —
+              open Help → Best Services inside the editor for the full wired catalog.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {BEST_SERVICES_LANDING.map((s) => (
+              <a
+                key={s.name}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group p-4 rounded-xl border border-white/[0.04] hover:border-white/[0.12] transition-all hover:-translate-y-0.5 block"
+                style={{ background: "rgba(14,18,28,0.55)" }}
+              >
+                <div
+                  className="w-2 h-2 rounded-full mb-2"
+                  style={{ background: s.color, boxShadow: `0 0 8px ${s.color}50` }}
+                />
+                <div className="text-xs font-semibold text-white/75 group-hover:text-white mb-0.5">
+                  {s.name}
+                </div>
+                <div className="text-[10px] text-white/30 leading-snug">{s.hint}</div>
+              </a>
             ))}
           </div>
         </div>
