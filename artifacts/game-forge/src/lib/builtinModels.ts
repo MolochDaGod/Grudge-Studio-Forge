@@ -122,6 +122,9 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "vfx-stylized-fire-tornado": ensureBaseUrl("builtin/vfx-stylized-fire-tornado.glb"),
   // Maps
   "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
+  /** Production open-world lobby (full multipack scene on CDN). */
+  "map-pirate-islands-scene":
+    "https://assets.grudge-studio.com/models/lobby/pirate-islands/scene.glb",
   "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
   "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
   // Chicken Gun maps — hosted on R2 CDN (too large to ship in git)

@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { CameraMode, EntityType } from "@/scene/types";
 import { useCreateAsset, getListAssetsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { BestServicesPanel } from "@/editor/BestServicesPanel";
 
 /** Fire a CustomEvent on `window`. Existing flows (Toolbar, AssetBrowser,
  *  Hierarchy, Electron shell) already listen for `gameforge:*` events —
@@ -39,7 +40,7 @@ function fire<T = unknown>(name: string, detail?: T) {
  *  isn't mounted until the bottom Tabs surface its `assets` panel, so we
  *  fire focusAssetTab on the next microtask to give it time to mount. */
 function openAssets(tab:
-  | "weapons" | "items" | "enemies" | "quests" | "races"
+  | "fast" | "weapons" | "items" | "enemies" | "quests" | "races"
   | "ph-models" | "ph-textures" | "ph-hdris" | "project",
 ) {
   useEditor.getState().setBottomTab("assets");
@@ -65,6 +66,7 @@ export function MenuBar({
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [bestServicesOpen, setBestServicesOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importBusy, setImportBusy] = useState(false);
@@ -73,11 +75,16 @@ export function MenuBar({
 
   // Native menu (Electron) → "Help → Keyboard shortcuts" forwards as a
   // `gameforge:openShortcuts` event so the desktop and web menus end at
-  // the same dialog.
+  // the same dialog. Best Services uses the same bus.
   useEffect(() => {
     const open = () => setShortcutsOpen(true);
+    const openServices = () => setBestServicesOpen(true);
     window.addEventListener("gameforge:openShortcuts", open);
-    return () => window.removeEventListener("gameforge:openShortcuts", open);
+    window.addEventListener("gameforge:openBestServices", openServices);
+    return () => {
+      window.removeEventListener("gameforge:openShortcuts", open);
+      window.removeEventListener("gameforge:openBestServices", openServices);
+    };
   }, []);
 
   const setCameraMode = (mode: CameraMode) =>
@@ -311,7 +318,7 @@ export function MenuBar({
               Show Console
             </MenubarItem>
             <MenubarItem onSelect={() => openAssets("project")}>
-  Show Library
+              Show Library
             </MenubarItem>
             <MenubarItem onSelect={() => useEditor.getState().setBottomTab("scripts")}>
               Show Script Editor
@@ -319,9 +326,9 @@ export function MenuBar({
             <MenubarItem onSelect={() => useEditor.getState().setBottomTab("nodes")}>
               Show Node Graph
             </MenubarItem>
-  < MenubarItem onSelect = {() => useEditor.getState().setBottomTab("layers")}>
-    Show Physics Settings
-      </MenubarItem>
+            <MenubarItem onSelect={() => useEditor.getState().setBottomTab("layers")}>
+              Show Physics Settings
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 
@@ -337,6 +344,9 @@ export function MenuBar({
             <MenubarItem onSelect={() => addPrimitive("light")}>Light</MenubarItem>
             <MenubarItem onSelect={() => addPrimitive("model")}>Empty Model Slot</MenubarItem>
             <MenubarSeparator />
+            <MenubarItem onSelect={() => openAssets("fast")} data-testid="menu-add-fast">
+              From Fast options…
+            </MenubarItem>
             <MenubarItem onSelect={() => openAssets("ph-models")}>
               From PolyHaven Models…
             </MenubarItem>
@@ -350,6 +360,9 @@ export function MenuBar({
         <MenubarMenu>
           <MenubarTrigger className="text-xs h-6 px-2" data-testid="menu-assets">Assets</MenubarTrigger>
           <MenubarContent>
+            <MenubarItem onSelect={() => openAssets("fast")} data-testid="menu-assets-fast">
+              Fast options (one-click)
+            </MenubarItem>
             <MenubarItem onSelect={() => openAssets("project")}>Open Asset Browser</MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
@@ -422,6 +435,12 @@ export function MenuBar({
           <MenubarContent>
             <MenubarItem onSelect={() => setShortcutsOpen(true)} data-testid="menu-help-shortcuts">
               Keyboard Shortcuts
+            </MenubarItem>
+            <MenubarItem
+              onSelect={() => setBestServicesOpen(true)}
+              data-testid="menu-help-best-services"
+            >
+              Best Services (free + fleet)
             </MenubarItem>
             <MenubarItem
               onSelect={() => window.open("https://polyhaven.com", "_blank", "noopener")}
@@ -503,18 +522,29 @@ export function MenuBar({
           <DialogHeader>
             <DialogTitle>Grudge GameForge</DialogTitle>
             <DialogDescription>
-              A browser-native 3D game editor — Three.js · React-Three-Fiber ·
-              Rapier physics · Blazor C# transpiler. PolyHaven CC0 assets and
-              the Grudge Object Store are wired in directly so any model,
-              texture, HDRI, weapon, item, enemy or quest can be dragged
-              straight into a scene.
+              Free customized Three.js editor for Grudge Studio — React Three
+              Fiber · Rapier · AI Worker · meshopt GLB pipeline. Built against
+              three.js editor DNA (commands, hierarchy, loaders) with fleet
+              services (CDN, ObjectStore, Grudge ID) and free tiers (Puter,
+              Poly Haven, Groq/OpenRouter/Gemini BYOK, Ollama).
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAboutOpen(false);
+                setBestServicesOpen(true);
+              }}
+            >
+              Best Services
+            </Button>
             <Button onClick={() => setAboutOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BestServicesPanel open={bestServicesOpen} onOpenChange={setBestServicesOpen} />
     </>
   );
 }

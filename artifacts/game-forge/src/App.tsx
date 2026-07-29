@@ -74,8 +74,23 @@ function EditorShell() {
 
   // Welcome log
   useEffect(() => {
-    pushLog("info", "GameForge ready · Three.js · Rapier · R3F · Blazor C# transpiler loaded");
+    pushLog(
+      "info",
+      "GameForge ready · free Three.js editor · Help → Best Services · Rapier · R3F · AI",
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Best Services panel / external shells open AI Worker or project picker via bus
+  useEffect(() => {
+    const onAi = () => setAiOpen(true);
+    const onProjects = () => setPickerOpen(true);
+    window.addEventListener("gameforge:toggleAIWorker", onAi);
+    window.addEventListener("gameforge:openProjects", onProjects);
+    return () => {
+      window.removeEventListener("gameforge:toggleAIWorker", onAi);
+      window.removeEventListener("gameforge:openProjects", onProjects);
+    };
   }, []);
 
   // Published-scene auto-loader + Pipeline pack import.

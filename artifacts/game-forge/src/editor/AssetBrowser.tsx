@@ -17,12 +17,17 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import { useEditor } from "@/store/editor";
-import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users } from "lucide-react";
+import { Sword, Package, Skull, Scroll, Plus, ExternalLink, Loader2, Trash2, Search, Upload, Image as ImageIcon, Sun, Box, Library, LayoutGrid, List as ListIcon, Copy, Eye, FileBox, Users, Zap } from "lucide-react";
 import { RACES, type Race } from "@/lib/races";
 import { useViewportTabs } from "@/store/viewportTabs";
 import { openModelTabFromAsset } from "@/lib/openModelTab";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
 import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
+import {
+  FAST_ASSETS,
+  fastAssetsByGroup,
+  type FastAsset,
+} from "@/lib/fastAssets";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -1406,6 +1411,7 @@ function RacesGrid() {
  *  top menu (Assets → …) can deep-link straight to a provider. Kept in
  *  one place so the menu and this component cannot drift apart. */
 export type AssetBrowserTab =
+  | "fast"
   | "weapons"
   | "items"
   | "enemies"
@@ -1416,12 +1422,125 @@ export type AssetBrowserTab =
   | "ph-hdris"
   | "project";
 
+/**
+ * Fast options — curated one-click fleet + builtin assets (characters, maps,
+ * VFX, RTS buildings, weapons). Spawns use durable `builtin:` keys.
+ */
+function FastAssetsGrid() {
+  const projectId = useEditor((s) => s.projectId);
+  const pushLog = useEditor((s) => s.pushLog);
+  const addEntity = useEditor((s) => s.cmdAddEntity);
+  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const [query, setQuery] = useState("");
+  const groups = fastAssetsByGroup();
+
+  const spawn = (a: FastAsset) => {
+    if (!projectId) {
+      pushLog("warn", "Open a project first to spawn Fast assets into a scene.");
+      window.alert(
+        "Open or create a project first — Fast assets spawn into the active scene.",
+      );
+      return;
+    }
+    const e = addEntity("model", a.label);
+    const y = a.spawnY ?? 0;
+    const s = a.scale ?? 1;
+    updateEntity(e.id, (d) => {
+      d.model = { url: a.modelUrl };
+      d.transform = {
+        ...d.transform,
+        position: [0, y, 0],
+        scale: [s, s, s],
+      };
+    });
+    pushLog("info", `Spawned Fast asset "${a.label}" (${a.modelUrl}).`);
+  };
+
+  const filteredGroups = groups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((a) => {
+        if (!query.trim()) return true;
+        const q = query.toLowerCase();
+        return (
+          a.label.toLowerCase().includes(q) ||
+          a.blurb.toLowerCase().includes(q) ||
+          a.group.includes(q) ||
+          a.modelUrl.toLowerCase().includes(q)
+        );
+      }),
+    }))
+    .filter((g) => g.items.length > 0);
+
+  const total = FAST_ASSETS.length;
+  const shown = filteredGroups.reduce((n, g) => n + g.items.length, 0);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-2 py-2 border-b border-border flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search Fast options…"
+            className="h-7 pl-7 text-xs"
+            data-testid="input-fast-assets-search"
+          />
+        </div>
+        <span className="text-[10px] text-muted-foreground font-mono">
+          {shown}/{total}
+        </span>
+      </div>
+      <p className="px-2 py-1.5 text-[10px] text-muted-foreground border-b border-border/60 leading-snug">
+        Fast options — one-click production assets (CDN + builtins). Click to
+        spawn. Prefer these over raw URL paste.
+      </p>
+      <ScrollArea className="flex-1">
+        <div className="p-2 space-y-3">
+          {filteredGroups.map((g) => (
+            <section key={g.group}>
+              <h4 className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5 px-0.5">
+                {g.label}
+              </h4>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-1.5">
+                {g.items.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => spawn(a)}
+                    title={`${a.label}\n${a.modelUrl}\n${a.blurb}`}
+                    data-testid={`fast-asset-${a.id}`}
+                    className="text-left rounded-md border border-border bg-muted/30 hover:bg-accent/10 hover:border-primary/40 px-2 py-1.5 transition-colors"
+                  >
+                    <div className="text-[11px] font-medium text-foreground truncate">
+                      {a.label}
+                    </div>
+                    <div className="text-[9px] text-muted-foreground line-clamp-2 leading-snug mt-0.5">
+                      {a.blurb}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+          {filteredGroups.length === 0 && (
+            <p className="text-xs text-muted-foreground p-4 text-center">
+              No Fast assets match “{query}”.
+            </p>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 export function AssetBrowser() {
   const weapons = useGetGrudgeWeapons();
   const items = useGetGrudgeItems();
   const enemies = useGetGrudgeEnemies();
   const quests = useGetGrudgeQuests();
-  const [tab, setTab] = useState<AssetBrowserTab>("weapons");
+  const [tab, setTab] = useState<AssetBrowserTab>("fast");
 
   // Top menu (Assets → Browse PolyHaven HDRIs, etc.) dispatches a
   // `gameforge:focusAssetTab` CustomEvent with the target tab id. We
@@ -1431,7 +1550,7 @@ export function AssetBrowser() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail;
       const valid: readonly AssetBrowserTab[] = [
-        "weapons", "items", "enemies", "quests", "races",
+        "fast", "weapons", "items", "enemies", "quests", "races",
         "ph-models", "ph-textures", "ph-hdris", "project",
       ];
       if (valid.includes(detail as AssetBrowserTab)) {
@@ -1445,6 +1564,9 @@ export function AssetBrowser() {
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as AssetBrowserTab)} className="flex flex-col h-full">
       <TabsList className="rounded-none w-fit mx-2 mt-1.5 flex-wrap h-auto">
+        <TabsTrigger value="fast" className="text-xs gap-1.5" data-testid="tab-fast-assets">
+          <Zap className="size-3" /> Fast
+        </TabsTrigger>
         <TabsTrigger value="weapons" className="text-xs gap-1.5">
           <Sword className="size-3" /> Weapons
         </TabsTrigger>
@@ -1474,6 +1596,9 @@ export function AssetBrowser() {
         </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
+        <TabsContent value="fast" className="m-0 h-full">
+          <FastAssetsGrid />
+        </TabsContent>
         <TabsContent value="weapons" className="m-0 h-full">
           <GrudgeGrid loading={weapons.isLoading} items={weapons.data?.items ?? []} type="weapon" EmptyIcon={Sword} />
         </TabsContent>
