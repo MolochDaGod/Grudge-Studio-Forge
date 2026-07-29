@@ -117,6 +117,12 @@ export function MenuBar({
     const id = useEditor.getState().selectedId;
     if (id) useEditor.getState().cmdRemoveEntity(id);
   };
+  const copySelected = () => {
+    void import("@/lib/entityClipboard").then((m) => m.copySelectedEntity());
+  };
+  const pasteClipboard = () => {
+    void import("@/lib/entityClipboard").then((m) => m.pasteEntityClipboard());
+  };
   const focusSelected = () => {
     if (useEditor.getState().selectedId) useEditor.getState().requestFocus();
   };
@@ -263,6 +269,12 @@ export function MenuBar({
               Redo <MenubarShortcut>Ctrl+Y</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
+            <MenubarItem onSelect={copySelected} data-testid="menu-edit-copy">
+              Copy <MenubarShortcut>Ctrl+C</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onSelect={pasteClipboard} data-testid="menu-edit-paste">
+              Paste <MenubarShortcut>Ctrl+V</MenubarShortcut>
+            </MenubarItem>
             <MenubarItem onSelect={duplicateSelected} data-testid="menu-edit-duplicate">
               Duplicate <MenubarShortcut>Ctrl+D</MenubarShortcut>
             </MenubarItem>
@@ -281,7 +293,7 @@ export function MenuBar({
           <MenubarTrigger className="text-xs h-6 px-2" data-testid="menu-view">View</MenubarTrigger>
           <MenubarContent>
             <MenubarItem onSelect={focusSelected} data-testid="menu-view-focus">
-              Focus on Selection <MenubarShortcut>F</MenubarShortcut>
+              Frame selection + hierarchy <MenubarShortcut>F</MenubarShortcut>
             </MenubarItem>
             <MenubarSeparator />
             <MenubarSub>
@@ -500,7 +512,8 @@ export function MenuBar({
           </DialogHeader>
           <div className="text-sm grid grid-cols-2 gap-x-6 gap-y-1.5 font-mono">
             <span className="text-muted-foreground">W / E / R</span><span>Translate / Rotate / Scale gizmo</span>
-            <span className="text-muted-foreground">F</span><span>Focus camera on selection</span>
+            <span className="text-muted-foreground">F</span><span>Frame selection + hierarchy children</span>
+            <span className="text-muted-foreground">Ctrl+C / V</span><span>Copy / paste hierarchy</span>
             <span className="text-muted-foreground">P</span><span>Toggle play / stop</span>
             <span className="text-muted-foreground">Esc</span><span>Stop play mode</span>
             <span className="text-muted-foreground">Ctrl+Z / Ctrl+Y</span><span>Undo / Redo</span>

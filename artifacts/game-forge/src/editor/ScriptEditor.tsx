@@ -20,8 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Save, Loader2, Code2 } from "lucide-react";
+import { Plus, Trash2, Save, Loader2, Code2, Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SCRIPT_TEMPLATES, getTemplate } from "@/ai/tools/scripting/templates";
+
+/** Smart starter kits shown in the Scripts tab (gameplay / multiplayer / camera). */
+const SMART_TEMPLATE_KEYS = [
+  "wasd-character-controller",
+  "third-person-camera",
+  "network-manager-mirror",
+  "remote-player-interpolator",
+  "outline-select-highlight",
+  "spawn-r2-character",
+  "health-system",
+  "seek-player",
+  "trigger-zone",
+  "spin",
+] as const;
 
 export function ScriptEditor() {
   const projectId = useEditor((s) => s.projectId);
@@ -35,6 +50,7 @@ export function ScriptEditor() {
   const [draft, setDraft] = useState<string>("");
   const [draftName, setDraftName] = useState<string>("");
   const [newLanguage, setNewLanguage] = useState<"js" | "ts" | "cs">("js");
+  const [templateKey, setTemplateKey] = useState<string>("wasd-character-controller");
 
   const active = useMemo<Script | undefined>(
     () => scripts.find((s) => s.id === activeId),
@@ -67,6 +83,7 @@ export function ScriptEditor() {
         projectId,
         name: `Script ${scripts.length + 1}`,
         language: newLanguage,
+        code: newLanguage === "cs" ? "// C# Blazor script\n" : "// New script\nexports.update = function(entity, ctx) {\n  // ...\n};\n",
       },
     });
     qc.invalidateQueries({ queryKey: getListScriptsQueryKey(projectId) });
@@ -74,6 +91,36 @@ export function ScriptEditor() {
     setActiveId(res.id);
     pushLog("info", `Created ${newLanguage.toUpperCase()} script "${res.name}"`);
   };
+
+  const onNewFromTemplate = async () => {
+    if (!projectId) return;
+    const tpl = getTemplate(templateKey);
+    if (!tpl) {
+      pushLog("error", `Unknown template "${templateKey}"`);
+      return;
+    }
+    const code = tpl.render({});
+    const res = await createScript.mutateAsync({
+      data: {
+        projectId,
+        name: tpl.name,
+        language: "js",
+        code,
+      },
+    });
+    qc.invalidateQueries({ queryKey: getListScriptsQueryKey(projectId) });
+    qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+    setActiveId(res.id);
+    pushLog("info", `Created script from template "${tpl.key}"`);
+  };
+
+  const smartTemplates = useMemo(
+    () =>
+      SMART_TEMPLATE_KEYS.map((k) => getTemplate(k)).filter(
+        (t): t is NonNullable<typeof t> => !!t,
+      ),
+    [],
+  );
 
   const onSave = async () => {
     if (!active || !projectId) return;
@@ -139,20 +186,50 @@ export function ScriptEditor() {
     >
       {/* Script list */}
       <div className="border-r border-border flex flex-col bg-card/40">
-        <div className="p-2 border-b border-border flex gap-1">
-          <Select value={newLanguage} onValueChange={(v) => setNewLanguage(v as "js" | "ts" | "cs")}>
-            <SelectTrigger className="h-7 text-xs flex-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="js">JavaScript</SelectItem>
-              <SelectItem value="ts">TypeScript</SelectItem>
-              <SelectItem value="cs">C# (Blazor)</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button size="sm" className="h-7 px-2" onClick={onNew} data-testid="button-new-script">
-            <Plus className="size-3.5" />
-          </Button>
+        <div className="p-2 border-b border-border space-y-1.5">
+          <div className="flex gap-1">
+            <Select value={newLanguage} onValueChange={(v) => setNewLanguage(v as "js" | "ts" | "cs")}>
+              <SelectTrigger className="h-7 text-xs flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="js">JavaScript</SelectItem>
+                <SelectItem value="ts">TypeScript</SelectItem>
+                <SelectItem value="cs">C# (Blazor)</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-7 px-2" onClick={onNew} data-testid="button-new-script" title="Blank script">
+              <Plus className="size-3.5" />
+            </Button>
+          </div>
+          <div className="flex gap-1 items-center">
+            <Select value={templateKey} onValueChange={setTemplateKey}>
+              <SelectTrigger className="h-7 text-[10px] flex-1" data-testid="select-script-template">
+                <SelectValue placeholder="Smart template" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {smartTemplates.map((t) => (
+                  <SelectItem key={t.key} value={t.key} className="text-xs">
+                    {t.name}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__all__" disabled className="text-[10px] opacity-60">
+                  — all {SCRIPT_TEMPLATES.length} via AI list_script_templates —
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 px-2"
+              onClick={() => void onNewFromTemplate()}
+              disabled={createScript.isPending || templateKey === "__all__"}
+              data-testid="button-new-from-template"
+              title="Create from smart template"
+            >
+              <Sparkles className="size-3.5" />
+            </Button>
+          </div>
         </div>
         <ScrollArea className="flex-1">
           <div className="p-1 space-y-0.5">

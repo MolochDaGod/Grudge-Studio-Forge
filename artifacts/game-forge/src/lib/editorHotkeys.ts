@@ -10,6 +10,7 @@
 
 import { useEditor } from "@/store/editor";
 import type { Hotkey } from "@/lib/hotkeys";
+import { copySelectedEntity, pasteEntityClipboard } from "@/lib/entityClipboard";
 
 /** Dependency callbacks the keydown actions need beyond the global store.
  *  Pulled into a typed shape so the cheatsheet can call this builder with
@@ -161,6 +162,31 @@ export function buildEditorHotkeys(deps: EditorHotkeyDeps): Hotkey[] {
       },
     },
     {
+      id: "edit.copy",
+      label: "Ctrl+C",
+      description: "Copy selected entity (+ hierarchy children)",
+      category: "Edit",
+      key: "c",
+      ctrlOrMeta: true,
+      action: () => {
+        if (!get().selectedId) return false;
+        return copySelectedEntity();
+      },
+    },
+    {
+      id: "edit.paste",
+      label: "Ctrl+V",
+      description: "Paste entity clipboard",
+      category: "Edit",
+      key: "v",
+      ctrlOrMeta: true,
+      action: () => {
+        // Async clipboard read — fire and handle; hotkey system is sync
+        void pasteEntityClipboard();
+        return true;
+      },
+    },
+    {
       id: "edit.duplicate",
       label: "Ctrl+D",
       description: "Duplicate selected entity",
@@ -177,7 +203,7 @@ export function buildEditorHotkeys(deps: EditorHotkeyDeps): Hotkey[] {
     {
       id: "view.focus",
       label: "F",
-      description: "Frame camera on selection (smooth)",
+      description: "Frame camera on selection + hierarchy children",
       category: "Camera",
       key: "f",
       action: () => {

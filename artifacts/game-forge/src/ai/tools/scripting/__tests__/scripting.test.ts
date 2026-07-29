@@ -72,6 +72,8 @@ describe("patch flow (unified diff)", () => {
 describe("script templates", () => {
   it("every template renders to validatable JS", () => {
     for (const tpl of SCRIPT_TEMPLATES) {
+      // Blazor packs are C# markers, not JS play scripts
+      if (tpl.key.startsWith("blazor-")) continue;
       const code = tpl.render({});
       const v = validateScript("js", code);
       expect(v.ok, `template ${tpl.key}: ${v.errors.map((e) => e.message).join("; ")}`).toBe(true);

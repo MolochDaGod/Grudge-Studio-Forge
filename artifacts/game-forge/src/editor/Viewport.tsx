@@ -498,33 +498,56 @@ function FocusCameraController() {
 
   useEffect(() => {
     if (focusToken === 0) return; // initial mount, don't snap
-    const { selectedId } = useEditor.getState();
+    const { selectedId, sceneData } = useEditor.getState();
     if (!selectedId) return;
 
-    // Find the entity's actual three.js group via `userData.entityId`
-    // (stamped by EntityRenderer). Traversing the scene means we don't
-    // need cross-component group ref plumbing.
-    let target: THREE.Object3D | null = null;
-    scene.traverse((o) => {
-      if (target) return;
-      const ud = o.userData as { entityId?: string } | undefined;
-      if (ud?.entityId === selectedId) target = o;
-    });
-    if (!target) return;
-
-    // Force a world-matrix update so Box3 reads post-transform bounds.
-    (target as THREE.Object3D).updateWorldMatrix(true, true);
-    const box = new THREE.Box3().setFromObject(target);
-    if (box.isEmpty() || !Number.isFinite(box.min.x)) {
-      // Empties / lights have no geometry â€” fall back to a unit AABB at
-      // the object's world position so we at least frame SOMETHING
-      // sensible.
-      const wp = new THREE.Vector3();
-      (target as THREE.Object3D).getWorldPosition(wp);
-      box.setFromCenterAndSize(wp, new THREE.Vector3(1, 1, 1));
+    // Collect selected entity + hierarchy children (same ids as Hierarchy).
+    const idSet = new Set<string>([selectedId]);
+    const kids = new Map<string, string[]>();
+    for (const e of sceneData.entities) {
+      if (!e.parentId) continue;
+      const arr = kids.get(e.parentId) ?? [];
+      arr.push(e.id);
+      kids.set(e.parentId, arr);
+    }
+    const stack = [...(kids.get(selectedId) ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (idSet.has(id)) continue;
+      idSet.add(id);
+      const ch = kids.get(id);
+      if (ch) stack.push(...ch);
     }
 
+    // Union world AABBs of every matching EntityRenderer root.
+    const box = new THREE.Box3();
+    let found = false;
+    scene.traverse((o) => {
+      const ud = o.userData as { entityId?: string } | undefined;
+      if (!ud?.entityId || !idSet.has(ud.entityId)) return;
+      // Prefer direct entity roots (avoid double-counting deep meshes)
+      o.updateWorldMatrix(true, true);
+      const b = new THREE.Box3().setFromObject(o);
+      if (b.isEmpty() || !Number.isFinite(b.min.x)) {
+        const wp = new THREE.Vector3();
+        o.getWorldPosition(wp);
+        b.setFromCenterAndSize(wp, new THREE.Vector3(1, 1, 1));
+      }
+      if (!found) {
+        box.copy(b);
+        found = true;
+      } else {
+        box.union(b);
+      }
+    });
+    if (!found) return;
+
     const persp = camera as THREE.PerspectiveCamera;
+    // Ensure editor camera can see large framed sets
+    if (persp.far < 100_000) persp.far = 500_000;
+    if (persp.near > 0.05) persp.near = 0.02;
+    persp.updateProjectionMatrix();
+
     const fov = persp.fov ?? 45;
     const aspect = persp.aspect ?? (size.width > 0 ? size.width / size.height : 1);
     // reason: drei's `useThree().controls` is typed as `EventDispatcher`;
@@ -541,11 +564,15 @@ function FocusCameraController() {
       currentTarget: [curTarget.x, curTarget.y, curTarget.z],
       fovDegrees: fov,
       aspect,
+      margin: 1.65,
+      minRadius: 0.75,
+      maxDistance: 5_000,
+      minDistance: 1.5,
     });
 
     tweenRef.current = {
       startTime: performance.now(),
-      duration: 250,
+      duration: 320,
       startCam: camera.position.clone(),
       startTarget: curTarget,
       endCam: new THREE.Vector3(pose.position[0], pose.position[1], pose.position[2]),
@@ -1023,7 +1050,14 @@ export function Viewport() {
               // Wide clip range for large templates / city maps (agentic builds
               // often place content far from origin). logarithmicDepthBuffer
               // reduces z-fighting when near is small and far is huge.
-              camera={{ position: [8, 8, 12], fov: 45, near: 0.05, far: 50_000 }}
+              camera={{
+                position: [8, 8, 12],
+                fov: 45,
+                // SI island / city maps: near small for props, far very large
+                // so distant R2 assets stay visible (log depth buffer on).
+                near: 0.02,
+                far: 500_000,
+              }}
               onPointerMissed={
                 isPlaying
                   ? undefined
@@ -1113,15 +1147,15 @@ export function Viewport() {
               {!isPlaying && (
                 <>
                   <Grid
-                    args={[40, 40]}
+                    args={[200, 200]}
                     cellSize={1}
                     cellThickness={0.5}
                     cellColor="#2a2a3e"
-                    sectionSize={5}
+                    sectionSize={10}
                     sectionThickness={1}
                     sectionColor="#d4af37"
-                    fadeDistance={40}
-                    fadeStrength={1.4}
+                    fadeDistance={2_500}
+                    fadeStrength={1.2}
                     infiniteGrid
                     position={[0, -0.001, 0]}
                   />

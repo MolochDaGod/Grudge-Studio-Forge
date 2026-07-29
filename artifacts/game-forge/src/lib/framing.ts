@@ -27,12 +27,18 @@ export interface ComputeFramingPoseOptions {
   /** Viewport aspect (width / height). Defaults to 1 when unknown. */
   aspect?: number;
   /** Multiplier applied to the fitting distance — leaves room around the
-   *  entity instead of cropping its silhouette. Default 1.4 ≈ ~30% padding. */
+   *  entity instead of cropping its silhouette. Default 1.55 ≈ hierarchy
+   *  padding (characters + children). */
   margin?: number;
   /** Floor on the bounding-sphere radius so a zero-extent / single-point
    *  entity (e.g. an empty marker) still produces a usable framing distance
    *  rather than collapsing the camera into the target. */
   minRadius?: number;
+  /** Clamp max framing distance (world units). Large islands otherwise
+   *  fling the camera to space. Default 2_500. */
+  maxDistance?: number;
+  /** Minimum camera distance from target. Default 1.2. */
+  minDistance?: number;
 }
 
 export interface FramingPose {
@@ -67,7 +73,7 @@ export function computeFramingPose(opts: ComputeFramingPoseOptions): FramingPose
   const minRadius = opts.minRadius ?? 0.5;
   const radius = Math.max(minRadius, 0.5 * Math.sqrt(sx * sx + sy * sy + sz * sz));
 
-  const margin = opts.margin ?? 1.4;
+  const margin = opts.margin ?? 1.55;
   const aspect = opts.aspect && opts.aspect > 0 ? opts.aspect : 1;
   const fovRad = (opts.fovDegrees * Math.PI) / 180;
   // Vertical fit
@@ -75,7 +81,12 @@ export function computeFramingPose(opts: ComputeFramingPoseOptions): FramingPose
   // Horizontal fit (when aspect < 1 the horizontal FOV is the binding one)
   const fovH = 2 * Math.atan(Math.tan(fovRad / 2) * aspect);
   const distH = radius / Math.sin(fovH / 2);
-  const distance = Math.max(distV, distH) * margin;
+  const maxDistance = opts.maxDistance ?? 2_500;
+  const minDistance = opts.minDistance ?? 1.2;
+  const distance = Math.min(
+    maxDistance,
+    Math.max(minDistance, Math.max(distV, distH) * margin),
+  );
 
   // Preserve the current view direction. Fall back to a 1,1,1 isometric-ish
   // direction if the camera is sitting on the orbit target (degenerate).

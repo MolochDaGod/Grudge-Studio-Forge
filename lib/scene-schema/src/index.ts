@@ -571,12 +571,11 @@ export interface SceneData {
  *  all read the same vector — change it once, every fallback updates. */
 export const DEFAULT_GRAVITY: Vec3 = [0, -9.81, 0];
 
-/** Default linear-fog distances (world units). The viewport falls back to
- *  these when `Environment.fog` is unset. Sized for the current ~120u arena
- *  scale so the fog wall sits on the horizon, not behind the player. */
+/** Default linear-fog distances (world units). Far enough for island / city
+ *  maps so the fog wall sits on the horizon, not mid-map in the editor. */
 export const DEFAULT_FOG = {
-  near: 80,
-  far: 320,
+  near: 200,
+  far: 4_000,
 } as const;
 
 export const DEFAULT_ENV: Environment = {

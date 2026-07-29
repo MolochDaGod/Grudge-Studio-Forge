@@ -858,6 +858,289 @@ exports.start = function(entity, ctx) {
 `;
     },
   },
+
+  // ── Multiplayer / camera / network (grudgecontrol · three-player-controller · Mirror patterns) ──
+  {
+    key: "third-person-camera",
+    name: "Third-Person Camera Follow",
+    description:
+      "Orbit-style third-person follow (grudgecontrol / three-player-controller tips). Attach to Player or a CameraRig empty. Uses min/max distance, pitch clamp, and optional LMB orbit.",
+    params: [
+      { name: "targetName", description: "Entity to follow.", type: "string", default: "Player" },
+      { name: "distance", description: "Default camera distance (m).", type: "number", default: 6 },
+      { name: "height", description: "Look-at height offset (m).", type: "number", default: 1.6 },
+      { name: "minDistance", description: "Zoom min.", type: "number", default: 2 },
+      { name: "maxDistance", description: "Zoom max (large maps).", type: "number", default: 80 },
+      { name: "smooth", description: "Lerp factor 0–1 per second scale.", type: "number", default: 8 },
+    ],
+    render: (p) => {
+      const target = str(p.targetName, "Player");
+      const dist = num(p.distance, 6);
+      const height = num(p.height, 1.6);
+      const minD = num(p.minDistance, 2);
+      const maxD = num(p.maxDistance, 80);
+      const smooth = num(p.smooth, 8);
+      return `// Third-person follow camera — inspired by grudgecontrol multiplayer-gltf
+// + three-player-controller orbit tips. Attach to a Camera / empty named CameraRig.
+exports.start = function(entity, ctx) {
+  ctx.state.yaw = 0;
+  ctx.state.pitch = 0.25;
+  ctx.state.distance = ${dist};
+  ctx.state.minD = ${minD};
+  ctx.state.maxD = ${maxD};
+  ctx.input.setCursorLock(false);
+};
+exports.update = function(entity, ctx) {
+  var target = ctx.scene.find(${JSON.stringify(target)});
+  if (!target) return;
+  var mx = ctx.input.mouseDeltaX || 0;
+  var my = ctx.input.mouseDeltaY || 0;
+  if (ctx.input.mouseRight || ctx.input.mouseLeft) {
+    ctx.state.yaw -= mx * 0.004;
+    ctx.state.pitch = Math.max(-1.2, Math.min(1.2, ctx.state.pitch - my * 0.004));
+  }
+  var wheel = ctx.input.wheelDelta || 0;
+  if (wheel) {
+    ctx.state.distance = Math.max(ctx.state.minD, Math.min(ctx.state.maxD, ctx.state.distance + wheel * 0.01));
+  }
+  var lookY = target.position[1] + ${height};
+  var cx = target.position[0] + Math.sin(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
+  var cy = lookY + Math.sin(ctx.state.pitch) * ctx.state.distance;
+  var cz = target.position[2] + Math.cos(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
+  var k = 1 - Math.exp(-${smooth} * ctx.time.delta);
+  entity.position[0] += (cx - entity.position[0]) * k;
+  entity.position[1] += (cy - entity.position[1]) * k;
+  entity.position[2] += (cz - entity.position[2]) * k;
+  // Face look-at point (yaw only for simple scripts)
+  entity.rotation[1] = ctx.state.yaw + Math.PI;
+  ctx.events.emit("cameraLookAt", { x: target.position[0], y: lookY, z: target.position[2] });
+};
+`;
+    },
+  },
+  {
+    key: "wasd-character-controller",
+    name: "WASD Character Controller",
+    description:
+      "SI-scale third-person locomotion (walk/run/jump) for Bip001 / Mixamo baked characters from R2. Pair with third-person-camera.",
+    params: [
+      { name: "walkSpeed", description: "m/s walk.", type: "number", default: 2.5 },
+      { name: "runSpeed", description: "m/s run (Shift).", type: "number", default: 5.5 },
+      { name: "jumpForce", description: "Upward impulse.", type: "number", default: 5.5 },
+      { name: "turnSpeed", description: "Yaw lerp rad/s.", type: "number", default: 10 },
+    ],
+    render: (p) => {
+      const walk = num(p.walkSpeed, 2.5);
+      const run = num(p.runSpeed, 5.5);
+      const jump = num(p.jumpForce, 5.5);
+      const turn = num(p.turnSpeed, 10);
+      return `// WASD character — SI meters, R2/baked Bip001 clips via AnimationDirector when available
+exports.start = function(entity, ctx) {
+  ctx.state.vy = 0;
+  ctx.state.grounded = true;
+  entity.tags = entity.tags || {};
+  entity.tags.player = true;
+  entity.name = entity.name || "Player";
+};
+exports.update = function(entity, ctx) {
+  var keys = ctx.keys || {};
+  var dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
+  var dz = (keys.w || keys.ArrowUp ? 1 : 0) - (keys.s || keys.ArrowDown ? 1 : 0);
+  var len = Math.hypot(dx, dz);
+  var speed = (keys.Shift ? ${run} : ${walk});
+  if (len > 0.001) {
+    dx /= len; dz /= len;
+    entity.position[0] += dx * speed * ctx.time.delta;
+    entity.position[2] += dz * speed * ctx.time.delta;
+    var yaw = Math.atan2(dx, dz);
+    var cur = entity.rotation[1];
+    var diff = yaw - cur;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    entity.rotation[1] += diff * Math.min(1, ${turn} * ctx.time.delta);
+    if (ctx.anim) ctx.anim.setGait(keys.Shift ? "run" : "walk");
+  } else if (ctx.anim) {
+    ctx.anim.setGait("idle");
+  }
+  if ((keys[" "] || keys.Space) && ctx.state.grounded) {
+    ctx.state.vy = ${jump};
+    ctx.state.grounded = false;
+    if (ctx.anim) ctx.anim.requestOneShot("jump");
+  }
+  ctx.state.vy -= 9.81 * ctx.time.delta;
+  entity.position[1] += ctx.state.vy * ctx.time.delta;
+  if (entity.position[1] <= 0) {
+    entity.position[1] = 0;
+    ctx.state.vy = 0;
+    ctx.state.grounded = true;
+  }
+  ctx.events.emit("playerPose", {
+    id: entity.id,
+    position: entity.position.slice ? entity.position.slice() : [entity.position[0], entity.position[1], entity.position[2]],
+    rotationY: entity.rotation[1],
+    gait: len > 0.001 ? (keys.Shift ? "run" : "walk") : "idle",
+  });
+};
+`;
+    },
+  },
+  {
+    key: "network-manager-mirror",
+    name: "Network Manager (Mirror-style)",
+    description:
+      "Client authority pose sync scaffold (uMMORPG / Mirror NetworkManager patterns). Emits room events; wire to Grudge live WS / Firebase / Carrier. Not a full server — agent fills transport.",
+    params: [
+      { name: "roomId", description: "Room / lobby id.", type: "string", default: "forge-room-1" },
+      { name: "tickHz", description: "Send rate.", type: "number", default: 15 },
+      { name: "maxPlayers", description: "Soft cap.", type: "number", default: 16 },
+    ],
+    render: (p) => {
+      const room = str(p.roomId, "forge-room-1");
+      const hz = num(p.tickHz, 15);
+      const maxP = num(p.maxPlayers, 16);
+      return `// NetworkManager scaffold — Mirror/uMMORPG-style client hooks for Grudge live
+// Transport: set ctx.net = { send, on } from fleet WS (Carrier / gameopen) at start.
+exports.start = function(entity, ctx) {
+  ctx.state.roomId = ${JSON.stringify(room)};
+  ctx.state.tick = 0;
+  ctx.state.interval = 1 / ${hz};
+  ctx.state.acc = 0;
+  ctx.state.remotes = {};
+  ctx.state.localId = ctx.net && ctx.net.playerId ? ctx.net.playerId : ("p_" + Math.random().toString(36).slice(2, 8));
+  ctx.state.maxPlayers = ${maxP};
+  ctx.log("NetworkManager room=" + ctx.state.roomId + " local=" + ctx.state.localId);
+  if (ctx.net && ctx.net.on) {
+    ctx.net.on("playerPose", function(msg) {
+      if (!msg || msg.id === ctx.state.localId) return;
+      ctx.state.remotes[msg.id] = msg;
+      ctx.events.emit("remotePlayer", msg);
+    });
+    ctx.net.on("playerLeft", function(msg) {
+      if (msg && msg.id) delete ctx.state.remotes[msg.id];
+      ctx.events.emit("remotePlayerLeft", msg);
+    });
+  }
+};
+exports.update = function(entity, ctx) {
+  ctx.state.acc += ctx.time.delta;
+  if (ctx.state.acc < ctx.state.interval) return;
+  ctx.state.acc = 0;
+  var player = ctx.scene.find("Player");
+  if (!player) return;
+  var payload = {
+    type: "playerPose",
+    roomId: ctx.state.roomId,
+    id: ctx.state.localId,
+    t: ctx.time.elapsed,
+    position: player.position.slice ? player.position.slice() : [player.position[0], player.position[1], player.position[2]],
+    rotationY: player.rotation[1],
+    gait: player.tags && player.tags.gait ? player.tags.gait : "idle",
+  };
+  if (ctx.net && ctx.net.send) ctx.net.send(payload);
+  else ctx.events.emit("netOutbound", payload);
+};
+`;
+    },
+  },
+  {
+    key: "remote-player-interpolator",
+    name: "Remote Player Interpolator",
+    description:
+      "Smooth remote avatar transforms from network-manager events (multiplayer-gltf.js pattern).",
+    params: [
+      { name: "lerp", description: "Position lerp speed.", type: "number", default: 12 },
+    ],
+    render: (p) => {
+      const lerp = num(p.lerp, 12);
+      return `// Remote player smooth follow — attach to a remote avatar entity
+// Expects ctx.state.remoteId set, or entity.name === remote player id.
+exports.start = function(entity, ctx) {
+  ctx.state.targetPos = entity.position.slice ? entity.position.slice() : [0, 0, 0];
+  ctx.state.targetYaw = entity.rotation[1];
+  ctx.events.on("remotePlayer", function(msg) {
+    if (!msg) return;
+    var mine = ctx.state.remoteId || entity.name;
+    if (msg.id !== mine) return;
+    ctx.state.targetPos = msg.position;
+    ctx.state.targetYaw = msg.rotationY || 0;
+    if (ctx.anim && msg.gait) ctx.anim.setGait(msg.gait);
+  });
+};
+exports.update = function(entity, ctx) {
+  if (!ctx.state.targetPos) return;
+  var k = 1 - Math.exp(-${lerp} * ctx.time.delta);
+  entity.position[0] += (ctx.state.targetPos[0] - entity.position[0]) * k;
+  entity.position[1] += (ctx.state.targetPos[1] - entity.position[1]) * k;
+  entity.position[2] += (ctx.state.targetPos[2] - entity.position[2]) * k;
+  var dy = ctx.state.targetYaw - entity.rotation[1];
+  while (dy > Math.PI) dy -= Math.PI * 2;
+  while (dy < -Math.PI) dy += Math.PI * 2;
+  entity.rotation[1] += dy * k;
+};
+`;
+    },
+  },
+  {
+    key: "outline-select-highlight",
+    name: "Outline Select Highlight",
+    description:
+      "Emits outline/highlight events for selected targets (combat soft-lock / interactable). Pairs with post outline pass.",
+    params: [
+      { name: "color", description: "Hex outline color.", type: "string", default: "#f6c945" },
+      { name: "range", description: "Select range meters.", type: "number", default: 12 },
+    ],
+    render: (p) => {
+      const color = str(p.color, "#f6c945");
+      const range = num(p.range, 12);
+      return `// Outline highlight for nearest interactable / hard target
+exports.update = function(entity, ctx) {
+  var best = null;
+  var bestD = ${range};
+  var list = ctx.scene.query ? ctx.scene.query({ tag: "interactable" }) : [];
+  for (var i = 0; i < list.length; i++) {
+    var o = list[i];
+    if (o.id === entity.id) continue;
+    var dx = o.position[0] - entity.position[0];
+    var dz = o.position[2] - entity.position[2];
+    var d = Math.hypot(dx, dz);
+    if (d < bestD) { bestD = d; best = o; }
+  }
+  ctx.events.emit("outlineTarget", best ? {
+    id: best.id,
+    color: ${JSON.stringify(color)},
+    distance: bestD,
+  } : null);
+};
+`;
+    },
+  },
+  {
+    key: "spawn-r2-character",
+    name: "Spawn R2 Character Hook",
+    description:
+      "Documents + applies builtin:/assets.grudge-studio.com character load policy for play scripts (grudge6 / races). Prefer entity model.builtin keys set in editor.",
+    params: [
+      { name: "builtinKey", description: "builtin model key e.g. race:warrior", type: "string", default: "blake" },
+      { name: "scale", description: "Uniform scale SI.", type: "number", default: 1 },
+    ],
+    render: (p) => {
+      const key = str(p.builtinKey, "blake");
+      const scale = num(p.scale, 1);
+      return `// Character from fleet R2 / builtin — set model URL on this entity at start
+// SSOT: assets.grudge-studio.com + D1 registry. Never use localhost/replit.
+exports.start = function(entity, ctx) {
+  entity.model = entity.model || {};
+  entity.model.url = "builtin:" + ${JSON.stringify(key)};
+  entity.scale = [${scale}, ${scale}, ${scale}];
+  entity.tags = entity.tags || {};
+  entity.tags.character = true;
+  entity.tags.rig = "Bip001";
+  ctx.log("Character hook builtin:" + ${JSON.stringify(key)} + " (R2/CDN via resolveModelUrl)");
+  ctx.events.emit("characterReady", { id: entity.id, builtin: ${JSON.stringify(key)} });
+};
+`;
+    },
+  },
 ];
 
 export function getTemplate(key: string): ScriptTemplate | undefined {

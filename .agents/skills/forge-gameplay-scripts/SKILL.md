@@ -1,0 +1,87 @@
+---
+name: forge-gameplay-scripts
+description: >
+  Forge gameplay scripts, multiplayer network manager, third-person camera,
+  character R2/D1 bake, editor hotkeys (copy/paste/frame), and deployment of
+  playable scenes. References grudgecontrol multiplayer-gltf, three-player-controller,
+  Unity/uMMORPG/Mirror patterns.
+  USE WHEN: custom scripts, multiplayer network manager, third person camera,
+  WASD controller, outline select, Mirror NetworkManager, spawn R2 character,
+  Ctrl+C/V/Z/Y frame selection, deploy forge gameplay.
+  Load AFTER forge-editor + grudge-studio.
+---
+
+# Forge Gameplay Scripts & Multiplayer
+
+## Editor hotkeys (must work)
+
+| Key | Action |
+|-----|--------|
+| **Ctrl+Z** | Undo |
+| **Ctrl+Y** / **Ctrl+Shift+Z** | Redo |
+| **Ctrl+C** | Copy selected entity + hierarchy children |
+| **Ctrl+V** | Paste clipboard |
+| **Ctrl+D** | Duplicate |
+| **F** | Frame selection **including hierarchy children** (smooth) |
+| **Ctrl+S** | Save scene |
+
+Implementation: `lib/editorHotkeys.ts`, `lib/entityClipboard.ts`, `Viewport` `FocusCameraController`.
+
+## Editor render range
+
+- Camera: `near 0.02`, `far 500_000`, `logarithmicDepthBuffer`
+- Fog default: `near 200`, `far 4000` (`DEFAULT_FOG` in scene-schema)
+- Grid: infinite, `fadeDistance` 2500
+- Orbit: `maxDistance` free (1e9)
+
+## Character assets (R2 / D1 / ObjectStore)
+
+- **CDN:** `https://assets.grudge-studio.com`
+- **ObjectStore:** `https://objectstore.grudge-studio.com`
+- **Policy:** only `builtin:<key>` or assets CDN (see `assetUrlPolicy.ts`)
+- Prefer Fast options / `list_fast_assets` / `spawn_fast_asset`
+- Rig: Bip001 for grudge6 / Toon RTS; bake via grudge-asset-pipeline
+- Template: `spawn-r2-character` script key
+
+## Script templates (smart kit)
+
+Create via Scripts tab sparkle button or AI `list_script_templates` / `create_script_from_template`.
+
+| Key | Role |
+|-----|------|
+| `wasd-character-controller` | SI walk/run/jump + gait events |
+| `third-person-camera` | Orbit follow, zoom, pitch clamp |
+| `network-manager-mirror` | Mirror/uMMORPG-style room pose send |
+| `remote-player-interpolator` | Smooth remote avatars |
+| `outline-select-highlight` | Soft target outline events |
+| `spawn-r2-character` | builtin character hook |
+
+Source: `artifacts/game-forge/src/ai/tools/scripting/templates.ts`
+
+## Reference stacks (do not vendor blindly)
+
+1. **grudgecontrol multiplayer-gltf** — Firebase room pose, character list, spawn points, camera min/max distance  
+   https://github.com/MolochDaGod/grudgecontrol/blob/master/example/multiplayer-gltf.js
+2. **three-player-controller** — third-person / player controller patterns  
+   https://github.com/hh-hang/three-player-controller
+3. **Unity uMMORPG / Mirror** — NetworkManager, client authority, interest management → map to Grudge live WS / Carrier, not full C# Mirror in browser
+
+## AI agent rules
+
+1. Prefer templates over inventing multiplayer from scratch.
+2. Characters: `builtin:` / Fast assets only — never random hosts.
+3. Pair `wasd-character-controller` + `third-person-camera` for TPS playtest.
+4. Network: emit `playerPose` events; attach real transport via fleet live servers skill.
+5. Frame with **F** after spawning hierarchy (parent + children).
+6. Save: Ctrl+S → Puter or local project; Cloud Save for Puter snapshot.
+
+## Deploy
+
+- SPA: GHA Deploy Forge SPA → forge.grudge-studio.com
+- Edge free-ai: catalog + agent jobs + Groq
+- Play data: Railway (player bag) vs Puter (editor projects)
+- Live multiplayer rooms: grudge-live-servers skill
+
+## See also
+
+`forge-editor` · `grudge-warlords-assets` · `grudge-character-correctness` · `grudge-live-servers` · `grudge-fleet-combat`

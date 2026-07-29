@@ -197,7 +197,12 @@ export function useCreateScript(_opts?: unknown) {
     mutationFn: async ({
       data,
     }: {
-      data: { projectId: number; name: string; code?: string };
+      data: {
+        projectId: number;
+        name: string;
+        code?: string;
+        language?: "js" | "ts" | "cs";
+      };
     }) => dp.createScript(data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["scripts"] }),
   });

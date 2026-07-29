@@ -344,19 +344,26 @@ export interface ScriptRecord {
   projectId: number;
   name: string;
   code: string;
+  language: "js" | "ts" | "cs";
   createdAt: string;
   updatedAt: string;
 }
 
 export async function listScripts(projectId: number): Promise<ScriptRecord[]> {
   const all = await readIndex<ScriptRecord>("scripts");
-  return all.filter((s) => s.projectId === projectId);
+  return all
+    .filter((s) => s.projectId === projectId)
+    .map((s) => ({
+      ...s,
+      language: s.language ?? "js",
+    }));
 }
 
 export async function createScript(body: {
   projectId: number;
   name: string;
   code?: string;
+  language?: "js" | "ts" | "cs";
 }): Promise<ScriptRecord> {
   const id = await nextId();
   const ts = now();
@@ -365,6 +372,7 @@ export async function createScript(body: {
     projectId: body.projectId,
     name: body.name,
     code: body.code ?? "",
+    language: body.language ?? "js",
     createdAt: ts,
     updatedAt: ts,
   };
