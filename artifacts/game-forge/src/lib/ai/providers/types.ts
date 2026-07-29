@@ -254,11 +254,19 @@ export const MODELS: ModelOption[] = [
 
   // ── Together ─────────────────────────────────────────────────────
   {
-    id: "together:meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    label: "Llama 3.1 8B Turbo (Together)",
+    id: "together:meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    label: "Llama 3.3 70B Turbo (Together)",
     hint: "Fleet edge key · open models",
     provider: "together",
-    modelId: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    modelId: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    requiresFreeApiKey: true,
+  },
+  {
+    id: "together:Qwen/Qwen2.5-7B-Instruct-Turbo",
+    label: "Qwen 2.5 7B Turbo (Together)",
+    hint: "Fleet · fast code/chat",
+    provider: "together",
+    modelId: "Qwen/Qwen2.5-7B-Instruct-Turbo",
     requiresFreeApiKey: true,
   },
 
