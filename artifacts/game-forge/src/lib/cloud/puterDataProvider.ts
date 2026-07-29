@@ -260,7 +260,24 @@ export interface SceneRecord {
 
 export async function listScenes(projectId: number): Promise<SceneRecord[]> {
   const all = await readIndex<SceneRecord>("scenes");
-  return all.filter((s) => s.projectId === projectId);
+  const forProject = all.filter((s) => s.projectId === projectId);
+  // Index keeps data:null for size — hydrate FS/localStorage payloads so
+  // Hierarchy auto-load and scene switch get real entities.
+  const hydrated = await Promise.all(
+    forProject.map(async (entry) => {
+      const data = await readPayload("scenes", entry.id);
+      return {
+        ...entry,
+        data:
+          data ??
+          entry.data ?? {
+            entities: [],
+            environment: {},
+          },
+      };
+    }),
+  );
+  return hydrated;
 }
 
 export async function createScene(body: {

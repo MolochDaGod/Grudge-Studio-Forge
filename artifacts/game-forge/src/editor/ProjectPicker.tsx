@@ -66,6 +66,8 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
     if (!name.trim()) return;
     const res = await createProject.mutateAsync({ data: { name: name.trim(), description: description.trim() } });
     qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+    // Seeded "Main" scene lives under scenes index — Hierarchy auto-loads it.
+    qc.invalidateQueries({ queryKey: ["scenes"] });
     setProject(res.id);
     setName("");
     setDescription("");
@@ -80,6 +82,8 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
 
   const onOpen = (id: number) => {
     setProject(id);
+    // Force scene list refetch so first scene hydrates into the viewport.
+    qc.invalidateQueries({ queryKey: ["scenes", id] });
     onOpenChange(false);
   };
 
