@@ -44,7 +44,11 @@ import {
 import { useAuth } from "@/store/auth";
 import { signInWithPuter } from "@/lib/authBootstrap";
 import { FreeApiKeysPanel } from "@/editor/FreeApiKeysPanel";
-import { getStoredApiKey, type FreeProviderId } from "@/lib/ai/providers";
+import {
+  hasProviderAccess,
+  refreshFleetServerKeys,
+  type FreeProviderId,
+} from "@/lib/ai/providers";
 import {
   Select,
   SelectContent,
@@ -164,6 +168,7 @@ export function AIWorkerPanel({
   const [streaming, setStreaming] = useState(false);
   const [ollamaOk, setOllamaOk] = useState(false);
   const [aiStatusHint, setAiStatusHint] = useState<string | null>(null);
+  const [fleetKeysTick, setFleetKeysTick] = useState(0);
   // Per-project model selection: each project remembers which model it
   // was last using. Falls back to the global default when the project
   // hasn't picked one yet (or in pre-project state).
@@ -268,22 +273,15 @@ export function AIWorkerPanel({
 
       const bits: string[] = [];
       try {
-        const freeRes = await fetch("/api/free-ai/status", {
-          signal: AbortSignal.timeout(4000),
-        });
-        if (freeRes.ok) {
-          const free = (await freeRes.json()) as {
-            providers?: Record<string, boolean>;
-            byok?: boolean;
-          };
-          const serverKeys = Object.entries(free.providers ?? {})
-            .filter(([, v]) => v)
-            .map(([k]) => k);
-          if (serverKeys.length > 0) {
-            bits.push(`Server free AI: ${serverKeys.join(", ")}`);
-          } else {
-            bits.push("Free AI proxy online · paste keys below (Groq/OpenRouter/…)");
-          }
+        const providers = await refreshFleetServerKeys(true);
+        if (!cancelled) setFleetKeysTick((t) => t + 1);
+        const serverKeys = Object.entries(providers)
+          .filter(([, v]) => v)
+          .map(([k]) => k);
+        if (serverKeys.length > 0) {
+          bits.push(`Fleet AI: ${serverKeys.join(", ")} (no paste needed)`);
+        } else {
+          bits.push("Free AI proxy online · paste keys or use Puter");
         }
       } catch {
         /* free-ai optional */
@@ -876,10 +874,12 @@ export function AIWorkerPanel({
                   "deepseek",
                   "together",
                 ]);
+                // Fleet Worker secrets count as access (no browser BYOK required).
+                void fleetKeysTick;
                 const needsKey =
                   m.requiresFreeApiKey &&
                   freeIds.has(m.provider) &&
-                  !getStoredApiKey(m.provider as FreeProviderId);
+                  !hasProviderAccess(m.provider as FreeProviderId);
                 return (
                   <SelectItem
                     key={m.id}
@@ -905,6 +905,13 @@ export function AIWorkerPanel({
                             (key)
                           </span>
                         )}
+                        {!needsKey &&
+                          m.requiresFreeApiKey &&
+                          freeIds.has(m.provider) && (
+                            <span className="text-[10px] text-emerald-400/90 ml-1">
+                              (fleet)
+                            </span>
+                          )}
                       </span>
                       {m.hint && (
                         <span className="text-[10px] text-muted-foreground">

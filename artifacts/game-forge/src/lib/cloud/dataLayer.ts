@@ -368,6 +368,9 @@ export function useGetAuthConfig(_opts?: unknown) {
     puterBasePath: "/grudge-forge",
     enablePuterCloud: true,
     grudgeAuthUrl: "https://id.grudge-studio.com",
+    assetsCdn: "https://assets.grudge-studio.com",
+    objectStoreUrl: "https://objectstore.grudge-studio.com",
+    projectStorage: "puter-or-local",
   }));
 }
 

@@ -122,11 +122,11 @@ export const MODELS: ModelOption[] = [
     requiresPuterAuth: true,
   },
 
-  // ── Groq (free tier — ultra fast) ────────────────────────────────
+  // ── Groq (fleet edge key + BYOK — ultra fast) ────────────────────
   {
     id: "groq:llama-3.3-70b-versatile",
     label: "Llama 3.3 70B (Groq)",
-    hint: "Free · ultra-fast · paste Groq key",
+    hint: "Fleet · ultra-fast · agentic default",
     provider: "groq",
     modelId: "llama-3.3-70b-versatile",
     requiresFreeApiKey: true,
@@ -134,7 +134,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "groq:llama-3.1-8b-instant",
     label: "Llama 3.1 8B Instant (Groq)",
-    hint: "Free · fastest · paste Groq key",
+    hint: "Fleet · fastest · tools",
     provider: "groq",
     modelId: "llama-3.1-8b-instant",
     requiresFreeApiKey: true,
@@ -142,7 +142,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "groq:gemma2-9b-it",
     label: "Gemma 2 9B (Groq)",
-    hint: "Free · paste Groq key",
+    hint: "Fleet · compact",
     provider: "groq",
     modelId: "gemma2-9b-it",
     requiresFreeApiKey: true,
@@ -150,7 +150,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "groq:qwen-qwq-32b",
     label: "Qwen QwQ 32B (Groq)",
-    hint: "Free · reasoning · paste Groq key",
+    hint: "Fleet · reasoning",
     provider: "groq",
     modelId: "qwen-qwq-32b",
     requiresFreeApiKey: true,
@@ -256,7 +256,7 @@ export const MODELS: ModelOption[] = [
   {
     id: "together:meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
     label: "Llama 3.1 8B Turbo (Together)",
-    hint: "Free credits · Together key",
+    hint: "Fleet edge key · open models",
     provider: "together",
     modelId: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
     requiresFreeApiKey: true,
@@ -293,7 +293,8 @@ export const MODELS: ModelOption[] = [
   },
 ];
 
-export const DEFAULT_MODEL_ID = MODELS[0].id;
+/** Prefer fleet Groq for agentic tools (no Puter gate). Puter remains available. */
+export const DEFAULT_MODEL_ID = "groq:llama-3.3-70b-versatile";
 
 const LEGACY_SERVER_IDS = new Set([
   "claude-sonnet-4-6",

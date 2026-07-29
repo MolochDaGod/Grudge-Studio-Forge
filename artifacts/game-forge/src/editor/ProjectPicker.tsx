@@ -21,12 +21,27 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditor } from "@/store/editor";
-import { FolderOpen, Plus, Trash2, Loader2, Sparkles } from "lucide-react";
+import { useAuth } from "@/store/auth";
+import { signInWithPuter } from "@/lib/authBootstrap";
+import {
+  FolderOpen,
+  Plus,
+  Trash2,
+  Loader2,
+  Sparkles,
+  Cloud,
+  HardDrive,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 
 export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const setProject = useEditor((s) => s.setProject);
   const projectId = useEditor((s) => s.projectId);
+  const isPuter = useAuth((s) => s.isPuterSignedIn);
+  const authStatus = useAuth((s) => s.status);
+  const { toast } = useToast();
 
   // Coerce to array defensively. The destructure pattern `data: projects = []`
   // only fires when `data` is `undefined`; a `null` (from any future empty- or
@@ -40,6 +55,12 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+
+  const storageLabel = isPuter ? "Puter cloud (Grudge)" : "This browser (local)";
+  const storageHint = isPuter
+    ? "Projects sync to your Puter drive (KV index + FS scene JSON)."
+    : "Projects stay in this browser until you sign in with Puter.";
 
   const onCreate = async () => {
     if (!name.trim()) return;
@@ -48,6 +69,12 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
     setProject(res.id);
     setName("");
     setDescription("");
+    toast({
+      title: isPuter ? "Project saved to Puter cloud" : "Project saved locally",
+      description: isPuter
+        ? `"${res.name}" · sign-in keeps it across devices`
+        : `"${res.name}" · use Sign in with Puter for cloud sync`,
+    });
     onOpenChange(false);
   };
 
@@ -63,17 +90,75 @@ export function ProjectPicker({ open, onOpenChange }: { open: boolean; onOpenCha
     if (projectId === id) setProject(null);
   };
 
+  const onSignInPuter = async () => {
+    setSigningIn(true);
+    try {
+      await signInWithPuter();
+      qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      toast({
+        title: "Signed in with Puter",
+        description: "Projects now save to your Grudge Puter cloud.",
+      });
+    } catch (err) {
+      toast({
+        title: "Puter sign-in failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setSigningIn(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="size-5 text-primary" /> GameForge Projects
+            <Sparkles className="size-5 text-primary" /> Forge Projects
           </DialogTitle>
           <DialogDescription>
-            Open an existing project, or create a new one to start prototyping.
+            Open or create a project. Storage: <strong>{storageLabel}</strong>.
+            {" "}{storageHint}
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs">
+          {isPuter ? (
+            <>
+              <Cloud className="size-3.5 text-sky-400" />
+              <Badge variant="outline" className="text-[10px] h-5 border-sky-500/40 text-sky-300">
+                Puter cloud
+              </Badge>
+              <span className="text-muted-foreground">Grudge drive · multi-device</span>
+            </>
+          ) : (
+            <>
+              <HardDrive className="size-3.5 text-violet-400" />
+              <Badge variant="outline" className="text-[10px] h-5 border-violet-500/40 text-violet-300">
+                Local browser
+              </Badge>
+              <span className="text-muted-foreground">localStorage · this device</span>
+              {authStatus !== "idle" && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 ml-auto text-[11px]"
+                  onClick={() => void onSignInPuter()}
+                  disabled={signingIn}
+                  data-testid="button-projects-puter-signin"
+                >
+                  {signingIn ? (
+                    <Loader2 className="size-3.5 mr-1 animate-spin" />
+                  ) : (
+                    <Cloud className="size-3.5 mr-1" />
+                  )}
+                  Sign in with Puter
+                </Button>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-6 py-2">
           {/* Existing projects */}

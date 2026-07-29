@@ -148,6 +148,24 @@ export async function createProject(body: {
   };
   const existing = await readIndex<ProjectRecord>("projects");
   await writeIndex("projects", [...existing, project]);
+  // Seed an empty Main scene so Save / AI Worker work immediately
+  // (localStorage guest or Puter FS when signed in).
+  try {
+    await createScene({
+      projectId: id,
+      name: "Main",
+      data: {
+        entities: [],
+        environment: {
+          sky: "clear",
+          ambientIntensity: 0.45,
+          sunIntensity: 1.1,
+        },
+      },
+    });
+  } catch {
+    /* non-fatal — user can create a scene later */
+  }
   return project;
 }
 

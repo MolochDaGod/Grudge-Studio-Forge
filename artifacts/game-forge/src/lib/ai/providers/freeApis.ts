@@ -38,7 +38,7 @@ export const FREE_PROVIDERS: Record<FreeProviderId, FreeProviderConfig> = {
     envKey: "GROQ_API_KEY",
     storageKey: "grudge.ai.key.groq",
     signupUrl: "https://console.groq.com/keys",
-    hint: "Free tier · ultra-fast Llama / Gemma",
+    hint: "Fleet edge key or BYOK · ultra-fast Llama",
   },
   openrouter: {
     id: "openrouter",
@@ -83,9 +83,14 @@ export const FREE_PROVIDERS: Record<FreeProviderId, FreeProviderConfig> = {
     envKey: "TOGETHER_API_KEY",
     storageKey: "grudge.ai.key.together",
     signupUrl: "https://api.together.xyz/settings/api-keys",
-    hint: "Free credits · open models",
+    hint: "Fleet edge key or BYOK · open models",
   },
 };
+
+/** Providers the free-ai Worker currently has server secrets for (probed). */
+let fleetServerKeys: Partial<Record<FreeProviderId, boolean>> = {};
+let fleetServerKeysAt = 0;
+const FLEET_KEYS_TTL_MS = 60_000;
 
 export function getStoredApiKey(provider: FreeProviderId): string | null {
   try {
@@ -115,4 +120,47 @@ export function listStoredKeys(): Partial<Record<FreeProviderId, boolean>> {
     out[id] = Boolean(getStoredApiKey(id));
   }
   return out;
+}
+
+/** True if BYOK or fleet Worker secret can run this provider. */
+export function hasProviderAccess(provider: FreeProviderId): boolean {
+  if (getStoredApiKey(provider)) return true;
+  return Boolean(fleetServerKeys[provider]);
+}
+
+export function getFleetServerKeys(): Partial<Record<FreeProviderId, boolean>> {
+  return { ...fleetServerKeys };
+}
+
+/**
+ * Probe `/api/free-ai/status` for server-side keys. Safe to call often;
+ * results are cached ~60s.
+ */
+export async function refreshFleetServerKeys(
+  force = false,
+): Promise<Partial<Record<FreeProviderId, boolean>>> {
+  if (
+    !force &&
+    fleetServerKeysAt > 0 &&
+    Date.now() - fleetServerKeysAt < FLEET_KEYS_TTL_MS
+  ) {
+    return getFleetServerKeys();
+  }
+  try {
+    const r = await fetch("/api/free-ai/status", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!r.ok) return getFleetServerKeys();
+    const j = (await r.json()) as { providers?: Record<string, boolean> };
+    const next: Partial<Record<FreeProviderId, boolean>> = {};
+    for (const id of Object.keys(FREE_PROVIDERS) as FreeProviderId[]) {
+      next[id] = Boolean(j.providers?.[id]);
+    }
+    fleetServerKeys = next;
+    fleetServerKeysAt = Date.now();
+  } catch {
+    /* keep last known */
+  }
+  return getFleetServerKeys();
 }

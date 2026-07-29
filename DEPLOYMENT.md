@@ -47,6 +47,22 @@ Without D1, jobs fall back to in-memory on the isolate.
 **CF routes (free-ai worker owns these over gameforge-api `/api/*`):**
 `forge.grudge-studio.com/api/free-ai/*`, `/api/catalog/*`, `/api/agent/*`.
 
+### Secrets & env (modern stack)
+
+| Secret / var | Where | Purpose |
+| --- | --- | --- |
+| `GROQ_API_KEY` | `wrangler secret put` on **grudge-forge-free-ai** | Fleet agentic LLM (default) |
+| `TOGETHER_API_KEY` | free-ai Worker | Together models |
+| `OPENROUTER_API_KEY` / `GEMINI_API_KEY` / … | free-ai Worker | Optional providers |
+| `OBJECTSTORE_API_KEY` | ObjectStore / gameforge-api only | Presigned upload / catalog write |
+| Public CDN | SPA `fleetConfig` | `https://assets.grudge-studio.com` |
+| ObjectStore | SPA / fleet | `https://objectstore.grudge-studio.com` |
+| R2 bucket | ops docs | `grudge-assets` |
+
+**Never** commit API keys or CF Access tokens. SPA only gets public URLs.
+Project save: **Puter** (signed-in) or **localStorage** (guest) — no Railway for Forge scenes.
+Player bag/island remains Railway Postgres (fleet games, not this editor).
+
 | Surface | Component | URL / host |
 | --- | --- | --- |
 | Public editor | CF edge + Vercel SPA | https://forge.grudge-studio.com |

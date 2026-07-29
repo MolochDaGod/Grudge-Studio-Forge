@@ -45,5 +45,8 @@ export {
   getStoredApiKey,
   setStoredApiKey,
   listStoredKeys,
+  hasProviderAccess,
+  refreshFleetServerKeys,
+  getFleetServerKeys,
   type FreeProviderId,
 } from "./freeApis";
