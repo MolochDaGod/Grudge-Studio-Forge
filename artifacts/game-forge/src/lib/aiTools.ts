@@ -13,6 +13,15 @@
  */
 import { useEditor } from "@/store/editor";
 import { BUILTIN_MODELS } from "@/lib/builtinModels";
+import { FAST_ASSETS } from "@/lib/fastAssets";
+import { checkAssetUrl, requireAgentAssetUrl } from "@/lib/assetUrlPolicy";
+import {
+  createAgentJob,
+  fetchCatalogStatus,
+  fetchFastCatalog,
+  getAgentJob,
+  listAgentJobs,
+} from "@/lib/agentEdge";
 import { generateMap, type MapKind } from "@/lib/mapGen";
 import { STARTER_VFX } from "@/lib/starterPrefabs";
 import {
@@ -245,10 +254,12 @@ function buildEntity(input: {
   }
 
   if (input.type === "model") {
-    const url = input.model?.builtin
+    let url = input.model?.builtin
       ? `builtin:${input.model.builtin}`
       : input.model?.url;
     if (url) {
+      const checked = checkAssetUrl(url);
+      if (checked.ok) url = checked.url;
       e.model = {
         url,
         clip: input.model?.clip,
@@ -339,6 +350,181 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     exec: async () => ({ ok: true, data: Object.keys(BUILTIN_MODELS) }),
   },
 
+  {
+    def: {
+      name: "list_fast_assets",
+      description:
+        "List one-click Fast options (characters, maps, VFX, weapons, nature, RTS). Prefer these over inventing URLs. Returns id, label, group, modelUrl (usually builtin:…).",
+      input_schema: {
+        type: "object",
+        properties: {
+          group: {
+            type: "string",
+            description:
+              "Optional filter: characters|maps|vfx|nature|buildings|vehicles|props|weapons",
+          },
+        },
+      },
+    },
+    exec: async (input) => {
+      const { items, source } = await fetchFastCatalog();
+      const group =
+        typeof input.group === "string" ? input.group.toLowerCase() : null;
+      const filtered = group
+        ? items.filter((a) => a.group === group)
+        : items;
+      return {
+        ok: true,
+        data: {
+          source,
+          count: filtered.length,
+          items: filtered.map((a) => ({
+            id: a.id,
+            label: a.label,
+            group: a.group,
+            modelUrl: a.modelUrl,
+            blurb: a.blurb,
+          })),
+        },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "spawn_fast_asset",
+      description:
+        "Spawn a Fast options asset by id (from list_fast_assets). Uses durable builtin:/R2 URLs only.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Fast asset id e.g. char-race-orc" },
+          name: { type: "string" },
+          position: {
+            type: "array",
+            items: { type: "number" },
+            minItems: 3,
+            maxItems: 3,
+          },
+        },
+        required: ["id"],
+      },
+    },
+    exec: async (input) => {
+      const id = String(input.id ?? "");
+      const { items } = await fetchFastCatalog();
+      const a = items.find((x) => x.id === id) ?? FAST_ASSETS.find((x) => x.id === id);
+      if (!a) {
+        return {
+          ok: false,
+          error: `Unknown fast asset id "${id}". Call list_fast_assets first.`,
+        };
+      }
+      let modelUrl: string;
+      try {
+        modelUrl = requireAgentAssetUrl(a.modelUrl);
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+      const e = buildEntity({
+        type: "model",
+        name: typeof input.name === "string" ? input.name : a.label,
+        position: (input.position as [number, number, number] | undefined) ?? [
+          0,
+          a.spawnY ?? 0,
+          0,
+        ],
+        scale: a.scale != null ? [a.scale, a.scale, a.scale] : undefined,
+        model: { url: modelUrl },
+      });
+      if (!e.model?.url) {
+        return { ok: false, error: "Failed to build model entity" };
+      }
+      useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      return {
+        ok: true,
+        data: { id: e.id, name: e.name, modelUrl: e.model.url, fastId: a.id },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "agent_stack_status",
+      description:
+        "Report edge stack health for agentic creation: D1 jobs, Fast catalog, free-AI, R2 policy. Call when diagnosing deploy/AI wiring.",
+      input_schema: { type: "object", properties: {} },
+    },
+    exec: async () => {
+      const catalog = await fetchCatalogStatus();
+      const jobs = await listAgentJobs();
+      return {
+        ok: true,
+        data: {
+          catalog,
+          openJobs: jobs.filter((j) => j.status === "pending" || j.status === "running")
+            .length,
+          recentJobs: jobs.slice(0, 5),
+          policy:
+            "Models: builtin: or https://assets.grudge-studio.com. Play data: Railway. No Docker for SPA.",
+        },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "create_agent_job",
+      description:
+        "Enqueue an edge agent job (catalog/generate/bake hint). Poll with get_agent_job. Durable when D1 is bound on free-ai worker.",
+      input_schema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            description: "Job kind e.g. generate-texture, bake-glb, spawn-hint",
+          },
+          prompt: { type: "string" },
+        },
+        required: ["kind"],
+      },
+    },
+    exec: async (input) => {
+      const job = await createAgentJob({
+        kind: String(input.kind),
+        prompt: typeof input.prompt === "string" ? input.prompt : undefined,
+      });
+      if (!job) {
+        return {
+          ok: false,
+          error:
+            "Agent job API unavailable. Deploy grudge-forge-free-ai worker with /api/agent routes.",
+        };
+      }
+      return { ok: true, data: job };
+    },
+  },
+
+  {
+    def: {
+      name: "get_agent_job",
+      description: "Get status of an edge agent job by id.",
+      input_schema: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+    },
+    exec: async (input) => {
+      const job = await getAgentJob(String(input.id));
+      if (!job) return { ok: false, error: "Job not found or edge offline" };
+      return { ok: true, data: job };
+    },
+  },
+
   // ── Entity CRUD ────────────────────────────────────────────────────
   {
     def: {
@@ -416,14 +602,38 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       },
     },
     exec: async (input) => {
+      const raw = input as Parameters<typeof buildEntity>[0] & {
+        model?: { builtin?: string; url?: string };
+      };
+      // Prefer builtin keys; validate any absolute URL against production policy.
+      if (raw.model?.url && !raw.model?.builtin) {
+        const c = checkAssetUrl(raw.model.url);
+        if (!c.ok) {
+          return {
+            ok: false,
+            error: `${c.error} Prefer list_fast_assets / list_builtin_models.`,
+          };
+        }
+        raw.model = { ...raw.model, url: c.url };
+      }
+      if (raw.model?.builtin) {
+        const key = raw.model.builtin.replace(/^builtin:/, "");
+        if (!(key in BUILTIN_MODELS)) {
+          return {
+            ok: false,
+            error: `Unknown builtin "${key}". Call list_builtin_models or list_fast_assets.`,
+          };
+        }
+      }
       const e = buildEntity({
-        ...(input as Parameters<typeof buildEntity>[0]),
+        ...raw,
         type: "model",
       });
       if (!e.model?.url) {
         return {
           ok: false,
-          error: "Need either model.builtin or model.url. Call list_builtin_models for valid keys.",
+          error:
+            "Need either model.builtin or model.url. Call list_fast_assets or list_builtin_models.",
         };
       }
       useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
@@ -1040,6 +1250,25 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
       },
     },
     exec: async (input) => {
+      const sourceUrl = String(input.sourceUrl ?? "");
+      try {
+        const u = new URL(sourceUrl);
+        const host = u.hostname.toLowerCase();
+        const ok =
+          host === "assets.grudge-studio.com" ||
+          host === "cdn.polyhaven.com" ||
+          host === "dl.polyhaven.org" ||
+          host.endsWith("polyhaven.com") ||
+          host.endsWith("polyhaven.org");
+        if (!ok) {
+          return {
+            ok: false,
+            error: `import_asset_from_url blocked host "${host}". Use assets.grudge-studio.com, Poly Haven, or list_fast_assets.`,
+          };
+        }
+      } catch {
+        return { ok: false, error: "Invalid sourceUrl" };
+      }
       const projectId = useEditor.getState().projectId;
       if (!projectId) return { ok: false, error: "No project open." };
       const res = await fetch(apiUrl("ai-storage/import-asset"), {
@@ -1047,7 +1276,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          sourceUrl: input.sourceUrl,
+          sourceUrl,
           name: input.name,
           contentType: input.contentType,
         }),
@@ -1278,10 +1507,13 @@ export function buildSystemPrompt(): string {
       ].join("\n");
     })(),
     ``,
-    `AI BRAIN — R2 · D1 · RESEARCH · EXAMPLES (use these; do not invent APIs or URLs):`,
-    `- Starter scenes / game examples: list_scenes when a project is open; templates are loaded by the human via the empty-scene picker (Deathmatch Cyberpunk/Fort Royale/Encampment, RPG Village, Dungeon, Survival Camp, City Sandbox, Arena Underground Wars). After a template loads, call get_scene_summary + list_entities before editing. Maps use builtin:map-* keys — EntityRenderer resolves them to /builtin/*.glb or https://assets.grudge-studio.com/builtin/*.glb (R2). Never invent /builtin:map-… relative paths.`,
-    `- Cloudflare R2: list_r2_storage (prefixes: user-assets, ai-snapshots, templates, maps, forge-spa, cf-ai) and list_user_assets for the open project. import_asset_from_url pulls remote GLB/textures into R2; save_scene_snapshot checkpoints scenes. Prefer reusing existing R2 URLs over re-downloading.`,
-    `- D1 / long-term memory: call d1_status or knowledge_status first. If D1 is configured, query_d1 with read-only SELECT/PRAGMA (discover schema via sqlite_master). If not, use get_brain_catalog (Postgres projects/scenes/assets totals) + list_scenes / list_prefabs / list_assets.`,
+    `AI BRAIN — R2 · D1 · FAST OPTIONS · EDGE (use these; do not invent APIs or URLs):`,
+    `- STACK: Editor SPA = Vercel; edge = CF Workers; binaries = R2 (assets.grudge-studio.com); agent jobs/catalog = /api/agent + /api/catalog on free-ai worker (optional D1). Player/fleet data = Railway Postgres. Do NOT use Docker for the SPA. Do NOT invent Replit/localhost URLs.`,
+    `- FAST OPTIONS (preferred spawn path): list_fast_assets → spawn_fast_asset({ id }) or add_model_entity({ model: { builtin: '…' } }). Covers races, pirate islands, VFX, RTS, weapons. agent_stack_status diagnoses edge/D1.`,
+    `- Starter scenes / game examples: list_scenes when a project is open; templates via empty-scene picker. Maps use builtin:map-* keys → R2. Never invent relative /builtin:map-… paths.`,
+    `- Cloudflare R2: list_r2_storage + list_user_assets. import_asset_from_url only for allowlisted hosts (then prefer the returned R2 URL). Never leave blob: or localhost in scenes.`,
+    `- Asset policy: only builtin:<key> or https://assets.grudge-studio.com/… (or Poly Haven CDN during import). check fails → list_fast_assets.`,
+    `- D1 agent jobs: create_agent_job / get_agent_job when edge is up. Also d1_status / knowledge_status / query_d1 when configured. Else get_brain_catalog + list_scenes / list_prefabs / list_assets.`,
     `- Internet / GitHub research for three.js · R3F · Rapier · drei: search_github (topic= threejs|r3f|rapier|drei|gltf|physics|character|navmesh), list_docs, then fetch_doc_url on allowlisted hosts (threejs.org, docs.pmnd.rs, rapier.rs, github.com, raw.githubusercontent.com). Extract patterns → implement with Forge tools (entities, scripts, materials, node graph). Never dump entire repos; never claim you ran code you did not.`,
     `- When the user asks "how does X work in three/r3f/rapier?" or for examples: research first (list_docs → fetch_doc_url and/or search_github), then build a minimal working version in the scene.`,
     `- Blazor C# scripts: the editor ships a Blazor WASM runtime + C#→JS transpile path for MonoBehaviour-style scripts (public/_framework, scene/csTranspile). Prefer JS script templates (list_script_templates) unless the user explicitly wants C#; when writing C#, stick to Vector3/Transform/Time/Debug APIs documented in csharp/GameForgeRuntime.`,
@@ -1293,7 +1525,7 @@ export function buildSystemPrompt(): string {
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,
-    `- Take initiative. For a "playable scene": generate_map → add_model_entity (blake) → set_player → set_environment / apply_atmosphere_preset as needed.`,
+    `- Take initiative. For a "playable scene": generate_map → spawn_fast_asset (blake / race) → set_player → set_environment / apply_atmosphere_preset as needed.`,
     `- For "feel" tweaks prefer set_tunable_param after list_tunable_params.`,
     `- Bulk scene questions → count_entities / query_entities (ECS mirror).`,
     `- BEFORE big builds: get_active_scene_meta, get_project_summary or get_brain_catalog, describe_layout, list_scenes / list_prefabs / list_assets / list_r2_storage.`,
@@ -1304,8 +1536,8 @@ export function buildSystemPrompt(): string {
     `- Always list_entities for real ids before update/delete/attach — never guess ids.`,
     `- SCRIPT EDITS: get_script first; patch_script for small diffs; update_script for rewrites; respect validate_script errors; get_script_logs after play.`,
     `- New behaviors: list_script_templates → create_script_from_template when possible.`,
-    `- Player characters: prefer builtin 'blake'.`,
-    `- Remote assets: import_asset_from_url → add_model_entity; recall with list_user_assets / list_r2_storage.`,
+    `- Player characters: prefer builtin 'blake' or list_fast_assets characters group.`,
+    `- Remote assets: import_asset_from_url (allowlisted) → add_model_entity; never random web hosts.`,
     `- Checkpoints / share: save_scene_snapshot.`,
     `- Navigation: list_surfaces, set_surface, bake_navmesh, find_path / sample_navmesh, set_nav_agent (destructive where noted).`,
     `- Physics layers: list_layers, get_layer_matrix, set_layer, set_layer_matrix.`,

@@ -91,6 +91,15 @@ export const BEST_SERVICES: BestService[] = [
 
   // ── Assets ─────────────────────────────────────────────────────────
   {
+    id: "agent-edge",
+    name: "Agent catalog + jobs",
+    category: "ai",
+    tier: "fleet",
+    blurb: "Edge /api/catalog + /api/agent · Fast assets · optional D1 jobs",
+    url: "https://forge.grudge-studio.com/api/catalog/status",
+    wired: true,
+  },
+  {
     id: "fast-assets",
     name: "Fast options",
     category: "assets",

@@ -219,14 +219,35 @@ export default {
       );
     }
 
-    // ── Free AI is a separate worker route in CF; if traffic hits this
-    // worker first, optional FREE_AI_ORIGIN can forward. ────────────────
-    if (path.startsWith("/api/free-ai/") && env.FREE_AI_ORIGIN) {
-      const res = await proxyTo(request, env.FREE_AI_ORIGIN, { stripPrefix: "" });
-      return applySecurityHeaders(res, { "Cache-Control": "no-store" });
+    // ── Free AI + agent catalog (Workers AI edge) ────────────────────
+    // Prefer dedicated FREE_AI_ORIGIN; else FORGE_AI_ORIGIN; else workers.dev default.
+    const freeAiOrigin = (
+      env.FREE_AI_ORIGIN ||
+      env.FORGE_AI_ORIGIN ||
+      "https://grudge-forge-free-ai.grudge.workers.dev"
+    ).replace(/\/$/, "");
+
+    if (
+      path.startsWith("/api/free-ai/") ||
+      path.startsWith("/api/catalog/") ||
+      path.startsWith("/api/agent/")
+    ) {
+      try {
+        const res = await proxyTo(request, freeAiOrigin, { stripPrefix: "" });
+        return applySecurityHeaders(res, { "Cache-Control": "no-store" });
+      } catch (err) {
+        return json(
+          {
+            error: "Agent/AI edge unreachable",
+            detail: err.message || String(err),
+            freeAiOrigin,
+          },
+          502,
+        );
+      }
     }
 
-    // ── JSON API → Railway ───────────────────────────────────────────
+    // ── JSON API → Railway / Forge API ───────────────────────────────
     if (path.startsWith("/api/")) {
       if (!env.API_ORIGIN) return json({ error: "API_ORIGIN unset" }, 500);
       const res = await proxyTo(request, env.API_ORIGIN);

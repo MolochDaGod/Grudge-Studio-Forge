@@ -15,14 +15,37 @@ workers, DNS, or the SPA build.
     ▼
 forge.grudge-studio.com          Cloudflare DNS (proxied)
     │
-    ├─ /api/*           → Worker grudge-gameforge-api   (Forge JSON API)
-    ├─ /api/free-ai/*   → Worker grudge-forge-free-ai   (BYOK / free LLM proxy)
+    ├─ /api/free-ai/*   → Worker grudge-forge-free-ai   (BYOK LLM + catalog + agent jobs)
+    ├─ /api/catalog/*   → same free-ai worker            (Fast assets JSON)
+    ├─ /api/agent/*     → same free-ai worker            (job queue; optional D1)
+    ├─ /api/*           → Worker grudge-gameforge-api / Railway  (Forge JSON / fleet)
     └─ /*               → Worker grudge-gameforge-web
                               │
                               ├─ ORIGIN        → https://grudge-studio-forge.vercel.app  (SPA)
                               ├─ ASSETS_ORIGIN → https://assets.grudge-studio.com        (R2)
                               └─ API_ORIGIN    → optional Railway fleet API (not Forge DB)
 ```
+
+### Stack principles (agentic editor)
+
+| Concern | Use | Do not use |
+| --- | --- | --- |
+| SPA / editor UI | Vercel prebuilt (GHA) | Docker Cloud / Railway for SPA |
+| Binaries / GLBs | **R2** `assets.grudge-studio.com` + `builtin:` keys | Random hosts, Replit, localhost |
+| Agentic LLM | free-ai Worker (BYOK) + client tools | Second AI host without need |
+| Agent jobs / Fast catalog | free-ai Worker + optional **D1** | New storage product |
+| Player / bag / wallet | Railway Postgres | Forge D1 |
+| Video | — | Stream until cinema is a product |
+
+**Agent tools** must call `list_fast_assets` / `spawn_fast_asset` / `builtin:` only; absolute URLs must pass asset URL policy (R2 / Poly Haven).
+
+**D1 (agent jobs):** database `forge-agent` bound as `DB` on `grudge-forge-free-ai`
+(`workers/forge-free-ai/schema.sql`). Apply schema:
+`npx wrangler d1 execute forge-agent --remote --file=./schema.sql`.
+Without D1, jobs fall back to in-memory on the isolate.
+
+**CF routes (free-ai worker owns these over gameforge-api `/api/*`):**
+`forge.grudge-studio.com/api/free-ai/*`, `/api/catalog/*`, `/api/agent/*`.
 
 | Surface | Component | URL / host |
 | --- | --- | --- |

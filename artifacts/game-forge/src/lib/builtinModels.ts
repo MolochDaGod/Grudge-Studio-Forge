@@ -295,7 +295,26 @@ export function resolveModelUrl(url: string): string {
       `Unknown builtin model "${key}". Register it in BUILTIN_MODELS (lib/builtinModels.ts) or update the scene to use a valid builtin: key.`,
     );
   }
-  if (/^https?:\/\//i.test(url) || url.startsWith("data:") || url.startsWith("blob:")) return url;
+  // Block known-bad hosts early (agent / pasted URLs)
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host.includes("replit") ||
+        host.endsWith(".local")
+      ) {
+        throw new Error(
+          `Blocked model host "${host}" — use builtin: keys or assets.grudge-studio.com (R2)`,
+        );
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("Blocked")) throw e;
+    }
+    return url;
+  }
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   const base = import.meta.env.BASE_URL || "/";
   if (base !== "/" && url.startsWith(base)) return url;
   return `${base}${url.replace(/^\/+/, "")}`;

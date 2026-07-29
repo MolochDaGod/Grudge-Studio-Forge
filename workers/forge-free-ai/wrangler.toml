@@ -3,6 +3,28 @@ main = "worker.js"
 compatibility_date = "2025-09-01"
 workers_dev = true
 
+# More-specific than grudge-gameforge-api's /api/* so catalog + agent + free-ai
+# hit this worker on the production domain (not Railway 404s).
+[[routes]]
+pattern = "forge.grudge-studio.com/api/free-ai/*"
+zone_name = "grudge-studio.com"
+
+[[routes]]
+pattern = "forge.grudge-studio.com/api/catalog/*"
+zone_name = "grudge-studio.com"
+
+[[routes]]
+pattern = "forge.grudge-studio.com/api/agent/*"
+zone_name = "grudge-studio.com"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forge-agent"
+database_id = "261db160-c45e-4688-a253-a943a01f75af"
+
+[vars]
+ORIGIN = "https://grudge-studio-forge.vercel.app"
+
 # Optional secrets (wrangler secret put NAME):
 # GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
 # CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY

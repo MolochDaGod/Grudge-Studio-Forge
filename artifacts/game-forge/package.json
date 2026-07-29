@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts --host 0.0.0.0",
-    "prebuild": "pnpm --filter @workspace/player run build",
+    "export:fast-assets": "node scripts/export-fast-assets.mjs",
+    "prebuild": "node scripts/export-fast-assets.mjs && pnpm --filter @workspace/player run build",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
