@@ -76,6 +76,7 @@ export function loadPuterSdk(origin = "https://js.puter.com"): Promise<PuterSdk>
   if (window.puter) return Promise.resolve(window.puter);
   if (loadPromise) return loadPromise;
 
+  const PUTER_LOAD_MS = 8_000;
   loadPromise = new Promise<PuterSdk>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `${origin.replace(/\/$/, "")}/v2/`;
@@ -86,15 +87,27 @@ export function loadPuterSdk(origin = "https://js.puter.com"): Promise<PuterSdk>
     // Plain `<script>` tags execute fine cross-origin without CORS — we
     // just lose the ability to read window.onerror details, which we
     // don't need (the SDK exposes its own `window.puter` global).
-    script.onload = () => {
-      if (window.puter) resolve(window.puter);
-      else reject(new Error("Puter SDK loaded but window.puter is missing"));
+    let settled = false;
+    const finish = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) {
+        loadPromise = null;
+        reject(err);
+      } else if (window.puter) {
+        resolve(window.puter);
+      } else {
+        loadPromise = null;
+        reject(new Error("Puter SDK loaded but window.puter is missing"));
+      }
     };
-    script.onerror = () => {
-      // Reset so a future caller can retry after a network blip.
-      loadPromise = null;
-      reject(new Error("Failed to load Puter SDK"));
-    };
+    const timer = window.setTimeout(() => {
+      // Hang forever if Puter CDN is blocked/slow → editor stuck at auth idle.
+      finish(new Error("Puter SDK load timeout"));
+    }, PUTER_LOAD_MS);
+    script.onload = () => finish();
+    script.onerror = () => finish(new Error("Failed to load Puter SDK"));
     document.head.appendChild(script);
   });
   return loadPromise;

@@ -144,7 +144,9 @@ function preloadViewportCandidate(): Plugin {
             tag: "link",
             attrs: {
               rel: "modulepreload",
-              crossorigin: "",
+              // Use anonymous (not empty string) — empty crossorigin="" can
+              // break modulepreload on some browsers and white-screen the SPA.
+              crossorigin: "anonymous",
               href: `${basePath.replace(/\/$/, "")}/${filename}`,
             },
             injectTo: "head" as const,

@@ -98,38 +98,50 @@ async function readPuterSession(sdk: PuterSdk): Promise<AuthUser | null> {
  * and otherwise leave the store at `anon` so the Welcome modal renders.
  */
 export async function bootstrapAuth(): Promise<void> {
-  // 1. Check for a ?grudge_token= URL param (cross-domain OAuth redirect)
-  //    — used by Grudge Studio (dev tool) module embeds for single login.
-  if (await checkGrudgeTokenParam()) return;
-
-  // 2. Check for an existing Grudge ID session in localStorage
-  //    (may have been injected by Studio webview SSO before this ran)
-  if (await checkGrudgeSession()) return;
-
-  // 3. Try the Puter SDK. We tolerate CDN load failures (corp networks
-  // that block puter.com) by falling through to the guest path.
-  let sdk: PuterSdk | null = null;
   try {
-    sdk = await loadPuterSdk();
-  } catch {
-    sdk = null;
-  }
+    // 1. Check for a ?grudge_token= URL param (cross-domain OAuth redirect)
+    //    — used by Grudge Studio (dev tool) module embeds for single login.
+    if (await checkGrudgeTokenParam()) return;
 
-  if (sdk) {
-    const user = await readPuterSession(sdk);
-    if (user) {
-      useAuth.getState().setSignedIn(user);
+    // 2. Check for an existing Grudge ID session in localStorage
+    //    (may have been injected by Studio webview SSO before this ran)
+    if (await checkGrudgeSession()) return;
+
+    // 3. Try the Puter SDK. We tolerate CDN load failures (corp networks
+    // that block puter.com) by falling through to the guest path.
+    // loadPuterSdk has an 8s timeout so a hung CDN never freezes the SPA.
+    let sdk: PuterSdk | null = null;
+    try {
+      sdk = await loadPuterSdk();
+    } catch {
+      sdk = null;
+    }
+
+    if (sdk) {
+      const user = await readPuterSession(sdk);
+      if (user) {
+        useAuth.getState().setSignedIn(user);
+        return;
+      }
+    }
+
+    const guest = readStoredGuest();
+    if (guest) {
+      useAuth.getState().setGuest({ id: guest.id, name: guest.name });
       return;
     }
-  }
 
-  const guest = readStoredGuest();
-  if (guest) {
-    useAuth.getState().setGuest({ id: guest.id, name: guest.name });
-    return;
+    useAuth.getState().reset();
+  } catch {
+    // Never leave the store at "idle" — Welcome modal only opens for "anon".
+    if (useAuth.getState().status === "idle") {
+      useAuth.getState().reset();
+    }
+  } finally {
+    if (useAuth.getState().status === "idle") {
+      useAuth.getState().reset();
+    }
   }
-
-  useAuth.getState().reset();
 }
 
 /**

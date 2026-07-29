@@ -30,7 +30,9 @@ export function WelcomeModal() {
   const [busy, setBusy] = useState<"signin" | "grudge" | "guest" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const open = status === "anon";
+  // Show while still bootstrapping (idle) or when bootstrap finished with no user.
+  // Without idle, a hung Puter CDN left the SPA on a blank editor with no modal.
+  const open = status === "anon" || status === "idle";
 
   async function onSignIn() {
     setBusy("signin");
