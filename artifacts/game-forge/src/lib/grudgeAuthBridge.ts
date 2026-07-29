@@ -1,25 +1,35 @@
 /**
  * Grudge ID auth bridge for GameForge.
  *
- * Since the Forge runs on grudge-studio-forge.pages.dev (different TLD from
- * grudge-studio.com), it cannot share the `.grudge-studio.com` session cookie.
- * Instead it uses the launch-token popup flow:
+ * Forge (forge.grudge-studio.com / grudge-studio-forge.vercel.app) is a
+ * different origin from the ID hub, so it cannot share the session cookie.
+ * It uses the launch-token popup flow against the SSOT auth host:
  *
  *   1. User clicks "Sign in with Grudge ID"
- *   2. Popup opens at grudge-studio.com/auth/popup?audience=<forge-origin>
+ *   2. Popup opens at id.grudge-studio.com/auth/popup?audience=<forge-origin>
  *   3. User signs in via the unified modal (Discord, Phantom, guest, etc.)
  *   4. Popup posts back { type: "grudge:auth:success", token, player }
  *   5. Forge stores the token + player in the Zustand auth store
  *
  * On OAuth redirects the server appends ?grudge_token=<jwt> — this module
  * also handles extracting and exchanging that on page load.
+ *
+ * SSOT: id.grudge-studio.com only (never auth.grudge-studio.com).
+ * Apex grudge-studio.com still accepted as a postMessage origin for legacy
+ * popups that may still be open mid-migration.
  */
 
 import { useAuth, type AuthUser } from "@/store/auth";
 
-// The ENGINE host that serves the auth popup and API
-const GRUDGE_AUTH_HOST = "https://grudge-studio.com";
+/** Production Grudge ID hub — login UI + /api/auth/* (proxied to Railway). */
+const GRUDGE_AUTH_HOST = "https://id.grudge-studio.com";
 const GRUDGE_API = GRUDGE_AUTH_HOST;
+
+/** Origins allowed to postMessage grudge:auth:* back to Forge. */
+const GRUDGE_AUTH_MESSAGE_ORIGINS = new Set([
+  GRUDGE_AUTH_HOST,
+  "https://grudge-studio.com",
+]);
 
 export interface GrudgePlayer {
   id: number;
@@ -172,7 +182,7 @@ export function signInWithGrudge(): Promise<AuthUser> {
     };
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== GRUDGE_AUTH_HOST) return;
+      if (!GRUDGE_AUTH_MESSAGE_ORIGINS.has(event.origin)) return;
       const data = event.data;
       if (!data || typeof data !== "object") return;
 

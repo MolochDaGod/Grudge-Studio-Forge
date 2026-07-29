@@ -406,35 +406,33 @@ export function useGetStorageObject(objectPath: string, _opts?: unknown) {
   );
 }
 
-// ── Grudge catalogs (direct fetch from static JSON) ────────────────────
-const GRUDGE_API = "https://api.grudge-studio.com/api";
+// ── Grudge catalogs ────────────────────────────────────────────────────
+// Same-origin forge Worker (`/api/grudge/*`) — never api.grudge-studio.com
+// (deprecated split-brain; 404 in production). Mirrors `lib/grudge.ts`.
+const GRUDGE_CATALOG_BASE = "/api/grudge";
+
+async function fetchGrudgeCatalog(path: string): Promise<unknown> {
+  const res = await fetch(`${GRUDGE_CATALOG_BASE}${path}`);
+  if (!res.ok) {
+    throw new Error(`Grudge catalog ${path} failed: ${res.status}`);
+  }
+  return res.json();
+}
 
 export function useGetGrudgeWeapons(_opts?: unknown) {
-  return queryResult(["grudgeWeapons"], async () => {
-    const res = await fetch(`${GRUDGE_API}/grudge/weapons`);
-    return res.json();
-  });
+  return queryResult(["grudgeWeapons"], () => fetchGrudgeCatalog("/weapons"));
 }
 
 export function useGetGrudgeItems(_opts?: unknown) {
-  return queryResult(["grudgeItems"], async () => {
-    const res = await fetch(`${GRUDGE_API}/grudge/items`);
-    return res.json();
-  });
+  return queryResult(["grudgeItems"], () => fetchGrudgeCatalog("/items"));
 }
 
 export function useGetGrudgeEnemies(_opts?: unknown) {
-  return queryResult(["grudgeEnemies"], async () => {
-    const res = await fetch(`${GRUDGE_API}/grudge/enemies`);
-    return res.json();
-  });
+  return queryResult(["grudgeEnemies"], () => fetchGrudgeCatalog("/enemies"));
 }
 
 export function useGetGrudgeQuests(_opts?: unknown) {
-  return queryResult(["grudgeQuests"], async () => {
-    const res = await fetch(`${GRUDGE_API}/grudge/quests`);
-    return res.json();
-  });
+  return queryResult(["grudgeQuests"], () => fetchGrudgeCatalog("/quests"));
 }
 
 // ── Templates (API first, static fallback) ─────────────────────────────
