@@ -72,6 +72,19 @@ Prefer **pmndrs postprocessing** over ad-hoc EffectComposer stacks.
 
 Optional later: **howler** (SFX), **colyseus.js** (play client only) — see [multiplayer deploy]({% link multiplayer-deploy.md %}).
 
+## Fleet assets (D1 + R2 + ObjectStore)
+
+| Layer | Authority | Forge usage |
+|---|---|---|
+| **Binaries** | R2 `assets.grudge-studio.com` | `builtin:` keys, Fast options, `search_fleet_assets` |
+| **Mesh index** | D1 `grudge-assets-db` via `api.grudge-studio.com/assets` | Edge `GET /api/catalog/search` (Worker filters; fleet API has weak query) |
+| **Gamedata** | ObjectStore `weapons|equipment|materials.json` | Edge `GET /api/catalog/gamedata` — icons/stats, not meshes |
+| **Agent jobs** | D1 `forge-agent` | `POST /api/agent/jobs` only — never store GLBs here |
+| **Player bag** | Railway Postgres | Not Forge D1 |
+
+AI tools: `list_fast_assets` · `search_fleet_assets` · `spawn_fleet_asset` · `list_gamedata` · `agent_stack_status`.  
+Canonical heroes: `builtin:grudge6:warrior|orc|…` (FBX kits). Weapons: `builtin:race-weapon:*` (grudge6 library).
+
 ## Fleet optional (`optionalDependencies`)
 
 | Package | Role |

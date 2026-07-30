@@ -6,10 +6,19 @@
  *   POST /api/free-ai/chat?provider=
  *   GET  /api/catalog/status
  *   GET  /api/catalog/fast-assets
+ *   GET  /api/catalog/search?q=&category=&prefix=&format=&limit=
+ *   GET  /api/catalog/gamedata?kind=weapons|equipment|materials&q=&limit=
  *   GET  /api/agent/jobs
  *   POST /api/agent/jobs
  *   GET  /api/agent/jobs/:id
  *   PATCH /api/agent/jobs/:id
+ *
+ * Data plane (do not confuse):
+ *   D1 env.DB (forge-agent) — agent job rows only
+ *   Fleet D1 asset_registry — via public api.grudge-studio.com/assets (read)
+ *   R2 binaries — assets.grudge-studio.com (never invent paths)
+ *   ObjectStore gamedata — weapons/equipment/materials JSON (icons via spritePath)
+ *   Player bag/XP — Railway Postgres (not this worker)
  *
  * Optional bindings:
  *   D1  env.DB  — durable agent_jobs table (see schema.sql)
@@ -282,18 +291,511 @@ function isCatalogPath(path, suffix) {
   );
 }
 
-async function handleCatalog(path, env) {
+/** Fleet public asset index (D1-backed). Max page size observed: 500. */
+const FLEET_ASSETS_API = "https://api.grudge-studio.com/assets";
+const OBJECTSTORE_API = "https://objectstore.grudge-studio.com/api/v1";
+const CDN_ORIGIN = "https://assets.grudge-studio.com";
+
+/**
+ * Always-on curated entries (verified CDN keys). Returned first so agents
+ * never invent grudge6 / weapon paths even if fleet search is cold.
+ * Do not add un-verified paths here.
+ */
+const CANONICAL_FLEET = [
+  {
+    name: "WK Characters (human)",
+    category: "characters",
+    r2Key: "models/grudge6/races/WK_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "BRB Characters (barbarian)",
+    category: "characters",
+    r2Key: "models/grudge6/races/BRB_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "ELF Characters",
+    category: "characters",
+    r2Key: "models/grudge6/races/ELF_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "DWF Characters (dwarf)",
+    category: "characters",
+    r2Key: "models/grudge6/races/DWF_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "ORC Characters",
+    category: "characters",
+    r2Key: "models/grudge6/races/ORC_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "UD Characters (undead)",
+    category: "characters",
+    r2Key: "models/grudge6/races/UD_Characters.fbx",
+    format: "fbx",
+    kind: "character",
+  },
+  {
+    name: "WK sword A",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/human/WK_weapon_sword_A.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "ELF bow",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/elf/ELF_weapon_bow.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "ORC axe A",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/orc/ORC_weapon_Axe_A.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "DWF axe A",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/dwarf/DWF_Weapon_axe_A.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "BRB hammer A",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/barbarian/BRB_weapon_hammer_A.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "UD sword A",
+    category: "weapons",
+    r2Key: "models/grudge6/races/library/undead/UD_weapon_Sword_A.glb",
+    format: "glb",
+    kind: "weapon",
+  },
+  {
+    name: "Pirate Islands lobby",
+    category: "maps",
+    r2Key: "models/lobby/pirate-islands/scene.glb",
+    format: "glb",
+    kind: "map",
+  },
+  {
+    name: "Nature vegetation pack",
+    category: "nature",
+    r2Key: "models/nature/stylized/biome/nature_vegetation.glb",
+    format: "glb",
+    kind: "nature",
+  },
+  {
+    name: "Ore nodes pack",
+    category: "nature",
+    r2Key: "models/nature/stylized/harvest/ore_nodes.glb",
+    format: "glb",
+    kind: "nature",
+  },
+].map((row) => ({
+  ...row,
+  id: row.r2Key,
+  cdnUrl: `${CDN_ORIGIN}/${row.r2Key}`,
+  grudgeUuid: null,
+  source: "canonical",
+}));
+
+/** Module-level TTL cache for fleet registry pages (not request-scoped secrets). */
+let fleetIndexCache = null;
+let fleetIndexAt = 0;
+const FLEET_INDEX_TTL_MS = 10 * 60 * 1000;
+
+function normalizeFleetRow(a) {
+  const r2Key = String(a.r2Key || a.id || "").replace(/^\//, "");
+  if (!r2Key) return null;
+  let cdnUrl = a.cdnUrl || `${CDN_ORIGIN}/${r2Key}`;
+  try {
+    const u = new URL(cdnUrl);
+    if (u.hostname !== "assets.grudge-studio.com") {
+      // Force durable CDN host — never proxy random hosts into scenes
+      cdnUrl = `${CDN_ORIGIN}/${r2Key}`;
+    }
+  } catch {
+    cdnUrl = `${CDN_ORIGIN}/${r2Key}`;
+  }
+  const format =
+    a.format ||
+    (r2Key.endsWith(".glb")
+      ? "glb"
+      : r2Key.endsWith(".gltf")
+        ? "gltf"
+        : r2Key.endsWith(".fbx")
+          ? "fbx"
+          : r2Key.match(/\.(png|webp|jpg|jpeg)$/i)
+            ? "image"
+            : null);
+  return {
+    id: a.id || r2Key,
+    name: a.name || r2Key.split("/").pop() || r2Key,
+    category: a.category || "unknown",
+    r2Key,
+    cdnUrl,
+    grudgeUuid: a.grudgeUuid || null,
+    fileSize: a.fileSize || null,
+    format,
+    source: "fleet-d1",
+  };
+}
+
+/**
+ * Load compact fleet asset index (paginated). Cap pages so cold start stays bounded.
+ * Fleet API currently ignores q/category — filter happens in this Worker.
+ */
+async function loadFleetIndex(env) {
+  if (fleetIndexCache && Date.now() - fleetIndexAt < FLEET_INDEX_TTL_MS) {
+    return fleetIndexCache;
+  }
+  const pageSize = 500;
+  const maxPages = Number(env.FLEET_INDEX_MAX_PAGES) || 18; // ~9k rows
+  const base = (env.FLEET_ASSETS_API || FLEET_ASSETS_API).replace(/\/$/, "");
+  const pages = [];
+  for (let p = 0; p < maxPages; p++) {
+    pages.push(
+      fetch(`${base}?limit=${pageSize}&offset=${p * pageSize}`, {
+        cf: { cacheTtl: 600, cacheEverything: true },
+        headers: { Accept: "application/json" },
+      })
+        .then(async (r) => {
+          if (!r.ok) return [];
+          const ct = (r.headers.get("content-type") || "").toLowerCase();
+          if (ct.includes("text/html")) return [];
+          const data = await r.json();
+          return Array.isArray(data?.assets) ? data.assets : [];
+        })
+        .catch(() => []),
+    );
+  }
+  const chunks = await Promise.all(pages);
+  const byKey = new Map();
+  for (const chunk of chunks) {
+    for (const raw of chunk) {
+      const row = normalizeFleetRow(raw);
+      if (row) byKey.set(row.r2Key, row);
+    }
+  }
+  // Merge canonical so verified keys always exist even if registry lags
+  for (const c of CANONICAL_FLEET) {
+    if (!byKey.has(c.r2Key)) byKey.set(c.r2Key, c);
+  }
+  const items = [...byKey.values()];
+  fleetIndexCache = {
+    items,
+    count: items.length,
+    fetchedAt: new Date().toISOString(),
+  };
+  fleetIndexAt = Date.now();
+  return fleetIndexCache;
+}
+
+function matchFleetQuery(row, q, category, prefix, format) {
+  if (category) {
+    const c = category.toLowerCase();
+    const rc = (row.category || "").toLowerCase();
+    const rk = (row.r2Key || "").toLowerCase();
+    // soft category: match registry category OR path segment heuristics
+    const catHit =
+      rc === c ||
+      rc.includes(c) ||
+      (c === "characters" &&
+        (rk.includes("/characters") ||
+          rk.includes("grudge6/races") ||
+          rk.includes("/races/"))) ||
+      (c === "weapons" && (rk.includes("weapon") || rk.includes("/library/"))) ||
+      (c === "icons" && (rk.includes("/icons/") || row.format === "image")) ||
+      (c === "maps" && (rk.includes("/lobby/") || rk.includes("/maps/"))) ||
+      (c === "nature" && rk.includes("/nature/"));
+    if (!catHit) return false;
+  }
+  if (prefix) {
+    const p = prefix.replace(/^\//, "").toLowerCase();
+    if (!(row.r2Key || "").toLowerCase().startsWith(p)) return false;
+  }
+  if (format) {
+    const f = format.toLowerCase();
+    if ((row.format || "").toLowerCase() !== f) return false;
+  }
+  if (q) {
+    const needle = q.toLowerCase();
+    const hay = `${row.name} ${row.r2Key} ${row.category} ${row.id}`.toLowerCase();
+    if (!hay.includes(needle)) return false;
+  }
+  return true;
+}
+
+async function searchFleetAssets(env, url) {
+  const q = (url.searchParams.get("q") || "").trim();
+  const category = (url.searchParams.get("category") || "").trim();
+  const prefix = (url.searchParams.get("prefix") || "").trim();
+  const format = (url.searchParams.get("format") || "").trim();
+  const limit = Math.min(
+    Math.max(parseInt(url.searchParams.get("limit") || "40", 10) || 40, 1),
+    100,
+  );
+
+  // Prefer canonical hits first (always correct paths)
+  const canonicalHits = CANONICAL_FLEET.filter((row) =>
+    matchFleetQuery(row, q, category, prefix, format),
+  );
+
+  let fleetHits = [];
+  let indexMeta = { count: 0, fetchedAt: null, error: null };
+  try {
+    const index = await loadFleetIndex(env);
+    indexMeta = { count: index.count, fetchedAt: index.fetchedAt, error: null };
+    const seen = new Set(canonicalHits.map((r) => r.r2Key));
+    for (const row of index.items) {
+      if (seen.has(row.r2Key)) continue;
+      if (!matchFleetQuery(row, q, category, prefix, format)) continue;
+      // Prefer mesh/icon over raw animation dumps when no format specified
+      if (!format && row.category === "animation" && !q) continue;
+      fleetHits.push(row);
+      if (canonicalHits.length + fleetHits.length >= limit * 3) break;
+    }
+  } catch (err) {
+    indexMeta.error = err?.message || String(err);
+  }
+
+  const items = [...canonicalHits, ...fleetHits].slice(0, limit).map((row) => ({
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    r2Key: row.r2Key,
+    cdnUrl: row.cdnUrl,
+    grudgeUuid: row.grudgeUuid,
+    format: row.format,
+    fileSize: row.fileSize ?? null,
+    source: row.source,
+  }));
+
+  return {
+    ok: true,
+    count: items.length,
+    limit,
+    q: q || null,
+    category: category || null,
+    prefix: prefix || null,
+    format: format || null,
+    fleetIndex: indexMeta,
+    policy: {
+      assets: "cdnUrl must be assets.grudge-studio.com — use with add_model_entity / import",
+      playData: "Railway Postgres (not catalog)",
+      agentJobs: "D1 forge-agent only",
+    },
+    items,
+  };
+}
+
+/** ObjectStore gamedata cache (weapons/equipment/materials). */
+const gamedataCache = new Map();
+const GAMEDATA_TTL_MS = 15 * 60 * 1000;
+
+function flattenGamedata(kind, raw) {
+  const items = [];
+  if (!raw || typeof raw !== "object") return items;
+
+  if (Array.isArray(raw)) {
+    for (const it of raw) {
+      if (it && typeof it === "object") items.push(normalizeGameItem(kind, it, null));
+    }
+    return items.filter(Boolean);
+  }
+
+  // weapons.json shape: { categories: { swords: { iconBase, items: [...] } } }
+  const cats = raw.categories;
+  if (cats && typeof cats === "object") {
+    for (const [catKey, catVal] of Object.entries(cats)) {
+      const list = Array.isArray(catVal?.items)
+        ? catVal.items
+        : Array.isArray(catVal)
+          ? catVal
+          : [];
+      for (const it of list) {
+        items.push(
+          normalizeGameItem(kind, it, {
+            categoryKey: catKey,
+            iconBase: catVal?.iconBase,
+          }),
+        );
+      }
+    }
+    return items.filter(Boolean);
+  }
+
+  // equipment / materials sometimes use top-level arrays under keys
+  for (const [k, v] of Object.entries(raw)) {
+    if (Array.isArray(v)) {
+      for (const it of v) {
+        if (it && typeof it === "object" && (it.id || it.name)) {
+          items.push(normalizeGameItem(kind, it, { categoryKey: k }));
+        }
+      }
+    }
+  }
+  return items.filter(Boolean);
+}
+
+function normalizeGameItem(kind, it, meta) {
+  if (!it || typeof it !== "object") return null;
+  const id = String(it.id || it.name || "").trim();
+  if (!id) return null;
+  const sprite =
+    it.spritePath ||
+    it.icon ||
+    it.iconPath ||
+    it.cdnIcon ||
+    null;
+  let iconUrl = null;
+  if (typeof sprite === "string" && sprite.length > 0) {
+    if (sprite.startsWith("http")) iconUrl = sprite;
+    else iconUrl = `${CDN_ORIGIN}${sprite.startsWith("/") ? "" : "/"}${sprite}`;
+  }
+  // Prefer mesh model if present (some ObjectStore packs include model/r2Key)
+  let modelUrl = null;
+  const model =
+    it.model ||
+    it.modelUrl ||
+    it.mesh ||
+    it.glb ||
+    it.r2Key ||
+    null;
+  if (typeof model === "string" && model.length > 0) {
+    if (model.startsWith("http")) modelUrl = model;
+    else if (model.startsWith("builtin:")) modelUrl = model;
+    else modelUrl = `${CDN_ORIGIN}/${model.replace(/^\//, "")}`;
+  }
+  return {
+    id,
+    name: String(it.name || id),
+    kind,
+    category: it.category || meta?.categoryKey || null,
+    iconUrl,
+    spritePath: typeof sprite === "string" ? sprite : null,
+    modelUrl,
+    grudgeType: it.grudgeType || null,
+    lore: typeof it.lore === "string" ? it.lore.slice(0, 200) : null,
+    // stats stay light for AI tool payload
+    primaryStat: it.primaryStat || null,
+  };
+}
+
+async function loadGamedata(kind, env) {
+  const allowed = new Set(["weapons", "equipment", "materials", "armor", "races"]);
+  if (!allowed.has(kind)) {
+    return { error: `Unknown kind '${kind}'`, known: [...allowed] };
+  }
+  const hit = gamedataCache.get(kind);
+  if (hit && Date.now() - hit.at < GAMEDATA_TTL_MS) return hit;
+
+  const base = (env.OBJECTSTORE_API || OBJECTSTORE_API).replace(/\/$/, "");
+  const url = `${base}/${kind}.json`;
+  try {
+    const r = await fetch(url, {
+      cf: { cacheTtl: 900, cacheEverything: true },
+      headers: { Accept: "application/json" },
+    });
+    if (!r.ok) {
+      return { error: `ObjectStore ${kind} HTTP ${r.status}`, items: [] };
+    }
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("text/html")) {
+      return { error: "ObjectStore returned HTML", items: [] };
+    }
+    const raw = await r.json();
+    const items = flattenGamedata(kind, raw);
+    const payload = {
+      kind,
+      count: items.length,
+      items,
+      source: url,
+      at: Date.now(),
+    };
+    gamedataCache.set(kind, payload);
+    return payload;
+  } catch (err) {
+    return { error: err?.message || String(err), items: [] };
+  }
+}
+
+async function handleGamedata(env, url) {
+  const kind = (url.searchParams.get("kind") || "weapons").toLowerCase();
+  const q = (url.searchParams.get("q") || "").trim().toLowerCase();
+  const limit = Math.min(
+    Math.max(parseInt(url.searchParams.get("limit") || "40", 10) || 40, 1),
+    100,
+  );
+  const data = await loadGamedata(kind, env);
+  if (data.error && !(data.items && data.items.length)) {
+    return json(
+      {
+        ok: false,
+        error: data.error,
+        kind,
+        known: data.known,
+        hint: "Gamedata is ObjectStore JSON (stats/icons), not R2 meshes. Use catalog/search for GLB/FBX.",
+      },
+      502,
+    );
+  }
+  let items = data.items || [];
+  if (q) {
+    items = items.filter((it) => {
+      const hay = `${it.id} ${it.name} ${it.category || ""} ${it.lore || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  items = items.slice(0, limit);
+  return json({
+    ok: true,
+    kind,
+    count: items.length,
+    totalIndexed: data.count || items.length,
+    q: q || null,
+    source: data.source || null,
+    policy: {
+      icons: "iconUrl → assets.grudge-studio.com + spritePath (may 404 until R2 icon pack seeded)",
+      meshes: "Use catalog/search or Fast weapons (grudge6 library) for 3D models",
+      playData: "Railway inventory, not this JSON",
+    },
+    items,
+  });
+}
+
+async function handleCatalog(path, env, url) {
   if (isCatalogPath(path, "status")) {
     const fastAssets = await loadFastCatalog(env);
+    let fleetCount = fleetIndexCache?.count ?? null;
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
       d1: Boolean(env.DB),
       fastAssetCount: fastAssets.count || (fastAssets.items || []).length,
+      fleetIndexCount: fleetCount,
       stack: [
         "cloudflare-workers",
         "r2-assets.grudge-studio.com",
         env.DB ? "d1-agent-jobs" : "memory-agent-jobs",
+        "fleet-d1-asset-search",
+        "objectstore-gamedata",
         "free-ai-byok",
         "vercel-spa",
       ],
@@ -301,6 +803,13 @@ async function handleCatalog(path, env) {
         assets: "builtin: keys + https://assets.grudge-studio.com only",
         playData: "Railway Postgres (not this worker)",
         binaries: "R2",
+        agentJobs: "D1 forge-agent only",
+        gamedata: "ObjectStore weapons/equipment/materials",
+      },
+      routes: {
+        search: "/api/catalog/search?q=&category=&prefix=&format=&limit=",
+        gamedata: "/api/catalog/gamedata?kind=weapons|equipment|materials&q=",
+        fast: "/api/catalog/fast-assets",
       },
     });
   }
@@ -312,6 +821,13 @@ async function handleCatalog(path, env) {
       items: fastAssets.items || [],
       source: fastAssets.source || "edge",
     });
+  }
+  if (isCatalogPath(path, "search")) {
+    const result = await searchFleetAssets(env, url);
+    return json(result);
+  }
+  if (isCatalogPath(path, "gamedata")) {
+    return handleGamedata(env, url);
   }
   return null;
 }
@@ -525,7 +1041,7 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
-    const catalogRes = await handleCatalog(path, env);
+    const catalogRes = await handleCatalog(path, env, url);
     if (catalogRes) return catalogRes;
 
     const agentRes = await handleAgent(path, request, env, ctx);
@@ -558,6 +1074,8 @@ export default {
           "GET /api/free-ai/status",
           "POST /api/free-ai/chat",
           "GET /api/catalog/fast-assets",
+          "GET /api/catalog/search?q=&category=&prefix=&format=",
+          "GET /api/catalog/gamedata?kind=weapons|equipment|materials",
           "GET /api/catalog/status",
           "GET|POST /api/agent/jobs",
           "GET|PATCH /api/agent/jobs/:id",

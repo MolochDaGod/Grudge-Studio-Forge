@@ -110,6 +110,49 @@ export const FAST_ASSETS: FastAsset[] = [
     modelUrl: "builtin:char-wolf",
     blurb: "Stylized creature",
   },
+  // grudge6 modular kits (FBX on R2 — preferred production heroes)
+  {
+    id: "char-g6-human",
+    label: "Grudge6 · Human kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:warrior",
+    blurb: "WK_Characters.fbx · CDN modular",
+  },
+  {
+    id: "char-g6-orc",
+    label: "Grudge6 · Orc kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:orc",
+    blurb: "ORC_Characters.fbx · CDN modular",
+  },
+  {
+    id: "char-g6-elf",
+    label: "Grudge6 · Elf kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:elf",
+    blurb: "ELF_Characters.fbx · CDN modular",
+  },
+  {
+    id: "char-g6-dwarf",
+    label: "Grudge6 · Dwarf kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:dwarf",
+    blurb: "DWF_Characters.fbx · CDN modular",
+  },
+  {
+    id: "char-g6-barb",
+    label: "Grudge6 · Barbarian kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:frost-dwarf",
+    blurb: "BRB_Characters.fbx · CDN modular",
+  },
+  {
+    id: "char-g6-undead",
+    label: "Grudge6 · Undead kit",
+    group: "characters",
+    modelUrl: "builtin:grudge6:skeleton",
+    blurb: "UD_Characters.fbx · CDN modular",
+  },
 
   // ── Maps ──────────────────────────────────────────────────────────
   {
@@ -380,6 +423,30 @@ export const FAST_ASSETS: FastAsset[] = [
     group: "weapons",
     modelUrl: "builtin:rifle",
     blurb: "Bundled rifle",
+    spawnY: 1,
+  },
+  {
+    id: "wpn-dwarf",
+    label: "Dwarf Axe",
+    group: "weapons",
+    modelUrl: "builtin:race-weapon:dwarf",
+    blurb: "grudge6 library · CDN",
+    spawnY: 1,
+  },
+  {
+    id: "wpn-barb",
+    label: "Barbarian Hammer",
+    group: "weapons",
+    modelUrl: "builtin:race-weapon:frost-dwarf",
+    blurb: "grudge6 library · CDN",
+    spawnY: 1,
+  },
+  {
+    id: "wpn-undead",
+    label: "Undead Sword",
+    group: "weapons",
+    modelUrl: "builtin:race-weapon:skeleton",
+    blurb: "grudge6 library · CDN",
     spawnY: 1,
   },
 ];

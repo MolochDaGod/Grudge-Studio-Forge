@@ -78,10 +78,21 @@ export function getRaceWeaponUrl(race: RaceId): string {
 }
 
 /**
- * Full modular race kits (optional — multi-mesh equip). Prefer single-mesh
- * `getRaceCharacterUrl` for simple templates; use kits when equipping mesh_ids.
+ * Full modular race kits (multi-mesh equip). Prefer **FBX** on CDN — GLB
+ * conversion historically stripped materials ("yellow model"). Verified HEAD 200.
+ * Single-mesh templates still use `getRaceCharacterUrl` (toon-rts GLB).
  */
 export const GRUDGE6_RACE_KIT: Readonly<Record<RaceId, string>> = {
+  warrior: "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.fbx",
+  dwarf: "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.fbx",
+  "frost-dwarf": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.fbx",
+  elf: "https://assets.grudge-studio.com/models/grudge6/races/ELF_Characters.fbx",
+  orc: "https://assets.grudge-studio.com/models/grudge6/races/ORC_Characters.fbx",
+  skeleton: "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.fbx",
+};
+
+/** GLB mirrors (materials may be incomplete — prefer FBX kits when possible). */
+export const GRUDGE6_RACE_KIT_GLB: Readonly<Record<RaceId, string>> = {
   warrior: "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.glb",
   dwarf: "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.glb",
   "frost-dwarf": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.glb",

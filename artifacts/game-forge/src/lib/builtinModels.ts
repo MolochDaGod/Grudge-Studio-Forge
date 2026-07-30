@@ -1,6 +1,10 @@
 import characterUrl from "@/assets/models/character.glb?url";
 import rifleUrl from "@/assets/models/rifle.glb?url";
-import { getRaceCharacterUrl, getRaceWeaponUrl } from "./objectStoreApi";
+import {
+  getRaceCharacterUrl,
+  getRaceKitUrl,
+  getRaceWeaponUrl,
+} from "./objectStoreApi";
 import type { RaceId } from "./races";
 
 /** Vite quirk: in dev mode `?url` returns a source path like
@@ -158,6 +162,13 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
   "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
   "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
+  // Modular grudge6 race kits (FBX, multi-mesh equip) — durable builtin:grudge6:<id>
+  "grudge6:warrior": getRaceKitUrl("warrior"),
+  "grudge6:dwarf": getRaceKitUrl("dwarf"),
+  "grudge6:frost-dwarf": getRaceKitUrl("frost-dwarf"),
+  "grudge6:elf": getRaceKitUrl("elf"),
+  "grudge6:orc": getRaceKitUrl("orc"),
+  "grudge6:skeleton": getRaceKitUrl("skeleton"),
   // Template aliases (rts-fort-royale creeps / bosses)
   "creature:mutant": ensureBaseUrl("builtin/char-distortus-rex.glb"),
   "creature:creep": ensureBaseUrl(getRaceCharacterUrl("skeleton")),

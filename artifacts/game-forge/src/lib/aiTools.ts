@@ -19,8 +19,10 @@ import {
   createAgentJob,
   fetchCatalogStatus,
   fetchFastCatalog,
+  fetchGamedata,
   getAgentJob,
   listAgentJobs,
+  searchFleetAssets,
 } from "@/lib/agentEdge";
 import { generateMap, type MapKind } from "@/lib/mapGen";
 import { STARTER_VFX } from "@/lib/starterPrefabs";
@@ -453,14 +455,189 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
 
   {
     def: {
+      name: "search_fleet_assets",
+      description:
+        "Search fleet D1 asset registry (R2-backed) via edge Worker. Returns durable cdnUrl on assets.grudge-studio.com only. Prefer for characters/weapons/nature beyond Fast options. Use category=characters|weapons|maps|nature or prefix=models/grudge6. NEVER invent CDN paths — only use returned cdnUrl.",
+      input_schema: {
+        type: "object",
+        properties: {
+          q: {
+            type: "string",
+            description: "Substring match on name / r2Key (e.g. sword, grudge6, pirate)",
+          },
+          category: {
+            type: "string",
+            description: "characters | weapons | maps | nature | icons | or registry category",
+          },
+          prefix: {
+            type: "string",
+            description: "r2Key prefix e.g. models/grudge6 or models/nature/stylized",
+          },
+          format: {
+            type: "string",
+            description: "glb | fbx | gltf | image",
+          },
+          limit: { type: "number", description: "Max results (default 40, max 100)" },
+        },
+      },
+    },
+    exec: async (input) => {
+      const result = await searchFleetAssets({
+        q: typeof input.q === "string" ? input.q : undefined,
+        category: typeof input.category === "string" ? input.category : undefined,
+        prefix: typeof input.prefix === "string" ? input.prefix : undefined,
+        format: typeof input.format === "string" ? input.format : undefined,
+        limit: typeof input.limit === "number" ? input.limit : 40,
+      });
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error || "search_fleet_assets failed",
+        };
+      }
+      return {
+        ok: true,
+        data: {
+          count: result.count,
+          fleetIndex: result.fleetIndex,
+          items: result.items.map((a) => ({
+            name: a.name,
+            category: a.category,
+            r2Key: a.r2Key,
+            cdnUrl: a.cdnUrl,
+            format: a.format,
+            source: a.source,
+          })),
+          tip: "Spawn with spawn_fleet_asset({ cdnUrl }) or add_model_entity({ model: { url: cdnUrl } }).",
+        },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "spawn_fleet_asset",
+      description:
+        "Spawn a model from a fleet search cdnUrl (must be https://assets.grudge-studio.com/…). Call search_fleet_assets first.",
+      input_schema: {
+        type: "object",
+        properties: {
+          cdnUrl: {
+            type: "string",
+            description: "Exact cdnUrl from search_fleet_assets",
+          },
+          name: { type: "string" },
+          position: {
+            type: "array",
+            items: { type: "number" },
+            minItems: 3,
+            maxItems: 3,
+          },
+        },
+        required: ["cdnUrl"],
+      },
+    },
+    exec: async (input) => {
+      const raw = String(input.cdnUrl ?? "");
+      let modelUrl: string;
+      try {
+        modelUrl = requireAgentAssetUrl(raw);
+      } catch (e) {
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+      const check = checkAssetUrl(modelUrl);
+      if (!check.ok || (check.kind !== "cdn" && check.kind !== "builtin")) {
+        return {
+          ok: false,
+          error: `spawn_fleet_asset requires assets.grudge-studio.com or builtin: — got ${modelUrl.slice(0, 80)}`,
+        };
+      }
+      const label =
+        typeof input.name === "string"
+          ? input.name
+          : modelUrl.split("/").pop()?.replace(/\.[^.]+$/, "") || "Fleet asset";
+      const e = buildEntity({
+        type: "model",
+        name: label,
+        position: (input.position as [number, number, number] | undefined) ?? [
+          0, 0, 0,
+        ],
+        model: { url: modelUrl },
+      });
+      if (!e.model?.url) {
+        return { ok: false, error: "Failed to build model entity" };
+      }
+      useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      return {
+        ok: true,
+        data: { id: e.id, name: e.name, modelUrl: e.model.url },
+      };
+    },
+  },
+
+  {
+    def: {
+      name: "list_gamedata",
+      description:
+        "List ObjectStore gamedata (weapons/equipment/materials) with id, name, iconUrl, lore. Icons may 404 until R2 icon pack is seeded — still use ids for UI/crafting. For 3D weapon meshes use search_fleet_assets category=weapons or Fast weapons (grudge6 library).",
+      input_schema: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            description: "weapons | equipment | materials | armor | races (default weapons)",
+          },
+          q: { type: "string", description: "Filter by name/id" },
+          limit: { type: "number" },
+        },
+      },
+    },
+    exec: async (input) => {
+      const result = await fetchGamedata({
+        kind: typeof input.kind === "string" ? input.kind : "weapons",
+        q: typeof input.q === "string" ? input.q : undefined,
+        limit: typeof input.limit === "number" ? input.limit : 40,
+      });
+      if (!result.ok) {
+        return { ok: false, error: result.error || "list_gamedata failed" };
+      }
+      return {
+        ok: true,
+        data: {
+          kind: result.kind,
+          count: result.count,
+          policy: result.policy,
+          items: result.items.map((it) => ({
+            id: it.id,
+            name: it.name,
+            category: it.category,
+            iconUrl: it.iconUrl,
+            modelUrl: it.modelUrl,
+            primaryStat: it.primaryStat,
+            lore: it.lore,
+          })),
+        },
+      };
+    },
+  },
+
+  {
+    def: {
       name: "agent_stack_status",
       description:
-        "Report edge stack health for agentic creation: D1 jobs, Fast catalog, free-AI, R2 policy. Call when diagnosing deploy/AI wiring.",
+        "Report edge stack health for agentic creation: D1 jobs, Fast catalog, fleet search, free-AI, R2 policy. Call when diagnosing deploy/AI wiring.",
       input_schema: { type: "object", properties: {} },
     },
     exec: async () => {
       const catalog = await fetchCatalogStatus();
       const jobs = await listAgentJobs();
+      const probe = await searchFleetAssets({
+        category: "characters",
+        limit: 3,
+      });
       return {
         ok: true,
         data: {
@@ -468,8 +645,14 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
           openJobs: jobs.filter((j) => j.status === "pending" || j.status === "running")
             .length,
           recentJobs: jobs.slice(0, 5),
+          fleetSearch: {
+            ok: probe.ok,
+            count: probe.count,
+            index: probe.fleetIndex,
+            sample: probe.items.slice(0, 3).map((i) => i.r2Key),
+          },
           policy:
-            "Models: builtin: or https://assets.grudge-studio.com. Play data: Railway. No Docker for SPA.",
+            "Models: builtin: or https://assets.grudge-studio.com. Gamedata: ObjectStore. Play data: Railway. Agent jobs: D1 forge-agent. No Docker for SPA.",
         },
       };
     },
@@ -1508,11 +1691,13 @@ export function buildSystemPrompt(): string {
     })(),
     ``,
     `AI BRAIN — R2 · D1 · FAST OPTIONS · EDGE (use these; do not invent APIs or URLs):`,
-    `- STACK: Editor SPA = Vercel; edge = CF Workers; binaries = R2 (assets.grudge-studio.com); agent jobs/catalog = /api/agent + /api/catalog on free-ai worker (optional D1). Player/fleet data = Railway Postgres. Do NOT use Docker for the SPA. Do NOT invent Replit/localhost URLs.`,
-    `- FAST OPTIONS (preferred spawn path): list_fast_assets → spawn_fast_asset({ id }) or add_model_entity({ model: { builtin: '…' } }). Covers races, pirate islands, VFX, RTS, weapons. agent_stack_status diagnoses edge/D1.`,
+    `- STACK: Editor SPA = Vercel; edge = CF Workers; binaries = R2 (assets.grudge-studio.com); agent jobs = D1 forge-agent; fleet mesh INDEX = D1 via /api/catalog/search; gamedata = ObjectStore via /api/catalog/gamedata; player bag/XP = Railway Postgres. Do NOT use Docker for the SPA. Do NOT invent Replit/localhost URLs.`,
+    `- FAST OPTIONS (preferred spawn path): list_fast_assets → spawn_fast_asset({ id }) or add_model_entity({ model: { builtin: '…' } }). Covers races, grudge6 kits, pirate islands, VFX, RTS, weapons. agent_stack_status diagnoses edge/D1.`,
+    `- FLEET SEARCH (full registry): search_fleet_assets({ q, category, prefix, format }) → spawn_fleet_asset({ cdnUrl }). category=characters|weapons|maps|nature. prefix=models/grudge6. NEVER invent r2Key/cdnUrl — only returned rows.`,
+    `- GAMEDATA (icons/stats, not meshes): list_gamedata({ kind:'weapons'|'equipment'|'materials', q }). iconUrl may 404 until icon pack on R2; for 3D weapons use Fast weapons or search_fleet_assets category=weapons (grudge6 library).`,
     `- Starter scenes / game examples: list_scenes when a project is open; templates via empty-scene picker. Maps use builtin:map-* keys → R2. Never invent relative /builtin:map-… paths.`,
     `- Cloudflare R2: list_r2_storage + list_user_assets. import_asset_from_url only for allowlisted hosts (then prefer the returned R2 URL). Never leave blob: or localhost in scenes.`,
-    `- Asset policy: only builtin:<key> or https://assets.grudge-studio.com/… (or Poly Haven CDN during import). check fails → list_fast_assets.`,
+    `- Asset policy: only builtin:<key> or https://assets.grudge-studio.com/… (or Poly Haven CDN during import). check fails → list_fast_assets or search_fleet_assets.`,
     `- D1 agent jobs: create_agent_job / get_agent_job when edge is up. Also d1_status / knowledge_status / query_d1 when configured. Else get_brain_catalog + list_scenes / list_prefabs / list_assets.`,
     `- Internet / GitHub research for three.js · R3F · Rapier · drei: search_github (topic= threejs|r3f|rapier|drei|gltf|physics|character|navmesh), list_docs, then fetch_doc_url on allowlisted hosts (threejs.org, docs.pmnd.rs, rapier.rs, github.com, raw.githubusercontent.com). Extract patterns → implement with Forge tools (entities, scripts, materials, node graph). Never dump entire repos; never claim you ran code you did not.`,
     `- When the user asks "how does X work in three/r3f/rapier?" or for examples: research first (list_docs → fetch_doc_url and/or search_github), then build a minimal working version in the scene.`,
@@ -1530,7 +1715,7 @@ export function buildSystemPrompt(): string {
     `- Bulk scene questions → count_entities / query_entities (ECS mirror).`,
     `- BEFORE big builds: get_active_scene_meta, get_project_summary or get_brain_catalog, describe_layout, list_scenes / list_prefabs / list_assets / list_r2_storage.`,
     `- After edit chunks: diagnose_scene → auto_fix_scene for error/warn rules → diagnose_scene again before claiming done.`,
-    `- Prefer Grudge6 CDN race kits (models/grudge6/races/*_Characters.glb on assets.grudge-studio.com) over toon-shooter, mutant.glb, or inventing URLs. Player characters: blake OR Grudge6 human kit.`,
+    `- Prefer grudge6: builtin:grudge6:warrior|orc|… (FBX kits) or Fast char-g6-* / search_fleet_assets category=characters. Avoid inventing URLs. Player: blake OR grudge6 human. No Meshy/capsules as final heroes.`,
     `- Organized projects: scenes/, prefabs/, scripts/, assets/{models,textures,audio,vfx}, grudge.project.json when exporting to disk via Studio Projects.`,
     `- Breakage reports → get_console_errors, get_recent_history, get_last_ai_changes.`,
     `- Always list_entities for real ids before update/delete/attach — never guess ids.`,
