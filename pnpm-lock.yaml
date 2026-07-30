@@ -9,6 +9,15 @@ catalogs:
     '@dimforge/rapier3d':
       specifier: ^0.19.3
       version: 0.19.3
+    '@gltf-transform/core':
+      specifier: ^4.1.1
+      version: 4.3.0
+    '@gltf-transform/extensions':
+      specifier: ^4.1.1
+      version: 4.3.0
+    '@gltf-transform/functions':
+      specifier: ^4.1.1
+      version: 4.3.0
     '@react-three/drei':
       specifier: ^10.7.7
       version: 10.7.7
@@ -48,18 +57,30 @@ catalogs:
     clsx:
       specifier: ^2.1.1
       version: 2.1.1
+    comlink:
+      specifier: ^4.4.2
+      version: 4.4.2
+    detect-gpu:
+      specifier: ^5.0.70
+      version: 5.0.70
     drizzle-orm:
       specifier: ^0.45.2
       version: 0.45.2
     framer-motion:
       specifier: ^12.23.24
       version: 12.35.1
+    idb-keyval:
+      specifier: ^6.2.1
+      version: 6.3.0
     lucide-react:
       specifier: ^0.545.0
       version: 0.545.0
     maath:
       specifier: ^0.10.8
       version: 0.10.8
+    meshoptimizer:
+      specifier: ^0.22.0
+      version: 0.22.0
     postprocessing:
       specifier: ^6.39.4
       version: 6.39.4
@@ -210,6 +231,15 @@ importers:
       '@dimforge/rapier3d':
         specifier: 'catalog:'
         version: 0.19.3
+      '@gltf-transform/core':
+        specifier: 'catalog:'
+        version: 4.3.0
+      '@gltf-transform/extensions':
+        specifier: 'catalog:'
+        version: 4.3.0
+      '@gltf-transform/functions':
+        specifier: 'catalog:'
+        version: 4.3.0
       '@monaco-editor/react':
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -231,12 +261,21 @@ importers:
       '@xyflow/react':
         specifier: ^12.10.2
         version: 12.10.2(@types/react@19.2.14)(immer@11.1.4)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      comlink:
+        specifier: 'catalog:'
+        version: 4.4.2
+      detect-gpu:
+        specifier: 'catalog:'
+        version: 5.0.70
       diff:
         specifier: ^9.0.0
         version: 9.0.0
       fflate:
         specifier: ^0.8.3
         version: 0.8.3
+      idb-keyval:
+        specifier: 'catalog:'
+        version: 6.3.0
       immer:
         specifier: ^11.1.4
         version: 11.1.4
@@ -246,6 +285,9 @@ importers:
       maath:
         specifier: 'catalog:'
         version: 0.10.8(@types/three@0.185.1)(three@0.185.1)
+      meshoptimizer:
+        specifier: 'catalog:'
+        version: 0.22.0
       miniplex:
         specifier: ^2.0.0
         version: 2.0.0
@@ -4349,6 +4391,9 @@ packages:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
 
+  comlink@4.4.2:
+    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
+
   commander@14.0.3:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
     engines: {node: '>=20'}
@@ -5381,6 +5426,9 @@ packages:
     resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
     engines: {node: '>=0.10.0'}
 
+  idb-keyval@6.3.0:
+    resolution: {integrity: sha512-um+2dgAWmYsu615EXpWVwSmapJhON0G43t3Ka/EVaohzPQXSMqKEqeDK/oIW3Ow+BXaF2PvSc+oBTFp793A5Ow==}
+
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
 
@@ -5867,6 +5915,9 @@ packages:
     resolution: {integrity: sha512-/TQj+JdZkeSUOl5Mk2J7eLcYTLiQm2IDzmlSvYm7ov15anEcDJ92GHqqazxTSreeNgfnYu24kiEvvv0WlbCdFQ==}
     peerDependencies:
       three: 0.185.1
+
+  meshoptimizer@0.22.0:
+    resolution: {integrity: sha512-IebiK79sqIy+E4EgOr+CAw+Ke8hAspXKzBd0JdgEmPHiAwmvEj2S4h1rfvo+o/BnfEYd/jAOg5IeeIjzlzSnDg==}
 
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
@@ -11389,6 +11440,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
+  comlink@4.4.2: {}
+
   commander@14.0.3: {}
 
   commander@5.1.0: {}
@@ -12540,6 +12593,8 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
+  idb-keyval@6.3.0: {}
+
   ieee754@1.2.1: {}
 
   ignore@5.3.2: {}
@@ -12967,6 +13022,8 @@ snapshots:
   meshline@3.3.1(three@0.185.1):
     dependencies:
       three: 0.185.1
+
+  meshoptimizer@0.22.0: {}
 
   meshoptimizer@1.1.1: {}
 

@@ -313,10 +313,22 @@ export function MenuBar({
             <MenubarSub>
               <MenubarSubTrigger>Render Quality</MenubarSubTrigger>
               <MenubarSubContent>
-                <MenubarItem onSelect={() => useEditor.getState().setRenderQuality("high")}>
+                <MenubarItem
+                  onSelect={() => {
+                    void import("@/lib/deviceTier").then((m) =>
+                      m.setUserRenderQualityPref("high"),
+                    );
+                  }}
+                >
                   {renderQuality === "high" ? "● " : "  "}High (effects on)
                 </MenubarItem>
-                <MenubarItem onSelect={() => useEditor.getState().setRenderQuality("perf")}>
+                <MenubarItem
+                  onSelect={() => {
+                    void import("@/lib/deviceTier").then((m) =>
+                      m.setUserRenderQualityPref("perf"),
+                    );
+                  }}
+                >
                   {renderQuality === "perf" ? "● " : "  "}Performance
                 </MenubarItem>
               </MenubarSubContent>

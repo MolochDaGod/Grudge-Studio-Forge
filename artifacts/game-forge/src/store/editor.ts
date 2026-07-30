@@ -392,36 +392,32 @@ export const useEditor = create<EditorState>((set, get) => ({
     let { entities, warnings } = sanitizeEntities(raw);
     let envFromServer = { ...DEFAULT_ENV, ...(data?.environment ?? {}) };
 
-    // Crash-recovery: if a localStorage draft exists for this scene, the
-    // previous session ended with unsaved changes (browser crash, tab
-    // close without save, network failure mid-save). Prefer the draft
-    // over the server copy and surface a console message so the user
-    // knows we restored their work. Cleared by `markSaved()` on the
-    // next confirmed save.
+    // Crash-recovery: localStorage draft first; IndexedDB if quota forced IDB.
+    // Prefer draft over server copy; cleared by `markSaved()` after confirmed save.
     let draftRestoredAt: number | null = null;
+    const applyDraft = (parsed: {
+      savedAt?: number;
+      data?: { entities?: unknown; environment?: unknown };
+    } | null) => {
+      const draftEntities = parsed?.data?.entities;
+      if (!Array.isArray(draftEntities)) return;
+      const draft = sanitizeEntities(draftEntities);
+      entities = draft.entities;
+      warnings = [...warnings, ...draft.warnings];
+      envFromServer = {
+        ...DEFAULT_ENV,
+        ...((parsed?.data?.environment as Record<string, unknown>) ?? {}),
+      };
+      draftRestoredAt =
+        typeof parsed?.savedAt === "number" ? parsed.savedAt : Date.now();
+    };
     try {
       if (typeof window !== "undefined") {
         const raw = window.localStorage.getItem(`gameforge:draft:${sceneId}`);
-        if (raw) {
-          const parsed = JSON.parse(raw) as
-            | { savedAt?: number; data?: { entities?: unknown; environment?: unknown } }
-            | null;
-          const draftEntities = parsed?.data?.entities;
-          if (Array.isArray(draftEntities)) {
-            const draft = sanitizeEntities(draftEntities);
-            entities = draft.entities;
-            warnings = [...warnings, ...draft.warnings];
-            envFromServer = {
-              ...DEFAULT_ENV,
-              ...((parsed?.data?.environment as Record<string, unknown>) ?? {}),
-            };
-            draftRestoredAt = typeof parsed?.savedAt === "number" ? parsed.savedAt : Date.now();
-          }
-        }
+        if (raw) applyDraft(JSON.parse(raw));
       }
     } catch {
-      // Corrupt or quota-blocked localStorage — just fall back to the
-      // server copy. Never block scene load on a draft read failure.
+      /* fall through — async IDB below */
     }
 
     // New scene = new editing context; previous undo entries reference
@@ -449,6 +445,29 @@ export const useEditor = create<EditorState>((set, get) => ({
         "info",
         `Recovered unsaved changes for "${name}" (last edit ${ageStr}). Press Ctrl+S to confirm.`,
       );
+    } else if (typeof window !== "undefined") {
+      // Async IDB draft (large scenes that overflowed localStorage)
+      void import("@/lib/idbDraft").then(async ({ readDraft }) => {
+        const draft = await readDraft(sceneId);
+        if (!draft?.data) return;
+        const cur = get();
+        if (cur.sceneId !== sceneId || cur.isDirty) return;
+        const d = draft.data as { entities?: unknown; environment?: unknown };
+        if (!Array.isArray(d.entities)) return;
+        const sanitized = sanitizeEntities(d.entities);
+        set({
+          sceneData: {
+            entities: sanitized.entities,
+            environment: { ...DEFAULT_ENV, ...(d.environment as object) },
+          },
+          isDirty: true,
+        });
+        for (const w of sanitized.warnings) get().pushLog("warn", `Scene load: ${w}`);
+        get().pushLog(
+          "info",
+          `Recovered large draft for "${name}" from IndexedDB. Press Ctrl+S to confirm.`,
+        );
+      });
     }
   },
 
@@ -468,12 +487,15 @@ export const useEditor = create<EditorState>((set, get) => ({
     for (const w of warnings) get().pushLog("warn", `Scene data: ${w}`);
   },
   markSaved: () => {
-    // Confirmed save → drop the crash-recovery draft for this scene so
-    // a future load reads the canonical server copy (and so localStorage
-    // doesn't accumulate forever).
+    // Confirmed save → drop crash-recovery drafts (localStorage + IndexedDB).
     const sid = get().sceneId;
     if (sid !== null && typeof window !== "undefined") {
-      try { window.localStorage.removeItem(`gameforge:draft:${sid}`); } catch {}
+      try {
+        window.localStorage.removeItem(`gameforge:draft:${sid}`);
+      } catch {
+        /* ignore */
+      }
+      void import("@/lib/idbDraft").then(({ clearDraft }) => clearDraft(sid));
     }
     set({ isDirty: false });
   },

@@ -60,6 +60,18 @@ Spline paths for cutscenes / roads use **three curves** + **maath** (not a separ
 
 Prefer **pmndrs postprocessing** over ad-hoc EffectComposer stacks.
 
+## Convert + editor helpers (P0/P1)
+
+| Package | Role |
+|---|---|
+| **@gltf-transform/core** (+ extensions, functions) | Offline GLB dedup / prune / weld |
+| **meshoptimizer** | EXT_meshopt_compression (local, not esm.sh) |
+| **detect-gpu** | Boot-time render quality (`lib/deviceTier.ts`) |
+| **idb-keyval** | Large drafts when localStorage quota fails |
+| **comlink** | Worker RPC helper (`lib/comlinkWorker.ts`) |
+
+Optional later: **howler** (SFX), **colyseus.js** (play client only) — see [multiplayer deploy]({% link multiplayer-deploy.md %}).
+
 ## Fleet optional (`optionalDependencies`)
 
 | Package | Role |
@@ -98,4 +110,5 @@ Bump versions only in **`pnpm-workspace.yaml` catalog** (+ root overrides for `t
 
 - [Best practices]({% link best-practices.md %})
 - [Deployment]({% link deployment.md %})
+- [Multiplayer deploy]({% link multiplayer-deploy.md %})
 - Repo skill: `forge-editor` · `forge-gameplay-scripts`

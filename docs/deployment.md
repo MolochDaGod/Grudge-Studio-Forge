@@ -58,6 +58,7 @@ forge.grudge-studio.com          Cloudflare DNS (proxied)
 | Agent jobs / catalog | free-ai + optional D1 | New storage product |
 | Player bag / island | Railway Postgres | Forge D1 |
 | Project scenes | Puter KV/FS or localStorage | Mixing with player DB |
+| **Multiplayer realtime** | Railway L2 room **or** CF Worker WS→Railway (L3) **or** Durable Objects (L6) | WebSocket on Vercel SPA / forge web Worker alone |
 
 ## Secrets (never commit)
 
@@ -91,3 +92,16 @@ Expect: HTML **200** with title “Grudge Forge”, edge `"ok": true`, catalog +
 4. SPA still ships from `main` independently (do not wait on desktop for web).
 
 See [Releases]({% link releases.md %}).
+
+## Multiplayer (not the SPA path)
+
+Forge SPA deploy does **not** host gameplay WebSockets. For co-op / PvP / playtest rooms, pick a live-servers pattern and deploy the **room host** separately:
+
+| Pattern | Deploy surface | Notes |
+|---|---|---|
+| **L2 Carrier** | One Railway Node: HTTP + `WS /api/carrier` | Best default when the game API is already Node |
+| **L3 + L4** | CF Worker (upgrade) → Railway room | Required when the browser origin is Vercel-only |
+| **L6 DO** | Cloudflare Durable Object per `roomId` | Multi-tenant edge rooms |
+| **L7 Ephemeral** | Ticket + TTL room URL | Forge “Publish playtest” target |
+
+Full wiring (scripts, `ctx.net`, checklist): **[Multiplayer deploy]({% link multiplayer-deploy.md %})**.

@@ -29,39 +29,7 @@
  */
 import { unzipSync } from "fflate";
 import type * as THREE_NS from "three";
-
-// gltf-transform + meshoptimizer are loaded from a CDN at runtime so the
-// editor bundle doesn't have to ship the encoder WASM. The CDN URLs are
-// centralised here so they can be swapped (or self-hosted) in one place.
-// Pinned to the 4.x line that ships ESM with EXT_meshopt_compression.
-const GLTF_TRANSFORM_CORE_URL = "https://esm.sh/@gltf-transform/core@4.4.4";
-const GLTF_TRANSFORM_EXT_URL = "https://esm.sh/@gltf-transform/extensions@4.4.4";
-const GLTF_TRANSFORM_FN_URL = "https://esm.sh/@gltf-transform/functions@4.4.4";
-const MESHOPTIMIZER_URL = "https://esm.sh/meshoptimizer@0.25.0";
-
-// Structural shape of the gltf-transform Document we touch. Kept minimal so
-// we don't have to ship the @gltf-transform/core types just for IntelliSense.
-type GltfDocLike = {
-  getRoot(): {
-    listMeshes(): Array<{
-      listPrimitives(): Array<{
-        getAttribute(name: string): { getCount(): number; getMin(out: number[]): number[]; getMax(out: number[]): number[] } | null;
-        getIndices(): { getCount(): number } | null;
-      }>;
-    }>;
-    listSkins(): Array<{ listJoints(): unknown[] }>;
-    listMaterials(): Array<{
-      getName(): string;
-      getBaseColorTexture(): unknown;
-      getMetallicRoughnessTexture(): unknown;
-      getNormalTexture(): unknown;
-      getEmissiveTexture(): unknown;
-      getOcclusionTexture(): unknown;
-    }>;
-    listAnimations(): Array<{ getName(): string }>;
-  };
-  transform(...fns: unknown[]): Promise<void>;
-};
+import type { Document as GltfDocument } from "@gltf-transform/core";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -185,28 +153,37 @@ async function exportToGlb(
 async function optimizeAndMeasure(
   bytes: Uint8Array,
 ): Promise<{ bytes: Uint8Array; metadata: AssetMetadata }> {
-  // CDN-loaded so the editor bundle stays slim. `@vite-ignore` keeps Vite
-  // from trying to pre-bundle these URLs at build time.
-  let core: any, ext: any, fns: any, meshoptModule: any;
+  // Dynamic imports keep gltf-transform / meshoptimizer out of the first-paint
+  // editor chunk; packages ship from npm (catalog) so CI/offline never depends
+  // on esm.sh.
+  let WebIO: typeof import("@gltf-transform/core").WebIO;
+  let ALL_EXTENSIONS: typeof import("@gltf-transform/extensions").ALL_EXTENSIONS;
+  let dedup: typeof import("@gltf-transform/functions").dedup;
+  let prune: typeof import("@gltf-transform/functions").prune;
+  let weld: typeof import("@gltf-transform/functions").weld;
+  let meshopt: typeof import("@gltf-transform/functions").meshopt;
+  let MeshoptEncoder: typeof import("meshoptimizer").MeshoptEncoder;
   try {
-    [core, ext, fns, meshoptModule] = await Promise.all([
-      import(/* @vite-ignore */ GLTF_TRANSFORM_CORE_URL),
-      import(/* @vite-ignore */ GLTF_TRANSFORM_EXT_URL),
-      import(/* @vite-ignore */ GLTF_TRANSFORM_FN_URL),
-      import(/* @vite-ignore */ MESHOPTIMIZER_URL),
+    const [core, ext, fns, meshoptModule] = await Promise.all([
+      import("@gltf-transform/core"),
+      import("@gltf-transform/extensions"),
+      import("@gltf-transform/functions"),
+      import("meshoptimizer"),
     ]);
+    WebIO = core.WebIO;
+    ALL_EXTENSIONS = ext.ALL_EXTENSIONS;
+    dedup = fns.dedup;
+    prune = fns.prune;
+    weld = fns.weld;
+    meshopt = fns.meshopt;
+    MeshoptEncoder = meshoptModule.MeshoptEncoder;
   } catch (err) {
-    console.warn("[AssetConverter] CDN load failed; skipping optimization:", err);
+    console.warn("[AssetConverter] gltf-transform/meshoptimizer import failed:", err);
     return { bytes, metadata: emptyMetadata() };
   }
 
-  const { WebIO } = core;
-  const { ALL_EXTENSIONS } = ext;
-  const { dedup, prune, weld, meshopt } = fns;
-  const { MeshoptEncoder } = meshoptModule;
-
   const io = new WebIO().registerExtensions(ALL_EXTENSIONS);
-  let doc: GltfDocLike;
+  let doc: GltfDocument;
   try {
     doc = await io.readBinary(bytes);
   } catch (err) {
@@ -219,7 +196,8 @@ async function optimizeAndMeasure(
     await doc.transform(
       dedup(),
       prune(),
-      weld({ tolerance: 0.0001 }),
+      // gltf-transform 4.x WeldOptions has overwrite only (no tolerance).
+      weld(),
       meshopt({ encoder: MeshoptEncoder, level: "medium" }),
     );
   } catch (err) {
@@ -252,7 +230,7 @@ function emptyMetadata(): AssetMetadata {
   };
 }
 
-function extractMetadata(doc: GltfDocLike): AssetMetadata {
+function extractMetadata(doc: GltfDocument): AssetMetadata {
   const root = doc.getRoot();
   const meshes = root.listMeshes();
   let triangles = 0;

@@ -92,12 +92,9 @@ export function useEditorDraftMirror(): void {
     if (!isDirty) return;
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      try {
-        const payload = JSON.stringify({ savedAt: Date.now(), data: sceneData });
-        window.localStorage.setItem(`${DRAFT_KEY_PREFIX}${sceneId}`, payload);
-      } catch {
-        // Quota / private mode / disabled storage — non-fatal.
-      }
+      void import("@/lib/idbDraft").then(({ writeDraft }) =>
+        writeDraft(sceneId, { savedAt: Date.now(), data: sceneData }),
+      );
     }, DRAFT_DEBOUNCE_MS);
     return () => {
       if (timerRef.current) {

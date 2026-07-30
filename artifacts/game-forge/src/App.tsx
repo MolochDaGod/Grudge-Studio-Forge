@@ -341,6 +341,11 @@ function EditorShell() {
     return installStudioSsoHydrateListener();
   }, []);
 
+  // Device-tier render quality (detect-gpu) unless user forced View → Quality.
+  useEffect(() => {
+    void import("@/lib/deviceTier").then((m) => m.applyDetectedRenderQuality());
+  }, []);
+
   // Mirror the scene store into the miniplex ECS so AI bulk queries
   // (count_entities / query_entities) stay O(1) regardless of how many
   // entities the user / AI spawn. Idempotent + cleans up on unmount so

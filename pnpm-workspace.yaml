@@ -32,6 +32,14 @@ catalog:
   recast-navigation: ^0.43.1
   '@recast-navigation/three': ^0.43.1
   three-bvh-csg: ^0.0.18
+  # Offline glTF optimize (no esm.sh) + editor helpers
+  '@gltf-transform/core': ^4.1.1
+  '@gltf-transform/extensions': ^4.1.1
+  '@gltf-transform/functions': ^4.1.1
+  meshoptimizer: ^0.22.0
+  detect-gpu: ^5.0.70
+  idb-keyval: ^6.2.1
+  comlink: ^4.4.2
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   drizzle-orm: ^0.45.2
@@ -48,7 +56,15 @@ catalog:
 
 minimumReleaseAge: 1440
 
-minimumReleaseAgeExclude: []
+# Allow recent patches for convert pipeline + editor helpers (still pinned in catalog).
+minimumReleaseAgeExclude:
+  - '@gltf-transform/core'
+  - '@gltf-transform/extensions'
+  - '@gltf-transform/functions'
+  - meshoptimizer
+  - detect-gpu
+  - idb-keyval
+  - comlink
 
 onlyBuiltDependencies:
   - '@swc/core'
