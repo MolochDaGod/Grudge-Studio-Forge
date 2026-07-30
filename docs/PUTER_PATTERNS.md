@@ -1,14 +1,19 @@
+﻿---
+layout: default
+title: Puter patterns
+nav_order: 13
+---
 /**
  * Procedural map generation. Each generator returns a flat list of
  * `SceneEntity` rows, all parented under a single named root group, so
  * the entire generated chunk is one drag/delete/undo unit.
  *
  * Reproducible output: every generator takes a numeric `seed`. Same seed
- * + same options → identical map.
+ * + same options â†’ identical map.
  *
  * When `sectorId` is provided the generators use the matching biome's
- * asset table (`lib/sectorAssets.ts`) to place real GLB models — trees,
- * structures, harvestables, monsters, and ambient VFX — instead of (or
+ * asset table (`lib/sectorAssets.ts`) to place real GLB models â€” trees,
+ * structures, harvestables, monsters, and ambient VFX â€” instead of (or
  * alongside) the fallback primitive geometry.
  */
 
@@ -23,7 +28,7 @@ export type MapKind = "cityGrid" | "openArena" | "dungeonRooms" | "maze" | "open
 
 export interface MapGenOptions {
   kind: MapKind;
-  /** "Map width" in world units (also map depth — generators are square). */
+  /** "Map width" in world units (also map depth â€” generators are square). */
   size: number;
   /** Density tuning, 0..1. Meaning depends on the generator. */
   density: number;
@@ -119,7 +124,7 @@ function rootGroup(name: string): SceneEntity {
 function cityGrid(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
   const assets = resolveAssets(opts.sectorId);
-  const root = rootGroup("Generated · City Grid");
+  const root = rootGroup("Generated Â· City Grid");
   const out: SceneEntity[] = [root];
 
   const size = Math.max(20, opts.size);
@@ -230,7 +235,7 @@ function cityGrid(opts: MapGenOptions): SceneEntity[] {
 function openArena(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
   const assets = resolveAssets(opts.sectorId);
-  const root = rootGroup("Generated · Open Arena");
+  const root = rootGroup("Generated Â· Open Arena");
   const out: SceneEntity[] = [root];
   const size = Math.max(12, opts.size);
   const half = size / 2;
@@ -270,7 +275,7 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
     );
   }
 
-  // Cover objects — prefer GLB props when assets available
+  // Cover objects â€” prefer GLB props when assets available
   const step = 3;
   const jitter = step * 0.45;
   const coverChance = 0.2 + opts.density * 0.55;
@@ -369,7 +374,7 @@ interface BspRect {
 function dungeonRooms(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
   const assets = resolveAssets(opts.sectorId);
-  const root = rootGroup("Generated · Dungeon");
+  const root = rootGroup("Generated Â· Dungeon");
   const out: SceneEntity[] = [root];
   const size = Math.max(20, opts.size);
 
@@ -566,7 +571,7 @@ function buildWall(
 function maze(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
   const assets = resolveAssets(opts.sectorId);
-  const root = rootGroup("Generated · Maze");
+  const root = rootGroup("Generated Â· Maze");
   const out: SceneEntity[] = [root];
 
   // Cell grid: choose count by size; cell side = 3 units
@@ -724,7 +729,7 @@ function maze(opts: MapGenOptions): SceneEntity[] {
 function openWorld(opts: MapGenOptions): SceneEntity[] {
   const rng = mulberry32(opts.seed);
   const assets = resolveAssets(opts.sectorId);
-  const root = rootGroup("Generated · Open World");
+  const root = rootGroup("Generated Â· Open World");
   const out: SceneEntity[] = [root];
   const size = Math.max(40, opts.size);
   const half = size / 2;
@@ -741,7 +746,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }),
   );
 
-  // Foliage (trees / plants) — dense scatter
+  // Foliage (trees / plants) â€” dense scatter
   if (assets && assets.foliage.length > 0) {
     const foliageDensity = (assets.foliageDensity ?? 0.5) * opts.density;
     const foliageStep = 4;
@@ -764,7 +769,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Structures — sparsely scattered
+  // Structures â€” sparsely scattered
   if (assets && assets.structures.length > 0) {
     const structureCount = Math.round(2 + opts.density * 4);
     for (let i = 0; i < structureCount; i++) {
@@ -813,7 +818,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Monsters — scattered throughout
+  // Monsters â€” scattered throughout
   if (assets && assets.monsters.length > 0) {
     const monsterCount = Math.round(3 + opts.density * 8);
     for (let i = 0; i < monsterCount; i++) {
@@ -1272,7 +1277,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
               <p className="text-[11px] text-muted-foreground">
                 Locator (proxy) for sub-node{" "}
                 <span className="font-mono text-foreground">{entity.model.subNode ?? "?"}</span> of
-                its parent GLB. Geometry is rendered by the parent — this entity is a
+                its parent GLB. Geometry is rendered by the parent â€” this entity is a
                 transform-only anchor you can target by name (Spawn_*, Cover_*, etc.) or attach
                 scripts/behaviors to.
               </p>
@@ -1299,7 +1304,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
                         </Button>
                         <p className="text-[11px] text-muted-foreground">
                           Walks the GLB and adds a transform-only locator child for each top-level
-                          named node (Spawn_*, Cover_*, Door_*, …). Lets scripts/AI target sub-parts
+                          named node (Spawn_*, Cover_*, Door_*, â€¦). Lets scripts/AI target sub-parts
                           by name and attach behaviors.
                         </p>
                       </>
@@ -1323,8 +1328,8 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">None (passive object)</SelectItem>
-                <SelectItem value="thirdPerson">Player — Third-person</SelectItem>
-                <SelectItem value="firstPerson">Player — First-person</SelectItem>
+                <SelectItem value="thirdPerson">Player â€” Third-person</SelectItem>
+                <SelectItem value="firstPerson">Player â€” First-person</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-[11px] text-muted-foreground mt-1.5">
@@ -1335,7 +1340,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
           </div>
         </Section>
 
-        {/* ── Stats ─────────────────────────────────────────────── */}
+        {/* â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {entity.stats ? (
           <Section title="Stats" Icon={SwordsIcon}>
             <div className="space-y-2">
@@ -1469,3 +1474,4 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     </div>
   );
 }
+

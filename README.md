@@ -10,6 +10,8 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 | **AI skills** | [`forge-editor`](.agents/skills/forge-editor/SKILL.md) · [`forge-gameplay-scripts`](.agents/skills/forge-gameplay-scripts/SKILL.md) |
 | **Hybrid C# docs** | [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) |
 | **Deploy guide** | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
+| **Docs site (Pages)** | [molochdagod.github.io/Grudge-Studio-Forge](https://molochdagod.github.io/Grudge-Studio-Forge/) |
+| **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) |
 | **Edge + MCP** | [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) |
 
 ## Production status (current)

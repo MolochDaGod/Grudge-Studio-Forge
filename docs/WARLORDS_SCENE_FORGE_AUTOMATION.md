@@ -1,4 +1,9 @@
-# Warlords scene ↔ Forge automation
+﻿---
+layout: default
+title: Warlords scene automation
+nav_order: 15
+---
+# Warlords scene â†” Forge automation
 
 **Foundry pattern SSOT:** character-viewer `docs/WARLORDS_ERA_SCENE_PATTERN.md`  
 **Live scene:** https://character.grudge-studio.com/scene/warlords  
@@ -11,15 +16,15 @@ Automate and streamline Forge so **baked, UUID-registered, game-ready prefabs** 
 ## Streamlined process
 
 ```
-Drop FBX/GLB → Convert (meshopt/WebP) → Quality gates → Register UUID
-  → R2 upload → Bind deck slot / .gfscene entity → Foundry/client loads CDN
+Drop FBX/GLB â†’ Convert (meshopt/WebP) â†’ Quality gates â†’ Register UUID
+  â†’ R2 upload â†’ Bind deck slot / .gfscene entity â†’ Foundry/client loads CDN
 ```
 
 | Step | Forge UI / API | Production out |
 |------|----------------|----------------|
 | Import | AssetDropZone | working mesh |
 | Convert | assetConverter + meshopt | production GLB |
-| Quality | SI · sRGB · idle/walk · feet | pass/fail meta |
+| Quality | SI Â· sRGB Â· idle/walk Â· feet | pass/fail meta |
 | Register | ObjectStore / D1 | asset uuid + r2_key |
 | Deploy binary | R2 CDN | assets.grudge-studio.com |
 | Bind scene | Prefab spawn on anchors | airship crew slot |
@@ -45,7 +50,7 @@ Definitions = ObjectStore. Binaries = R2.
 
 ## Prefab gates (must all pass)
 
-uuid_stable · si_height_1_8m · srgb_maps · loco_idle_walk · root_motion_stripped · feet_grounded · shadows · era_tag_warlords · cdn_url
+uuid_stable Â· si_height_1_8m Â· srgb_maps Â· loco_idle_walk Â· root_motion_stripped Â· feet_grounded Â· shadows Â· era_tag_warlords Â· cdn_url
 
 ## Do / Don't
 
@@ -55,3 +60,4 @@ uuid_stable · si_height_1_8m · srgb_maps · loco_idle_walk · root_motion_stri
 | R2 + Railway + ObjectStore | Replit / local-only as production |
 | CommandStack edits in Forge | Silent scene mutations without undo |
 | Foundry 4-circle HUD contract | Duplicate select UIs |
+

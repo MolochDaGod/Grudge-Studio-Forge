@@ -1,0 +1,34 @@
+title: Grudge Forge Docs
+description: >-
+  Production docs for Grudge GameForge — deployment path, best practices,
+  hybrid C#, edge workers, and agentic editor mechanisms.
+url: "https://molochdagod.github.io"
+baseurl: "/Grudge-Studio-Forge"
+remote_theme: just-the-docs/just-the-docs
+markdown: kramdown
+kramdown:
+  syntax_highlighter: rouge
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
+  - jekyll-relative-links
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+color_scheme: dark
+search_enabled: true
+heading_anchors: true
+aux_links:
+  "Live editor": "https://forge.grudge-studio.com/editor"
+  "GitHub": "https://github.com/MolochDaGod/Grudge-Studio-Forge"
+  "Releases": "https://github.com/MolochDaGod/Grudge-Studio-Forge/releases"
+nav_external_links:
+  - title: "forge.grudge-studio.com"
+    url: "https://forge.grudge-studio.com"
+  - title: "Source"
+    url: "https://github.com/MolochDaGod/Grudge-Studio-Forge"
+footer_content: >-
+  Grudge Studio · GameForge · production SPA via Cloudflare → Vercel prebuilt

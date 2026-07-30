@@ -1,12 +1,17 @@
-# Game Deployment Definitions — API & Fleet SSOT
+﻿---
+layout: default
+title: Game deployment definitions
+nav_order: 14
+---
+# Game Deployment Definitions â€” API & Fleet SSOT
 
 **Audience:** Forge agents, game onboarding, deploy ops  
-**Live:** forge.grudge-studio.com · fleet games  
+**Live:** forge.grudge-studio.com Â· fleet games  
 **Code:** `artifacts/game-forge/src/lib/gameDeployments.ts`  
-**Related:** `DEPLOYMENT.md` (Forge SPA only) · skills `grudge-fleet` · `grudge-live-servers` · `grudge-game-onboarding` · `grudge-foundry`  
+**Related:** `DEPLOYMENT.md` (Forge SPA only) Â· skills `grudge-fleet` Â· `grudge-live-servers` Â· `grudge-game-onboarding` Â· `grudge-foundry`  
 **Last review:** 2026-07-27  
 
-This document **defines** how games, editors, and APIs are classified for deployment. It **replaces** vague “publish” language and purged practices that assumed “assets ship inside the SPA bundle.”
+This document **defines** how games, editors, and APIs are classified for deployment. It **replaces** vague â€œpublishâ€ language and purged practices that assumed â€œassets ship inside the SPA bundle.â€
 
 ---
 
@@ -14,7 +19,7 @@ This document **defines** how games, editors, and APIs are classified for deploy
 
 | Layer | Authority | Host / path | Not for |
 |-------|-----------|-------------|---------|
-| **L-PLAYER** | Railway Postgres | `grudge-api-production-0d46` via same-origin `/api/characters\|account\|island\|wallet\|…` | D1 as bag/XP |
+| **L-PLAYER** | Railway Postgres | `grudge-api-production-0d46` via same-origin `/api/characters\|account\|island\|wallet\|â€¦` | D1 as bag/XP |
 | **L-DEFS** | ObjectStore / info | `objectstore.grudge-studio.com/api/v1` | Random gists |
 | **L-BIN** | R2 `grudge-assets` | `https://assets.grudge-studio.com/{r2Key}` | Git LFS large GLBs |
 | **L-INDEX** | D1 asset registry | index/search only | Player state |
@@ -34,7 +39,7 @@ This document **defines** how games, editors, and APIs are classified for deploy
 | `create_foundry` | Character create + select | character.grudge-studio.com |
 | `hub_pvp` | Multiplayer hub + WS edge | grudox.grudge-studio.com |
 | `api_game_data` | Character/account SSOT API | Railway grudge-api |
-| `api_forge` | Forge projects/scenes/scripts | forge `/api/*` → Railway forge-api |
+| `api_forge` | Forge projects/scenes/scripts | forge `/api/*` â†’ Railway forge-api |
 | `api_identity` | Auth gateway | id.grudge-studio.com |
 | `api_ai` | AI gateway | ai.grudge-studio.com |
 | `cdn_assets` | Binary CDN | assets.grudge-studio.com |
@@ -50,19 +55,19 @@ This document **defines** how games, editors, and APIs are classified for deploy
 
 | ID | Name | Use when |
 |----|------|----------|
-| **L0** | Asset SSOT | Always — CDN + magic-byte verify |
+| **L0** | Asset SSOT | Always â€” CDN + magic-byte verify |
 | **L1** | Open launcher SPA | open.grudge-studio.com |
 | **L2** | Co-located HTTP+WS | Single Node process (Carrier) |
 | **L3** | CF edge WS proxy | Vercel SPA + Railway room (GRUDOX) |
 | **L4** | Dedicated Railway room | Heavy isolation / Colyseus / pvp |
 | **L5** | Path-isolated rooms | Multi-room path prefixes |
 | **L6** | Durable Object rooms | Edge multi-tenant |
-| **L7** | Ephemeral playtest | Forge “Publish preview” TTL |
+| **L7** | Ephemeral playtest | Forge â€œPublish previewâ€ TTL |
 | **L8** | Studio/editor artifact | forge / studio / dash |
 | **L9** | Open library entry | Player-facing catalog card |
 
 **Default new browser game:** L0 + L1 entry + L2 (or L3+L4 if fronted by Vercel).  
-**Default Forge playtest:** L7 Puter host or player embed — **not** full fleet publish.
+**Default Forge playtest:** L7 Puter host or player embed â€” **not** full fleet publish.
 
 ---
 
@@ -71,13 +76,13 @@ This document **defines** how games, editors, and APIs are classified for deploy
 | `PublishChannel` | What it is | Durable? | Best practice |
 |------------------|------------|----------|----------------|
 | `forge_api_save` | POST project/scene/scripts to Forge Postgres | Yes | Primary editor save |
-| `r2_user_assets` | GLB/textures → R2 `user-assets/<projectId>/…` | Yes | Required for models in scenes |
+| `r2_user_assets` | GLB/textures â†’ R2 `user-assets/<projectId>/â€¦` | Yes | Required for models in scenes |
 | `github_pack` | `forge.project.json` + scenes + scripts | Yes | Team / backup |
 | `puter_host` | `*.puter.site` player bootstrap + scene.json | User-pays | Share link; **not** fleet prod |
 | `player_embed` | Static `player.html` + scene.json | Depends on host | Lightweight play |
 | `fleet_satellite` | Vercel game + rewrites to Railway/ID/CDN | Yes | Real games (onboarding skill) |
 | `open_library` | GameEntry on Open | Yes | Discovery only |
-| **PURGED** `bundle_in_spa` | Ship GLBs inside editor Vite dist | **No** | **Do not use** — CDN only |
+| **PURGED** `bundle_in_spa` | Ship GLBs inside editor Vite dist | **No** | **Do not use** â€” CDN only |
 
 ---
 
@@ -108,7 +113,7 @@ This document **defines** how games, editors, and APIs are classified for deploy
 |--------|--------|
 | `/api/characters` | Roster / active character |
 | `/api/account` | Profile / tokens |
-| `/api/inventory` · bag | Items |
+| `/api/inventory` Â· bag | Items |
 | `/api/island` | Home island state |
 | `/api/wallet` | In-game wallet |
 | Auth segments | Session / guest / bridge (via ID + Railway) |
@@ -134,12 +139,12 @@ This document **defines** how games, editors, and APIs are classified for deploy
 
 ```
 [Browser game or editor]
-  ├── Auth:     id.grudge-studio.com  (/login?redirect_uri=)
-  ├── Player:   same-origin /api/characters|account|… → Railway
-  ├── Defs:     objectstore /api/v1  (or proxy)
-  ├── Binaries: assets.grudge-studio.com  (or proxy)
-  ├── AI:       ai.grudge-studio.com  (optional)
-  └── Realtime: L2 same host | L3 Worker→Railway | L4 dedicated WS
+  â”œâ”€â”€ Auth:     id.grudge-studio.com  (/login?redirect_uri=)
+  â”œâ”€â”€ Player:   same-origin /api/characters|account|â€¦ â†’ Railway
+  â”œâ”€â”€ Defs:     objectstore /api/v1  (or proxy)
+  â”œâ”€â”€ Binaries: assets.grudge-studio.com  (or proxy)
+  â”œâ”€â”€ AI:       ai.grudge-studio.com  (optional)
+  â””â”€â”€ Realtime: L2 same host | L3 Workerâ†’Railway | L4 dedicated WS
 ```
 
 **Dead / purged endpoints (do not assign):**
@@ -159,9 +164,9 @@ This document **defines** how games, editors, and APIs are classified for deploy
 |------|---------|---------|---------------------|
 | Keep working | `forge_api_save` + `r2_user_assets` | L8 | projects, scenes, assets, storage |
 | Share playtest | `puter_host` or `player_embed` | L7 | storage + Puter (not Railway characters required) |
-| Ship Warlords content | Export GLB/scene → client CDN + Railway characters | L0 + play_client | R2 + grudge-api |
+| Ship Warlords content | Export GLB/scene â†’ client CDN + Railway characters | L0 + play_client | R2 + grudge-api |
 | Ship new browser game | `fleet_satellite` + L9 | L0+L1(+L2/L3) | ID + Railway + ObjectStore + CDN |
-| Multiplayer room | room_ws | L2–L4 | room process + optional game-data |
+| Multiplayer room | room_ws | L2â€“L4 | room process + optional game-data |
 
 ---
 
@@ -169,14 +174,14 @@ This document **defines** how games, editors, and APIs are classified for deploy
 
 | Context | Owns | Must not say |
 |---------|------|--------------|
-| `deploy` | Channels, L-codes, smoke | “bundle GLBs in Vite dist” |
-| `project-asset` | R2 keys, meta sidecars, unused asset cleanup | “assets are bundled into published build” |
+| `deploy` | Channels, L-codes, smoke | â€œbundle GLBs in Vite distâ€ |
+| `project-asset` | R2 keys, meta sidecars, unused asset cleanup | â€œassets are bundled into published buildâ€ |
 | `import` / `export` | Converter + GLB rules | Puter as sole durable store |
 | `scene` | CommandStack, `.gfscene.json` | ObjectLoader as game SSOT |
 | `ai` | Undoable tools | Fleet one-click ship via batch_generate |
-| `viewport` / `physics` | Render + Rapier | — |
+| `viewport` / `physics` | Render + Rapier | â€” |
 
-Code: `lib/bestPractices.ts` · AI: `list_forge_best_practices` · defs: `lib/gameDeployments.ts`.
+Code: `lib/bestPractices.ts` Â· AI: `list_forge_best_practices` Â· defs: `lib/gameDeployments.ts`.
 
 ---
 
@@ -185,9 +190,10 @@ Code: `lib/bestPractices.ts` · AI: `list_forge_best_practices` · defs: `lib/ga
 ```
 [ ] Identify SurfaceClass + PublishChannel
 [ ] L-PLAYER writes only Railway; L-BIN only R2
-[ ] Forge save ≠ fleet game publish
+[ ] Forge save â‰  fleet game publish
 [ ] Puter host = L7 playtest, not production Warlords
 [ ] No Replit / dead api tunnel / SPA-bundled GLBs
 [ ] Smoke health + asset HEAD after deploy
 [ ] Register Open library (L9) only for player-facing games
 ```
+
