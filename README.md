@@ -102,7 +102,7 @@ If WASM is stale, packs fall back to JS equivalents so play mode still works.
 | Pathfinding | Yuka 0.7, recast-navigation 0.43 |
 | Scripting | JS + hybrid C# (transpile / Blazor packs) |
 | State | Zustand, Immer, Miniplex, XState |
-| AI | Anthropic · Puter · Ollama · CF Workers AI |
+| AI | Puter · fleet free-ai (Groq/Together) · Ollama · optional Anthropic |
 | UI | Radix, Tailwind 4, shadcn, cmdk, Framer Motion |
 | Editor | Monaco |
 | Graph | @xyflow/react |
@@ -129,7 +129,40 @@ pnpm run typecheck
 pnpm run test
 ```
 
-## Deployment
+## Deployment path (browser → frontend)
+
+How a user hits the **live editor SPA** (verified production path):
+
+```
+Browser
+  → https://forge.grudge-studio.com          Cloudflare DNS (proxied)
+    → Worker grudge-gameforge-web            zone route forge.grudge-studio.com/*
+        ├─ /api/free-ai|catalog|agent/*      → grudge-forge-free-ai (more-specific routes)
+        ├─ /api/*                            → gameforge-api / Railway
+        └─ /*  (HTML, JS, CSS, /editor)      → ORIGIN = Vercel prebuilt SPA
+              https://grudge-studio-forge.vercel.app
+```
+
+| Step | Check | Expect |
+|---|---|---|
+| 1. DNS / edge | `GET /__edge/health` | `"ok": true`, `spa.ok`, bindings `ORIGIN` + `ASSETS_ORIGIN` |
+| 2. SPA shell | `GET /` and `GET /editor` | **200** HTML, title **Grudge Forge — Game Editor** |
+| 3. Origin | Edge probe `spa` | Vercel returns index.html (not 522/5xx) |
+| 4. Agent edge | `GET /api/catalog/status` · `/api/free-ai/status` | **200** JSON from free-ai worker |
+| 5. Ship | GHA **Deploy Forge SPA** on `main` | Success → Vercel production → next edge fetch |
+
+```bash
+# Smoke the path (PowerShell / bash)
+curl -sS -o /dev/null -w "%{http_code}\n" https://forge.grudge-studio.com/
+curl -sS -o /dev/null -w "%{http_code}\n" https://forge.grudge-studio.com/editor
+curl -sS https://forge.grudge-studio.com/__edge/health
+curl -sS https://forge.grudge-studio.com/api/catalog/status
+curl -sS https://forge.grudge-studio.com/api/free-ai/status
+# Optional full smoke:
+node scripts/smoke-forge-prod.mjs
+```
+
+### Deploy artifacts
 
 | Artifact | How | URL |
 |---|---|---|
@@ -140,23 +173,12 @@ pnpm run test
 | Assets | R2 CDN | https://assets.grudge-studio.com |
 | Desktop | GHA **Release** on `v*` tags | GitHub Releases |
 
-**Ship checklist**
+**Ship rules**
 
-```bash
-# After push to main — wait for Deploy Forge SPA, then:
-curl -s https://forge.grudge-studio.com/__edge/health
-curl -s https://forge.grudge-studio.com/api/catalog/status
-curl -s https://forge.grudge-studio.com/api/free-ai/status
-node scripts/smoke-forge-prod.mjs
-```
-
-- Push **`main`** → CI + SPA deploy (not raw Vercel git build — OOM risk).
+- Push **`main`** → CI + SPA deploy (**prebuilt** only — do not rely on Vercel git auto-build; OOM risk).
 - Hybrid C# needs `_framework/` in the SPA dist (verified in GHA).
 - Worker secrets (never commit): `GROQ_API_KEY`, `TOGETHER_API_KEY`, … via `wrangler secret put` in `workers/forge-free-ai/`.
-- Edge + workers: [`DEPLOYMENT.md`](./DEPLOYMENT.md) · [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md)
-- Blazor packs: [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md)
-
-Full guide: [DEPLOYMENT.md](./DEPLOYMENT.md).
+- Full guide: [`DEPLOYMENT.md`](./DEPLOYMENT.md) · edge notes: [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) · Blazor: [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md)
 
 ## Projects, login, and save/load
 
