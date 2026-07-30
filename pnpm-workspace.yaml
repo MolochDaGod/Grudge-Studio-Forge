@@ -14,18 +14,24 @@ catalog:
   '@types/node': ^25.3.3
   '@types/react': ^19.2.0
   '@types/react-dom': ^19.2.0
-  '@types/three': 0.184.0
+  '@types/three': 0.185.1
   '@vitejs/plugin-react': ^5.0.4
-  # Grudge Studio 3D stack (single versions across editor + player + desktop)
-  three: 0.184.0
-  '@react-three/fiber': ^9.6.0
+  # Grudge Studio 3D stack (editor + player + desktop) — fleet SSOT ~0.185
+  # See docs/3d-dependencies.md
+  three: 0.185.1
+  '@react-three/fiber': ^9.6.1
   '@react-three/drei': ^10.7.7
   '@react-three/rapier': ^2.2.0
   '@react-three/postprocessing': ^3.0.4
   '@dimforge/rapier3d': ^0.19.3
-  postprocessing: ^6.39.1
+  postprocessing: ^6.39.4
   three-stdlib: ^2.36.1
-  three-mesh-bvh: ^0.9.9
+  three-mesh-bvh: ^0.9.13
+  maath: ^0.10.8
+  yuka: ^0.7.8
+  recast-navigation: ^0.43.1
+  '@recast-navigation/three': ^0.43.1
+  three-bvh-csg: ^0.0.18
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   drizzle-orm: ^0.45.2
@@ -132,4 +138,4 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
-  three: 0.184.0
+  three: 0.185.1

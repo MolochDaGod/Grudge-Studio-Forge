@@ -18,7 +18,7 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 
 | Surface | Stack | Deploy |
 |---|---|---|
-| Editor SPA (`artifacts/game-forge`) | Three **0.184** · R3F · Rapier · Monaco · Blazor WASM | **GHA → Vercel prebuilt** · CF edge `forge.grudge-studio.com` |
+| Editor SPA (`artifacts/game-forge`) | Three **0.185** · R3F · Rapier · Monaco · Blazor WASM | **GHA → Vercel prebuilt** · CF edge `forge.grudge-studio.com` |
 | Edge SPA proxy | Worker `grudge-gameforge-web` | `ORIGIN` = Vercel · `ASSETS_ORIGIN` = R2 CDN |
 | Free AI + agent catalog | Worker `grudge-forge-free-ai` + optional **D1** `forge-agent` | `/api/free-ai/*` · `/api/catalog/*` · `/api/agent/*` |
 | JSON API | Worker `grudge-gameforge-api` / Railway fleet | `/api/*` (storage upload, health) |
@@ -32,7 +32,7 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 **Hard rules (production):**
 
 - **One 3D engine:** Three.js + Rapier only (no Babylon / Havok on the play path).
-- **`three@0.184.0`** pinned in the pnpm workspace catalog — every scene/game package uses `"three": "catalog:"`.
+- **`three@0.185.1`** pinned in the pnpm workspace catalog — every scene/game package uses `"three": "catalog:"` (fleet r185).
 - **Scripting hybrid:** JS `exports.start/update` for designers; C# live-edit via transpile; production packs via Blazor WASM attach/tick.
 - **Asset policy:** no Replit / localhost URLs in saved scenes — see `assetUrlPolicy.ts`.
 - **Babylon runtime** is excluded from the workspace (`!lib/babylon-runtime`) so it cannot install by accident.
@@ -98,8 +98,8 @@ If WASM is stale, packs fall back to JS equivalents so play mode still works.
 
 | Layer | Tech |
 |---|---|
-| 3D | **Three.js 0.184** (catalog), R3F 9, drei, three-mesh-bvh, three-stdlib |
-| Physics | Rapier 0.19 + `@react-three/rapier` only |
+| 3D | **Three.js 0.185** (catalog), R3F 9.6, drei, three-mesh-bvh, three-stdlib — see [`docs/3d-dependencies.md`](./docs/3d-dependencies.md) |
+| Physics | Rapier 0.19 (`@dimforge/rapier3d` + WASM) + `@react-three/rapier` only |
 | Play | `@workspace/player` — R3F + Rapier + EffectsRig |
 | Pathfinding | Yuka 0.7, recast-navigation 0.43 |
 | Scripting | JS + hybrid C# (transpile / Blazor packs) |

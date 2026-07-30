@@ -27,6 +27,7 @@ Browser **Three.js / R3F / Rapier** scene editor with agentic AI, Puter projects
 |---|---|
 | [Deployment mechanisms]({% link deployment.md %}) | DNS → Workers → Vercel SPA, GHA, smoke checks |
 | [Best practices]({% link best-practices.md %}) | Engine, assets, agent, projects, hotkeys |
+| [3D dependencies]({% link 3d-dependencies.md %}) | three / R3F / Rapier / pathfinding / effects pins |
 | [Releases]({% link releases.md %}) | Semver, tags, desktop + SPA ship process |
 | [Edge & MCP]({% link EDGE_AND_MCP.md %}) | CF edge, MCP, workers |
 | [Hybrid C#]({% link HYBRID_CSHARP.md %}) | JS / transpile / Blazor packs |

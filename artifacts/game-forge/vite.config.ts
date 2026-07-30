@@ -11,8 +11,8 @@ import topLevelAwait from "vite-plugin-top-level-await";
  * through the dynamic Viewport import).
  *
  * Vite's default behavior already preloads the vendor chunks that the
- * entry's static import graph touches (`vendor-react`, `vendor-radix`,
- * `vendor-three`, `vendor-r3f`, `vendor-rapier`). It does *not* preload:
+ * entry's static import graph touches (`vendor-3d` = three+R3F, `vendor-rapier`).
+ * It does *not* preload:
  *   - The lazy `viewportPreload` chunk itself (the small re-export entry
  *     in `src/editor/viewportPreload.ts` that anchors the dynamic import).
  *   - `vendor-postprocessing`, whose only consumer is reached through that
@@ -260,16 +260,12 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     /**
-     * After moving Rapier off the `-compat` build (its WASM is now a
-     * separate ~1.5 MB asset, not inlined), the heaviest remaining JS
-     * chunk is `vendor-three` at ~1.1 MB minified. We bump Vite's 500 kB
-     * default up to 1100 kB to cover three.js without flagging it on every
-     * build, but keep it tight enough that any *new* multi-megabyte
-     * dependency triggers the warning and forces us to reconsider before
-     * shipping. (Down from the previous 2500 kB ceiling that masked the
-     * Rapier blob.)
+     * Heaviest JS is `vendor-3d` (three + R3F + drei + postprocessing) —
+     * must stay one chunk to avoid TLA circular init (see manualChunks).
+     * ~2 MB minified is expected; warn only above that so new bloat still
+     * surfaces. (Rapier WASM is a separate asset, not in this budget.)
      */
-    chunkSizeWarningLimit: 1100,
+    chunkSizeWarningLimit: 2200,
     rollupOptions: {
       // Cap the number of files Rollup opens in parallel. The default
       // (os.cpus().length × 20) creates huge in-memory queues when bundling
@@ -337,23 +333,26 @@ export default defineConfig({
           ) {
             return "vendor-rapier";
           }
+          // three + R3F + drei + postprocessing MUST share one chunk.
+          // Splitting them (vendor-three ↔ vendor-r3f) creates a circular
+          // import under `vite-plugin-top-level-await`: vendor-three ends up
+          // importing `__tla` from vendor-r3f while r3f imports three. Class
+          // static blocks then run before bindings resolve:
+          //   "Cannot read properties of undefined (reading 'prototype')"
+          // on Vector2/etc. Same class of bug as the React forwardRef note above.
           if (
             norm.includes("/@react-three/fiber") ||
             norm.includes("/@react-three/drei") ||
             norm.includes("/@react-three/rapier") ||
             norm.includes("/@react-three/postprocessing") ||
-            norm.includes("/postprocessing/")
-          ) {
-            return "vendor-r3f";
-          }
-          if (
+            norm.includes("/postprocessing/") ||
             norm.includes("/three/") ||
             norm.endsWith("/three") ||
             norm.includes("/three-stdlib/") ||
             norm.includes("/three-mesh-bvh/") ||
             norm.includes("/maath/")
           ) {
-            return "vendor-three";
+            return "vendor-3d";
           }
           // React + Radix deliberately fall through to the main entry
           // chunk — see the long comment above for why splitting them
