@@ -25,6 +25,18 @@ describe("auth store", () => {
     expect(s.user?.puter?.username).toBe("alice");
   });
 
+  it("setSignedIn with Grudge ID only leaves isPuterSignedIn false", () => {
+    useAuth.getState().setSignedIn({
+      id: "GRDG-TEST",
+      name: "Moloch",
+      // no puter — fleet SSO from id.grudge-studio.com
+    });
+    const s = useAuth.getState();
+    expect(s.status).toBe("signedIn");
+    expect(s.isPuterSignedIn).toBe(false);
+    expect(s.user?.id).toBe("GRDG-TEST");
+  });
+
   it("setGuest leaves isPuterSignedIn false", () => {
     useAuth.getState().setGuest({ id: "g-1", name: "Player-1234" });
     const s = useAuth.getState();

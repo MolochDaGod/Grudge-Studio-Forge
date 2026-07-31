@@ -6,8 +6,8 @@
  * this module as an additional entry, and walks its *static* import graph
  * to emit `<link rel="modulepreload">` tags for every chunk reachable from
  * it — which means the heavy `Viewport.tsx` module and its transitive
- * vendor chunks (`vendor-three`, `vendor-r3f`, `vendor-rapier`,
- * `vendor-postprocessing`) all get preload hints in the generated HTML.
+ * vendor chunk (`vendor-3d` = three + R3F + drei + postprocessing + Rapier)
+ * gets preload hints in the generated HTML.
  *
  * The browser begins fetching those chunks in parallel with the main
  * `index.js` entry, instead of waiting for the runtime `__vitePreload`

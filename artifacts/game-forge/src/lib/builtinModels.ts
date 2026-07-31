@@ -162,17 +162,19 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
   "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
   "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
-  // Modular grudge6 race kits (FBX, multi-mesh equip) — durable builtin:grudge6:<id>
+  // Modular grudge6 race kits (production GLB on R2) — durable builtin:grudge6:<id>
   "grudge6:warrior": getRaceKitUrl("warrior"),
   "grudge6:dwarf": getRaceKitUrl("dwarf"),
   "grudge6:frost-dwarf": getRaceKitUrl("frost-dwarf"),
   "grudge6:elf": getRaceKitUrl("elf"),
   "grudge6:orc": getRaceKitUrl("orc"),
   "grudge6:skeleton": getRaceKitUrl("skeleton"),
-  // Template aliases (rts-fort-royale creeps / bosses)
-  "creature:mutant": ensureBaseUrl("builtin/char-distortus-rex.glb"),
-  "creature:creep": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
-  "creature:boss-orc": ensureBaseUrl("builtin/char-boss-orc.glb"),
+  // Template aliases (rts-fort-royale creeps / bosses).
+  // Must be absolute assets.grudge-studio.com URLs — never SPA-relative /builtin/*
+  // (Vercel catch-all returns HTML as "GLB" and demos crash).
+  "creature:mutant": getRaceCharacterUrl("orc"),
+  "creature:creep": getRaceCharacterUrl("skeleton"),
+  "creature:boss-orc": getRaceCharacterUrl("orc"),
   // RTS building pack — orc settlement + battle towers on the public CDN
   // (same assets used by RTS-Grudge). Durable `builtin:rts-bldg-*` keys so
   // scenes never bake raw CDN paths.
@@ -207,6 +209,17 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
   "race:elf": Math.PI,
   "race:orc": Math.PI,
   "race:skeleton": Math.PI,
+  // grudge6 Toon RTS kits: art often faces +X; controller/camera expect +Z-ish framing.
+  // Half-turn matches race:* until full facePlusZ deploy is shared with arena characterDeploy.
+  "grudge6:warrior": Math.PI,
+  "grudge6:dwarf": Math.PI,
+  "grudge6:frost-dwarf": Math.PI,
+  "grudge6:elf": Math.PI,
+  "grudge6:orc": Math.PI,
+  "grudge6:skeleton": Math.PI,
+  "creature:mutant": Math.PI,
+  "creature:creep": Math.PI,
+  "creature:boss-orc": Math.PI,
 };
 
 /** Per-race animation clip names used by the player camera controllers
@@ -281,14 +294,34 @@ export function resolveBuiltinModel(url: string): string | null {
   return BUILTIN_MODELS[key] ?? null;
 }
 
+/** Safe CDN hero when a builtin key is missing — never SPA HTML-as-GLB. */
+const FALLBACK_CHARACTER_URL = getRaceCharacterUrl("warrior");
+
+/** Legacy absolute R2 paths that 404 — rewrite to durable race GLBs. */
+const BROKEN_CDN_REWRITES: Array<{ match: RegExp; to: string }> = [
+  {
+    match: /\/builtin\/creature:mutant\.glb$/i,
+    to: getRaceCharacterUrl("orc"),
+  },
+  {
+    match: /\/builtin\/creature%3Amutant\.glb$/i,
+    to: getRaceCharacterUrl("orc"),
+  },
+  {
+    match: /\/builtin\/char-distortus-rex\.glb$/i,
+    to: getRaceCharacterUrl("orc"),
+  },
+];
+
 /** Resolve a model URL for GLTF loaders. Order:
  *   1. `builtin:<key>` → bundled / CDN asset URL
- *   2. absolute http(s)/data/blob → returned as-is
+ *   2. absolute http(s)/data/blob → returned as-is (with broken-path rewrites)
  *   3. anything else → relative to the artifact BASE_URL
  *
  *  Unknown `builtin:` keys must NOT fall through to (3) — Vercel's SPA
  *  catch-all would return `index.html` and drei would try to parse it as
- *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error. */
+ *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error.
+ *  Instead fall back to a verified race GLB so demos keep running. */
 export function resolveModelUrl(url: string): string {
   if (!url || typeof url !== "string") {
     throw new Error("resolveModelUrl: empty model url");
@@ -302,9 +335,10 @@ export function resolveModelUrl(url: string): string {
   if (builtin) return builtin;
   if (url.startsWith("builtin:")) {
     const key = url.slice("builtin:".length);
-    throw new Error(
-      `Unknown builtin model "${key}". Register it in BUILTIN_MODELS (lib/builtinModels.ts) or update the scene to use a valid builtin: key.`,
+    console.warn(
+      `[builtinModels] Unknown builtin "${key}" — falling back to race:warrior CDN GLB`,
     );
+    return FALLBACK_CHARACTER_URL;
   }
   // Block known-bad hosts early (agent / pasted URLs)
   if (/^https?:\/\//i.test(url)) {
@@ -322,6 +356,9 @@ export function resolveModelUrl(url: string): string {
       }
     } catch (e) {
       if (e instanceof Error && e.message.startsWith("Blocked")) throw e;
+    }
+    for (const { match, to } of BROKEN_CDN_REWRITES) {
+      if (match.test(url)) return to;
     }
     return url;
   }

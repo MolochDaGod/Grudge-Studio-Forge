@@ -1,17 +1,16 @@
 import { create } from "zustand";
 
 /**
- * Editor-side auth store — Puter-backed.
+ * Editor-side auth store — Puter + Grudge ID.
  *
  * Three terminal statuses (after the bootstrap completes):
  *   - "anon"     — bootstrap finished, no user, Welcome modal should be shown.
  *   - "guest"    — user explicitly chose "Continue without signing in".
  *                  Editor works locally; cloud / publish disabled with tooltip.
- *   - "signedIn" — `puter.auth.isSignedIn()` returned true. `user.puter` is
- *                  the authoritative identity (uuid + username, optionally
- *                  email + isTemp). The Toolbar's existing
- *                  `status === "signedIn"` publish gate naturally lights up
- *                  only for the real Puter session.
+ *   - "signedIn" — real account via Puter and/or Grudge ID (id.grudge-studio.com).
+ *                  `user.puter` is present only for Puter sessions.
+ *                  `isPuterSignedIn` is true only when `user.puter` exists so
+ *                  Cloud Save / Puter AI stay gated correctly.
  *
  * The `user.id` / `user.name` aliases are preserved so existing consumers
  * (UserMenu, screenshot tagging) keep working without per-call shape checks.
@@ -61,7 +60,13 @@ export const useAuth = create<AuthState>((set) => ({
       isPuterSignedIn: !!user?.puter,
     }),
   setSignedIn: (user) =>
-    set({ status: "signedIn", user, isPuterSignedIn: true }),
+    set({
+      status: "signedIn",
+      user,
+      // Grudge ID SSO may call setSignedIn without a Puter identity — never
+      // fake isPuterSignedIn or Cloud Save / Puter AI will hit guest errors.
+      isPuterSignedIn: !!user?.puter,
+    }),
   setGuest: (user) =>
     set({ status: "guest", user, isPuterSignedIn: false }),
   reset: () => set({ status: "anon", user: null, isPuterSignedIn: false }),

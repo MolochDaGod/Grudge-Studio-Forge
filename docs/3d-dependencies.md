@@ -97,7 +97,22 @@ Canonical heroes: `builtin:grudge6:warrior|orc|…` (FBX kits). Weapons: `builti
 
 ## Chunking (Vite)
 
-`three` + `@react-three/*` + `postprocessing` + `three-stdlib` + `three-mesh-bvh` + `maath` ship as **one** `vendor-3d` chunk. Splitting three vs R3F causes circular TLA init crashes (`prototype` undefined).
+| Chunk | Contents | TLA? |
+|---|---|---|
+| **`vendor-3d`** | `three` + fiber + drei + postprocessing + stdlib + mesh-bvh + maath + troika | **No** |
+| **`vendor-rapier`** | `@dimforge/rapier3d` (+ wasm) + `@react-three/rapier` | **Yes** (wasm) |
+| **`vendor-monaco`** | `monaco-editor` only (not `@monaco-editor/react`) | No |
+
+**Hard rule:** Rapier must **not** live inside `vendor-3d`. If three and Rapier share a chunk (or three imports Rapier's `__tla`), production dies with:
+
+```text
+static{De.prototype.isVector2=!0}
+TypeError: Cannot read properties of undefined (reading 'prototype')
+```
+
+One-way is fine: `vendor-rapier` → `vendor-3d` (three already evaluated).
+
+Pin **one** `three` via root `pnpm.overrides` (**0.185.1**). Nested `stats-gl/three@0.170` dual copies also break Vector2.
 
 ## Install / bump
 

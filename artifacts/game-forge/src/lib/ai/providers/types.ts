@@ -301,7 +301,11 @@ export const MODELS: ModelOption[] = [
   },
 ];
 
-/** Prefer fleet Groq for agentic tools (no Puter gate). Puter remains available. */
+/**
+ * Agentic default — fleet Groq (edge key, no Puter gate).
+ * MODELS[0] remains Puter Claude for the free sign-in picker; findModel(null)
+ * always resolves DEFAULT_MODEL_ID so AI tools start on fleet Groq.
+ */
 export const DEFAULT_MODEL_ID = "groq:llama-3.3-70b-versatile";
 
 const LEGACY_SERVER_IDS = new Set([
@@ -313,6 +317,10 @@ const LEGACY_SERVER_IDS = new Set([
   "anthropic:claude-sonnet-4-6",
 ]);
 
+function defaultModelOption(): ModelOption {
+  return MODELS.find((m) => m.id === DEFAULT_MODEL_ID) ?? MODELS[0];
+}
+
 export function findModel(id: string | null | undefined): ModelOption {
   if (
     !id ||
@@ -320,7 +328,7 @@ export function findModel(id: string | null | undefined): ModelOption {
     id.startsWith("server:") ||
     id.startsWith("anthropic:")
   ) {
-    return MODELS[0];
+    return defaultModelOption();
   }
-  return MODELS.find((m) => m.id === id) ?? MODELS[0];
+  return MODELS.find((m) => m.id === id) ?? defaultModelOption();
 }

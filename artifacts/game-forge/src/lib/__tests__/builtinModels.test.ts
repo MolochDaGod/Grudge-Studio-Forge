@@ -75,6 +75,22 @@ describe("RTS demo assets", () => {
       expect(BUILTIN_MODELS[k], `missing model ${k}`).toMatch(/^https:\/\//);
     }
   });
+
+  it("maps grudge6 kits to production CDN GLBs (not SPA-relative)", () => {
+    for (const id of [
+      "warrior",
+      "dwarf",
+      "frost-dwarf",
+      "elf",
+      "orc",
+      "skeleton",
+    ] as const) {
+      const url = resolveBuiltinModel(`builtin:grudge6:${id}`);
+      expect(url, `grudge6:${id}`).toMatch(
+        /^https:\/\/assets\.grudge-studio\.com\/models\/grudge6\/races\/.+\.glb$/,
+      );
+    }
+  });
 });
 
 describe("BUILTIN_MODEL_CLIPS", () => {

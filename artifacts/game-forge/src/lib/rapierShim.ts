@@ -4,10 +4,10 @@
  * Why this exists:
  * `@react-three/rapier` (and our scripts inside the editor) hard-pin to the
  * `-compat` build of Rapier, which inlines its 1.5 MB WebAssembly binary as a
- * base64 string inside the JS module. That bloats the lazy `vendor-rapier`
- * chunk to ~2.2 MB minified — the heaviest single chunk in the editor —
- * because every byte of WASM is shipped through the JS parser even though it
- * is never read until the user presses Play.
+ * base64 string inside the JS module. Streaming `@dimforge/rapier3d` keeps WASM
+ * out of the JS parse path. Rapier + `@react-three/rapier` ship as
+ * `vendor-rapier` (TLA). `three` stays in `vendor-3d` **without** TLA so
+ * Vector2 static blocks never race (`isVector2` prototype crash).
  *
  * The non-`compat` build (`@dimforge/rapier3d`) ships the same API but loads
  * its WASM via a sibling `.wasm` file. With `vite-plugin-wasm` +

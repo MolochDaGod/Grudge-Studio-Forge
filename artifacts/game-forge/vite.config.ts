@@ -28,18 +28,76 @@ import topLevelAwait from "vite-plugin-top-level-await";
  */
 /**
  * Production deploys should NOT ship public/builtin (hundreds of MB of GLBs).
- * Those load from R2 (assets.grudge-studio.com/builtin). Strip after copy.
+ * Those load from R2 (assets.grudge-studio.com/builtin).
+ *
+ * CRITICAL: Vite copies the entire `public/` tree into dist during transform —
+ * ~350MB of GLBs OOM 8GB builders. Park `public/builtin` *before* copy, restore
+ * after. closeBundle still strips any residual dist/public/builtin.
  * Also guarantee vercel.json SPA rewrites exist (prebuilt dist deploys).
  */
 function stripHeavyPublicAssets(): Plugin {
+  const packageRoot = process.cwd();
+  const publicBuiltin = path.resolve(packageRoot, "public/builtin");
+  const parkedBuiltin = path.resolve(packageRoot, "public/.builtin-parked-for-build");
+  let parked = false;
+
+  async function parkBuiltin() {
+    const { rename, access } = await import("node:fs/promises");
+    try {
+      await access(publicBuiltin);
+      // If a previous crash left a park folder, prefer keeping source of truth.
+      try {
+        await access(parkedBuiltin);
+        // Already parked
+        parked = true;
+        return;
+      } catch {
+        /* ok */
+      }
+      await rename(publicBuiltin, parkedBuiltin);
+      parked = true;
+      console.log(
+        "[build] parked public/builtin → public/.builtin-parked-for-build (CDN at runtime)",
+      );
+    } catch {
+      /* no local builtin folder — fine for lean checkouts */
+    }
+  }
+
+  async function restoreBuiltin() {
+    if (!parked) return;
+    const { rename, access } = await import("node:fs/promises");
+    try {
+      await access(parkedBuiltin);
+      try {
+        await access(publicBuiltin);
+        // Target already exists — leave park in place for next build
+        return;
+      } catch {
+        /* restore */
+      }
+      await rename(parkedBuiltin, publicBuiltin);
+      parked = false;
+      console.log("[build] restored public/builtin from park");
+    } catch {
+      /* ignore */
+    }
+  }
+
   return {
     name: "strip-heavy-public-assets",
     apply: "build",
+    async buildStart() {
+      await parkBuiltin();
+    },
+    async buildEnd() {
+      // Restore even when transform fails mid-build (OOM / kill).
+      await restoreBuiltin();
+    },
     async closeBundle() {
       const { rm, writeFile, stat, copyFile, access, mkdir } = await import("node:fs/promises");
       // Prefer process.cwd() (package root under pnpm filter). import.meta.dirname
       // can point at Vite's compiled config temp dir on CI and miss dist/public.
-      const packageRoot = process.cwd();
       const publicDir = path.resolve(packageRoot, "dist/public");
       const builtinDir = path.join(publicDir, "builtin");
       try {
@@ -49,6 +107,7 @@ function stripHeavyPublicAssets(): Plugin {
       } catch {
         /* folder may not exist */
       }
+      await restoreBuiltin();
 
       // SPA rewrites — without this, /editor 404s on Vercel static deploys.
       const vercelJson = path.join(publicDir, "vercel.json");
@@ -231,10 +290,22 @@ export default defineConfig({
         "src/lib/cloud/dataLayer.ts",
       ),
     },
-    dedupe: ["react", "react-dom", "three"],
+    // Force a single three + react graph (nested stats-gl three@0.170 kills Vector2).
+    dedupe: [
+      "react",
+      "react-dom",
+      "scheduler",
+      "three",
+      "@react-three/fiber",
+      "@react-three/drei",
+      "@react-three/rapier",
+      "@react-three/postprocessing",
+      "@dimforge/rapier3d",
+      "@dimforge/rapier3d-compat",
+    ],
   },
   optimizeDeps: {
-    include: ["three"],
+    include: ["three", "@react-three/fiber", "@react-three/drei"],
     /**
      * Esbuild (used by Vite's dep pre-bundler) can't natively resolve the
      * `import * as wasm from "./rapier_wasm3d_bg.wasm"` statement inside
@@ -321,42 +392,55 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           // Normalize Windows paths so the substring checks below work.
           const norm = id.replace(/\\/g, "/");
+
+          // Monaco core only — never @monaco-editor/react (keeps React out).
           if (
-            norm.includes("/monaco-editor/") ||
-            norm.includes("/@monaco-editor/")
+            norm.includes("/monaco-editor/") &&
+            !norm.includes("/@monaco-editor/react")
           ) {
             return "vendor-monaco";
           }
+
+          // ─────────────────────────────────────────────────────────────
+          // Rapier WASM + @react-three/rapier — OWN chunk with TLA.
+          // Must NOT be mixed into vendor-3d: that made vendor-3d import
+          // vendor-rapier `__tla` while also defining three.Vector2, so
+          // static{De.prototype.isVector2} ran with De in TDZ → crash.
+          // One-way edge is OK: vendor-rapier → vendor-3d (three already
+          // fully evaluated, no TLA in vendor-3d).
+          // ─────────────────────────────────────────────────────────────
           if (
             norm.includes("/@dimforge/rapier3d/") ||
-            norm.includes("/@dimforge/rapier3d-compat")
+            norm.includes("/@dimforge/rapier3d-compat") ||
+            norm.includes("/@react-three/rapier")
           ) {
             return "vendor-rapier";
           }
-          // three + R3F + drei + postprocessing MUST share one chunk.
-          // Splitting them (vendor-three ↔ vendor-r3f) creates a circular
-          // import under `vite-plugin-top-level-await`: vendor-three ends up
-          // importing `__tla` from vendor-r3f while r3f imports three. Class
-          // static blocks then run before bindings resolve:
-          //   "Cannot read properties of undefined (reading 'prototype')"
-          // on Vector2/etc. Same class of bug as the React forwardRef note above.
+
+          // three + R3F + drei + post — NO Rapier, so NO top-level await.
+          // Splitting three vs fiber alone still breaks under TLA cycles;
+          // keep them together. Nested three (stats-gl) forced here too.
           if (
             norm.includes("/@react-three/fiber") ||
             norm.includes("/@react-three/drei") ||
-            norm.includes("/@react-three/rapier") ||
             norm.includes("/@react-three/postprocessing") ||
             norm.includes("/postprocessing/") ||
             norm.includes("/three/") ||
             norm.endsWith("/three") ||
+            /\/node_modules\/three\//.test(norm) ||
             norm.includes("/three-stdlib/") ||
             norm.includes("/three-mesh-bvh/") ||
-            norm.includes("/maath/")
+            norm.includes("/maath/") ||
+            norm.includes("/troika-three-text/") ||
+            norm.includes("/troika-three-utils/") ||
+            norm.includes("/troika-worker-utils/") ||
+            norm.includes("/camera-controls/") ||
+            norm.includes("/stats-gl/")
           ) {
             return "vendor-3d";
           }
-          // React + Radix deliberately fall through to the main entry
-          // chunk — see the long comment above for why splitting them
-          // breaks production builds when TLA is in the graph.
+
+          // React + Radix stay in the main entry (forwardRef / TLA note above).
           return undefined;
         },
       },

@@ -101,6 +101,15 @@ export const GRUDGE6_RACE_KIT_GLB: Readonly<Record<RaceId, string>> = {
   skeleton: "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.glb",
 };
 
+/**
+ * Prefer production **GLB** kits for Forge SPA (same-origin CDN, meshopt-ready).
+ * FBX kits remain in GRUDGE6_RACE_KIT for convert/bake tools.
+ */
 export function getRaceKitUrl(race: RaceId): string {
+  return GRUDGE6_RACE_KIT_GLB[race] ?? GRUDGE6_RACE_KIT[race];
+}
+
+/** Author FBX kits when converting / re-baking modular races. */
+export function getRaceKitFbxUrl(race: RaceId): string {
   return GRUDGE6_RACE_KIT[race];
 }

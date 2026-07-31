@@ -7,14 +7,17 @@ import {
 } from "@/lib/ai/providers";
 
 describe("AI provider catalog", () => {
-  it("DEFAULT_MODEL_ID is the first entry of MODELS", () => {
-    expect(DEFAULT_MODEL_ID).toBe(MODELS[0].id);
+  it("DEFAULT_MODEL_ID is registered in MODELS (agentic fleet default)", () => {
+    expect(MODELS.some((m) => m.id === DEFAULT_MODEL_ID)).toBe(true);
+    expect(DEFAULT_MODEL_ID).toBe("groq:llama-3.3-70b-versatile");
   });
 
-  it("default model is a Puter-backed Claude (free via Puter)", () => {
+  it("catalog first entry is Puter Claude; agentic default is fleet Groq", () => {
     expect(MODELS[0].provider).toBe("puter");
     expect(MODELS[0].requiresPuterAuth).toBe(true);
     expect(MODELS[0].id.startsWith("puter:claude")).toBe(true);
+    const def = MODELS.find((m) => m.id === DEFAULT_MODEL_ID);
+    expect(def?.provider).toBe("groq");
   });
 
   it("includes Puter-backed models gated behind requiresPuterAuth", () => {
@@ -25,7 +28,7 @@ describe("AI provider catalog", () => {
     }
   });
 
-  it("findModel falls back to default for unknown ids", () => {
+  it("findModel falls back to DEFAULT_MODEL_ID for unknown / empty ids", () => {
     expect(findModel(null).id).toBe(DEFAULT_MODEL_ID);
     expect(findModel(undefined).id).toBe(DEFAULT_MODEL_ID);
     expect(findModel("does-not-exist").id).toBe(DEFAULT_MODEL_ID);
