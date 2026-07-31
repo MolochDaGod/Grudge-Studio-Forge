@@ -3,6 +3,12 @@ import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import wasm from "vite-plugin-wasm";
+// NOTE: do NOT use vite-plugin-top-level-await on the main app graph.
+// It rewrites chunks as `let X; __tla=(async()=>{ X=class{static{X.prototype…}} })()`
+// which TDZ-crashes Three.js r152+ (`Vector2` static `prototype` init) and produces:
+//   TypeError: Cannot read properties of undefined (reading 'prototype')
+// in vendor-3d. build.target is "esnext" — browsers get native top-level await.
+// Workers may still use the plugin if they need classic IIFE (see worker.plugins).
 import topLevelAwait from "vite-plugin-top-level-await";
 /**
  * Inject `<link rel="modulepreload">` tags into the built `index.html` for
@@ -338,26 +344,28 @@ export default defineConfig({
     /**
      * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
      * statement inside `@dimforge/rapier3d` natively, emitting the binary as
-     * a separate, browser-cacheable asset under `dist/public/assets/`. The
-     * companion `topLevelAwait` plugin wraps the resulting top-level
-     * `await WebAssembly.instantiateStreaming(...)` so the output still
-     * targets ES2020 (no native top-level await required in the browser).
+     * a separate, browser-cacheable asset under `dist/public/assets/`.
      *
      * Together these replace the 1.5 MB base64 blob that ships inside the
      * `-compat` package — see `src/lib/rapierShim.ts` for the alias wiring.
      *
-     * HARD RULE: only `vendor-rapier` may carry `__tla`. `vendor-3d` must
-     * never import it (Vector2.prototype crash on forge.grudge-studio.com).
+     * HARD RULES:
+     * - Only `vendor-rapier` may use native WASM / top-level await.
+     * - `vendor-3d` must never import rapier (Vector2.prototype crash).
+     * - Never enable vite-plugin-top-level-await on this SPA graph — it rewrites
+     *   three classes into let+async assignment and TDZ-crashes Vector2 statics
+     *   (live: vendor-3d-DJpNAl_7.js Cannot read properties of undefined 'prototype').
      */
     wasm(),
-    topLevelAwait(),
   ],
   // Vite defaults `worker.format` to "iife", which rollup rejects whenever a
   // worker bundle ends up code-split (our `colliderBaker.worker.ts` pulls in
   // `vhacd-js` which lazy-imports its wasm loader). Switching to "es" lets
   // rollup emit a multi-chunk worker output and unblocks the prod build.
+  // TLA transform is OK on workers (no three Vector2 graph).
   worker: {
     format: "es",
+    plugins: () => [wasm(), topLevelAwait()],
   },
   resolve: {
     alias: {
@@ -524,13 +532,10 @@ export default defineConfig({
           }
 
           // ─────────────────────────────────────────────────────────────
-          // Rapier WASM + @react-three/rapier — OWN chunk with TLA.
-          // Live forge.grudge-studio.com crash (vendor-3d-kfUrB2f4.js):
-          //   vendor-3d imported vendor-rapier __tla → three Vector2
-          //   static{De.prototype.isVector2} with De in TDZ.
-          // Root cause: @react-three/rapier leaked into vendor-3d via
-          // weak path match. isRapierModuleId() is the hard gate above.
-          // One-way ONLY: vendor-rapier → vendor-3d.
+          // three + R3F + drei + post — OWN chunk (isVendor3dModuleId).
+          // Live crash: Vector2 static prototype TDZ when vendor-3d had __tla
+          // (plugin rewrite and/or rapier reverse edge). isRapierModuleId()
+          // above is the hard gate; one-way ONLY: vendor-rapier → vendor-3d.
           // ─────────────────────────────────────────────────────────────
           if (isVendor3dModuleId(id)) {
             return "vendor-3d";
