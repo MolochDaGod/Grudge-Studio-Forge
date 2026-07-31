@@ -471,10 +471,21 @@ export default defineConfig({
       // output — Rollup ignores it if placed inside the output block.
       maxParallelFileOps: 1,
       output: {
-        // Force new content-hashes after CF served stale vendor-3d under the
-        // same filename (hash assigned before TLA post-transform historically).
-        // Bump this string whenever forge.grudge-studio.com edge is stuck on HIT.
-        banner: "/* forge-spa 2026-07-31-no-tla-v2 */\n",
+        // CF edge cached broken vendor-3d-DJpNAl_7.js for 7 days under the same
+        // filename (TLA post-transform changed bytes without renaming). Force a
+        // new URL path so forge.grudge-studio.com cannot HIT the stale object.
+        // Bump the salt (v3…) after any future sticky CF HIT on hashed assets.
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: (chunkInfo) => {
+          if (chunkInfo.name === "vendor-3d") {
+            return "assets/vendor-3d-v3-[hash].js";
+          }
+          if (chunkInfo.name === "vendor-rapier") {
+            return "assets/vendor-rapier-v3-[hash].js";
+          }
+          return "assets/[name]-[hash].js";
+        },
+        assetFileNames: "assets/[name]-[hash][extname]",
         /**
          * Split the heavy vendor libraries into their own chunks so:
          *
