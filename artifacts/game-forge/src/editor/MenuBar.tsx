@@ -417,6 +417,71 @@ export function MenuBar({
           </MenubarContent>
         </MenubarMenu>
 
+        {/* ---------- Create ---------- */}
+        <MenubarMenu>
+          <MenubarTrigger className="text-xs h-6 px-2" data-testid="menu-create">
+            Create
+          </MenubarTrigger>
+          <MenubarContent>
+            <MenubarItem
+              onSelect={() =>
+                window.open(
+                  "https://ui.grudge-studio.com/studio?embed=0&from=forge&pack=forge",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              data-testid="menu-create-ui"
+            >
+              Create UI…
+            </MenubarItem>
+            <MenubarItem
+              onSelect={() =>
+                window.open(
+                  "https://ui.grudge-studio.com/games?from=forge",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              data-testid="menu-create-ui-packs"
+            >
+              UI Game Packs…
+            </MenubarItem>
+            <MenubarItem
+              onSelect={() =>
+                window.open(
+                  "https://ui.grudge-studio.com/assets?from=forge",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              data-testid="menu-create-ui-assets"
+            >
+              UI Assets (craftpix / kits)…
+            </MenubarItem>
+            <MenubarSeparator />
+            <MenubarItem
+              onSelect={() =>
+                window.open(
+                  "https://open.grudge-studio.com/ui?pack=forge",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              data-testid="menu-create-ui-open"
+            >
+              Open · Create UI (in-app)
+            </MenubarItem>
+            <MenubarItem
+              onSelect={() =>
+                window.open("https://open.grudge-studio.com/", "_blank", "noopener,noreferrer")
+              }
+            >
+              Open Library (GRUDOX launcher host)
+            </MenubarItem>
+          </MenubarContent>
+        </MenubarMenu>
+
         {/* ---------- Tools ---------- */}
         <MenubarMenu>
           <MenubarTrigger className="text-xs h-6 px-2" data-testid="menu-tools">Tools</MenubarTrigger>
@@ -434,6 +499,18 @@ export function MenuBar({
               Deploy Scene
             </MenubarItem>
             <MenubarSeparator />
+            <MenubarItem
+              onSelect={() =>
+                window.open(
+                  "https://ui.grudge-studio.com/studio?from=forge&pack=forge",
+                  "_blank",
+                  "noopener,noreferrer",
+                )
+              }
+              data-testid="menu-tools-create-ui"
+            >
+              Create UI (HUD / menus)…
+            </MenubarItem>
             <MenubarItem onSelect={() => fire("gameforge:openMapGen")} data-testid="menu-tools-mapgen">
               AI Map Generator…
             </MenubarItem>
