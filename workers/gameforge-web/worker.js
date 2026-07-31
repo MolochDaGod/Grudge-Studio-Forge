@@ -73,6 +73,11 @@ async function proxyTo(request, targetOrigin, { stripPrefix = "", rewritePath } 
     redirect: "manual",
     // @ts-expect-error duplex for streaming body in CF workers
     duplex: request.method === "GET" || request.method === "HEAD" ? undefined : "half",
+    // Bypass CF edge object cache for SPA JS after deploys (stale vendor-3d HIT).
+    cf:
+      target.pathname.startsWith("/assets/") || target.pathname.endsWith(".html") || target.pathname === "/"
+        ? { cacheTtl: 0, cacheEverything: false }
+        : undefined,
   };
 
   return fetch(target.toString(), init);
@@ -92,13 +97,16 @@ function cacheHeadersForPath(pathname) {
     }
     return { "Cache-Control": "public, max-age=3600" };
   }
-  // Builtin GLBs / static assets
-  if (
-    pathname.startsWith("/builtin/") ||
-    pathname.startsWith("/assets/") ||
-    /\.(glb|gltf|webp|png|jpg|jpeg|svg|woff2?)$/i.test(pathname)
-  ) {
+  // Builtin GLBs — long cache OK (CDN binaries rarely change path)
+  if (pathname.startsWith("/builtin/") || /\.(glb|gltf|webp|png|jpg|jpeg|svg|woff2?)$/i.test(pathname)) {
     return { "Cache-Control": "public, max-age=604800, stale-while-revalidate=86400" };
+  }
+  // Vite /assets/* — content-hashed filenames, but post-build plugins can change
+  // bytes after the hash is assigned (historical vendor-3d __tla rewrite). A
+  // 7-day CF HIT then serves a broken old body under the same URL. Keep short
+  // revalidation so forge.grudge-studio.com tracks Vercel origin after deploys.
+  if (pathname.startsWith("/assets/")) {
+    return { "Cache-Control": "public, max-age=120, must-revalidate" };
   }
   // SPA shell — short cache so deploys roll out
   if (pathname === "/" || pathname === "/editor" || pathname.endsWith(".html")) {

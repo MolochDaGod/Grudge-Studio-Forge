@@ -471,6 +471,10 @@ export default defineConfig({
       // output — Rollup ignores it if placed inside the output block.
       maxParallelFileOps: 1,
       output: {
+        // Force new content-hashes after CF served stale vendor-3d under the
+        // same filename (hash assigned before TLA post-transform historically).
+        // Bump this string whenever forge.grudge-studio.com edge is stuck on HIT.
+        banner: "/* forge-spa 2026-07-31-no-tla-v2 */\n",
         /**
          * Split the heavy vendor libraries into their own chunks so:
          *
