@@ -1,15 +1,25 @@
 /**
  * Puter-backed data provider — replaces the Express + PostgreSQL api-server.
  *
- * All CRUD operations use Puter KV for indexes and Puter FS for payloads.
- * Numeric IDs are generated via a KV counter for backward compatibility with
- * the `Project.id`, `Scene.id`, `Script.id`, `Asset.id`, `Prefab.id` shapes.
+ * Storage planes (see projectStorage.ts + forgeEnv.ts):
+ *   Puter signed-in → KV indexes + FS payloads under Grudge/forge/
+ *   Guest / local    → localStorage indexes + IndexedDB payloads (large scenes)
  *
- * Guest users (not signed in via Puter) get local-only storage via
- * localStorage, so the editor stays fully functional offline or without
- * an account.
+ * Edge free-ai D1 is for agent jobs only — never project bodies.
+ * Railway is player bag SSOT — never Forge editor projects.
  */
-import { cloud, isPuterSignedIn, type CloudResult } from "./puterCloud";
+import { cloud, isPuterSignedIn } from "./puterCloud";
+import {
+  localJsonGet,
+  localJsonSet,
+  localJsonDelete,
+  localPayloadRead,
+  localPayloadWrite,
+  localPayloadDelete,
+  getProjectStorageStatus,
+  migrateLocalProjectsToPuter,
+  activeStorageBackend,
+} from "./projectStorage";
 
 // ── ID generation ──────────────────────────────────────────────────────
 const LOCAL_COUNTER_KEY = "grudge.forge.nextId";
@@ -33,37 +43,12 @@ function now(): string {
   return new Date().toISOString();
 }
 
-// ── Local storage helpers (guest fallback) ─────────────────────────────
-function localGet<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-function localSet(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* quota — non-fatal */
-  }
-}
-
-function localDelete(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    /* non-fatal */
-  }
-}
-
 // ── Generic KV-backed collection ───────────────────────────────────────
 // Each entity type stores:
 //   KV index:  grudge:forge:<collection>:index  →  <T>[]
 //   FS payload (optional, for large data like scene JSON):
 //              Grudge/forge/<collection>/<id>.json
+//   Local guest: same keys in localStorage; scene payloads may live in IDB.
 
 type HasId = { id: number };
 
@@ -74,7 +59,7 @@ async function readIndex<T extends HasId>(collection: string): Promise<T[]> {
     const r = await cloud.kv.get<T[]>(kvKey);
     return r.ok && Array.isArray(r.data) ? r.data : [];
   }
-  return localGet<T[]>(kvKey) ?? [];
+  return localJsonGet<T[]>(kvKey) ?? [];
 }
 
 async function writeIndex<T extends HasId>(collection: string, items: T[]): Promise<void> {
@@ -83,7 +68,7 @@ async function writeIndex<T extends HasId>(collection: string, items: T[]): Prom
   if (isPuterSignedIn()) {
     await cloud.kv.set(kvKey, items);
   } else {
-    localSet(kvKey, items);
+    localJsonSet(kvKey, items);
   }
 }
 
@@ -94,7 +79,7 @@ async function readPayload<T>(collection: string, id: number): Promise<T | null>
     const r = await cloud.fs.readJson<T>(fsPath);
     return r.ok ? r.data : null;
   }
-  return localGet<T>(`grudge:forge:${collection}:${id}:data`);
+  return localPayloadRead<T>(collection, id);
 }
 
 async function writePayload(collection: string, id: number, data: unknown): Promise<void> {
@@ -106,7 +91,12 @@ async function writePayload(collection: string, id: number, data: unknown): Prom
       createMissingParents: true,
     });
   } else {
-    localSet(`grudge:forge:${collection}:${id}:data`, data);
+    const where = await localPayloadWrite(collection, id, data);
+    if (where === "none") {
+      console.warn(
+        `[puterDataProvider] failed to persist ${collection}/${id} (quota). Sign in with Puter for cloud storage.`,
+      );
+    }
   }
 }
 
@@ -116,8 +106,36 @@ async function deletePayload(collection: string, id: number): Promise<void> {
   if (isPuterSignedIn()) {
     await cloud.fs.delete(fsPath).catch(() => {});
   } else {
-    localDelete(`grudge:forge:${collection}:${id}:data`);
+    await localPayloadDelete(collection, id);
   }
+}
+
+// ── Storage status / migrate (Grudge cloud users) ──────────────────────
+
+export { getProjectStorageStatus, activeStorageBackend };
+
+/** Upload local guest projects into Puter after sign-in. */
+export async function syncLocalProjectsToPuterCloud(): Promise<{
+  ok: boolean;
+  migratedProjects: number;
+  migratedScenes: number;
+  error?: string;
+  backend: string;
+}> {
+  const result = await migrateLocalProjectsToPuter({
+    kvSet: async (key, value) => {
+      const r = await cloud.kv.set(key, value);
+      return r.ok;
+    },
+    fsWrite: async (path, body) => {
+      const r = await cloud.fs.write(path, body, {
+        overwrite: true,
+        createMissingParents: true,
+      });
+      return r.ok;
+    },
+  });
+  return { ...result, backend: activeStorageBackend() };
 }
 
 // ── Projects ───────────────────────────────────────────────────────────
@@ -412,37 +430,60 @@ export async function deleteScript(id: number): Promise<void> {
   );
 }
 
-// ── Assets ─────────────────────────────────────────────────────────────
+// ── Assets (aligned with api-client Asset shape for UI/AI tools) ───────
+export type AssetType = "model" | "texture" | "audio" | "image" | "other";
+export type AssetSource = "grudge" | "upload" | "url" | "generated" | "builtin";
+
 export interface AssetRecord {
   id: number;
   projectId: number;
   name: string;
-  contentType: string;
-  size: number;
-  objectPath: string;
+  /** Public or puter:// URL the editor can load */
+  url: string;
+  type: AssetType;
+  source: AssetSource;
+  contentType?: string;
+  size?: number;
+  objectPath?: string;
   createdAt: string;
 }
 
 export async function listAssets(projectId: number): Promise<AssetRecord[]> {
   const all = await readIndex<AssetRecord>("assets");
-  return all.filter((a) => a.projectId === projectId);
+  return all
+    .filter((a) => a.projectId === projectId)
+    .map((a) => ({
+      ...a,
+      // Back-compat for older local rows that only had objectPath
+      url: a.url || a.objectPath || "",
+      type: a.type || "other",
+      source: a.source || "upload",
+    }));
 }
 
 export async function createAsset(body: {
   projectId: number;
   name: string;
-  contentType: string;
-  size: number;
-  objectPath: string;
+  url?: string;
+  type?: AssetType | string;
+  source?: AssetSource | string;
+  contentType?: string;
+  size?: number;
+  objectPath?: string;
 }): Promise<AssetRecord> {
   const id = await nextId();
+  const objectPath = body.objectPath ?? body.url ?? "";
+  const url = body.url ?? objectPath;
   const asset: AssetRecord = {
     id,
     projectId: body.projectId,
     name: body.name,
+    url,
+    type: (body.type as AssetType) || "other",
+    source: (body.source as AssetSource) || "upload",
     contentType: body.contentType,
     size: body.size,
-    objectPath: body.objectPath,
+    objectPath,
     createdAt: now(),
   };
   const existing = await readIndex<AssetRecord>("assets");
@@ -458,18 +499,23 @@ export async function deleteAsset(id: number): Promise<void> {
     all.filter((a) => a.id !== id),
   );
   // Try to delete the file from Puter FS
-  if (asset?.objectPath && isPuterSignedIn()) {
-    await cloud.fs.delete(asset.objectPath).catch(() => {});
+  const path = asset?.objectPath;
+  if (path && !path.startsWith("blob:") && isPuterSignedIn()) {
+    await cloud.fs.delete(path).catch(() => {});
   }
 }
 
 // ── Prefabs ────────────────────────────────────────────────────────────
+/** Prefab graph payload — keep loose for Puter JSON; UI casts to PrefabData. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type PrefabDataLoose = any;
+
 export interface PrefabRecord {
   id: number;
   projectId: number;
   name: string;
-  data: unknown;
-  thumbnail: string | null;
+  data: PrefabDataLoose;
+  thumbnail?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -482,7 +528,7 @@ export async function listPrefabs(projectId: number): Promise<PrefabRecord[]> {
 export async function createPrefab(body: {
   projectId: number;
   name: string;
-  data: unknown;
+  data?: PrefabDataLoose;
   thumbnail?: string | null;
 }): Promise<PrefabRecord> {
   const id = await nextId();
@@ -491,7 +537,7 @@ export async function createPrefab(body: {
     id,
     projectId: body.projectId,
     name: body.name,
-    data: body.data,
+    data: body.data ?? { entities: [] },
     thumbnail: body.thumbnail ?? null,
     createdAt: ts,
     updatedAt: ts,
@@ -508,7 +554,7 @@ export async function getPrefab(id: number): Promise<PrefabRecord | null> {
 
 export async function updatePrefab(
   id: number,
-  body: { name?: string; data?: unknown; thumbnail?: string | null },
+  body: { name?: string; data?: PrefabDataLoose; thumbnail?: string | null },
 ): Promise<PrefabRecord | null> {
   const all = await readIndex<PrefabRecord>("prefabs");
   const idx = all.findIndex((p) => p.id === id);

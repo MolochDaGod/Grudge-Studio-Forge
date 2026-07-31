@@ -45,6 +45,20 @@ describe("knowledge tools module", () => {
     expect(rec).toContain("r2_user_assets");
   });
 
+  it("list_game_deployments returns wargus forge workflow", async () => {
+    const r = await handlers.list_game_deployments!({ game: "wargus" });
+    expect(r.ok).toBe(true);
+    const data = r.data as {
+      known: boolean;
+      workflow: { steps: string[]; channels: string[] };
+      fleetGameIds: string[];
+    };
+    expect(data.known).toBe(true);
+    expect(data.workflow.steps.length).toBeGreaterThan(3);
+    expect(data.workflow.channels).toContain("fleet_satellite");
+    expect(data.fleetGameIds).toContain("wargus");
+  });
+
   it("is entirely non-destructive", () => {
     expect(destructiveToolNames).toEqual([]);
   });

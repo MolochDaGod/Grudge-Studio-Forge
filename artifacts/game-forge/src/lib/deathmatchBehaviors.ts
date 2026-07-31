@@ -2286,4 +2286,13 @@ export const FACTION_RULESETS = {
     friendly: ["ally"],
     civilian: ["neutral", "vendor", "npc-dialog"],
   },
+  rts: {
+    id: "rts",
+    description:
+      "Toon RTS / Wargus: GameManager gamemode-rts, workers, military, buildings, creeps. Economy gold/wood/food.",
+    player: ["rts-peon", "rts-footman", "rts-archer", "rts-building", "rts-tower"],
+    hostile: ["rts-creep"],
+    friendly: [],
+    civilian: [],
+  },
 } as const;

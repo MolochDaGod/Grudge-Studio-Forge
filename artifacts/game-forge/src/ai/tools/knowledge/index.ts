@@ -132,13 +132,15 @@ async function listBestPracticesHandler(
   }
 }
 
-/** Typed fleet/Forge deployment definitions (channels, APIs, L-patterns). */
+/** Typed fleet/Forge deployment definitions (channels, APIs, L-patterns, games). */
 const LIST_GAME_DEPLOYMENTS: ToolDef = {
   name: "list_game_deployments",
   description:
-    "Return SSOT game deployment definitions: SurfaceClass, PublishChannel, API systems, L0–L9 patterns. " +
+    "Return SSOT game deployment definitions: SurfaceClass, PublishChannel, API systems, L0–L9 patterns, " +
+    "and fleet games (wargus, warlords-client, grudox) with Forge roles (map_edit, script, playtest, " +
+    "game_manager, inspector, deploy, ai_agent). " +
     "Use when choosing how to save/playtest/ship a scene or game. Refuses purged channels (bundle_in_spa, dead api tunnel). " +
-    "Optional goal: save | playtest | fleet_game | share_link | backup for channel recommendations.",
+    "Optional goal: save | playtest | fleet_game | share_link | backup. Optional game: wargus | warlords-client | grudox.",
   input_schema: {
     type: "object",
     properties: {
@@ -149,6 +151,11 @@ const LIST_GAME_DEPLOYMENTS: ToolDef = {
       channel: {
         type: "string",
         description: "Optional PublishChannel to validate (assert allowed)",
+      },
+      game: {
+        type: "string",
+        description:
+          "Optional fleet game id (wargus, warlords-client, grudox, open-launcher) for Forge workflow steps",
       },
     },
   },
@@ -164,10 +171,14 @@ async function listGameDeploymentsHandler(
       assertPublishChannelAllowed,
       activePublishChannels,
       activeApiSystems,
+      forgeWorkflowForGame,
+      getFleetGame,
+      activeFleetGames,
     } = await import("@/lib/gameDeployments");
 
     const goal = typeof input.goal === "string" ? input.goal : "";
     const channel = typeof input.channel === "string" ? input.channel : "";
+    const gameId = typeof input.game === "string" ? input.game.trim() : "";
 
     if (channel) {
       const check = assertPublishChannelAllowed(channel);
@@ -175,6 +186,20 @@ async function listGameDeploymentsHandler(
         ok: check.ok,
         data: check,
         error: check.error,
+      };
+    }
+
+    if (gameId) {
+      const workflow = forgeWorkflowForGame(gameId);
+      const known = getFleetGame(gameId);
+      return {
+        ok: true,
+        data: {
+          gameId,
+          known: Boolean(known),
+          workflow,
+          fleetGameIds: activeFleetGames().map((g) => g.id),
+        },
       };
     }
 
@@ -195,6 +220,7 @@ async function listGameDeploymentsHandler(
         recommendedChannels: recommended,
         activeChannelIds: activePublishChannels().map((c) => c.id),
         activeApiIds: activeApiSystems().map((a) => a.id),
+        fleetGameIds: activeFleetGames().map((g) => g.id),
       },
     };
   } catch (err) {

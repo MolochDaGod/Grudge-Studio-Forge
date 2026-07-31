@@ -10,16 +10,14 @@
     "allowImportingTsExtensions": true,
     "moduleResolution": "bundler",
     "types": ["node", "vite/client"],
+    "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@workspace/api-client-react": ["./src/lib/cloud/dataLayer.ts"],
+      "@workspace/scene-schema": ["../../lib/scene-schema/src/index.ts"],
+      "@workspace/scene-templates": ["../../lib/scene-templates/src/index.ts"],
+      "@workspace/object-storage-web": ["../../lib/object-storage-web/src/index.ts"],
+      "@workspace/desktop-bridge": ["../../lib/desktop-bridge/src/index.ts"]
     }
-  },
-  "references": [
-    {
-      "path": "../../lib/api-client-react"
-    },
-    {
-      "path": "../../lib/object-storage-web"
-    }
-  ]
+  }
 }

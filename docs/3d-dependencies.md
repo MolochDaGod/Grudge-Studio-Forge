@@ -100,17 +100,25 @@ Canonical heroes: `builtin:grudge6:warrior|orc|…` (FBX kits). Weapons: `builti
 | Chunk | Contents | TLA? |
 |---|---|---|
 | **`vendor-3d`** | `three` + fiber + drei + postprocessing + stdlib + mesh-bvh + maath + troika | **No** |
-| **`vendor-rapier`** | `@dimforge/rapier3d` (+ wasm) + `@react-three/rapier` | **Yes** (wasm) |
+| **`vendor-rapier`** | `@dimforge/rapier3d` (+ wasm) + `@react-three/rapier` + `rapierShim.ts` | **Yes** (wasm) |
 | **`vendor-monaco`** | `monaco-editor` only (not `@monaco-editor/react`) | No |
 
-**Hard rule:** Rapier must **not** live inside `vendor-3d`. If three and Rapier share a chunk (or three imports Rapier's `__tla`), production dies with:
+**Hard rule:** Rapier must **not** live inside `vendor-3d`. If three imports Rapier's `__tla`, production dies with:
 
 ```text
 static{De.prototype.isVector2=!0}
 TypeError: Cannot read properties of undefined (reading 'prototype')
 ```
 
-One-way is fine: `vendor-rapier` → `vendor-3d` (three already evaluated).
+**Live incident (forge.grudge-studio.com `vendor-3d-kfUrB2f4.js`):** `@react-three/rapier` leaked into `vendor-3d`, which then `import { …, __tla } from "./vendor-rapier-*.js"`. TLA wrapped the entire three graph; `Vector2` static initializers hit TDZ.
+
+| Edge | Allowed? |
+|---|---|
+| `vendor-rapier` → `vendor-3d` | Yes (three already evaluated) |
+| `vendor-3d` → `vendor-rapier` | **Never** |
+| `__tla` export on `vendor-3d` | **Never** |
+
+Build gate: `assertVendor3dNoRapierTla` in `artifacts/game-forge/vite.config.ts` fails the build if the reverse edge appears. Matcher: `isRapierModuleId()` (scoped paths + `react-three-rapier` filename + local shim).
 
 Pin **one** `three` via root `pnpm.overrides` (**0.185.1**). Nested `stats-gl/three@0.170` dual copies also break Vector2.
 

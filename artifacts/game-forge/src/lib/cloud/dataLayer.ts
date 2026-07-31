@@ -259,9 +259,12 @@ export function useCreateAsset(_opts?: unknown) {
       data: {
         projectId: number;
         name: string;
-        contentType: string;
-        size: number;
-        objectPath: string;
+        url?: string;
+        type?: string;
+        source?: string;
+        contentType?: string;
+        size?: number;
+        objectPath?: string;
       };
     }) => dp.createAsset(data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
@@ -417,30 +420,72 @@ export function useGetStorageObject(objectPath: string, _opts?: unknown) {
 // ── Grudge catalogs ────────────────────────────────────────────────────
 // Same-origin forge Worker (`/api/grudge/*`) — never api.grudge-studio.com
 // (deprecated split-brain; 404 in production). Mirrors `lib/grudge.ts`.
+// Also falls back to ObjectStore gamedata when edge route is offline.
 const GRUDGE_CATALOG_BASE = "/api/grudge";
 
-async function fetchGrudgeCatalog(path: string): Promise<unknown> {
-  const res = await fetch(`${GRUDGE_CATALOG_BASE}${path}`);
-  if (!res.ok) {
-    throw new Error(`Grudge catalog ${path} failed: ${res.status}`);
+export interface GrudgeCatalogPayload {
+  items: Array<Record<string, unknown>>;
+  source?: string;
+}
+
+async function fetchGrudgeCatalog(path: string): Promise<GrudgeCatalogPayload> {
+  try {
+    const res = await fetch(`${GRUDGE_CATALOG_BASE}${path}`);
+    if (res.ok) {
+      const body = (await res.json()) as GrudgeCatalogPayload | unknown[];
+      if (Array.isArray(body)) return { items: body as Array<Record<string, unknown>>, source: "edge-array" };
+      if (body && typeof body === "object" && Array.isArray((body as GrudgeCatalogPayload).items)) {
+        return body as GrudgeCatalogPayload;
+      }
+    }
+  } catch {
+    /* fall through */
   }
-  return res.json();
+  // ObjectStore fallback for production when /api/grudge is missing
+  const kind = path.replace(/^\//, "").split("?")[0]; // weapons|items|...
+  try {
+    const os = await fetch(
+      `https://objectstore.grudge-studio.com/api/v1/${encodeURIComponent(kind)}.json`,
+    );
+    if (os.ok) {
+      const body = await os.json();
+      const items = Array.isArray(body)
+        ? body
+        : Array.isArray(body?.items)
+          ? body.items
+          : Array.isArray(body?.weapons)
+            ? body.weapons
+            : [];
+      return { items, source: "objectstore" };
+    }
+  } catch {
+    /* empty */
+  }
+  return { items: [], source: "empty" };
 }
 
 export function useGetGrudgeWeapons(_opts?: unknown) {
-  return queryResult(["grudgeWeapons"], () => fetchGrudgeCatalog("/weapons"));
+  return queryResult<GrudgeCatalogPayload>(["grudgeWeapons"], () =>
+    fetchGrudgeCatalog("/weapons"),
+  );
 }
 
 export function useGetGrudgeItems(_opts?: unknown) {
-  return queryResult(["grudgeItems"], () => fetchGrudgeCatalog("/items"));
+  return queryResult<GrudgeCatalogPayload>(["grudgeItems"], () =>
+    fetchGrudgeCatalog("/items"),
+  );
 }
 
 export function useGetGrudgeEnemies(_opts?: unknown) {
-  return queryResult(["grudgeEnemies"], () => fetchGrudgeCatalog("/enemies"));
+  return queryResult<GrudgeCatalogPayload>(["grudgeEnemies"], () =>
+    fetchGrudgeCatalog("/enemies"),
+  );
 }
 
 export function useGetGrudgeQuests(_opts?: unknown) {
-  return queryResult(["grudgeQuests"], () => fetchGrudgeCatalog("/quests"));
+  return queryResult<GrudgeCatalogPayload>(["grudgeQuests"], () =>
+    fetchGrudgeCatalog("/quests"),
+  );
 }
 
 // ── Templates (API first, static fallback) ─────────────────────────────
@@ -478,7 +523,16 @@ export function useGetTemplate(key: string, _opts?: unknown) {
 
 // ── Non-hook re-exports for direct function calls ──────────────────────
 // Some files import the raw functions (not hooks) for AI tool use, etc.
-export { listScripts } from "./puterDataProvider";
+export {
+  listScripts,
+  listScenes,
+  listAssets,
+  listPrefabs,
+  getProjectStorageStatus,
+  activeStorageBackend,
+  syncLocalProjectsToPuterCloud,
+} from "./puterDataProvider";
+export type { PrefabData } from "../../../../../lib/api-client-react/src/generated/api.schemas";
 export {
   getGetPublicObjectUrl,
   getGetStorageObjectUrl,

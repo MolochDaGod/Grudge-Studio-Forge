@@ -179,20 +179,80 @@ const listMyPuterProjectsHandler: ToolHandler = async () => {
   return { ok: true, data: { count: idx.length, projects: idx } };
 };
 
+const PROJECT_STORAGE_STATUS: ToolDef = {
+  name: "project_storage_status",
+  description:
+    "Report where Forge projects live for this user: local (guest IndexedDB/localStorage) vs Puter cloud (Grudge/forge KV+FS). " +
+    "Also lists migration hints. Call when diagnosing missing projects, quota, or after sign-in.",
+  input_schema: { type: "object", properties: {} },
+};
+
+const projectStorageStatusHandler: ToolHandler = async () => {
+  const {
+    getProjectStorageStatus,
+    listLocalIdbPayloadKeys,
+  } = await import("@/lib/cloud/projectStorage");
+  const { forgeEnvSnapshot } = await import("@/lib/forgeEnv");
+  const status = getProjectStorageStatus();
+  const idbKeys = await listLocalIdbPayloadKeys();
+  return {
+    ok: true,
+    data: {
+      ...status,
+      idbPayloadKeys: idbKeys.slice(0, 40),
+      env: forgeEnvSnapshot({
+        isPuterSignedIn: status.puterSignedIn,
+        storageBackend: status.backend,
+      }),
+    },
+  };
+};
+
+const MIGRATE_LOCAL_TO_PUTER: ToolDef = {
+  name: "migrate_local_projects_to_puter",
+  description:
+    "Copy guest/local Forge projects (indexes + scene payloads) into the signed-in user's Puter cloud (Grudge/forge/*). " +
+    "Does not delete local data. Requires Puter sign-in. Use after user signs in so Grudge cloud users keep offline work.",
+  input_schema: { type: "object", properties: {} },
+};
+
+const migrateLocalToPuterHandler: ToolHandler = async () => {
+  if (!cloud.isAvailable()) {
+    return {
+      ok: false,
+      error: "Sign in with Puter to migrate local projects to Grudge cloud.",
+    };
+  }
+  const { syncLocalProjectsToPuterCloud } = await import(
+    "@/lib/cloud/puterDataProvider"
+  );
+  const result = await syncLocalProjectsToPuterCloud();
+  return {
+    ok: result.ok,
+    data: result,
+    error: result.error,
+  };
+};
+
 export const defs: ToolDef[] = [
   CLOUD_SAVE_PROJECT,
   PUBLISH_TO_PUTER,
   LIST_MY_PUTER_PROJECTS,
+  PROJECT_STORAGE_STATUS,
+  MIGRATE_LOCAL_TO_PUTER,
 ];
 
 export const handlers: Record<string, ToolHandler> = {
   cloud_save_project: cloudSaveProjectHandler,
   publish_to_puter: publishToPuterHandler,
   list_my_puter_projects: listMyPuterProjectsHandler,
+  project_storage_status: projectStorageStatusHandler,
+  migrate_local_projects_to_puter: migrateLocalToPuterHandler,
 };
 
 export const destructiveToolNames: string[] = [
   // Writes to the user's cloud — confirm before clobbering.
   "cloud_save_project",
   "publish_to_puter",
+  "migrate_local_projects_to_puter",
 ];

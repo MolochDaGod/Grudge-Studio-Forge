@@ -23,20 +23,10 @@ import {
 import { Plus, Trash2, Save, Loader2, Code2, Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SCRIPT_TEMPLATES, getTemplate } from "@/ai/tools/scripting/templates";
+import { SMART_SCRIPT_TEMPLATE_KEYS } from "@/lib/inspectorCatalogs";
 
-/** Smart starter kits shown in the Scripts tab (gameplay / multiplayer / camera). */
-const SMART_TEMPLATE_KEYS = [
-  "wasd-character-controller",
-  "third-person-camera",
-  "network-manager-mirror",
-  "remote-player-interpolator",
-  "outline-select-highlight",
-  "spawn-r2-character",
-  "health-system",
-  "seek-player",
-  "trigger-zone",
-  "spin",
-] as const;
+/** Smart starter kits — SSOT in inspectorCatalogs (Inspector shares this list). */
+const SMART_TEMPLATE_KEYS = SMART_SCRIPT_TEMPLATE_KEYS;
 
 export function ScriptEditor() {
   const projectId = useEditor((s) => s.projectId);

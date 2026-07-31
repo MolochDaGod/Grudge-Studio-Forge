@@ -217,6 +217,97 @@ function preloadViewportCandidate(): Plugin {
   };
 }
 
+/**
+ * Hard gate: production dies with
+ *   TypeError: Cannot read properties of undefined (reading 'prototype')
+ *   static{De.prototype.isVector2=!0}
+ * whenever `vendor-3d` (three + R3F) imports `vendor-rapier`'s `__tla`.
+ * TLA wraps the whole three chunk; Vector2 static blocks race with TDZ.
+ *
+ * Allowed: vendor-rapier → vendor-3d (one-way).
+ * Forbidden: vendor-3d → vendor-rapier, or __tla export on vendor-3d.
+ */
+function assertVendor3dNoRapierTla(): Plugin {
+  return {
+    name: "assert-vendor-3d-no-rapier-tla",
+    apply: "build",
+    generateBundle(_opts, bundle) {
+      const errors: string[] = [];
+      for (const [fileName, chunk] of Object.entries(bundle)) {
+        if (chunk.type !== "chunk") continue;
+        const isVendor3d =
+          chunk.name === "vendor-3d" || fileName.includes("vendor-3d");
+        if (!isVendor3d) continue;
+
+        const code = chunk.code ?? "";
+        // Reverse edge: three chunk must never import rapier (pulls __tla).
+        if (
+          /from\s*["'][^"']*vendor-rapier[^"']*["']/.test(code) ||
+          /import\s*\(\s*["'][^"']*vendor-rapier[^"']*["']\s*\)/.test(code)
+        ) {
+          errors.push(
+            `${fileName}: imports vendor-rapier (forbidden reverse TLA edge). ` +
+              `Ensure @react-three/rapier + @dimforge/rapier3d land only in vendor-rapier.`,
+          );
+        }
+        // Any __tla on vendor-3d means top-level-await wrapped three.
+        if (/\b__tla\b/.test(code) || /export\s*\{[^}]*\b__tla\b/.test(code)) {
+          errors.push(
+            `${fileName}: contains __tla — three/R3F chunk must not use top-level await. ` +
+              `Something Rapier-related leaked into vendor-3d.`,
+          );
+        }
+      }
+      if (errors.length > 0) {
+        throw new Error(
+          `[assert-vendor-3d-no-rapier-tla] Build refused — live crash pattern:\n` +
+            errors.map((e) => `  • ${e}`).join("\n") +
+            `\nSee docs/3d-dependencies.md § Chunking.`,
+        );
+      }
+    },
+  };
+}
+
+/** Resolve id → true when this module belongs in the Rapier/TLA chunk. */
+function isRapierModuleId(id: string): boolean {
+  const norm = id.replace(/\\/g, "/").toLowerCase();
+  // Cover pnpm paths, scoped packages, wasm assets, and the filename form
+  // `react-three-rapier.esm.js` (live prod had these land in vendor-3d).
+  return (
+    norm.includes("@dimforge/rapier3d") ||
+    norm.includes("rapier3d-compat") ||
+    norm.includes("rapier_wasm3d") ||
+    norm.includes("@react-three/rapier") ||
+    norm.includes("react-three-rapier") ||
+    // Local shim re-exports streaming rapier — must share the TLA chunk.
+    norm.includes("/src/lib/rapiershim")
+  );
+}
+
+/** Resolve id → true when this module belongs in the pure three/R3F chunk (no TLA). */
+function isVendor3dModuleId(id: string): boolean {
+  if (isRapierModuleId(id)) return false;
+  const norm = id.replace(/\\/g, "/");
+  return (
+    norm.includes("/@react-three/fiber") ||
+    norm.includes("/@react-three/drei") ||
+    norm.includes("/@react-three/postprocessing") ||
+    norm.includes("/postprocessing/") ||
+    // Bare `three` only — never `@react-three/*` (already handled above)
+    /\/node_modules\/three\//.test(norm) ||
+    norm.endsWith("/node_modules/three") ||
+    norm.includes("/three-stdlib/") ||
+    norm.includes("/three-mesh-bvh/") ||
+    norm.includes("/maath/") ||
+    norm.includes("/troika-three-text/") ||
+    norm.includes("/troika-three-utils/") ||
+    norm.includes("/troika-worker-utils/") ||
+    norm.includes("/camera-controls/") ||
+    norm.includes("/stats-gl/")
+  );
+}
+
 // PORT is only used by the dev server.
 // Default to a placeholder so the prod build doesn't fail if the deploy build
 // context doesn't inherit `[services.env]`. Same rationale as BASE_PATH below.
@@ -243,6 +334,7 @@ export default defineConfig({
     tailwindcss(),
     preloadViewportCandidate(),
     stripHeavyPublicAssets(),
+    assertVendor3dNoRapierTla(),
     /**
      * Lets Vite resolve the `import * as wasm from "./rapier_wasm3d_bg.wasm"`
      * statement inside `@dimforge/rapier3d` natively, emitting the binary as
@@ -253,6 +345,9 @@ export default defineConfig({
      *
      * Together these replace the 1.5 MB base64 blob that ships inside the
      * `-compat` package — see `src/lib/rapierShim.ts` for the alias wiring.
+     *
+     * HARD RULE: only `vendor-rapier` may carry `__tla`. `vendor-3d` must
+     * never import it (Vector2.prototype crash on forge.grudge-studio.com).
      */
     wasm(),
     topLevelAwait(),
@@ -288,6 +383,28 @@ export default defineConfig({
       "@workspace/api-client-react": path.resolve(
         import.meta.dirname,
         "src/lib/cloud/dataLayer.ts",
+      ),
+      /**
+       * Workspace packages as path aliases (not node_modules links).
+       * Required on exFAT / Windows without symlink support — pnpm
+       * `node-linker=hoisted` + `symlink=false` cannot link @workspace/*.
+       * Keep in sync with tsconfig paths.
+       */
+      "@workspace/scene-schema": path.resolve(
+        import.meta.dirname,
+        "../../lib/scene-schema/src/index.ts",
+      ),
+      "@workspace/scene-templates": path.resolve(
+        import.meta.dirname,
+        "../../lib/scene-templates/src/index.ts",
+      ),
+      "@workspace/object-storage-web": path.resolve(
+        import.meta.dirname,
+        "../../lib/object-storage-web/src/index.ts",
+      ),
+      "@workspace/desktop-bridge": path.resolve(
+        import.meta.dirname,
+        "../../lib/desktop-bridge/src/index.ts",
       ),
     },
     // Force a single three + react graph (nested stats-gl three@0.170 kills Vector2).
@@ -389,11 +506,16 @@ export default defineConfig({
          * need to enumerate the package roots we DO want split out.
          */
         manualChunks(id: string) {
+          // Local rapier shim is outside node_modules but MUST join vendor-rapier
+          // so its re-export of streaming WASM never lands in vendor-3d.
+          if (isRapierModuleId(id)) {
+            return "vendor-rapier";
+          }
+
           if (!id.includes("node_modules")) return undefined;
-          // Normalize Windows paths so the substring checks below work.
-          const norm = id.replace(/\\/g, "/");
 
           // Monaco core only — never @monaco-editor/react (keeps React out).
+          const norm = id.replace(/\\/g, "/");
           if (
             norm.includes("/monaco-editor/") &&
             !norm.includes("/@monaco-editor/react")
@@ -403,40 +525,14 @@ export default defineConfig({
 
           // ─────────────────────────────────────────────────────────────
           // Rapier WASM + @react-three/rapier — OWN chunk with TLA.
-          // Must NOT be mixed into vendor-3d: that made vendor-3d import
-          // vendor-rapier `__tla` while also defining three.Vector2, so
-          // static{De.prototype.isVector2} ran with De in TDZ → crash.
-          // One-way edge is OK: vendor-rapier → vendor-3d (three already
-          // fully evaluated, no TLA in vendor-3d).
+          // Live forge.grudge-studio.com crash (vendor-3d-kfUrB2f4.js):
+          //   vendor-3d imported vendor-rapier __tla → three Vector2
+          //   static{De.prototype.isVector2} with De in TDZ.
+          // Root cause: @react-three/rapier leaked into vendor-3d via
+          // weak path match. isRapierModuleId() is the hard gate above.
+          // One-way ONLY: vendor-rapier → vendor-3d.
           // ─────────────────────────────────────────────────────────────
-          if (
-            norm.includes("/@dimforge/rapier3d/") ||
-            norm.includes("/@dimforge/rapier3d-compat") ||
-            norm.includes("/@react-three/rapier")
-          ) {
-            return "vendor-rapier";
-          }
-
-          // three + R3F + drei + post — NO Rapier, so NO top-level await.
-          // Splitting three vs fiber alone still breaks under TLA cycles;
-          // keep them together. Nested three (stats-gl) forced here too.
-          if (
-            norm.includes("/@react-three/fiber") ||
-            norm.includes("/@react-three/drei") ||
-            norm.includes("/@react-three/postprocessing") ||
-            norm.includes("/postprocessing/") ||
-            norm.includes("/three/") ||
-            norm.endsWith("/three") ||
-            /\/node_modules\/three\//.test(norm) ||
-            norm.includes("/three-stdlib/") ||
-            norm.includes("/three-mesh-bvh/") ||
-            norm.includes("/maath/") ||
-            norm.includes("/troika-three-text/") ||
-            norm.includes("/troika-three-utils/") ||
-            norm.includes("/troika-worker-utils/") ||
-            norm.includes("/camera-controls/") ||
-            norm.includes("/stats-gl/")
-          ) {
+          if (isVendor3dModuleId(id)) {
             return "vendor-3d";
           }
 

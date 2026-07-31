@@ -28,8 +28,14 @@ export const getGetProjectQueryKey = (id: number) => ["projects", id] as const;
 export const getGetProjectSummaryQueryKey = (id: number) =>
   ["projects", id, "summary"] as const;
 export const getListScenesQueryKey = (id: number) => ["scenes", id] as const;
-export const getGetSceneQueryKey = (projectId: number, sceneId: number) =>
-  ["scenes", projectId, sceneId] as const;
+/** Prefer (projectId, sceneId). Single-arg form is sceneId-only (legacy callers). */
+export const getGetSceneQueryKey = (
+  projectIdOrSceneId: number,
+  sceneId?: number,
+) =>
+  sceneId != null
+    ? (["scenes", "detail", sceneId] as const)
+    : (["scenes", "detail", projectIdOrSceneId] as const);
 export const getListScriptsQueryKey = (id: number) => ["scripts", id] as const;
 export const getListAssetsQueryKey = (id: number) => ["assets", id] as const;
 export const getListPrefabsQueryKey = (id: number) => ["prefabs", id] as const;

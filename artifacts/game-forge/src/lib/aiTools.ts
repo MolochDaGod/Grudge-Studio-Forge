@@ -638,10 +638,33 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         category: "characters",
         limit: 3,
       });
+      const { getProjectStorageStatus } = await import(
+        "@/lib/cloud/projectStorage"
+      );
+      const { forgeEnvSnapshot, freeAiStatusUrl } = await import(
+        "@/lib/forgeEnv"
+      );
+      const storage = getProjectStorageStatus();
+      let freeAi: { ok: boolean; detail?: unknown } = { ok: false };
+      try {
+        const r = await fetch(freeAiStatusUrl(), { cache: "no-store" });
+        freeAi = { ok: r.ok, detail: r.ok ? await r.json() : { status: r.status } };
+      } catch (err) {
+        freeAi = {
+          ok: false,
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
       return {
         ok: true,
         data: {
           catalog,
+          freeAi,
+          storage,
+          env: forgeEnvSnapshot({
+            isPuterSignedIn: storage.puterSignedIn,
+            storageBackend: storage.backend,
+          }),
           openJobs: jobs.filter((j) => j.status === "pending" || j.status === "running")
             .length,
           recentJobs: jobs.slice(0, 5),
@@ -652,7 +675,7 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
             sample: probe.items.slice(0, 3).map((i) => i.r2Key),
           },
           policy:
-            "Models: builtin: or https://assets.grudge-studio.com. Gamedata: ObjectStore. Play data: Railway. Agent jobs: D1 forge-agent. No Docker for SPA.",
+            "Projects: local IDB/localStorage OR Puter Grudge/forge. Models: builtin: or assets.grudge-studio.com. Gamedata: ObjectStore. Play bag: Railway. Agent jobs: D1 forge-agent. Brain: /api/knowledge. Free AI: /api/free-ai.",
         },
       };
     },

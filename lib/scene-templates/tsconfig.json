@@ -5,7 +5,11 @@
     "declarationMap": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@workspace/scene-schema": ["../scene-schema/src/index.ts"]
+    }
   },
   "include": ["src"],
   "references": [{ "path": "../scene-schema" }]

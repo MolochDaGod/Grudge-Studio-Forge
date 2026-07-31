@@ -482,15 +482,222 @@ export function recommendChannelsForGoal(
   }
 }
 
+// ── Fleet games editable / deployable from Forge ─────────────────────
+
+/**
+ * Production game shells the Forge editor can open, playtest, map-edit,
+ * inspect (GameManager), script, and hand off to AI agents.
+ *
+ * Pattern stack for every entry:
+ *   map edit → .gfscene + Hierarchy/Inspector
+ *   scripts → forge_scripts + behavior tags (gamemode-rts, rts-*)
+ *   playtest → L7 puter_host | player_embed
+ *   deploy → fleet_satellite (L0+L1+L2/L3)
+ *   AI → list_game_deployments · list_script_templates · agent jobs
+ */
+export type FleetGameForgeRole =
+  | "map_edit"
+  | "script"
+  | "playtest"
+  | "game_manager"
+  | "inspector"
+  | "deploy"
+  | "ai_agent";
+
+export interface FleetGameDef {
+  id: string;
+  label: string;
+  /** Live play URL */
+  playUrl: string;
+  /** Open in Forge (deep link / project template key when known) */
+  forgeOpen?: string;
+  surface: SurfaceClass;
+  status: DefStatus;
+  /** Deploy patterns (live-servers L-codes) */
+  patterns: DeployPatternId[];
+  /** Primary publish channels */
+  channels: PublishChannel[];
+  /** Built-in behavior keys for GameManager / units (see scripting tools) */
+  behaviors: string[];
+  /** Script template keys (see ai/tools/scripting/templates.ts) */
+  scriptTemplates: string[];
+  /** What Forge surfaces apply */
+  forgeRoles: FleetGameForgeRole[];
+  /** CDN / ObjectStore asset roots */
+  assets: string[];
+  notes: string;
+}
+
+export const FLEET_GAME_DEFS: FleetGameDef[] = [
+  {
+    id: "wargus",
+    label: "Wargus (Toon RTS)",
+    playUrl: "https://grudge-studio.com/wargus",
+    forgeOpen: "https://forge.grudge-studio.com/editor?game=wargus",
+    surface: "play_client",
+    status: "active",
+    patterns: ["L0", "L1", "L7", "L8"],
+    channels: ["fleet_satellite", "r2_user_assets", "puter_host", "player_embed"],
+    behaviors: [
+      "gamemode-rts",
+      "rts-peon",
+      "rts-footman",
+      "rts-archer",
+      "rts-creep",
+      "rts-building",
+      "rts-tower",
+    ],
+    scriptTemplates: [
+      "wasd-character-controller",
+      "third-person-camera",
+      "spawn-r2-character",
+      "network-manager-mirror",
+    ],
+    forgeRoles: [
+      "map_edit",
+      "script",
+      "playtest",
+      "game_manager",
+      "inspector",
+      "deploy",
+      "ai_agent",
+    ],
+    assets: [
+      "https://assets.grudge-studio.com/models/grudge6/",
+      "https://assets.grudge-studio.com/builtin/",
+      "https://objectstore.grudge-studio.com/api/v1",
+    ],
+    notes:
+      "grudge6 race kits (WK_/BRB_/ELF_/DWF_/ORC_/UD_), SI 1.8 m human, SkeletonUtils clones, " +
+      "Rapier colliders, production Draco GLBs. Forge: attach gamemode-rts on GameManager empty; " +
+      "map edit via .gfscene; playtest L7; deploy fleet_satellite. Player bag stays Railway.",
+  },
+  {
+    id: "warlords-client",
+    label: "Warlords / client island",
+    playUrl: "https://client.grudge-studio.com",
+    forgeOpen: "https://forge.grudge-studio.com/editor?game=warlords",
+    surface: "play_client",
+    status: "active",
+    patterns: ["L0", "L1", "L2", "L7", "L8"],
+    channels: ["fleet_satellite", "r2_user_assets", "puter_host"],
+    behaviors: ["player-rpg", "enemy-rpg", "npc-dialog", "ally", "spawnpoint"],
+    scriptTemplates: [
+      "wasd-character-controller",
+      "third-person-camera",
+      "spawn-r2-character",
+      "outline-select-highlight",
+      "network-manager-mirror",
+      "remote-player-interpolator",
+    ],
+    forgeRoles: [
+      "map_edit",
+      "script",
+      "playtest",
+      "game_manager",
+      "inspector",
+      "deploy",
+      "ai_agent",
+    ],
+    assets: [
+      "https://assets.grudge-studio.com/models/lobby/pirate-islands/scene.glb",
+      "https://assets.grudge-studio.com/builtin/",
+    ],
+    notes:
+      "Home island / zone lobby. Prefer pirate-islands CDN GLB. Forge edits scenes; live play is client.",
+  },
+  {
+    id: "grudox",
+    label: "GRUDOX / Carrier PvP hub",
+    playUrl: "https://grudox.grudge-studio.com",
+    surface: "hub_pvp",
+    status: "active",
+    patterns: ["L0", "L3", "L4", "L7", "L8"],
+    channels: ["fleet_satellite", "player_embed"],
+    behaviors: [
+      "player-deathmatch",
+      "enemy-deathmatch",
+      "gamemode-deathmatch",
+      "spawnpoint",
+    ],
+    scriptTemplates: [
+      "wasd-character-controller",
+      "third-person-camera",
+      "network-manager-mirror",
+      "remote-player-interpolator",
+    ],
+    forgeRoles: ["map_edit", "script", "playtest", "game_manager", "deploy", "ai_agent"],
+    assets: ["https://assets.grudge-studio.com/builtin/"],
+    notes: "L3 edge WS + L4 Railway rooms. Forge for arena maps / deathmatch GameManager only.",
+  },
+  {
+    id: "open-launcher",
+    label: "Open library launcher",
+    playUrl: "https://open.grudge-studio.com",
+    surface: "launcher",
+    status: "active",
+    patterns: ["L1", "L9"],
+    channels: ["open_library"],
+    behaviors: [],
+    scriptTemplates: [],
+    forgeRoles: ["deploy", "ai_agent"],
+    assets: [],
+    notes: "Discovery hub only — does not host game binaries. Register cards via open_library.",
+  },
+];
+
+export function getFleetGame(id: string): FleetGameDef | undefined {
+  return FLEET_GAME_DEFS.find((g) => g.id === id);
+}
+
+export function activeFleetGames(): FleetGameDef[] {
+  return FLEET_GAME_DEFS.filter((g) => g.status === "active");
+}
+
+/** Recommended Forge workflow for a fleet game (AI / UI). */
+export function forgeWorkflowForGame(gameId: string): {
+  game?: FleetGameDef;
+  steps: string[];
+  channels: PublishChannel[];
+  patterns: DeployPatternId[];
+} {
+  const game = getFleetGame(gameId);
+  if (!game) {
+    return {
+      steps: [
+        "Unknown game — list FLEET_GAME_DEFS / list_game_deployments.",
+        "For new games: onboarding skill + fleet_satellite + L0 CDN assets.",
+      ],
+      channels: ["forge_api_save", "r2_user_assets"],
+      patterns: ["L8", "L7", "L0"],
+    };
+  }
+  return {
+    game,
+    steps: [
+      `Open Forge editor (${game.forgeOpen ?? "https://forge.grudge-studio.com/editor"}).`,
+      "Map edit: Hierarchy + Inspector + Viewport; save .gfscene via forge_api_save.",
+      `Scripts: attach behaviors [${game.behaviors.join(", ") || "none"}] and/or script templates.`,
+      "GameManager: empty entity + gamemode-* behavior; inspector tunes economy / win rules.",
+      "Playtest: Play mode in editor, then L7 puter_host or player_embed.",
+      `Deploy live: ${game.channels.filter((c) => c === "fleet_satellite").length ? "fleet_satellite" : game.channels[0]} — never bundle_in_spa.`,
+      "AI agents: list_game_deployments, list_script_templates, list_fast_assets, spawn_fleet_asset.",
+    ],
+    channels: game.channels,
+    patterns: game.patterns,
+  };
+}
+
 /** Full snapshot for AI tools / diagnostics. */
 export function gameDeploymentSnapshot() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     doc: "docs/GAME_DEPLOYMENT_DEFINITIONS.md",
     surfaces: SURFACE_DEFS,
     publishChannels: PUBLISH_CHANNEL_DEFS,
     apiSystems: API_SYSTEM_DEFS,
     patterns: DEPLOY_PATTERN_DEFS,
+    fleetGames: FLEET_GAME_DEFS,
     purged: {
       channels: purgedPublishChannels().map((c) => c.id),
       apis: API_SYSTEM_DEFS.filter((a) => a.status === "purged").map((a) => a.id),
@@ -499,6 +706,12 @@ export function gameDeploymentSnapshot() {
       newBrowserGame: ["L0", "L1", "L2"] as DeployPatternId[],
       forgePlaytest: ["L7"] as DeployPatternId[],
       forgeEditor: ["L8"] as DeployPatternId[],
+      wargus: forgeWorkflowForGame("wargus"),
+    },
+    chunking: {
+      vendor3d: "three + fiber + drei + post — NO TLA, NO rapier imports",
+      vendorRapier: "@dimforge/rapier3d + @react-three/rapier — TLA OK; may import vendor-3d",
+      crashIf: "vendor-3d imports vendor-rapier __tla → Vector2.prototype undefined",
     },
   };
 }

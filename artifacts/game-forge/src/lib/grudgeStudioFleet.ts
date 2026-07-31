@@ -1,10 +1,12 @@
 /**
  * Fleet bridge stubs for Forge (no hard @grudge-studio/* dependency).
  *
- * Optional packages may be installed via optionalDependencies (^0.2.0) when
- * published. Production SPA / CI must typecheck without them.
+ * Optional packages may be installed via optionalDependencies (^0.3.0) when
+ * published from GrudgeStudioNPM (quality system: bake, character, units,
+ * animator, engine, deploy). Production SPA / CI must typecheck without them.
  *
  * Physics debug: always available via ./physicsDebugGate.
+ * Deployment SSOT: ./gameDeployments (FLEET_GAME_DEFS, wargus workflow).
  */
 
 export { forgePhysicsDebugEnabled } from "./physicsDebugGate";

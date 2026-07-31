@@ -135,6 +135,32 @@ This document **defines** how games, editors, and APIs are classified for deploy
 
 ---
 
+## 5.5 Fleet games + Forge roles (Wargus et al.)
+
+Code: `FLEET_GAME_DEFS` + `forgeWorkflowForGame()` in `gameDeployments.ts`.  
+AI: `list_game_deployments` with `{ game: "wargus" }`.
+
+| Game id | Play URL | Forge roles |
+|---------|----------|-------------|
+| **wargus** | grudge-studio.com/wargus | map_edit, script, playtest, game_manager, inspector, deploy, ai_agent |
+| **warlords-client** | client.grudge-studio.com | map + RPG behaviors + playtest |
+| **grudox** | grudox.grudge-studio.com | deathmatch maps + L3/L4 rooms |
+| **open-launcher** | open.grudge-studio.com | catalog only (L9) |
+
+### Wargus production pattern
+
+1. **Map edit** — Forge Hierarchy/Inspector/Viewport → save `.gfscene` (`forge_api_save` + `r2_user_assets`).
+2. **Scripts** — behaviors `gamemode-rts`, `rts-peon`, `rts-footman`, `rts-archer`, `rts-building`, … on entities; templates `wasd-character-controller`, `spawn-r2-character`, …
+3. **GameManager** — empty named `GameManager` + `gamemode-rts` (economy, win/lose, enemy AI).
+4. **Inspector** — entity props, production queues, rally, layers (Player/NPC/Terrain).
+5. **Playtest** — editor Play mode → L7 `puter_host` / `player_embed` (not full fleet publish).
+6. **Deploy** — `fleet_satellite` (L0 CDN grudge6 Draco GLBs + L1 Open card); player bag remains Railway.
+7. **AI agents** — `list_game_deployments`, `list_script_templates`, `list_fast_assets`, `spawn_fleet_asset`, free-ai edge jobs.
+
+**Assets:** `assets.grudge-studio.com/models/grudge6/` + builtin; SkeletonUtils clones; SI 1.8 m human; never `bundle_in_spa`.
+
+---
+
 ## 6. Connection contract (every live game)
 
 ```

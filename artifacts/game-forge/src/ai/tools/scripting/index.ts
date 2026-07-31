@@ -577,115 +577,19 @@ const LIST_BUILTIN_BEHAVIORS: ToolDef = {
     "List the built-in BehaviorKind tags an entity can be wired with via attach_behavior. Each entry includes a short description plus the recommended physics layer (e.g. `pickup-trigger` → `Trigger` so it spawns as a Rapier sensor).",
   input_schema: { type: "object", properties: {} },
 };
-const BEHAVIOR_DOCS: Record<
-  keyof typeof BUILTIN_BEHAVIORS,
-  { description: string; recommendedLayer?: string }
-> = {
-  "player-deathmatch": {
-    description:
-      "Wire LMB-shoot, health, damage, respawn for the player entity. Pair with controllerKind=firstPerson|thirdPerson.",
-    recommendedLayer: "Player",
-  },
-  "enemy-deathmatch": {
-    description:
-      "Yuka-driven AI with patrol/chase/attack/flee FSM, line-of-sight raycasts, group alerts.",
-    recommendedLayer: "NPC",
-  },
-  "gamemode-deathmatch": {
-    description:
-      "Score tracker for player vs. enemy kills; emits win/lose when scoreLimit is reached. Attach to a hidden empty named 'GameManager'.",
-  },
-  "rts-peon": {
-    description:
-      "RTS worker: gathers gold/wood under orders (or auto when idle), deposits at Town Hall. Select + right-click mine/forest.",
-    recommendedLayer: "Player",
-  },
-  "rts-footman": {
-    description:
-      "RTS melee unit: move/attack orders, auto-engages hostiles. Emits building damage on halls.",
-    recommendedLayer: "Player",
-  },
-  "rts-archer": {
-    description:
-      "RTS ranged unit: keeps distance, attacks at range under orders or auto-engage.",
-    recommendedLayer: "Player",
-  },
-  "rts-creep": {
-    description:
-      "Neutral camp guard: idles near spawn, aggroes on nearby player RTS units, gold bounty on death.",
-    recommendedLayer: "NPC",
-  },
-  "rts-building": {
-    description:
-      "RTS production building (Town Hall / Barracks / Farm / Mill). Select to train units; right-click sets rally.",
-    recommendedLayer: "Player",
-  },
-  "rts-tower": {
-    description:
-      "RTS defensive tower: auto-attacks nearby hostile units and buildings.",
-    recommendedLayer: "Player",
-  },
-  "gamemode-rts": {
-    description:
-      "RTS match controller: selection, right-click orders, gold/wood/food economy, production, enemy AI, win/lose. Attach to GameManager empty.",
-  },
-  spawnpoint: {
-    description:
-      "Pure marker — lets player/enemy behaviors find spawn points by behavior tag.",
-    recommendedLayer: "Trigger",
-  },
-  "pickup-trigger": {
-    description:
-      "Despawns this entity when a Player-named or Player-layer body overlaps. Demonstrates the onEnterTrigger / despawn ScriptContext API.",
-    recommendedLayer: "Trigger",
-  },
-  "player-rpg": {
-    description:
-      "RPG-flavored player: LMB melee swing, E-key 'interact' event, health + damage HUD wiring. No respawn (death is permanent) and no kill-feed scoring — pair with enemy-rpg for adventure-style scenes.",
-    recommendedLayer: "Player",
-  },
-  "enemy-rpg": {
-    description:
-      "RPG-flavored enemy: peaceful Yuka wander until provoked by damage or proximity, then chases + melee attacks. Permanent death (no respawn) and emits no kill events so the deathmatch scoreboard stays silent.",
-    recommendedLayer: "NPC",
-  },
-  "npc-dialog": {
-    description:
-      "Friendly NPC: listens for the player-rpg E-key 'interact' event and pops a one-line speech bubble in the HUD. Configure the line via SceneEntity.npcLine; falls back to '...' if unset.",
-    recommendedLayer: "NPC",
-  },
-  ally: {
-    description:
-      "Combat ally brain: seeks nearest hostile (enemy-deathmatch / enemy-rpg / boss), melee-fights them, soft-follows the player when idle. Ignores friendly fire from player.",
-    recommendedLayer: "NPC",
-  },
-  neutral: {
-    description:
-      "Civilian ruleset: wanders peacefully until damaged, then retaliates against the attacker. No deathmatch scoring side-effects required.",
-    recommendedLayer: "NPC",
-  },
-  vendor: {
-    description:
-      "Merchant: on player-rpg interact, emits npcDialog + vendorOpen with stock (default potions/ammo, or JSON array in npcLine).",
-    recommendedLayer: "NPC",
-  },
-  boss: {
-    description:
-      "Boss strategy: 500 HP, heavy melee, never flees, enrages under 30% HP (speed+damage). Emits bossHealth / bossEnrage / bossDefeated.",
-    recommendedLayer: "NPC",
-  },
-};
 const listBuiltinBehaviorsHandler: ToolHandler = async () => {
+  // SSOT: inspectorCatalogs — same list the Inspector Behavior dropdown uses.
+  const { behaviorCatalog } = await import("@/lib/inspectorCatalogs");
   return {
     ok: true,
     data: {
-      behaviors: (Object.keys(BUILTIN_BEHAVIORS) as Array<keyof typeof BUILTIN_BEHAVIORS>).map(
-        (key) => ({
-          key,
-          description: BEHAVIOR_DOCS[key]?.description ?? "",
-          recommendedLayer: BEHAVIOR_DOCS[key]?.recommendedLayer,
-        }),
-      ),
+      behaviors: behaviorCatalog().map((e) => ({
+        key: e.key,
+        label: e.label,
+        group: e.group,
+        description: e.description,
+        recommendedLayer: e.recommendedLayer ?? undefined,
+      })),
     },
   };
 };

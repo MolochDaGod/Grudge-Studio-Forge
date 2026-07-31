@@ -10,7 +10,7 @@ import { bakeEntityConvexHulls } from "@/lib/bakeEntityColliders";
 import type { BuildHullsOptions, HullFillMode } from "@/lib/colliderBaker";
 import { useState } from "react";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
-import type { Vec3, CameraMode, ControllerKind } from "@/scene/types";
+import type { Vec3, CameraMode, ControllerKind, BehaviorKind } from "@/scene/types";
 import {
   LAYERS,
   MATERIAL_KINDS,
@@ -34,6 +34,13 @@ import {
   type StatsComponent,
 } from "@workspace/scene-schema";
 import {
+  behaviorSelectGroups,
+  getBehaviorEntry,
+  gameProfileOptions,
+  scriptTemplateCatalog,
+  fleetGameCatalog,
+} from "@/lib/inspectorCatalogs";
+import {
   Box,
   FlaskConical,
   Lightbulb,
@@ -48,6 +55,7 @@ import {
   Wind as WindIcon,
   Swords as SwordsIcon,
   CloudSun as CloudSunIcon,
+  Gamepad2,
   CloudRain as CloudRainIcon,
 } from "lucide-react";
 
@@ -1639,33 +1647,226 @@ export function Inspector() {
           </div>
         )}
 
-        <Section title="Script" Icon={Code2}>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Attached Script</Label>
-            <Select
-              value={entity.scriptId ? String(entity.scriptId) : "__none"}
-              onValueChange={(v) =>
-                setEntityScript(entity.id, v === "__none" ? null : Number(v))
-              }
-            >
-              <SelectTrigger className="h-7 text-xs" data-testid="select-script">
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none">None</SelectItem>
-{
-  scripts.filter((s) => s.id != null).map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    [{s.language.toUpperCase()}] {s.name}
+        <Section title="Behavior (built-in)" Icon={Gamepad2}>
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Built-in behavior
+              </Label>
+              <Select
+                value={entity.behavior ?? "__none"}
+                onValueChange={(v) => {
+                  const next = v === "__none" ? undefined : (v as BehaviorKind);
+                  updateEntity(entity.id, (d) => {
+                    d.behavior = next;
+                  });
+                  // Apply recommended physics layer when the catalog specifies one
+                  // (same parity as AI attach_behavior + set_layer).
+                  const entry = getBehaviorEntry(next);
+                  if (entry?.recommendedLayer) {
+                    useEditor.getState().cmdSetEntityLayer(
+                      [entity.id],
+                      entry.recommendedLayer,
+                    );
+                  }
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-behavior">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent className="max-h-80">
+                  <SelectItem value="__none">None</SelectItem>
+                  {behaviorSelectGroups().map((g) => (
+                    <div key={g.group}>
+                      <div className="px-2 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        {g.label}
+                      </div>
+                      {g.items.map((item) => (
+                        <SelectItem
+                          key={item.key}
+                          value={item.key}
+                          className="text-xs"
+                        >
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(() => {
+                const entry = getBehaviorEntry(entity.behavior);
+                if (!entry?.description) return null;
+                return (
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
+                    {entry.description}
+                    {entry.recommendedLayer
+                      ? ` · layer → ${entry.recommendedLayer}`
+                      : ""}
+                  </p>
+                );
+              })()}
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Game profile (reference)
+              </Label>
+              <Select
+                value="__hint"
+                onValueChange={(v) => {
+                  if (v === "__hint") return;
+                  const profile = gameProfileOptions().find((p) => p.id === v);
+                  if (!profile?.gameManagerBehavior) return;
+                  // Only set behavior on this entity — designer picks GameManager empty.
+                  updateEntity(entity.id, (d) => {
+                    d.behavior = profile.gameManagerBehavior;
+                    if (
+                      profile.gameManagerBehavior?.startsWith("gamemode-") &&
+                      !d.name.toLowerCase().includes("manager")
+                    ) {
+                      d.name = "GameManager";
+                    }
+                  });
+                  const entry = getBehaviorEntry(profile.gameManagerBehavior);
+                  if (entry?.recommendedLayer) {
+                    useEditor
+                      .getState()
+                      .cmdSetEntityLayer([entity.id], entry.recommendedLayer);
+                  }
+                  useEditor
+                    .getState()
+                    .pushLog(
+                      "info",
+                      `Game profile "${profile.label}": set behavior ${profile.gameManagerBehavior}. Units: ${profile.behaviors.join(", ")}`,
+                    );
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-game-profile">
+                  <SelectValue placeholder="Apply GameManager profile…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__hint" disabled>
+                    Apply GameManager profile…
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {scripts.length === 0 && (
-              <p className="text-[11px] text-muted-foreground mt-2">
-                No scripts yet. Open the Scripts panel below to create one.
+                  {gameProfileOptions().map((p) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Deathmatch / RPG / RTS set this entity as GameManager when a match
+                controller exists. Unit behaviors still pick from the list above.
               </p>
-            )}
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Fleet game (docs)
+              </Label>
+              <Select
+                value="__fleet"
+                onValueChange={(v) => {
+                  if (v === "__fleet") return;
+                  const game = fleetGameCatalog().find((g) => g.id === v);
+                  if (!game) return;
+                  useEditor.getState().pushLog(
+                    "info",
+                    `${game.label}: play ${game.playUrl} · behaviors [${game.behaviors.slice(0, 6).join(", ")}${game.behaviors.length > 6 ? "…" : ""}] · playtest L7 · deploy ${game.channels.join("/")}`,
+                  );
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-fleet-game">
+                  <SelectValue placeholder="Wargus / Warlords / …" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__fleet" disabled>
+                    Fleet game workflow…
+                  </SelectItem>
+                  {fleetGameCatalog().map((g) => (
+                    <SelectItem key={g.id} value={g.id} className="text-xs">
+                      {g.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Script" Icon={Code2}>
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Attached Script
+              </Label>
+              <Select
+                value={entity.scriptId ? String(entity.scriptId) : "__none"}
+                onValueChange={(v) =>
+                  setEntityScript(entity.id, v === "__none" ? null : Number(v))
+                }
+              >
+                <SelectTrigger className="h-7 text-xs" data-testid="select-script">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">None</SelectItem>
+                  {scripts
+                    .filter((s) => s.id != null)
+                    .map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>
+                        [{s.language.toUpperCase()}] {s.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              {scripts.length === 0 && (
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  No scripts yet. Open the Scripts panel below to create one, or
+                  pick a smart template there (WASD, camera, network…).
+                </p>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Smart templates (Scripts panel)
+              </Label>
+              <Select
+                value="__tpl"
+                onValueChange={(v) => {
+                  if (v === "__tpl") return;
+                  const tpl = scriptTemplateCatalog({ smartOnly: true }).find(
+                    (t) => t.key === v,
+                  );
+                  if (!tpl) return;
+                  useEditor.getState().pushLog(
+                    "info",
+                    `Template "${tpl.name}": open Scripts panel → sparkle / template dropdown → create, then attach here. ${tpl.description}`,
+                  );
+                }}
+              >
+                <SelectTrigger
+                  className="h-7 text-xs"
+                  data-testid="select-script-template-hint"
+                >
+                  <SelectValue placeholder="Browse smart templates…" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="__tpl" disabled>
+                    Create in Scripts panel…
+                  </SelectItem>
+                  {scriptTemplateCatalog({ smartOnly: true }).map((t) => (
+                    <SelectItem key={t.key} value={t.key} className="text-xs">
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Built-in behaviors (above) run without a script row. User scripts
+                stack after the behavior at play time.
+              </p>
+            </div>
           </div>
         </Section>
 

@@ -14,8 +14,10 @@ import {
   getStoredApiKey,
   type FreeProviderId,
 } from "./freeApis";
+import { freeAiChatUrl } from "@/lib/forgeEnv";
 
-const PROXY = "/api/free-ai/chat";
+/** Same-origin free-ai worker proxy (avoids browser CORS). */
+const proxyPath = (provider: string) => freeAiChatUrl(provider);
 
 function translateTools(tools: ProviderRequest["tools"]) {
   return tools.map((t) => ({
@@ -247,7 +249,7 @@ export function createFreeApiProvider(providerId: FreeProviderId): AIProvider {
 
       let res: Response;
       try {
-        res = await fetch(`${PROXY}?provider=${providerId}`, {
+        res = await fetch(proxyPath(providerId), {
           method: "POST",
           headers,
           body: JSON.stringify(body),
