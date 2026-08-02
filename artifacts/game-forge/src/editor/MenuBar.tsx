@@ -624,11 +624,12 @@ export function MenuBar({
           <DialogHeader>
             <DialogTitle>Grudge GameForge</DialogTitle>
             <DialogDescription>
-              Free customized Three.js editor for Grudge Studio — React Three
-              Fiber · Rapier · AI Worker · meshopt GLB pipeline. Built against
-              three.js editor DNA (commands, hierarchy, loaders) with fleet
-              services (CDN, ObjectStore, Grudge ID) and free tiers (Puter,
-              Poly Haven, Groq/OpenRouter/Gemini BYOK, Ollama).
+              Grudge Studio Forge — scene editor product (React Three Fiber ·
+              Rapier · AI Worker · meshopt GLB pipeline). Built on three.js
+              editor DNA (commands, hierarchy, loaders) with fleet services
+              (CDN, ObjectStore, Grudge ID). Grudge AI systems cost GBux; BYOK
+              and local Ollama are optional. Projects sync via Puter cloud
+              (listed on puter-monitor-ai GrudgeOS).
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
