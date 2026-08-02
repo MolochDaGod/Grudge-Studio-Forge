@@ -41,10 +41,14 @@ jobs:
           version: 10.32.1
           run_install: false
 
+      # cache: pnpm + lockfile path — store must be default (see root .npmrc).
+      # A committed Windows store-dir made the setup-node post-step fail red
+      # even after a successful deploy.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install game-forge graph
         run: pnpm install --no-frozen-lockfile --filter "@workspace/game-forge..."
