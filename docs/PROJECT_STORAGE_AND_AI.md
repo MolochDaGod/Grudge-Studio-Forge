@@ -14,8 +14,19 @@ nav_order: 16
 | User | Project storage | AI | Notes |
 |------|-----------------|-----|--------|
 | **Guest** (Continue without sign-in) | localStorage indexes + **IndexedDB** scene payloads | Ollama / free-ai BYOK / edge free models | Offline capable; quota → IDB |
-| **Puter signed-in** (Grudge cloud) | Puter **KV** indexes + **FS** `Grudge/forge/<col>/<id>.json` | Puter AI + free-ai + optional Anthropic | Cloud Save, publish L7 |
+| **Puter signed-in** (Grudge cloud) | Puter **KV** indexes + **FS** `Grudge/forge/<col>/<id>.json` | Fleet AI **GBux** · BYOK · Puter · Ollama | Cloud Save, publish L7 |
 | **Grudge ID only** | Same as guest until Puter linked | Same as guest | SSO identity ≠ Puter FS |
+| **GrudgeOS** ([puter-monitor-ai](https://puter-monitor-ai.vercel.app)) | Same Puter plane — OS **Forge** app lists KV `grudge:forge:projects:index` | OS Puter AI + fleet AI hub | Deep link `/editor?project=<id>&from=grudgeos` |
+
+### GrudgeOS wiring SSOT
+
+| Piece | Value |
+|-------|--------|
+| OS shell | `https://puter-monitor-ai.vercel.app` |
+| Bridge lib | PuterGrudge `public/grudgeos/lib/forge-cloud-bridge.js` |
+| KV index | `grudge:forge:projects:index` |
+| FS root | `Grudge/forge/` |
+| Open project | `https://forge.grudge-studio.com/editor?project=<id>&edit=1&from=grudgeos` |
 
 ## What lives where (never mix)
 

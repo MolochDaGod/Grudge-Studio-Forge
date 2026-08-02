@@ -40,11 +40,25 @@ export const FORGE_ENV = {
   ),
   openLauncher: viteEnv("VITE_OPEN_LAUNCHER_URL", "https://open.grudge-studio.com"),
   puterSite: viteEnv("VITE_PUTER_SITE_ORIGIN", "https://puter.com"),
+  /**
+   * GrudgeOS shell (puter-monitor-ai) — lists Forge projects from the same
+   * Puter KV/FS plane. See puter-monitor `forge-cloud-bridge.js`.
+   */
+  grudgeOs: viteEnv(
+    "VITE_GRUDGE_OS_URL",
+    "https://puter-monitor-ai.vercel.app",
+  ),
   /** Same-origin free-ai / catalog / agent (CF Worker routes). */
   freeAiBase: "/api/free-ai",
   catalogBase: "/api/catalog",
   agentBase: "/api/agent",
   knowledgeBase: "/api/knowledge",
+  /** Puter keys shared with GrudgeOS ForgeCloudBridge */
+  puter: {
+    kvProjectsIndex: "grudge:forge:projects:index",
+    kvNextId: "grudge:forge:nextId",
+    fsRoot: "Grudge/forge",
+  },
 } as const;
 
 /** Edge AI + catalog routes used by agentEdge / freeApiProvider. */
@@ -88,7 +102,10 @@ export function forgeEnvSnapshot(opts?: {
       puter: {
         kv: "grudge:forge:<collection>:index",
         fs: "Grudge/forge/<collection>/<id>.json",
+        projectsIndex: FORGE_ENV.puter.kvProjectsIndex,
+        fsRoot: FORGE_ENV.puter.fsRoot,
         requires: "Puter sign-in (isPuterSignedIn)",
+        grudgeOs: FORGE_ENV.grudgeOs,
       },
       edge: {
         agentJobs: "D1 forge-agent via /api/agent/*",
@@ -122,6 +139,13 @@ export function forgeEnvSnapshot(opts?: {
       guest: "local projects only; no Cloud Save / Puter AI account",
       puterCloud: "Grudge cloud user — projects in Puter KV+FS; share L7 puter_host",
       grudgeId: "SSO identity; does not replace Puter project FS",
+      grudgeOs:
+        "puter-monitor-ai.vercel.app lists the same Puter projects; open /editor?project=<id>",
+    },
+    aiBilling: {
+      fleet: "GBux for Grudge AI systems",
+      byok: "optional free-ai / provider keys",
+      local: "Ollama offline",
     },
   };
 }

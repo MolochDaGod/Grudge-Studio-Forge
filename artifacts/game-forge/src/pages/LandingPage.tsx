@@ -40,7 +40,7 @@ const FEATURES = [
   {
     icon: <Wand2 className="w-5 h-5" />,
     title: "AI Assistant",
-    desc: "Puter (free), Groq, OpenRouter, Gemini, Cerebras, DeepSeek, Ollama. Agentic tool loop builds scenes for you.",
+    desc: "Grudge AI systems billed in GBux. Also supports BYOK (Groq, OpenRouter, Gemini…) and local Ollama. Agentic tool loop builds scenes for you.",
     color: "#a78bfa",
   },
   {
@@ -70,18 +70,18 @@ const FEATURES = [
 ];
 
 const AI_PROVIDERS = [
-  { name: "Puter AI", hint: "Default · Free sign-in", color: "#f6c945" },
-  { name: "Groq / OpenRouter", hint: "Free API keys · ultra-fast", color: "#ff8a3d" },
-  { name: "Gemini · Cerebras · DeepSeek", hint: "BYOK free tiers", color: "#6aa9ff" },
+  { name: "Grudge AI (GBux)", hint: "Fleet models · billed in GBux", color: "#f6c945" },
+  { name: "Groq / OpenRouter", hint: "BYOK · ultra-fast", color: "#ff8a3d" },
+  { name: "Gemini · Cerebras · DeepSeek", hint: "BYOK optional", color: "#6aa9ff" },
   { name: "Ollama (Local)", hint: "Offline · full privacy", color: "#6bdc8b" },
 ];
 
-/** Best free + fleet services — see lib/bestServices.ts SSOT */
+/** Best fleet + external services — see lib/bestServices.ts SSOT */
 const BEST_SERVICES_LANDING = [
-  { name: "Grudge ID + Puter", hint: "SSO · free cloud FS / AI / publish", color: "#f6c945", url: "https://id.grudge-studio.com" },
+  { name: "Grudge ID + Puter", hint: "SSO · cloud FS / publish", color: "#f6c945", url: "https://id.grudge-studio.com" },
   { name: "Assets CDN + ObjectStore", hint: "R2 binaries · JSON catalogs", color: "#6aa9ff", url: "https://assets.grudge-studio.com" },
   { name: "Poly Haven CC0", hint: "Models · textures · HDRIs in editor", color: "#21d4ff", url: "https://polyhaven.com" },
-  { name: "AI free tier stack", hint: "Puter · Groq · OpenRouter · Gemini · Ollama", color: "#a78bfa", url: "https://forge.grudge-studio.com/editor" },
+  { name: "Grudge AI (GBux)", hint: "Fleet AI · GBux usage · BYOK / Ollama", color: "#a78bfa", url: "https://forge.grudge-studio.com/editor" },
   { name: "Character Foundry", hint: "Create heroes · airship cinema", color: "#ff6b57", url: "https://character.grudge-studio.com" },
   { name: "Grudge Pipeline", hint: "Ingest · bake · R2 · open packs in Forge", color: "#f0a030", url: "https://grudge-pipeline.vercel.app/" },
   { name: "UI Editor + Open", hint: "HUD packs · fleet play launcher", color: "#6bdc8b", url: "https://ui.grudge-studio.com" },
@@ -91,9 +91,9 @@ const BEST_SERVICES_LANDING = [
 
 const STATS = [
   { value: "100+", label: "Builtin 3D models (R2)" },
-  { value: "20+", label: "AI models (free + local)" },
+  { value: "20+", label: "AI models (GBux + BYOK)" },
   { value: "0", label: "Install for web editor" },
-  { value: "Free", label: "Customized Three.js editor" },
+  { value: "GBux", label: "Grudge AI usage" },
 ];
 
 export function LandingPage() {
@@ -117,25 +117,34 @@ export function LandingPage() {
       style={{ background: "#050608", fontFamily: FONTS.body }}
       data-landing
     >
-      {/* ── Animated background ── */}
+      {/* ── Background art (mainpage mead hall) ── */}
       <div className="fixed inset-0 pointer-events-none">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          style={{
+            backgroundImage: "url(/landing-mainpage.png)",
+            transform: `translateY(${scrollY * 0.08}px) scale(1.05)`,
+            willChange: "transform",
+          }}
+          aria-hidden
+        />
+        {/* Readability scrims — keep hero type legible over the art */}
         <div
           className="absolute inset-0"
           style={{
             background: `
-              radial-gradient(ellipse 1200px 600px at 30% 20%, rgba(246,201,69,0.06), transparent 60%),
-              radial-gradient(ellipse 800px 500px at 70% 60%, rgba(106,169,255,0.04), transparent 50%),
-              radial-gradient(ellipse 600px 400px at 50% 90%, rgba(167,139,250,0.05), transparent 50%)
+              linear-gradient(180deg, rgba(5,6,8,0.72) 0%, rgba(5,6,8,0.55) 28%, rgba(5,6,8,0.78) 70%, rgba(5,6,8,0.94) 100%),
+              radial-gradient(ellipse 1000px 520px at 50% 18%, rgba(246,201,69,0.08), transparent 55%),
+              radial-gradient(ellipse 700px 400px at 70% 70%, rgba(20,30,50,0.35), transparent 50%)
             `,
           }}
         />
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.025]"
           style={{
             backgroundImage:
               "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
             backgroundSize: "64px 64px",
-            transform: `translateY(${scrollY * 0.05}px)`,
           }}
         />
       </div>
@@ -209,10 +218,10 @@ export function LandingPage() {
       {/* ── Hero ── */}
       <section className="relative pt-32 pb-20 px-6">
         <div className="max-w-5xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/5 mb-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 backdrop-blur-sm mb-6">
             <Zap className="w-3 h-3 text-amber-400" />
-            <span className="text-[10px] text-amber-400/80 tracking-wider uppercase font-semibold">
-              Free · Customized Three.js Editor · Best Services Wired
+            <span className="text-[10px] text-amber-400/90 tracking-wider uppercase font-semibold">
+              Grudge Studio · Forge · AI billed in GBux
             </span>
           </div>
 
@@ -220,20 +229,21 @@ export function LandingPage() {
             style={{ fontFamily: FONTS.display }}
             className="text-5xl md:text-7xl font-black tracking-wide mb-4 leading-[1.1]"
           >
-            <span className="bg-gradient-to-b from-white via-[#e8ecf4] to-[#8a93a8] bg-clip-text text-transparent">
-              Free Three.js Editor
+            <span className="bg-gradient-to-b from-white via-[#e8ecf4] to-[#8a93a8] bg-clip-text text-transparent drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)]">
+              Grudge Studio
             </span>
             <br />
             <span className="bg-gradient-to-r from-amber-400 via-amber-200 to-amber-400 bg-clip-text text-transparent">
-              Customized for Grudge
+              Forge Editor
             </span>
           </h1>
 
-          <p className="text-white/40 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            Browser-native scene editor built on three.js DNA — R3F, Rapier, AI Worker,
-            Poly Haven, and the full Grudge fleet (CDN, ObjectStore, Foundry, Open).
-            Use free tiers or go{" "}
-            <span className="text-white/60 font-medium">fully offline</span> with Ollama.
+          <p className="text-white/50 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed drop-shadow-[0_1px_12px_rgba(0,0,0,0.6)]">
+            Grudge Studio product — browser-native scene editor on three.js DNA
+            (R3F, Rapier, hierarchy, gizmos) wired to the full fleet (CDN,
+            ObjectStore, Foundry, Open). Grudge AI systems cost{" "}
+            <span className="text-amber-300/90 font-medium">GBux</span>; BYOK and
+            local Ollama remain available.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -330,8 +340,9 @@ export function LandingPage() {
               All Best Services
             </h2>
             <p className="text-white/30 text-sm max-w-xl mx-auto">
-              Free AI, CC0 assets, Grudge fleet identity/CDN, and open three.js stack —
-              open Help → Best Services inside the editor for the full wired catalog.
+              Grudge fleet identity/CDN, CC0 assets, and open three.js stack —
+              Grudge AI billed in GBux. Open Help → Best Services in the editor for
+              the full wired catalog.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

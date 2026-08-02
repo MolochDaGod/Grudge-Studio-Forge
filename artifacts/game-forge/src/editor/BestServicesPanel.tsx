@@ -1,5 +1,6 @@
 /**
- * Help → Best Services — free + fleet services for the customized Three.js editor.
+ * Help → Best Services — fleet + optional services for Grudge Studio Forge.
+ * Grudge AI usage is billed in GBux.
  */
 import { useEffect, useState } from "react";
 import {
@@ -123,12 +124,13 @@ export function BestServicesPanel({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-5 text-amber-400" />
-            Best services · free Three.js editor
+            Best services · Grudge Studio Forge
           </DialogTitle>
           <DialogDescription>
-            Grudge Forge is a free, customized three.js / R3F editor. These are
-            the fleet services and free externals already wired (or one click
-            away). BYOK keys stay in your browser.
+            Grudge Studio Forge is a three.js / R3F product editor. These are
+            the fleet services and optional externals already wired (or one
+            click away). Grudge AI usage costs GBux; BYOK keys stay in your
+            browser.
           </DialogDescription>
         </DialogHeader>
 

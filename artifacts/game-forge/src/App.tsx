@@ -42,6 +42,7 @@ function EditorShell() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const projectId = useEditor((s) => s.projectId);
+  const setProject = useEditor((s) => s.setProject);
   const setTransformMode = useEditor((s) => s.setTransformMode);
   const pushLog = useEditor((s) => s.pushLog);
   const isPlaying = useEditor((s) => s.isPlaying);
@@ -65,8 +66,12 @@ function EditorShell() {
 
   const { data: projects } = useListProjects();
 
-  // Auto-open picker if no project loaded
+  // Auto-open picker if no project loaded (skip when deep-linking ?project=)
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams(window.location.search).get("project");
+      if (q) return;
+    }
     if (!projectId && projects && projects.length === 0) {
       setPickerOpen(true);
     }
@@ -76,10 +81,57 @@ function EditorShell() {
   useEffect(() => {
     pushLog(
       "info",
-      "GameForge ready · free Three.js editor · Help → Best Services · Rapier · R3F · AI",
+      "GameForge ready · Grudge Studio Forge · Help → Best Services · Rapier · R3F · AI (GBux)",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // GrudgeOS (puter-monitor-ai) deep link: /editor?project=<id>&from=grudgeos
+  // Same Puter KV/FS plane as OS Forge app — sign-in must match.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("project");
+    if (!raw) return;
+    const id = Number.parseInt(raw, 10);
+    if (!Number.isFinite(id) || id <= 0) return;
+    setProject(id);
+    setPickerOpen(false);
+    pushLog(
+      "info",
+      `Opened project #${id} from cloud deep link (${params.get("from") || "url"})`,
+    );
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("project");
+      // keep edit/from for a moment is fine; strip project only
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }, [setProject, pushLog]);
+
+  // postMessage from GrudgeOS: { type: 'grudge:forge:open-project', projectId }
+  useEffect(() => {
+    const onMsg = (ev: MessageEvent) => {
+      const data = ev.data;
+      if (!data || data.type !== "grudge:forge:open-project") return;
+      const origin = typeof ev.origin === "string" ? ev.origin : "";
+      const ok =
+        origin.includes("puter-monitor-ai") ||
+        origin.includes("localhost") ||
+        origin.includes("127.0.0.1") ||
+        origin.endsWith(".vercel.app");
+      if (!ok) return;
+      const id = Number(data.projectId);
+      if (!Number.isFinite(id) || id <= 0) return;
+      setProject(id);
+      setPickerOpen(false);
+      pushLog("info", `Opened project #${id} from GrudgeOS postMessage`);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [setProject, pushLog]);
 
   // Best Services panel / external shells open AI Worker or project picker via bus
   useEffect(() => {

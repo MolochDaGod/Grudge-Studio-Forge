@@ -1,8 +1,9 @@
 /**
- * Best free + Grudge fleet services wired into the free Three.js editor (Forge).
+ * Best Grudge fleet + optional external services wired into Grudge Studio Forge.
  *
  * SSOT for Help → Best Services, landing page, and AI Worker knowledge.
  * Prefer fleet domains for production; free externals stay optional BYOK.
+ * Grudge AI systems are billed in GBux (not free product positioning).
  */
 
 export type ServiceTier = "fleet" | "free" | "byok" | "local";
@@ -43,11 +44,20 @@ export const BEST_SERVICES: BestService[] = [
   // ── Editor (this product) ──────────────────────────────────────────
   {
     id: "forge",
-    name: "Grudge Forge",
+    name: "Grudge Studio Forge",
     category: "editor",
     tier: "fleet",
-    blurb: "Free customized Three.js editor · R3F · Rapier · AI Worker",
+    blurb: "Scene editor product · R3F · Rapier · AI (GBux) · Puter project cloud",
     url: "https://forge.grudge-studio.com/editor",
+    wired: true,
+  },
+  {
+    id: "grudgeos",
+    name: "GrudgeOS (Puter Monitor AI)",
+    category: "tools",
+    tier: "fleet",
+    blurb: "WebOS shell · lists Forge projects from Puter KV/FS · Fleet Hub",
+    url: "https://puter-monitor-ai.vercel.app",
     wired: true,
   },
   {
@@ -382,17 +392,22 @@ export function servicesByCategory(): Array<{
   }));
 }
 
-/** Landing / marketing chips — short list of free differentiators. */
+/** Landing / marketing chips — short list of product differentiators. */
 export const LANDING_SERVICE_HIGHLIGHTS = [
   {
-    name: "Free Three.js editor",
-    hint: "Customized Forge · hierarchy · gizmos · GLB pipeline",
+    name: "Grudge Studio Forge",
+    hint: "Scene editor · hierarchy · gizmos · GLB pipeline",
     color: "#f6c945",
   },
   {
-    name: "Puter + free AI keys",
-    hint: "Groq · OpenRouter · Gemini · Cerebras · Ollama",
+    name: "Grudge AI (GBux)",
+    hint: "Fleet AI billed in GBux · BYOK · Ollama optional",
     color: "#a78bfa",
+  },
+  {
+    name: "GrudgeOS cloud",
+    hint: "puter-monitor-ai · Puter projects · Fleet Hub",
+    color: "#00f5ff",
   },
   {
     name: "Poly Haven CC0",

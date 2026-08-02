@@ -66,13 +66,13 @@ export function WelcomeModal() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="size-5 text-[#d4af37]" />
-            Free Three.js editor · Grudge Forge
+            Grudge Studio · Forge
           </DialogTitle>
           <DialogDescription>
-            Customized free three.js / R3F editor for Grudge Studio. Sign in
-            with Puter for cloud saves, free Puter AI, and one-click publish —
-            or continue as guest. Help → Best Services lists every free +
-            fleet integration (CDN, Poly Haven, Groq, Ollama…).
+            Grudge Studio scene editor (three.js / R3F). Sign in with Puter for
+            cloud saves and one-click publish — or continue as guest. Grudge AI
+            systems cost GBux; BYOK and local Ollama are optional. Help → Best
+            Services lists fleet integrations (CDN, Poly Haven, Groq…).
           </DialogDescription>
         </DialogHeader>
 
@@ -82,8 +82,8 @@ export function WelcomeModal() {
             editor parity with Rapier physics.
           </li>
           <li>
-            Free AI: Puter models, BYOK Groq / OpenRouter / Gemini, or local
-            Ollama — no paid Anthropic key required.
+            AI: Grudge fleet models billed in GBux · optional BYOK (Groq /
+            OpenRouter / Gemini) or local Ollama.
           </li>
           <li>
             Assets: Poly Haven CC0 + Grudge CDN / ObjectStore · publish to{" "}
