@@ -38,6 +38,7 @@ function makeParticleGeo(
 }
 
 const WEATHER_VERT = /* glsl */ `
+  precision highp float;
   attribute float aSeed;
   varying float vAlpha;
   varying float vSeed;
@@ -67,7 +68,9 @@ const WEATHER_VERT = /* glsl */ `
 `;
 
 const WEATHER_FRAG = /* glsl */ `
-  precision mediump float;
+  // Match vertex highp — shared uniforms/varyings must not mix mediump/highp
+  // (THREE.WebGLProgram VALIDATE_STATUS / precision mismatch).
+  precision highp float;
   varying float vAlpha;
   varying float vSeed;
   uniform vec3 uColor;

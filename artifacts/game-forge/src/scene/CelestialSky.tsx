@@ -31,6 +31,7 @@ function hexToVec3(hex: string | undefined, fallback: THREE.Color): THREE.Vector
 }
 
 const SKY_VERT = /* glsl */ `
+  precision highp float;
   varying vec3 vWorldPos;
   varying vec2 vUv;
   void main() {
@@ -297,7 +298,11 @@ function SkyDome({
   }, [radius, stars]);
 
   const starMat = useMemo(() => {
+    // WebGL requires matching precision for any uniform declared in BOTH
+    // stages (r185 VALIDATE_STATUS). Vertex defaults to highp; fragment
+    // must not use mediump for shared uniforms like uTime.
     return new THREE.ShaderMaterial({
+      name: "CelestialStars",
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -307,6 +312,7 @@ function SkyDome({
         uBright: { value: stars },
       },
       vertexShader: /* glsl */ `
+        precision highp float;
         attribute float aPhase;
         varying float vPhase;
         uniform float uTime;
@@ -319,7 +325,7 @@ function SkyDome({
         }
       `,
       fragmentShader: /* glsl */ `
-        precision mediump float;
+        precision highp float;
         varying float vPhase;
         uniform float uTime;
         uniform float uNight;
