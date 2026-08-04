@@ -5,6 +5,30 @@ All notable changes to **Grudge GameForge** are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/).
 
+## [0.4.2] — 2026-08-04
+
+### Added
+
+- **Forge AI orchestrator** — no model dropdown; best-available provider + automatic failover (fleet Groq/Together → Puter → BYOK → Ollama)
+- **Intent chips** — Auto / Scene / Assets / Physics / Script / Fix / Deploy with knowledge packs
+- **⚙ Routing user settings** (`aiUserSettings` + `AiRoutingSettings`):
+  - Custom **system prompt** (appended every turn; cannot override SI / CDN policy)
+  - **Allowed APIs** allowlist for orchestrator failover
+  - **Offline only** / **prefer Ollama when running**
+  - **Auto-start Ollama** (probe + desktop IPC if available; else `ollama serve` guidance)
+  - Ollama URL + **Start / check**
+- Docs: [`docs/FORGE_AI_ORCHESTRATOR.md`](./docs/FORGE_AI_ORCHESTRATOR.md)
+
+### Fixed
+
+- **Builtin assets loaded as wireframe “shapes”** — HTML error pages were treated as GLB; builtins resolve via R2 CDN + edge `/builtin` proxy
+
+### Deploy
+
+- SPA: GHA Deploy Forge SPA → Vercel prebuilt → `forge.grudge-studio.com`
+- Workers: `grudge-gameforge-web` (builtin→R2), `grudge-forge-free-ai`
+- Live: https://forge.grudge-studio.com/editor
+
 ## [0.4.1] — 2026-08-04
 
 ### Added
@@ -74,6 +98,7 @@ Versioning follows [SemVer](https://semver.org/).
 
 - Offline AI, asset pipeline, dungeon prefab
 
+[0.4.2]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.2
 [0.4.1]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.0
 [0.3.1]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.3.1

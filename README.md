@@ -11,7 +11,8 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 | **Hybrid C# docs** | [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) |
 | **Deploy guide** | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
 | **Docs site (Pages)** | [molochdagod.github.io/Grudge-Studio-Forge](https://molochdagod.github.io/Grudge-Studio-Forge/) |
-| **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) |
+| **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) · latest **[v0.4.2](./RELEASE_NOTES_v0.4.2.md)** |
+| **Forge AI orchestrator** | [`docs/FORGE_AI_ORCHESTRATOR.md`](./docs/FORGE_AI_ORCHESTRATOR.md) |
 | **Edge + MCP** | [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) |
 
 ## Production status (current)
@@ -47,7 +48,9 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 - **Projects** — create/open/save scenes **local** (browser) or **Puter cloud** when signed in
 - **Fast options** — one-click races, maps, VFX, RTS, weapons (`list_fast_assets` / Asset Browser → Fast)
 - **Agent edge** — fleet Groq/Together via `/api/free-ai`, Fast catalog, D1 agent jobs
-- **AI providers** — Puter AI · free OpenAI-compatible (Groq, Together, …) · Ollama offline · optional Anthropic
+- **Forge AI orchestrator** — no model dropdown; best-available failover + intent chips (Scene / Fix / Deploy / …); knowledge packs
+- **⚙ Routing settings** — custom system prompt, allowed APIs allowlist, offline / prefer Ollama, auto-start Ollama + URL check (localStorage)
+- **AI providers** — Puter · fleet free-ai (Groq/Together) · BYOK (OpenRouter, Gemini, …) · Ollama offline · optional Anthropic
 - **Inline AI** — contextual prompt bar on Console / Assets / Scripts / Prefabs / Nodes / Layers
 - **Visual scripting** — @xyflow node graph + AI prompt-to-graph
 - **Monaco scripts** — smart templates (WASD, third-person camera, Mirror-style NetworkManager, remotes, outline, R2 character) + Blazor packs
@@ -57,7 +60,7 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 - **RTS / skirmish** — Fort Royale-style modes with units, buildings, economy HUD
 - **GitHub project sync** — scenes + scripts as a project tree
 - **Scene templates** — deathmatch, RPG village, dungeon interior
-- **Builtin + CDN models** — `builtin:` keys resolve to R2; Fast catalog for agentic spawn
+- **Builtin + CDN models** — `builtin:` keys resolve to R2 (edge `/builtin` proxy); Fast catalog for agentic spawn — not HTML placeholders
 - **R3F player runtime** — same stack as the editor (`artifacts/player`)
 - **Recast + Yuka** — navmesh bake and AI agents
 - **Puter + Grudge ID** — SSO, cloud FS, publish paths for fleet games

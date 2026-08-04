@@ -16,7 +16,7 @@ description: Semver, GitHub Releases, and desktop vs SPA ship process for Forge.
 | **MINOR** | Features (agent edge, scripts, projects) |
 | **PATCH** | Fixes only |
 
-Tags: `vX.Y.Z` (e.g. `v0.4.0`).
+Tags: `vX.Y.Z` (e.g. `v0.4.2`). Latest product notes: root `RELEASE_NOTES_v*.md` + `CHANGELOG.md`.
 
 ## SPA (primary product)
 
