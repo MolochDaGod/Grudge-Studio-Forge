@@ -29,6 +29,7 @@ import {
 import {
   PlayCameraController,
   EditorOrbitControls,
+  OrbitGizmoArbitration,
 } from "@/scene/CameraControllers";
 import { buildTree } from "@/lib/hierarchy";
 import type { SceneEntity, EntityType } from "@/scene/types";
@@ -234,7 +235,12 @@ function SceneEditMode({
       }
     };
     ctl.addEventListener("dragging-changed", handler);
-    return () => ctl.removeEventListener("dragging-changed", handler);
+    return () => {
+      ctl.removeEventListener("dragging-changed", handler);
+      // Selection / gizmo remount must not leave orbit hard-disabled.
+      gizmoDragGate.active = false;
+      gizmoDragGate.releasedAt = performance.now();
+    };
   }, [selectedRef]);
 
   const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
@@ -1159,8 +1165,11 @@ export function Viewport() {
                     infiniteGrid
                     position={[0, -0.001, 0]}
                   />
-                  {/* Unity-like: MMB pan, free wheel zoom (no distance clamp) */}
+                  {/* Unity-like: MMB pan, free wheel zoom (no distance clamp).
+                      OrbitGizmoArbitration keeps pan/zoom free while selected —
+                      selection must never hard-block the viewport camera. */}
                   <EditorOrbitControls makeDefault />
+                  <OrbitGizmoArbitration />
                   <FocusCameraController />
                 </>
               )}

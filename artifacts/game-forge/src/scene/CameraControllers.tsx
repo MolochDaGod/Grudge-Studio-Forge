@@ -14,6 +14,15 @@ import {
   isClimbSurface,
 } from "@/scene/PlayRuntime";
 import { getRaceClips } from "@/lib/builtinModels";
+import { gizmoDragGate } from "@/editor/gizmoDragGate";
+
+/** OrbitControls-shaped subset we touch for gizmo arbitration. */
+type OrbitLike = {
+  enabled: boolean;
+  enableRotate: boolean;
+  enablePan: boolean;
+  enableZoom: boolean;
+};
 
 /** Publish the desired animation clip name for an entity into the same
  *  `window.__agentClips` map the FSM agent bridge writes to (see
@@ -291,6 +300,52 @@ export function EditorOrbitControls({
 
 export function EditorCameraController() {
   return <EditorOrbitControls makeDefault />;
+}
+
+/**
+ * Keep editor orbit free while an entity is selected.
+ *
+ * drei's TransformControls sets `state.controls.enabled = false` for the
+ * entire gizmo drag. That blocks LMB orbit **and** MMB pan / wheel zoom.
+ * If TransformControls remounts mid-drag (selection change), the
+ * `dragging-changed` false event never fires and orbit stays hard-locked.
+ *
+ * Policy:
+ * - Never leave `enabled === false` while not gizmo-dragging.
+ * - While gizmo-dragging: keep pan + zoom alive; only suppress rotate so
+ *   LMB drives the gizmo without tumbling the camera.
+ */
+export function OrbitGizmoArbitration() {
+  const { controls } = useThree();
+
+  useFrame(() => {
+    const c = controls as unknown as OrbitLike | null;
+    if (!c || typeof c.enabled !== "boolean") return;
+
+    // Always keep the controller instance enabled so pan/zoom work.
+    if (c.enabled === false) c.enabled = true;
+
+    if (gizmoDragGate.active) {
+      // LMB is owned by the gizmo; MMB pan + wheel still work.
+      if (c.enableRotate !== false) c.enableRotate = false;
+      if (c.enablePan === false) c.enablePan = true;
+      if (c.enableZoom === false) c.enableZoom = true;
+    } else {
+      if (c.enableRotate === false) c.enableRotate = true;
+      if (c.enablePan === false) c.enablePan = true;
+      if (c.enableZoom === false) c.enableZoom = true;
+    }
+  });
+
+  // If this component unmounts mid-drag (leave edit mode), clear the gate
+  // so the next orbit mount is not stuck.
+  useEffect(() => {
+    return () => {
+      gizmoDragGate.active = false;
+    };
+  }, []);
+
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */
