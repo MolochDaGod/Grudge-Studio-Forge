@@ -1,0 +1,2132 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-08-02T03:40:44.976Z",
+  "count": 118,
+  "spawnable": 111,
+  "items": [
+    {
+      "id": "ummorpg-placeable/air_ship",
+      "label": "Air Ship",
+      "group": "vehicles",
+      "kind": "vehicle",
+      "category": "airship",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/air_ship.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Air_Ship.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Vehicles Land/Air Ship.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/armory_icon",
+      "label": "Armory",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/armory_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Armory_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Armory.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/arsenal_icon",
+      "label": "Arsenal",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/arsenal_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Arsenal_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Arsenal.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barb_archer",
+      "label": "Barb Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/barb_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/barb_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Barbarian Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barb_merc",
+      "label": "Barb Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Barb_merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Barbarian Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barb_paladin",
+      "label": "Barb Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/barb_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Barbarian Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barb_warrior",
+      "label": "Barb Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/barb_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/barb_warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Barbarian Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barbarian_cabin",
+      "label": "Barbarian Cabin",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/barbarian_cabin.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/barbarian_cabin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Barbarian House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/barbarian_mage",
+      "label": "Barbarian Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/barbarian_Mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Barbarian Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/battle_ship",
+      "label": "Battle Ship",
+      "group": "vehicles",
+      "kind": "vehicle",
+      "category": "ship",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/battle_ship.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Battle_Ship.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Vehicles Water/Battle Ship.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/bed_icon",
+      "label": "Bed",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Bed_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/blacksmith_icon",
+      "label": "Blacksmith",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/blacksmith_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Blacksmith_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Black Smith.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/boat_icon",
+      "label": "Boat",
+      "group": "vehicles",
+      "kind": "vehicle",
+      "category": "ship",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/boat_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Boat_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Vehicles Water/Vehicle Small Sailboat 1.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/bolt_thrower",
+      "label": "Bolt Thrower",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/bolt_thrower.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Bolt_Thrower.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Siege/Crusade Bolt Thrower.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/brute_mecha_icon",
+      "label": "Brute Mecha",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/brute_mecha_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Brute_Mecha_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Mecha/Brute Mecha.prefab",
+      "blurb": "Remaining mecha/totem resolve (Unity FBX export folder empty)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/campfire",
+      "label": "Campfire",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fire",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/campfire.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Campfire.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Campfire.prefab",
+      "blurb": "DAE via Blender glTF export → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/castle_gate_icon",
+      "label": "Castle Gate",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/castle_gate_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Castle_Gate_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Gate.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/castle_stairs_icon",
+      "label": "Castle Stairs",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/castle_stairs_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Castle_Stairs_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Wood Stairs.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/castle_wall_icon",
+      "label": "Castle Wall",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/castle_wall_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Castle_Wall_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Wall.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/catamaran",
+      "label": "Catamaran",
+      "group": "vehicles",
+      "kind": "vehicle",
+      "category": "ship",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/catamaran.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Catamaran.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Vehicles Water/Catamaran.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/catapult",
+      "label": "Catapult",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/catapult.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Catapult.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Siege/Crusade Catapult.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/chair",
+      "label": "Chair",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/chair.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Chair.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Chair.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dark_horse",
+      "label": "Dark Horse",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/dark_horse.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Dark_Horse.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Dark Horse.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dragon_glider_icon",
+      "label": "Dragon Glider",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/dragon_glider_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Dragon_Glider_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/World Mounts/Dragon Fly Mecha.prefab",
+      "blurb": "Remaining mecha/totem resolve (Unity FBX export folder empty)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarf_archer",
+      "label": "Dwarf Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/dwarf_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/dwarf_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Dwarve Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarf_house",
+      "label": "Dwarf House",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/dwarf_house.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/dwarf_house.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Fabled/Dwarf House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarf_mage",
+      "label": "Dwarf Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/dwarf_mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Dwarve Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarf_paladin",
+      "label": "Dwarf Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/dwarf_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Dwarve Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarf_warrior",
+      "label": "Dwarf Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/dwarf_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/dwarf_warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Dwarve Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/dwarve_merc",
+      "label": "Dwarve Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Dwarve_merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Dwarve Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_archer",
+      "label": "Elf Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/elf_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/elf_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Elf Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_house",
+      "label": "Elf House",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/elf_house.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/elf_house.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Fabled/Elf House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_mage",
+      "label": "Elf Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ELF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/elf_mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Elf Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_merc",
+      "label": "Elf Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ELF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Elf_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Elf Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_paladin",
+      "label": "Elf Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ELF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/elf_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Elf Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/elf_warrior",
+      "label": "Elf Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/elf_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/elf_warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Elf Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/flag_icon",
+      "label": "Flag",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "claim_flag",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/flag_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Flag_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Claim Flag.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/foundry_icon",
+      "label": "Foundry",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/foundry_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Foundry_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Foundry.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_barb_merc",
+      "label": "Heavy Barb Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/BRB_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/heavy_barb_merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Barbarian Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_catapult",
+      "label": "Heavy Catapult",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/heavy_catapult.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Catapult.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Siege/Crusade Heavy Catapult.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_dwarve_merc",
+      "label": "Heavy Dwarve Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/DWF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Dwarve_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Dwarve Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_elf_merc",
+      "label": "Heavy Elf Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ELF_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Elf_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Elf Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_human_merc",
+      "label": "Heavy Human Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Human_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Human Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_orc_merc",
+      "label": "Heavy Orc Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ORC_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Orc_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Orc Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/heavy_undead_merc",
+      "label": "Heavy Undead Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Heavy_Undead_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Undead Defender.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/horse",
+      "label": "Horse",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/horse.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/horse.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Horse.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/house_icon",
+      "label": "House",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/house_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/House_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Human House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_archer",
+      "label": "Human Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/human_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/human_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Human Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_cabin",
+      "label": "Human Cabin",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/human_cabin.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Human_Cabin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Human House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_mage",
+      "label": "Human Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/human_mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Human Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_merc",
+      "label": "Human Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Human_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Human Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_paladin",
+      "label": "Human Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/WK_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/human_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Human Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/human_warrior",
+      "label": "Human Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/human_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Human_Warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Human Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/laboritory",
+      "label": "Laboritory",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/laboritory.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Laboritory.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Laboratory.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/ladder",
+      "label": "Ladder",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/ladder.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Ladder.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Ladder.prefab",
+      "blurb": "DAE via Blender glTF export → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/lamp_icon",
+      "label": "Lamp",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Lamp_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/large_furnace_icon",
+      "label": "Large Furnace",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/large_furnace_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Large_Furnace_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Large Furnace.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_alch",
+      "label": "Legion Alch",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_alch.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Alch.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Laboratory.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_armory",
+      "label": "Legion Armory",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_armory.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/legion_armory.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Armory.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_arsenal",
+      "label": "Legion Arsenal",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_arsenal.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Arsenal.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Arsenal.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_blacksmith",
+      "label": "Legion Blacksmith",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_blacksmith.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Blacksmith.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Black Smith.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_claim_flag",
+      "label": "Legion Claim Flag",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "claim_flag",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_claim_flag.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Claim_Flag.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Claim Flag.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_loom",
+      "label": "Legion Loom",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_loom.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Loom.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Loom.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_stable",
+      "label": "Legion Stable",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_stable.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Stable.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Stable.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_study",
+      "label": "Legion Study",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_study.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Study.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Study.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/legion_workbench",
+      "label": "Legion Workbench",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/legion_workbench.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Legion_Workbench.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Workbench.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/loom",
+      "label": "Loom",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/loom.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Loom.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Loom.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/market_icon",
+      "label": "Market",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Market_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_archer",
+      "label": "Orc Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/orc_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/orc_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Orc Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_hut",
+      "label": "Orc Hut",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/orc_hut.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/orc_hut.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Orc House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_mage",
+      "label": "Orc Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ORC_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/orc_mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Orc Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_merc",
+      "label": "Orc Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ORC_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Orc_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Orc Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_paladin",
+      "label": "Orc Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/ORC_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/orc_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Orc Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/orc_warrior",
+      "label": "Orc Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/orc_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/orc_warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Orc Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/ram_mount",
+      "label": "Ram Mount",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/ram_mount.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Ram_mount.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Ram.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/recycler_icon",
+      "label": "Recycler",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Recycler_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/refinery_icon",
+      "label": "Refinery",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/refinery_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Refinery_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Refinery.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/sawmill_icon",
+      "label": "Sawmill",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/sawmill_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Sawmill_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Sawmill.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/scorpid_launcher_icon",
+      "label": "Scorpid Launcher",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/scorpid_launcher_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Scorpid_Launcher_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Mecha/Scorpid Launcher Mecha.prefab",
+      "blurb": "Remaining mecha/totem resolve (Unity FBX export folder empty)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/siege_tower",
+      "label": "Siege Tower",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/buildings/towers/3_medieval_towers.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Siege_Tower.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "No high-confidence mesh in extract; needs Unity batch GLB export",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/skeeter_icon",
+      "label": "Skeeter",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/skeeter_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Skeeter_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Mecha/Skeeter Mecha.prefab",
+      "blurb": "Remaining mecha/totem resolve (Unity FBX export folder empty)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/small_furnace_icon",
+      "label": "Small Furnace",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/small_furnace_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Small_Furnace_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Large Furnace.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/small_wardrobe_icon",
+      "label": "Small Wardrobe",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Small_Wardrobe_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/stable_icon",
+      "label": "Stable",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/stable_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Stable_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Stable.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/stone_gate_icon",
+      "label": "Stone Gate",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/stone_gate_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Stone_Gate_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Gate.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/stone_stairs_icon",
+      "label": "Stone Stairs",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/stone_stairs_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Stone_Stairs_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Fabled/Wood Stairs 1.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/stone_wall_icon",
+      "label": "Stone Wall",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/stone_wall_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Stone_Wall_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Wall.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/storage",
+      "label": "Storage",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/storage.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Storage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Storage Crate.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/study",
+      "label": "Study",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "camp_building",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/study.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Study.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Study.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/table_icon",
+      "label": "Table",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Table_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tannery",
+      "label": "Tannery",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tannery.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tannery.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Tannery.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_cruisade_icon",
+      "label": "Tent Cruisade",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_cruisade_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Cruisade_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_cruisade_small",
+      "label": "Tent Cruisade Small",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_cruisade_small.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Cruisade_Small.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_fabled_icon",
+      "label": "Tent Fabled",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_fabled_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Fabled_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Fabled/Fabled Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_fabled_small",
+      "label": "Tent Fabled Small",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_fabled_small.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Fabled_Small.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Fabled/Fabled Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_legion_icon",
+      "label": "Tent Legion",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_legion_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Legion_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tent_legion_small",
+      "label": "Tent Legion Small",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "tent",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/tent_legion_small.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Tent_Legion_Small.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Legion Tent.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/totem_2",
+      "label": "Totem 2",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/totem_2.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/totem_2.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Fire Totem.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/totem_3",
+      "label": "Totem 3",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/totem_3.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/totem_3.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Water totem.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/totem_4",
+      "label": "Totem 4",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/totem_4.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/totem_4.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Wind totem.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/totem1",
+      "label": "Totem1",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "structure",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/totem1.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/totem1.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structures/Earth totem.prefab",
+      "blurb": "Earth totem stand-in from totem_2 until Unity export",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tower",
+      "label": "Tower",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/buildings/towers/3_medieval_towers.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/tower.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "No high-confidence mesh in extract; needs Unity batch GLB export",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/tower_2",
+      "label": "Tower 2",
+      "group": "props",
+      "kind": "siege",
+      "category": "siege",
+      "modelUrl": "https://assets.grudge-studio.com/models/buildings/towers/3_medieval_towers.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/tower_2.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "No high-confidence mesh in extract; needs Unity batch GLB export",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/und_horse",
+      "label": "Und Horse",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/und_horse.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/und_horse.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Undead Horse.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_archer",
+      "label": "Undead Archer",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/undead_archer.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/undead_archer.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Undead Ranger.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_crypt",
+      "label": "Undead Crypt",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "race_home",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/undead_crypt.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/undead_crypt.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Legion/Undead House.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_mage",
+      "label": "Undead Mage",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/undead_mage.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Undead Mage.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_merc",
+      "label": "Undead Merc",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Undead_Merc.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Monsters/Deployable Mercs/Undead Guard.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_paladin",
+      "label": "Undead Paladin",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/grudge6/races/UD_Characters.fbx",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/undead_paladin.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Undead Paladin.prefab",
+      "blurb": "Warlords unit → grudge6 race kit on CDN (Unity extract was modular kit noise)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/undead_warrior",
+      "label": "Undead Warrior",
+      "group": "characters",
+      "kind": "unit",
+      "category": "unit",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/undead_warrior.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/undead_warrior.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Pets/Mercs/Undead Warrior.prefab",
+      "blurb": "Unity batch FBX export → grudge-convert → R2 (buildings pass)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/wardrobe_icon",
+      "label": "Wardrobe",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "furniture",
+      "modelUrl": null,
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Wardrobe_Icon.png",
+      "meshStatus": "unity_prefab_only",
+      "unityPrefab": null,
+      "blurb": "Icon registered; 3D mesh pending bake/upload",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": false,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/white_horse",
+      "label": "White Horse",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/white_horse.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/White_Horse.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/White Horse.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/wolf_mount",
+      "label": "Wolf Mount",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/wolf_mount.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/wolf_mount.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Mounts/Wolf.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/wood_gate_icon",
+      "label": "Wood Gate",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/wood_gate_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Wood_Gate_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Gate.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/wood_stairs_icon",
+      "label": "Wood Stairs",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/wood_stairs_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Wood_Stairs_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Wood Stairs.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/wood_wall_icon",
+      "label": "Wood Wall",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "fortification",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/wood_wall_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Wood_Wall_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Wall.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/workbench",
+      "label": "Workbench",
+      "group": "buildings",
+      "kind": "structure",
+      "category": "bench",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/workbench.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/Workbench.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Structure Crusade/Crusade Workbench.prefab",
+      "blurb": "Buildings pass: GUID/name resolve → grudge-convert → R2",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    },
+    {
+      "id": "ummorpg-placeable/yolocopter_icon",
+      "label": "YoloCopter",
+      "group": "vehicles",
+      "kind": "mount",
+      "category": "mount",
+      "modelUrl": "https://assets.grudge-studio.com/models/warlords/entities/yolocopter_icon.glb",
+      "iconUrl": "https://assets.grudge-studio.com/game-assets/icons/pack/entities/YoloCopter_Icon.png",
+      "meshStatus": "cdn_ready",
+      "unityPrefab": "Entities/Vehicles Land/Yolocopter.prefab",
+      "blurb": "Remaining mecha/totem resolve (Unity FBX export folder empty)",
+      "spawnY": 0,
+      "scale": 1,
+      "forge": {
+        "spawnable": true,
+        "source": "warlords-entity-prefabs + ummorpg extract"
+      }
+    }
+  ]
+}
