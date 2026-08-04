@@ -33,31 +33,23 @@ import { cn } from "@/lib/utils";
 import { AIIcon3D } from "@/editor/AIIcon3D";
 import { useEditor } from "@/store/editor";
 import { useToast } from "@/hooks/use-toast";
-import { runConversation, type ChatMessage } from "@/lib/aiClient";
-import { TOOL_DEFS, buildSystemPrompt } from "@/lib/aiTools";
-import {
-  MODELS,
-  DEFAULT_MODEL_ID,
-  findModel,
-  type ModelOption,
-} from "@/lib/ai/providers";
+import { type ChatMessage } from "@/lib/aiClient";
 import { useAuth } from "@/store/auth";
 import { signInWithPuter } from "@/lib/authBootstrap";
 import { FreeApiKeysPanel } from "@/editor/FreeApiKeysPanel";
-import {
-  hasProviderAccess,
-  refreshFleetServerKeys,
-  type FreeProviderId,
-} from "@/lib/ai/providers";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { isOllamaAvailable } from "@/lib/ai/providers/ollamaProvider";
+import { refreshFleetServerKeys } from "@/lib/ai/providers";
 import { MUTATING_TOOLS } from "@/ai/aiAuditLog";
+import {
+  runOrchestratedConversation,
+  probeRouting,
+  classifyIntent,
+  intentLabel,
+  pickBestModel,
+  statusLabel,
+  roleForIntent,
+  type ForgeIntent,
+  type RoutingProbe,
+} from "@/lib/ai/orchestrator";
 import {
   countCompletedSteps,
   extractEntityIdsFromTool,
@@ -168,46 +160,11 @@ export function AIWorkerPanel({
   const [streaming, setStreaming] = useState(false);
   const [ollamaOk, setOllamaOk] = useState(false);
   const [aiStatusHint, setAiStatusHint] = useState<string | null>(null);
-  const [fleetKeysTick, setFleetKeysTick] = useState(0);
-  // Per-project model selection: each project remembers which model it
-  // was last using. Falls back to the global default when the project
-  // hasn't picked one yet (or in pre-project state).
-  const modelStorageKey = projectId
-    ? `grudge.ai.model:${projectId}`
-    : "grudge.ai.model";
-  const [selectedModelId, setSelectedModelId] = useState<string>(() => {
-    try {
-      return (
-        localStorage.getItem(modelStorageKey) ||
-        localStorage.getItem("grudge.ai.model") ||
-        DEFAULT_MODEL_ID
-      );
-    } catch {
-      return DEFAULT_MODEL_ID;
-    }
-  });
-  // When the open project changes, re-hydrate the picker from that
-  // project's stored preference.
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(modelStorageKey);
-      if (stored) setSelectedModelId(stored);
-    } catch {
-      /* ignore */
-    }
-  }, [modelStorageKey]);
-  const selectedModel = useMemo(() => findModel(selectedModelId), [selectedModelId]);
-  // Stable ref so the in-flight `runConversation` can read the latest pick
-  // without resubscribing — model is captured at turn-start, not mid-stream.
-  const selectedModelRef = useRef<ModelOption>(selectedModel);
-  useEffect(() => {
-    selectedModelRef.current = selectedModel;
-    try {
-      localStorage.setItem(modelStorageKey, selectedModelId);
-    } catch {
-      /* private mode — non-fatal */
-    }
-  }, [selectedModel, selectedModelId, modelStorageKey]);
+  const [routeStatus, setRouteStatus] = useState("Probing AI…");
+  const [intentOverride, setIntentOverride] = useState<ForgeIntent | null>(null);
+  const [showRouting, setShowRouting] = useState(false);
+  const [forceOffline, setForceOffline] = useState(false);
+  const probeRef = useRef<RoutingProbe | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -263,60 +220,42 @@ export function AIWorkerPanel({
   const liveToolsRef = useRef<AIToolEvent[]>([]);
   const bumpLive = () => setLiveTick((t) => t + 1);
 
-  // Probe Ollama + free-ai proxy + legacy /api/ai/status when panel opens.
+  // Probe best-available AI route when panel opens (no model dropdown).
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
-      const ok = await isOllamaAvailable();
-      if (!cancelled) setOllamaOk(ok);
-
-      const bits: string[] = [];
       try {
-        const providers = await refreshFleetServerKeys(true);
-        if (!cancelled) setFleetKeysTick((t) => t + 1);
-        const serverKeys = Object.entries(providers)
+        const probe = await probeRouting({
+          puterSignedIn: useAuth.getState().isPuterSignedIn,
+          forceOffline,
+        });
+        if (cancelled) return;
+        probeRef.current = probe;
+        setOllamaOk(probe.ollamaOk);
+        const best = pickBestModel("orchestrator", probe);
+        setRouteStatus(statusLabel(best, probe));
+        const fleet = Object.entries(probe.fleet)
           .filter(([, v]) => v)
           .map(([k]) => k);
-        if (serverKeys.length > 0) {
-          bits.push(`Fleet AI: ${serverKeys.join(", ")} (no paste needed)`);
-        } else {
-          bits.push("Free AI proxy online · paste keys or use Puter");
-        }
+        const bits: string[] = [];
+        if (fleet.length) bits.push(`Fleet: ${fleet.join(", ")}`);
+        if (probe.puterSignedIn) bits.push("Puter on");
+        if (probe.ollamaOk) bits.push("Ollama on");
+        if (!bits.length) bits.push("BYOK or Puter / Ollama");
+        setAiStatusHint(bits.join(" · "));
+        void refreshFleetServerKeys(true);
       } catch {
-        /* free-ai optional */
-      }
-
-      try {
-        const res = await fetch("/api/ai/status", { signal: AbortSignal.timeout(4000) });
-        if (res.ok) {
-          const j = (await res.json()) as {
-            anthropic?: boolean;
-            hint?: string;
-            knowledge?: { r2?: boolean; d1?: boolean; githubToken?: boolean };
-          };
-          if (j.knowledge?.r2) bits.push("R2");
-          if (j.knowledge?.d1) bits.push("D1");
-          if (j.anthropic) bits.push("Anthropic");
-          else if (j.hint) bits.push("Anthropic off");
-        }
-      } catch {
-        /* legacy status often 404 on edge worker */
-      }
-
-      if (!cancelled) {
-        if (bits.length) setAiStatusHint(bits.join(" · "));
-        else {
-          setAiStatusHint(
-            "Use Puter (sign-in) or Free API keys (Groq…). Local Ollama works offline.",
-          );
+        if (!cancelled) {
+          setRouteStatus("Offline · check Routing");
+          setAiStatusHint("Open ⚙ Routing for keys or start Ollama.");
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, forceOffline, isPuterSignedIn]);
 
   const interrupt = () => {
     if (!abortRef.current) return;
@@ -378,54 +317,58 @@ export function AIWorkerPanel({
     }
     apiMessages.push({ role: "user", content: [{ type: "text", text: trimmed }] });
 
-    const system = buildSystemPrompt();
     const turnTools: AIToolEvent[] = [];
     let turnText = "";
     let turnError: string | undefined;
 
-    // Puter is the free default — ensure session on the same click that sent the message
-    // (popup blockers require a user gesture stack).
-    const modelForTurn = selectedModelRef.current;
-    if (modelForTurn.provider === "puter" && !useAuth.getState().isPuterSignedIn) {
+    // Orchestrator: probe best route + failover (no model dropdown).
+    let probe = probeRef.current;
+    if (!probe) {
+      probe = await probeRouting({
+        puterSignedIn: useAuth.getState().isPuterSignedIn,
+        forceOffline,
+      });
+      probeRef.current = probe;
+      setOllamaOk(probe.ollamaOk);
+    } else if (forceOffline !== !!probe.forceOffline) {
+      probe = { ...probe, forceOffline };
+      probeRef.current = probe;
+    }
+
+    const intent = classifyIntent(trimmed, intentOverride);
+    const best = pickBestModel(roleForIntent(intent), probe);
+
+    // Puter models need a signed-in session; prompt on gesture if chain starts with Puter.
+    if (best.provider === "puter" && !useAuth.getState().isPuterSignedIn) {
       try {
         await signInWithPuter();
         toast({
           title: "Signed in with Puter",
           description: "Using free Puter AI models.",
         });
-      } catch (err) {
-        setStreaming(false);
-        abortRef.current = null;
-        const msg = err instanceof Error ? err.message : String(err);
-        pushLog("warn", `Puter sign-in required for AI: ${msg}`);
-        toast({
-          title: "Puter sign-in required",
-          description: msg || "Sign in with Puter to use free AI, then send again.",
-          variant: "destructive",
+        probe = await probeRouting({
+          puterSignedIn: true,
+          forceOffline,
         });
-        // Keep the user message in history so they can retry after sign-in.
-        setHistory((h) => [
-          ...h,
-          {
-            id: turnId,
-            kind: "ai",
-            turn: {
-              id: turnId,
-              text: "",
-              plan: [],
-              nextActions: [],
-              tools: [],
-              error: `Puter sign-in required: ${msg}`,
-            },
-          },
-        ]);
-        return;
+        probeRef.current = probe;
+      } catch (err) {
+        // Continue — orchestrator will fail over to fleet/BYOK/Ollama
+        pushLog(
+          "warn",
+          `Puter sign-in skipped: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
     try {
-      await runConversation(apiMessages, TOOL_DEFS, system, {
-        model: modelForTurn,
+      await runOrchestratedConversation(apiMessages, {
+        userText: trimmed,
+        intentOverride,
+        probe,
+        onRoute: ({ status, intent: i }) => {
+          setRouteStatus(`${intentLabel(i)} · ${status}`);
+        },
+        handlers: {
         onTextDelta: (t) => {
           liveTextRef.current += t;
           // Lock the plan in as soon as the closing tag streams in. Once
@@ -482,6 +425,7 @@ export function AIWorkerPanel({
           pushLog("error", `AI Worker: ${err}`);
         },
         signal: controller.signal,
+        },
       });
     } catch (err) {
       turnError = (err as Error).message;
@@ -658,19 +602,16 @@ export function AIWorkerPanel({
         <div className="flex items-center gap-2">
           <AIIcon3D size={18} active={streaming} />
           <span className="font-heading text-[11px] uppercase tracking-[0.22em] brand-gold">
-            AI Worker
+            Forge AI
           </span>
           {streaming && <Loader2 className="size-3 animate-spin text-primary" />}
           <span
             className={cn(
-              "text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border",
-              isPuterSignedIn
-                ? "border-emerald-500/40 text-emerald-400"
-                : "border-border text-muted-foreground",
+              "text-[9px] max-w-[140px] truncate tracking-wider px-1.5 py-0.5 rounded border border-primary/30 text-primary",
             )}
-            title="Puter AI (free cloud models)"
+            title={routeStatus}
           >
-            Puter {isPuterSignedIn ? "on" : "off"}
+            {routeStatus}
           </span>
           <span
             className={cn(
@@ -721,11 +662,11 @@ export function AIWorkerPanel({
         </div>
       </div>
 
-      {!isPuterSignedIn && (
+      {!isPuterSignedIn && !forceOffline && (
         <div className="px-3 py-2 border-b border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-100/90 space-y-1.5 shrink-0">
           <p className="leading-snug">
-            <strong className="text-amber-200">Sign in with Puter</strong> to use free agentic models
-            (Claude / GPT / Gemini). Server Anthropic is optional; Ollama works offline when running locally.
+            <strong className="text-amber-200">Optional:</strong> Sign in with Puter for free cloud
+            models. Fleet Groq/Together and ⚙ Routing BYOK work without Puter.
           </p>
           <Button
             size="sm"
@@ -833,7 +774,62 @@ export function AIWorkerPanel({
       </ScrollArea>
 
       <div className="border-t border-border p-2 space-y-2 shrink-0">
-        <FreeApiKeysPanel compact />
+        <div className="flex flex-wrap gap-1" data-testid="ai-intent-chips">
+          {(
+            [
+              [null, "Auto"],
+              ["scene", "Scene"],
+              ["model", "Assets"],
+              ["physics", "Physics"],
+              ["script", "Script"],
+              ["diagnose", "Fix"],
+              ["deploy", "Deploy"],
+            ] as const
+          ).map(([id, label]) => {
+            const active = intentOverride === id || (id === null && intentOverride === null);
+            return (
+              <button
+                key={label}
+                type="button"
+                disabled={streaming}
+                onClick={() => setIntentOverride(id)}
+                className={cn(
+                  "text-[10px] px-1.5 py-0.5 rounded border transition-colors",
+                  active
+                    ? "border-primary/50 bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+                data-testid={id ? `intent-${id}` : "intent-auto"}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {showRouting && (
+          <div className="rounded-md border border-border bg-card/50 p-2 space-y-2">
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Orchestrator picks the best available provider automatically.
+              Optional BYOK keys and offline mode live here.
+            </p>
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={forceOffline}
+                onChange={(e) => setForceOffline(e.target.checked)}
+                className="rounded border-border"
+                data-testid="ai-force-offline"
+              />
+              Offline only (Ollama)
+            </label>
+            <FreeApiKeysPanel compact />
+          </div>
+        )}
+        {!showRouting && aiStatusHint && (
+          <p className="text-[10px] text-muted-foreground px-0.5 truncate" title={aiStatusHint}>
+            {aiStatusHint}
+          </p>
+        )}
         <Textarea
           ref={inputRef}
           value={input}
@@ -841,7 +837,7 @@ export function AIWorkerPanel({
           onKeyDown={onKeyDown}
           placeholder={
             projectId
-              ? "Ask the AI Worker… (Enter to send, Shift+Enter for newline)"
+              ? "Describe what to build… (Enter to send)"
               : "Open a project first."
           }
           disabled={!projectId || streaming}
@@ -850,80 +846,16 @@ export function AIWorkerPanel({
           data-testid="input-ai-message"
         />
         <div className="flex items-center justify-between gap-2">
-          <Select
-            value={selectedModelId}
-            onValueChange={setSelectedModelId}
-            disabled={streaming}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[11px] px-2"
+            onClick={() => setShowRouting((v) => !v)}
+            data-testid="button-ai-routing"
+            title="AI routing & keys"
           >
-            <SelectTrigger
-              className="h-7 text-[11px] flex-1 max-w-[260px]"
-              data-testid="select-ai-model"
-            >
-              <SelectValue placeholder="Pick a model" />
-            </SelectTrigger>
-            <SelectContent className="max-h-80">
-              {MODELS.map((m) => {
-                // Allow selecting Puter models even when signed out — send()
-                // surfaces a clear sign-in prompt instead of a dead dropdown.
-                const locked = m.provider === "ollama" && !ollamaOk;
-                const freeIds = new Set([
-                  "groq",
-                  "openrouter",
-                  "gemini",
-                  "cerebras",
-                  "deepseek",
-                  "together",
-                ]);
-                // Fleet Worker secrets count as access (no browser BYOK required).
-                void fleetKeysTick;
-                const needsKey =
-                  m.requiresFreeApiKey &&
-                  freeIds.has(m.provider) &&
-                  !hasProviderAccess(m.provider as FreeProviderId);
-                return (
-                  <SelectItem
-                    key={m.id}
-                    value={m.id}
-                    disabled={locked}
-                    data-testid={`option-model-${m.id}`}
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-xs">
-                        {m.label}
-                        {m.requiresPuterAuth && !isPuterSignedIn && (
-                          <span className="text-[10px] text-muted-foreground ml-1">
-                            (sign in)
-                          </span>
-                        )}
-                        {m.provider === "ollama" && !ollamaOk && (
-                          <span className="text-[10px] text-muted-foreground ml-1">
-                            (offline)
-                          </span>
-                        )}
-                        {needsKey && (
-                          <span className="text-[10px] text-amber-400/90 ml-1">
-                            (key)
-                          </span>
-                        )}
-                        {!needsKey &&
-                          m.requiresFreeApiKey &&
-                          freeIds.has(m.provider) && (
-                            <span className="text-[10px] text-emerald-400/90 ml-1">
-                              (fleet)
-                            </span>
-                          )}
-                      </span>
-                      {m.hint && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {m.hint}
-                        </span>
-                      )}
-                    </div>
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+            ⚙ Routing
+          </Button>
           {streaming ? (
             <Button
               size="sm"

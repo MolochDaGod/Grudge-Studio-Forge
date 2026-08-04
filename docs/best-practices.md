@@ -47,10 +47,12 @@ Viewport: far plane ~500 000, fog defaults for islands, infinite grid with lon
 
 ## Agentic AI
 
-- Default fleet model: **Groq** via `/api/free-ai` (server secrets + optional BYOK).
+- **Orchestrator (no model dropdown):** best-available provider + failover — see [Forge AI Orchestrator]({% link FORGE_AI_ORCHESTRATOR.md %}).
+- Default fleet model: **Groq** via `/api/free-ai` (server secrets + optional BYOK in ⚙ Routing).
 - Edge catalog: `/api/catalog/fast-assets` (embedded fallback on free-ai Worker).
 - Jobs: `/api/agent/jobs` with D1 `forge-agent` when bound.
 - Tools: Fast assets, stack status, script templates — see `forge-gameplay-scripts` skill.
+- Intent chips: Auto / Scene / Assets / Physics / Script / Fix / Deploy.
 
 ## Scripts
 
