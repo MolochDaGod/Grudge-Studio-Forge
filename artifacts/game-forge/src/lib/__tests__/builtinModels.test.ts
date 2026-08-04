@@ -50,6 +50,24 @@ describe("RTS demo assets", () => {
     expect(url).not.toMatch(/index\.html/);
   });
 
+  it("resolves blake and maps to assets.grudge-studio.com (not SPA /builtin)", () => {
+    for (const key of ["blake", "map-cyberpunk", "map-encampment", "vfx-leaves"] as const) {
+      const url = resolveModelUrl(`builtin:${key}`);
+      expect(url, key).toMatch(/^https:\/\/assets\.grudge-studio\.com\/builtin\//);
+      expect(url, key).toMatch(/\.glb$/);
+      expect(url, key).not.toMatch(/^\/builtin\//);
+    }
+  });
+
+  it("rewrites relative /builtin/ paths to R2 CDN", () => {
+    expect(resolveModelUrl("/builtin/blake.glb")).toBe(
+      "https://assets.grudge-studio.com/builtin/blake.glb",
+    );
+    expect(resolveModelUrl("https://forge.grudge-studio.com/builtin/blake.glb")).toBe(
+      "https://assets.grudge-studio.com/builtin/blake.glb",
+    );
+  });
+
   it("registers RTS behaviors used by rts-fort-royale", () => {
     for (const k of [
       "rts-peon",

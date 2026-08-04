@@ -1,4 +1,4 @@
-import characterUrl from "@/assets/models/character.glb?url";
+﻿import characterUrl from "@/assets/models/character.glb?url";
 import rifleUrl from "@/assets/models/rifle.glb?url";
 import {
   getRaceCharacterUrl,
@@ -19,133 +19,143 @@ function ensureBaseUrl(url: string): string {
   return `${base}${url.replace(/^\/+/, "")}`;
 }
 
+/**
+ * Production builtins MUST load from R2 CDN — never SPA-relative `/builtin/…`.
+ * Vercel SPA catch-all returns index.html for missing paths; drei fails and
+ * the editor shows wireframe boxes ("everything is shapes").
+ */
+export const ASSETS_CDN_ORIGIN = "https://assets.grudge-studio.com";
+
+function cdnBuiltin(fileName: string): string {
+  const name = fileName.replace(/^\/+/, "").replace(/^builtin\//, "");
+  return `${ASSETS_CDN_ORIGIN}/builtin/${name}`;
+}
+
 /** Registry of GLB assets bundled with GameForge. Scene data stores stable
  *  keys (e.g. `"builtin:character"`); EntityRenderer resolves them to the
  *  real URL at render time so saved scenes survive rebuilds and work under
  *  path-based routing in dev + prod.
  *
- *  Two flavors live here:
- *   - Vite imports (`character`, `rifle`) — small enough to bundle.
- *   - public/builtin/*.glb (Blake + VFX) — too large to ship through Vite's
- *     asset graph, so they live in `public/` and are served as static files
- *     under the artifact's base path. */
+ *  Flavors:
+ *   - Vite imports (`character`, `rifle`) — small enough to bundle (hashed /assets).
+ *   - Everything else → https://assets.grudge-studio.com/builtin/… (R2). */
 export const BUILTIN_MODELS: Record<string, string> = {
   character: ensureBaseUrl(characterUrl),
   rifle: ensureBaseUrl(rifleUrl),
-  blake: ensureBaseUrl("builtin/blake.glb"),
-  "vfx-leaves": ensureBaseUrl("builtin/vfx-leaves.glb"),
-  "vfx-trail": ensureBaseUrl("builtin/vfx-trail.glb"),
-  "vfx-effect": ensureBaseUrl("builtin/vfx-effect.glb"),
-  "vfx-circuits": ensureBaseUrl("builtin/vfx-circuits.glb"),
-  "vfx-tornado": ensureBaseUrl("builtin/vfx-tornado.glb"),
-  "vfx-warning": ensureBaseUrl("builtin/vfx-warning.glb"),
-  "map-cyberpunk": ensureBaseUrl("builtin/map-cyberpunk.glb"),
-  "map-encampment": ensureBaseUrl("builtin/map-encampment.glb"),
-  "map-deserttown": ensureBaseUrl("builtin/map-deserttown.glb"),
-  "map-fort-royale": ensureBaseUrl("builtin/map-fort-royale.glb"),
-  // RTS-Grudge Underground Wars PvP arena — hosted on R2 (too large for Vite git bundle)
+  blake: cdnBuiltin("blake.glb"),
+  "vfx-leaves": cdnBuiltin("vfx-leaves.glb"),
+  "vfx-trail": cdnBuiltin("vfx-trail.glb"),
+  "vfx-effect": cdnBuiltin("vfx-effect.glb"),
+  "vfx-circuits": cdnBuiltin("vfx-circuits.glb"),
+  "vfx-tornado": cdnBuiltin("vfx-tornado.glb"),
+  "vfx-warning": cdnBuiltin("vfx-warning.glb"),
+  "map-cyberpunk": cdnBuiltin("map-cyberpunk.glb"),
+  "map-encampment": cdnBuiltin("map-encampment.glb"),
+  "map-deserttown": cdnBuiltin("map-deserttown.glb"),
+  "map-fort-royale": cdnBuiltin("map-fort-royale.glb"),
+  // RTS-Grudge Underground Wars PvP arena â€” hosted on R2 (too large for Vite git bundle)
   "map-underground-wars": "https://assets.grudge-studio.com/builtin/map-underground-wars.glb",
-  "map-yard": ensureBaseUrl("builtin/map-yard.glb"),
-  "map-winter-base": ensureBaseUrl("builtin/map-winter-base.glb"),
-  "forge-scene": ensureBaseUrl("builtin/forge-scene.glb"),
+  "map-yard": cdnBuiltin("map-yard.glb"),
+  "map-winter-base": cdnBuiltin("map-winter-base.glb"),
+  "forge-scene": cdnBuiltin("forge-scene.glb"),
   // Characters / monsters
-  "char-lava-sancho": ensureBaseUrl("builtin/char-lava-sancho.glb"),
-  "char-boss-orc": ensureBaseUrl("builtin/char-boss-orc.glb"),
-  "char-distortus-rex": ensureBaseUrl("builtin/char-distortus-rex.glb"),
-  "char-crow": ensureBaseUrl("builtin/char-crow.glb"),
+  "char-lava-sancho": cdnBuiltin("char-lava-sancho.glb"),
+  "char-boss-orc": cdnBuiltin("char-boss-orc.glb"),
+  "char-distortus-rex": cdnBuiltin("char-distortus-rex.glb"),
+  "char-crow": cdnBuiltin("char-crow.glb"),
   // VFX / effects
-  "vfx-fire-hurricane": ensureBaseUrl("builtin/vfx-fire-hurricane.glb"),
-  "vfx-explosion-a": ensureBaseUrl("builtin/vfx-explosion-a.glb"),
-  "vfx-explosion-b": ensureBaseUrl("builtin/vfx-explosion-b.glb"),
-  "vfx-fire-anim": ensureBaseUrl("builtin/vfx-fire-anim.glb"),
-  "vfx-freeze": ensureBaseUrl("builtin/vfx-freeze.glb"),
+  "vfx-fire-hurricane": cdnBuiltin("vfx-fire-hurricane.glb"),
+  "vfx-explosion-a": cdnBuiltin("vfx-explosion-a.glb"),
+  "vfx-explosion-b": cdnBuiltin("vfx-explosion-b.glb"),
+  "vfx-fire-anim": cdnBuiltin("vfx-fire-anim.glb"),
+  "vfx-freeze": cdnBuiltin("vfx-freeze.glb"),
   // Survivor / skeleton characters
-  "char-survivor-male": ensureBaseUrl("builtin/char-survivor-male.glb"),
-  "char-skeleton-axe": ensureBaseUrl("builtin/char-skeleton-axe.glb"),
-  "char-skeleton-sword": ensureBaseUrl("builtin/char-skeleton-sword.glb"),
+  "char-survivor-male": cdnBuiltin("char-survivor-male.glb"),
+  "char-skeleton-axe": cdnBuiltin("char-skeleton-axe.glb"),
+  "char-skeleton-sword": cdnBuiltin("char-skeleton-sword.glb"),
   // Animations (standalone clips)
-  "anim-sweep-fall": ensureBaseUrl("builtin/anim-sweep-fall.glb"),
-  "anim-swimming-to-edge": ensureBaseUrl("builtin/anim-swimming-to-edge.glb"),
-  "anim-swimming": ensureBaseUrl("builtin/anim-swimming.glb"),
+  "anim-sweep-fall": cdnBuiltin("anim-sweep-fall.glb"),
+  "anim-swimming-to-edge": cdnBuiltin("anim-swimming-to-edge.glb"),
+  "anim-swimming": cdnBuiltin("anim-swimming.glb"),
   // Props
-  "prop-survivors-tent": ensureBaseUrl("builtin/prop-survivors-tent.glb"),
+  "prop-survivors-tent": cdnBuiltin("prop-survivors-tent.glb"),
   // Modern-era characters (shooters / post-apocalyptic)
-  "char-bandit": ensureBaseUrl("builtin/char-bandit.glb"),
-  "char-ncr-ranger": ensureBaseUrl("builtin/char-ncr-ranger.glb"),
+  "char-bandit": cdnBuiltin("char-bandit.glb"),
+  "char-ncr-ranger": cdnBuiltin("char-ncr-ranger.glb"),
   // Grudge 6-race locomotion pack (12 clips)
-  "loco-idle": ensureBaseUrl("builtin/loco-idle.glb"),
-  "loco-walking": ensureBaseUrl("builtin/loco-walking.glb"),
-  "loco-running": ensureBaseUrl("builtin/loco-running.glb"),
-  "loco-jump": ensureBaseUrl("builtin/loco-jump.glb"),
-  "loco-left-strafe": ensureBaseUrl("builtin/loco-left-strafe.glb"),
-  "loco-right-strafe": ensureBaseUrl("builtin/loco-right-strafe.glb"),
-  "loco-left-strafe-walking": ensureBaseUrl("builtin/loco-left-strafe-walking.glb"),
-  "loco-right-strafe-walking": ensureBaseUrl("builtin/loco-right-strafe-walking.glb"),
-  "loco-left-turn": ensureBaseUrl("builtin/loco-left-turn.glb"),
-  "loco-right-turn": ensureBaseUrl("builtin/loco-right-turn.glb"),
-  "loco-left-turn-90": ensureBaseUrl("builtin/loco-left-turn-90.glb"),
-  "loco-right-turn-90": ensureBaseUrl("builtin/loco-right-turn-90.glb"),
-  // Grudge 6-race magic locomotion pack (16 clips — casting stance movement)
-  "magic-standing-idle": ensureBaseUrl("builtin/magic-standing-idle.glb"),
-  "magic-standing-jump": ensureBaseUrl("builtin/magic-standing-jump.glb"),
-  "magic-standing-jump-running": ensureBaseUrl("builtin/magic-standing-jump-running.glb"),
-  "magic-standing-jump-running-landing": ensureBaseUrl("builtin/magic-standing-jump-running-landing.glb"),
-  "magic-standing-land-to-standing-idle": ensureBaseUrl("builtin/magic-standing-land-to-standing-idle.glb"),
-  "magic-standing-run-forward": ensureBaseUrl("builtin/magic-standing-run-forward.glb"),
-  "magic-standing-run-back": ensureBaseUrl("builtin/magic-standing-run-back.glb"),
-  "magic-standing-run-left": ensureBaseUrl("builtin/magic-standing-run-left.glb"),
-  "magic-standing-run-right": ensureBaseUrl("builtin/magic-standing-run-right.glb"),
-  "magic-standing-sprint-forward": ensureBaseUrl("builtin/magic-standing-sprint-forward.glb"),
-  "magic-standing-walk-forward": ensureBaseUrl("builtin/magic-standing-walk-forward.glb"),
-  "magic-standing-walk-back": ensureBaseUrl("builtin/magic-standing-walk-back.glb"),
-  "magic-standing-walk-left": ensureBaseUrl("builtin/magic-standing-walk-left.glb"),
-  "magic-standing-walk-right": ensureBaseUrl("builtin/magic-standing-walk-right.glb"),
-  "magic-standing-turn-left-90": ensureBaseUrl("builtin/magic-standing-turn-left-90.glb"),
-  "magic-standing-turn-right-90": ensureBaseUrl("builtin/magic-standing-turn-right-90.glb"),
+  "loco-idle": cdnBuiltin("loco-idle.glb"),
+  "loco-walking": cdnBuiltin("loco-walking.glb"),
+  "loco-running": cdnBuiltin("loco-running.glb"),
+  "loco-jump": cdnBuiltin("loco-jump.glb"),
+  "loco-left-strafe": cdnBuiltin("loco-left-strafe.glb"),
+  "loco-right-strafe": cdnBuiltin("loco-right-strafe.glb"),
+  "loco-left-strafe-walking": cdnBuiltin("loco-left-strafe-walking.glb"),
+  "loco-right-strafe-walking": cdnBuiltin("loco-right-strafe-walking.glb"),
+  "loco-left-turn": cdnBuiltin("loco-left-turn.glb"),
+  "loco-right-turn": cdnBuiltin("loco-right-turn.glb"),
+  "loco-left-turn-90": cdnBuiltin("loco-left-turn-90.glb"),
+  "loco-right-turn-90": cdnBuiltin("loco-right-turn-90.glb"),
+  // Grudge 6-race magic locomotion pack (16 clips â€” casting stance movement)
+  "magic-standing-idle": cdnBuiltin("magic-standing-idle.glb"),
+  "magic-standing-jump": cdnBuiltin("magic-standing-jump.glb"),
+  "magic-standing-jump-running": cdnBuiltin("magic-standing-jump-running.glb"),
+  "magic-standing-jump-running-landing": cdnBuiltin("magic-standing-jump-running-landing.glb"),
+  "magic-standing-land-to-standing-idle": cdnBuiltin("magic-standing-land-to-standing-idle.glb"),
+  "magic-standing-run-forward": cdnBuiltin("magic-standing-run-forward.glb"),
+  "magic-standing-run-back": cdnBuiltin("magic-standing-run-back.glb"),
+  "magic-standing-run-left": cdnBuiltin("magic-standing-run-left.glb"),
+  "magic-standing-run-right": cdnBuiltin("magic-standing-run-right.glb"),
+  "magic-standing-sprint-forward": cdnBuiltin("magic-standing-sprint-forward.glb"),
+  "magic-standing-walk-forward": cdnBuiltin("magic-standing-walk-forward.glb"),
+  "magic-standing-walk-back": cdnBuiltin("magic-standing-walk-back.glb"),
+  "magic-standing-walk-left": cdnBuiltin("magic-standing-walk-left.glb"),
+  "magic-standing-walk-right": cdnBuiltin("magic-standing-walk-right.glb"),
+  "magic-standing-turn-left-90": cdnBuiltin("magic-standing-turn-left-90.glb"),
+  "magic-standing-turn-right-90": cdnBuiltin("magic-standing-turn-right-90.glb"),
   // Stylized nature packs
-  "nature-tree-pack": ensureBaseUrl("builtin/nature-tree-pack.glb"),
-  "nature-tropical-pack": ensureBaseUrl("builtin/nature-tropical-pack.glb"),
-  "nature-autumn-trees": ensureBaseUrl("builtin/nature-autumn-trees.glb"),
-  "nature-tree": ensureBaseUrl("builtin/nature-tree.glb"),
-  "nature-icicles": ensureBaseUrl("builtin/nature-icicles.glb"),
+  "nature-tree-pack": cdnBuiltin("nature-tree-pack.glb"),
+  "nature-tropical-pack": cdnBuiltin("nature-tropical-pack.glb"),
+  "nature-autumn-trees": cdnBuiltin("nature-autumn-trees.glb"),
+  "nature-tree": cdnBuiltin("nature-tree.glb"),
+  "nature-icicles": cdnBuiltin("nature-icicles.glb"),
   // Stylized characters/creatures
-  "char-wolf": ensureBaseUrl("builtin/char-wolf.glb"),
-  "char-shark": ensureBaseUrl("builtin/char-shark.glb"),
-  "anim-combat-demo": ensureBaseUrl("builtin/anim-combat-demo.glb"),
+  "char-wolf": cdnBuiltin("char-wolf.glb"),
+  "char-shark": cdnBuiltin("char-shark.glb"),
+  "anim-combat-demo": cdnBuiltin("anim-combat-demo.glb"),
   // Stylized buildings
-  "bldg-woodcutter-hut": ensureBaseUrl("builtin/bldg-woodcutter-hut.glb"),
-  "bldg-tavern": ensureBaseUrl("builtin/bldg-tavern.glb"),
+  "bldg-woodcutter-hut": cdnBuiltin("bldg-woodcutter-hut.glb"),
+  "bldg-tavern": cdnBuiltin("bldg-tavern.glb"),
   // Stylized props/items
-  "prop-crystal-gems": ensureBaseUrl("builtin/prop-crystal-gems.glb"),
-  "prop-medieval": ensureBaseUrl("builtin/prop-medieval.glb"),
-  "prop-survival-items": ensureBaseUrl("builtin/prop-survival-items.glb"),
-  "prop-toon-weapons": ensureBaseUrl("builtin/prop-toon-weapons.glb"),
-  "mat-sand-procedural": ensureBaseUrl("builtin/mat-sand-procedural.glb"),
+  "prop-crystal-gems": cdnBuiltin("prop-crystal-gems.glb"),
+  "prop-medieval": cdnBuiltin("prop-medieval.glb"),
+  "prop-survival-items": cdnBuiltin("prop-survival-items.glb"),
+  "prop-toon-weapons": cdnBuiltin("prop-toon-weapons.glb"),
+  "mat-sand-procedural": cdnBuiltin("mat-sand-procedural.glb"),
   // Stylized VFX
-  "vfx-stylized-fire": ensureBaseUrl("builtin/vfx-stylized-fire.glb"),
-  "vfx-stylized-fire-tornado": ensureBaseUrl("builtin/vfx-stylized-fire-tornado.glb"),
+  "vfx-stylized-fire": cdnBuiltin("vfx-stylized-fire.glb"),
+  "vfx-stylized-fire-tornado": cdnBuiltin("vfx-stylized-fire-tornado.glb"),
   // Maps
-  "map-pirate-island": ensureBaseUrl("builtin/map-pirate-island.glb"),
+  "map-pirate-island": cdnBuiltin("map-pirate-island.glb"),
   /** Production open-world lobby (full multipack scene on CDN). */
   "map-pirate-islands-scene":
     "https://assets.grudge-studio.com/models/lobby/pirate-islands/scene.glb",
-  "map-chinese-market": ensureBaseUrl("builtin/map-chinese-market.glb"),
-  "map-dude-theft-city": ensureBaseUrl("builtin/map-dude-theft-city.glb"),
-  // Chicken Gun maps — hosted on R2 CDN (too large to ship in git)
+  "map-chinese-market": cdnBuiltin("map-chinese-market.glb"),
+  "map-dude-theft-city": cdnBuiltin("map-dude-theft-city.glb"),
+  // Chicken Gun maps â€” hosted on R2 CDN (too large to ship in git)
   "map-mistytown": "https://assets.grudge-studio.com/builtin/map-mistytown.glb",
   "map-town2f": "https://assets.grudge-studio.com/builtin/map-town2f.glb",
   "map-bigfarm": "https://assets.grudge-studio.com/builtin/map-bigfarm.glb",
   "map-western": "https://assets.grudge-studio.com/builtin/map-western.glb",
-  // Vehicles (Realistic Car Pack — OBJ→GLB conversion)
-  "vehicle-cop": ensureBaseUrl("builtin/vehicle-cop.glb"),
-  "vehicle-sedan": ensureBaseUrl("builtin/vehicle-sedan.glb"),
-  "vehicle-sedan-2": ensureBaseUrl("builtin/vehicle-sedan-2.glb"),
-  "vehicle-sports": ensureBaseUrl("builtin/vehicle-sports.glb"),
-  "vehicle-sports-2": ensureBaseUrl("builtin/vehicle-sports-2.glb"),
-  "vehicle-suv": ensureBaseUrl("builtin/vehicle-suv.glb"),
-  "vehicle-taxi": ensureBaseUrl("builtin/vehicle-taxi.glb"),
+  // Vehicles (Realistic Car Pack â€” OBJâ†’GLB conversion)
+  "vehicle-cop": cdnBuiltin("vehicle-cop.glb"),
+  "vehicle-sedan": cdnBuiltin("vehicle-sedan.glb"),
+  "vehicle-sedan-2": cdnBuiltin("vehicle-sedan-2.glb"),
+  "vehicle-sports": cdnBuiltin("vehicle-sports.glb"),
+  "vehicle-sports-2": cdnBuiltin("vehicle-sports-2.glb"),
+  "vehicle-suv": cdnBuiltin("vehicle-suv.glb"),
+  "vehicle-taxi": cdnBuiltin("vehicle-taxi.glb"),
   // Per-race character GLBs from the toon-rts-characters asset pack
-  // (CDN, absolute https URL — `ensureBaseUrl` is a no-op for these).
+  // (CDN, absolute https URL â€” `ensureBaseUrl` is a no-op for these).
   // Saved scenes reference these via the durable `builtin:race:<id>` key
   // so we never bake CDN URLs into scene JSON.
   "race:warrior": ensureBaseUrl(getRaceCharacterUrl("warrior")),
@@ -154,7 +164,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race:elf": ensureBaseUrl(getRaceCharacterUrl("elf")),
   "race:orc": ensureBaseUrl(getRaceCharacterUrl("orc")),
   "race:skeleton": ensureBaseUrl(getRaceCharacterUrl("skeleton")),
-  // Per-race weapons — grudge6 library on CDN (toon-rts weapons/* 404).
+  // Per-race weapons â€” grudge6 library on CDN (toon-rts weapons/* 404).
   // Durable keys: builtin:race-weapon:<id>
   "race-weapon:warrior": ensureBaseUrl(getRaceWeaponUrl("warrior")),
   "race-weapon:dwarf": ensureBaseUrl(getRaceWeaponUrl("dwarf")),
@@ -162,7 +172,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "race-weapon:elf": ensureBaseUrl(getRaceWeaponUrl("elf")),
   "race-weapon:orc": ensureBaseUrl(getRaceWeaponUrl("orc")),
   "race-weapon:skeleton": ensureBaseUrl(getRaceWeaponUrl("skeleton")),
-  // Modular grudge6 race kits (production GLB on R2) — durable builtin:grudge6:<id>
+  // Modular grudge6 race kits (production GLB on R2) â€” durable builtin:grudge6:<id>
   "grudge6:warrior": getRaceKitUrl("warrior"),
   "grudge6:dwarf": getRaceKitUrl("dwarf"),
   "grudge6:frost-dwarf": getRaceKitUrl("frost-dwarf"),
@@ -170,12 +180,12 @@ export const BUILTIN_MODELS: Record<string, string> = {
   "grudge6:orc": getRaceKitUrl("orc"),
   "grudge6:skeleton": getRaceKitUrl("skeleton"),
   // Template aliases (rts-fort-royale creeps / bosses).
-  // Must be absolute assets.grudge-studio.com URLs — never SPA-relative /builtin/*
+  // Must be absolute assets.grudge-studio.com URLs â€” never SPA-relative /builtin/*
   // (Vercel catch-all returns HTML as "GLB" and demos crash).
   "creature:mutant": getRaceCharacterUrl("orc"),
   "creature:creep": getRaceCharacterUrl("skeleton"),
   "creature:boss-orc": getRaceCharacterUrl("orc"),
-  // RTS building pack — orc settlement + battle towers on the public CDN
+  // RTS building pack â€” orc settlement + battle towers on the public CDN
   // (same assets used by RTS-Grudge). Durable `builtin:rts-bldg-*` keys so
   // scenes never bake raw CDN paths.
   "rts-bldg-townhall": "https://assets.grudge-studio.com/models/orc_settlement/Tavern.glb",
@@ -197,7 +207,7 @@ export const BUILTIN_MODELS: Record<string, string> = {
  *  inside the entity's rigidbody/group, so the visual model faces the
  *  same direction as the physics body's "forward". The toon-rts character
  *  GLBs (the six `race:*` keys below) were authored facing +Z, while
- *  three.js' convention — and our physics yaw + camera forward — assume
+ *  three.js' convention â€” and our physics yaw + camera forward â€” assume
  *  -Z, so they need a half-turn to look the right way. The original
  *  `builtin:character` rig already faces -Z, so it is intentionally
  *  absent from this map (its effective offset is 0). EntityRenderer's
@@ -227,10 +237,10 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
  *  bridge in `EntityRenderer.LoadedModel`.
  *
  *  Verified by direct CDN probe (parsing the JSON chunk of every GLB
- *  under `…/glb/characters/{human,dwarf,barbarian,elf,orc,undead}.glb`)
+ *  under `â€¦/glb/characters/{human,dwarf,barbarian,elf,orc,undead}.glb`)
  *  that the public toon-rts character pack ships with **zero** baked
- *  animations on each rig — `gltf.animations.length === 0` for all six
- *  files (~0.83–1.07 MB each). The manifest references separate
+ *  animations on each rig â€” `gltf.animations.length === 0` for all six
+ *  files (~0.83â€“1.07 MB each). The manifest references separate
  *  `animationsweapons/male_locomotion/` packs but those URLs return 404
  *  on the same host today.
  *
@@ -248,7 +258,7 @@ export const BUILTIN_MODEL_YAW_OFFSETS: Record<string, number> = {
  *  stays consistent. */
 export interface RaceClipSet {
   /** Clip names. Empty string `""` means "no verified clip in the GLB
-   *  yet — skip publishing"; writer sites must guard with `if (!clip)`. */
+   *  yet â€” skip publishing"; writer sites must guard with `if (!clip)`. */
   idle: string;
   walk: string;
   run: string;
@@ -287,17 +297,17 @@ export function getRaceModelKey(race: RaceId): `builtin:race:${RaceId}` {
   return `builtin:race:${race}` as const;
 }
 
-/** Resolve `"builtin:foo"` → real URL. Returns null if not a builtin key. */
+/** Resolve `"builtin:foo"` â†’ real URL. Returns null if not a builtin key. */
 export function resolveBuiltinModel(url: string): string | null {
   if (!url.startsWith("builtin:")) return null;
   const key = url.slice("builtin:".length);
   return BUILTIN_MODELS[key] ?? null;
 }
 
-/** Safe CDN hero when a builtin key is missing — never SPA HTML-as-GLB. */
+/** Safe CDN hero when a builtin key is missing â€” never SPA HTML-as-GLB. */
 const FALLBACK_CHARACTER_URL = getRaceCharacterUrl("warrior");
 
-/** Legacy absolute R2 paths that 404 — rewrite to durable race GLBs. */
+/** Legacy absolute R2 paths that 404 â€” rewrite to durable race GLBs. */
 const BROKEN_CDN_REWRITES: Array<{ match: RegExp; to: string }> = [
   {
     match: /\/builtin\/creature:mutant\.glb$/i,
@@ -314,13 +324,13 @@ const BROKEN_CDN_REWRITES: Array<{ match: RegExp; to: string }> = [
 ];
 
 /** Resolve a model URL for GLTF loaders. Order:
- *   1. `builtin:<key>` → bundled / CDN asset URL
- *   2. absolute http(s)/data/blob → returned as-is (with broken-path rewrites)
- *   3. anything else → relative to the artifact BASE_URL
+ *   1. `builtin:<key>` â†’ bundled / CDN asset URL
+ *   2. absolute http(s)/data/blob â†’ returned as-is (with broken-path rewrites)
+ *   3. anything else â†’ relative to the artifact BASE_URL
  *
- *  Unknown `builtin:` keys must NOT fall through to (3) — Vercel's SPA
+ *  Unknown `builtin:` keys must NOT fall through to (3) â€” Vercel's SPA
  *  catch-all would return `index.html` and drei would try to parse it as
- *  GLB JSON, producing the opaque "<!doctype … is not valid JSON" error.
+ *  GLB JSON, producing the opaque "<!doctype â€¦ is not valid JSON" error.
  *  Instead fall back to a verified race GLB so demos keep running. */
 export function resolveModelUrl(url: string): string {
   if (!url || typeof url !== "string") {
@@ -340,6 +350,17 @@ export function resolveModelUrl(url: string): string {
     );
     return FALLBACK_CHARACTER_URL;
   }
+
+  // Relative SPA /builtin/… paths (saved scenes / old builds) → R2 CDN.
+  // Never leave these as same-origin paths: production returns HTML.
+  if (
+    url.startsWith("/builtin/") ||
+    url.startsWith("builtin/") ||
+    /^\/?builtin\//i.test(url)
+  ) {
+    return cdnBuiltin(url.replace(/^\/?builtin\//i, ""));
+  }
+
   // Block known-bad hosts early (agent / pasted URLs)
   if (/^https?:\/\//i.test(url)) {
     try {
@@ -354,6 +375,17 @@ export function resolveModelUrl(url: string): string {
           `Blocked model host "${host}" — use builtin: keys or assets.grudge-studio.com (R2)`,
         );
       }
+      // Same-host /builtin on forge SPA or Vercel origin → CDN (HTML-as-GLB fix).
+      if (
+        (host === "forge.grudge-studio.com" ||
+          host === "grudge-studio-forge.vercel.app" ||
+          host.endsWith(".vercel.app")) &&
+        /\/builtin\//i.test(url)
+      ) {
+        const path = new URL(url).pathname;
+        const file = path.replace(/^\/builtin\//i, "");
+        return cdnBuiltin(file);
+      }
     } catch (e) {
       if (e instanceof Error && e.message.startsWith("Blocked")) throw e;
     }
@@ -363,7 +395,10 @@ export function resolveModelUrl(url: string): string {
     return url;
   }
   if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+  // Same-origin /api/storage/… user uploads — keep relative so edge/API serve them.
+  if (url.startsWith("/api/storage")) return url;
   const base = import.meta.env.BASE_URL || "/";
   if (base !== "/" && url.startsWith(base)) return url;
   return `${base}${url.replace(/^\/+/, "")}`;
 }
+

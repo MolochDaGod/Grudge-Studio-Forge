@@ -268,10 +268,61 @@ export default {
       return applySecurityHeaders(res, cacheHeadersForPath(path));
     }
 
+    // ── Builtin GLBs → R2 first (never SPA HTML-as-GLB) ─────────────
+    // Vercel SPA catch-all rewrites missing /builtin/* to index.html
+    // (text/html). GLTFLoader then fails and the editor shows wireframe
+    // placeholders. Always try ASSETS_ORIGIN for /builtin/* binaries.
+    if (path.startsWith("/builtin/") && env.ASSETS_ORIGIN) {
+      try {
+        const cdnRes = await proxyTo(request, env.ASSETS_ORIGIN);
+        const ct = (cdnRes.headers.get("content-type") || "").toLowerCase();
+        if (
+          cdnRes.ok &&
+          !ct.includes("text/html") &&
+          cdnRes.status !== 404
+        ) {
+          return applySecurityHeaders(cdnRes, {
+            ...cacheHeadersForPath(path),
+            "X-Forge-Asset": "r2-builtin",
+          });
+        }
+      } catch {
+        /* fall through to ORIGIN */
+      }
+    }
+
     // ── SPA + static (Vercel / prebuilt ORIGIN) ──────────────────────
     if (!env.ORIGIN) return json({ error: "ORIGIN unset" }, 500);
     const res = await proxyTo(request, env.ORIGIN);
     const extra = cacheHeadersForPath(path);
+
+    // If ORIGIN returned SPA HTML for a binary path, fail closed (no fake GLB).
+    const originCt = (res.headers.get("content-type") || "").toLowerCase();
+    if (
+      path.startsWith("/builtin/") &&
+      originCt.includes("text/html") &&
+      env.ASSETS_ORIGIN
+    ) {
+      try {
+        const cdnRes = await proxyTo(request, env.ASSETS_ORIGIN);
+        if (cdnRes.ok) {
+          return applySecurityHeaders(cdnRes, {
+            ...cacheHeadersForPath(path),
+            "X-Forge-Asset": "r2-builtin-fallback",
+          });
+        }
+      } catch {
+        /* */
+      }
+      return json(
+        {
+          error: "Builtin GLB not on CDN",
+          path,
+          tip: "Upload to assets.grudge-studio.com/builtin/ or use a fleet CDN URL",
+        },
+        404,
+      );
+    }
 
     // Force wasm MIME even if origin is wrong (old Vercel / misconfigured)
     if (path.endsWith(".wasm") && !res.headers.get("content-type")?.includes("wasm")) {
