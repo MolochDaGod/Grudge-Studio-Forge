@@ -15,6 +15,12 @@ import {
   type FreeProviderId,
 } from "@/lib/ai/providers/freeApis";
 import { isOllamaAvailable } from "@/lib/ai/providers/ollamaProvider";
+import {
+  isProviderAllowed,
+  loadAiUserSettings,
+  type AiUserSettings,
+} from "@/lib/ai/aiUserSettings";
+import { ensureOllamaRunning, probeOllama } from "@/lib/ai/ollamaLifecycle";
 import type { AgentRole } from "./intent";
 
 export type RoutingProbe = {
@@ -24,6 +30,8 @@ export type RoutingProbe = {
   forceOffline?: boolean;
   /** Optional forced model id from advanced settings. */
   forceModelId?: string | null;
+  /** Snapshot of user allowlist / prefer-ollama. */
+  settings?: AiUserSettings;
 };
 
 const FREE_PROVIDER_KINDS = new Set<ProviderKind>([
@@ -87,7 +95,10 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
 };
 
 function modelAvailable(m: ModelOption, probe: RoutingProbe): boolean {
-  if (probe.forceOffline) {
+  const settings = probe.settings ?? loadAiUserSettings();
+  if (!isProviderAllowed(m.provider, settings)) return false;
+
+  if (probe.forceOffline || settings.forceOffline) {
     return m.provider === "ollama" && probe.ollamaOk;
   }
   if (m.provider === "ollama") return probe.ollamaOk;
@@ -113,12 +124,24 @@ export function buildFailoverChain(
     if (modelAvailable(forced, probe)) return [forced];
   }
 
-  const preferred = probe.forceOffline
-    ? ROLE_PREFERENCE.offline
-    : ROLE_PREFERENCE[role] ?? ROLE_PREFERENCE.orchestrator;
+  const settings = probe.settings ?? loadAiUserSettings();
+  const preferred =
+    probe.forceOffline || settings.forceOffline
+      ? ROLE_PREFERENCE.offline
+      : ROLE_PREFERENCE[role] ?? ROLE_PREFERENCE.orchestrator;
 
   const chain: ModelOption[] = [];
   const seen = new Set<string>();
+
+  // Prefer Ollama first when user opted in and it is up.
+  if (settings.preferOllamaWhenAvailable && probe.ollamaOk) {
+    for (const m of MODELS) {
+      if (m.provider !== "ollama" || seen.has(m.id)) continue;
+      if (!modelAvailable(m, probe)) continue;
+      chain.push(m);
+      seen.add(m.id);
+    }
+  }
 
   for (const id of preferred) {
     const m = MODELS.find((x) => x.id === id);
@@ -154,17 +177,31 @@ export async function probeRouting(opts: {
   puterSignedIn: boolean;
   forceOffline?: boolean;
   forceModelId?: string | null;
+  /** Attempt Ollama start when settings.autoStartOllama. */
+  tryStartOllama?: boolean;
 }): Promise<RoutingProbe> {
-  const [ollamaOk, fleet] = await Promise.all([
+  const settings = loadAiUserSettings();
+  const forceOffline = opts.forceOffline ?? settings.forceOffline;
+
+  if (opts.tryStartOllama !== false && (settings.autoStartOllama || forceOffline)) {
+    await ensureOllamaRunning({ forceAttempt: settings.autoStartOllama || forceOffline });
+  }
+
+  const [ollamaOkTags, ollamaOkCustom, fleet] = await Promise.all([
     isOllamaAvailable().catch(() => false),
-    refreshFleetServerKeys(true).catch(() => ({}) as Partial<Record<FreeProviderId, boolean>>),
+    probeOllama(settings.ollamaBaseUrl).catch(() => false),
+    refreshFleetServerKeys(true).catch(
+      () => ({}) as Partial<Record<FreeProviderId, boolean>>,
+    ),
   ]);
+
   return {
     puterSignedIn: opts.puterSignedIn,
-    ollamaOk: !!ollamaOk,
+    ollamaOk: !!(ollamaOkTags || ollamaOkCustom),
     fleet: fleet ?? {},
-    forceOffline: opts.forceOffline,
+    forceOffline,
     forceModelId: opts.forceModelId,
+    settings,
   };
 }
 

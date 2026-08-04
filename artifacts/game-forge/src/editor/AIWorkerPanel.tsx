@@ -36,8 +36,10 @@ import { useToast } from "@/hooks/use-toast";
 import { type ChatMessage } from "@/lib/aiClient";
 import { useAuth } from "@/store/auth";
 import { signInWithPuter } from "@/lib/authBootstrap";
-import { FreeApiKeysPanel } from "@/editor/FreeApiKeysPanel";
+import { AiRoutingSettings } from "@/editor/AiRoutingSettings";
 import { refreshFleetServerKeys } from "@/lib/ai/providers";
+import { loadAiUserSettings } from "@/lib/ai/aiUserSettings";
+import { clearOllamaAvailabilityCache } from "@/lib/ai/providers/ollamaProvider";
 import { MUTATING_TOOLS } from "@/ai/aiAuditLog";
 import {
   runOrchestratedConversation,
@@ -163,7 +165,11 @@ export function AIWorkerPanel({
   const [routeStatus, setRouteStatus] = useState("Probing AI…");
   const [intentOverride, setIntentOverride] = useState<ForgeIntent | null>(null);
   const [showRouting, setShowRouting] = useState(false);
-  const [forceOffline, setForceOffline] = useState(false);
+  /** Mirrors aiUserSettings.forceOffline — source of truth is localStorage. */
+  const [forceOffline, setForceOffline] = useState(
+    () => loadAiUserSettings().forceOffline,
+  );
+  const [settingsEpoch, setSettingsEpoch] = useState(0);
   const probeRef = useRef<RoutingProbe | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -220,15 +226,19 @@ export function AIWorkerPanel({
   const liveToolsRef = useRef<AIToolEvent[]>([]);
   const bumpLive = () => setLiveTick((t) => t + 1);
 
-  // Probe best-available AI route when panel opens (no model dropdown).
+  // Probe best-available AI route when panel opens or settings change.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void (async () => {
       try {
+        clearOllamaAvailabilityCache();
+        const settings = loadAiUserSettings();
+        setForceOffline(settings.forceOffline);
         const probe = await probeRouting({
           puterSignedIn: useAuth.getState().isPuterSignedIn,
-          forceOffline,
+          forceOffline: settings.forceOffline,
+          tryStartOllama: true,
         });
         if (cancelled) return;
         probeRef.current = probe;
@@ -239,9 +249,13 @@ export function AIWorkerPanel({
           .filter(([, v]) => v)
           .map(([k]) => k);
         const bits: string[] = [];
+        if (settings.forceOffline) bits.push("Offline mode");
         if (fleet.length) bits.push(`Fleet: ${fleet.join(", ")}`);
         if (probe.puterSignedIn) bits.push("Puter on");
         if (probe.ollamaOk) bits.push("Ollama on");
+        if (settings.preferOllamaWhenAvailable && probe.ollamaOk) {
+          bits.push("Prefer Ollama");
+        }
         if (!bits.length) bits.push("BYOK or Puter / Ollama");
         setAiStatusHint(bits.join(" · "));
         void refreshFleetServerKeys(true);
@@ -255,7 +269,7 @@ export function AIWorkerPanel({
     return () => {
       cancelled = true;
     };
-  }, [open, forceOffline, isPuterSignedIn]);
+  }, [open, isPuterSignedIn, settingsEpoch]);
 
   const interrupt = () => {
     if (!abortRef.current) return;
@@ -322,17 +336,18 @@ export function AIWorkerPanel({
     let turnError: string | undefined;
 
     // Orchestrator: probe best route + failover (no model dropdown).
+    const settingsNow = loadAiUserSettings();
+    const offline = settingsNow.forceOffline;
+    setForceOffline(offline);
     let probe = probeRef.current;
-    if (!probe) {
+    if (!probe || offline !== !!probe.forceOffline) {
       probe = await probeRouting({
         puterSignedIn: useAuth.getState().isPuterSignedIn,
-        forceOffline,
+        forceOffline: offline,
+        tryStartOllama: true,
       });
       probeRef.current = probe;
       setOllamaOk(probe.ollamaOk);
-    } else if (forceOffline !== !!probe.forceOffline) {
-      probe = { ...probe, forceOffline };
-      probeRef.current = probe;
     }
 
     const intent = classifyIntent(trimmed, intentOverride);
@@ -348,7 +363,8 @@ export function AIWorkerPanel({
         });
         probe = await probeRouting({
           puterSignedIn: true,
-          forceOffline,
+          forceOffline: offline,
+          tryStartOllama: true,
         });
         probeRef.current = probe;
       } catch (err) {
@@ -807,23 +823,13 @@ export function AIWorkerPanel({
           })}
         </div>
         {showRouting && (
-          <div className="rounded-md border border-border bg-card/50 p-2 space-y-2">
-            <p className="text-[10px] text-muted-foreground leading-snug">
-              Orchestrator picks the best available provider automatically.
-              Optional BYOK keys and offline mode live here.
-            </p>
-            <label className="flex items-center gap-2 text-[11px] cursor-pointer">
-              <input
-                type="checkbox"
-                checked={forceOffline}
-                onChange={(e) => setForceOffline(e.target.checked)}
-                className="rounded border-border"
-                data-testid="ai-force-offline"
-              />
-              Offline only (Ollama)
-            </label>
-            <FreeApiKeysPanel compact />
-          </div>
+          <AiRoutingSettings
+            onChange={(s) => {
+              setForceOffline(s.forceOffline);
+              probeRef.current = null;
+              setSettingsEpoch((n) => n + 1);
+            }}
+          />
         )}
         {!showRouting && aiStatusHint && (
           <p className="text-[10px] text-muted-foreground px-0.5 truncate" title={aiStatusHint}>

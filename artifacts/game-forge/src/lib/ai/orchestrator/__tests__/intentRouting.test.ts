@@ -76,6 +76,38 @@ describe("buildFailoverChain", () => {
     expect(chain.every((m) => m.provider === "ollama")).toBe(true);
   });
 
+  it("respects allowedProviders allowlist", () => {
+    const chain = buildFailoverChain("orchestrator", {
+      ...fleetProbe,
+      ollamaOk: true,
+      settings: {
+        customSystemPrompt: "",
+        allowedProviders: ["ollama"],
+        forceOffline: false,
+        autoStartOllama: false,
+        preferOllamaWhenAvailable: false,
+        ollamaBaseUrl: "http://localhost:11434",
+      },
+    });
+    expect(chain.every((m) => m.provider === "ollama")).toBe(true);
+  });
+
+  it("prefers ollama first when preferOllamaWhenAvailable", () => {
+    const chain = buildFailoverChain("orchestrator", {
+      ...fleetProbe,
+      ollamaOk: true,
+      settings: {
+        customSystemPrompt: "",
+        allowedProviders: ["groq", "together", "ollama", "puter", "openrouter", "gemini", "cerebras", "deepseek", "server-anthropic"],
+        forceOffline: false,
+        autoStartOllama: false,
+        preferOllamaWhenAvailable: true,
+        ollamaBaseUrl: "http://localhost:11434",
+      },
+    });
+    expect(chain[0]?.provider).toBe("ollama");
+  });
+
   it("always returns at least one model", () => {
     const chain = buildFailoverChain("diagnose", emptyProbe);
     expect(chain.length).toBeGreaterThan(0);

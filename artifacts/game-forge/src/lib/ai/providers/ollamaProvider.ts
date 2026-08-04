@@ -14,19 +14,33 @@
  * into Ollama's format and parse tool_calls back into ProviderToolUse.
  */
 import type { AIProvider, ProviderEvent, ProviderRequest } from "./types";
+import { loadAiUserSettings } from "@/lib/ai/aiUserSettings";
 
-const OLLAMA_BASE = "http://localhost:11434";
+const DEFAULT_OLLAMA_BASE = "http://localhost:11434";
+
+function ollamaBase(): string {
+  try {
+    return loadAiUserSettings().ollamaBaseUrl || DEFAULT_OLLAMA_BASE;
+  } catch {
+    return DEFAULT_OLLAMA_BASE;
+  }
+}
 
 /** Detect whether Ollama is reachable (cached for 30s). */
 let _ollamaOk: boolean | null = null;
 let _ollamaCheckedAt = 0;
+
+export function clearOllamaAvailabilityCache(): void {
+  _ollamaOk = null;
+  _ollamaCheckedAt = 0;
+}
 
 export async function isOllamaAvailable(): Promise<boolean> {
   if (_ollamaOk !== null && Date.now() - _ollamaCheckedAt < 30_000) {
     return _ollamaOk;
   }
   try {
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+    const res = await fetch(`${ollamaBase()}/api/tags`, {
       signal: AbortSignal.timeout(3000),
     });
     _ollamaOk = res.ok;
@@ -40,7 +54,7 @@ export async function isOllamaAvailable(): Promise<boolean> {
 /** List installed Ollama models. */
 export async function listOllamaModels(): Promise<string[]> {
   try {
-    const res = await fetch(`${OLLAMA_BASE}/api/tags`, {
+    const res = await fetch(`${ollamaBase()}/api/tags`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return [];
@@ -131,7 +145,7 @@ export const ollamaProvider: AIProvider = {
 
     let res: Response;
     try {
-      res = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      res = await fetch(`${ollamaBase()}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

@@ -17,7 +17,23 @@ Users **do not pick models**. Forge AI picks the **best available** provider for
 |---------|--------|
 | Intent chips | Auto / Scene / Assets / Physics / Script / Fix / Deploy |
 | Status chip | e.g. `Scene · Fleet · Llama 3.3 70B (Groq)` |
-| ⚙ Routing | Offline Ollama, BYOK keys (advanced) |
+| ⚙ Routing | System prompt, allowed APIs, Ollama auto-start, BYOK keys |
+
+## User settings (⚙ Routing)
+
+Stored in `localStorage` (`grudge.ai.userSettings.v1`) via `lib/ai/aiUserSettings.ts`. UI: `editor/AiRoutingSettings.tsx`.
+
+| Setting | Effect |
+|---------|--------|
+| **System prompt** | Appended every turn (cannot override SI units / CDN policy) |
+| **Allowed APIs** | Allowlist for orchestrator failover (Groq, Together, Puter, BYOK, Ollama, …) |
+| **Offline only** | Ollama chain only |
+| **Prefer Ollama when running** | Local models first even when fleet is up |
+| **Auto-start Ollama** | On panel open / offline: probe; desktop IPC if available; else show `ollama serve` |
+| **Ollama URL** | Default `http://localhost:11434` + Start/check |
+| **BYOK keys** | Existing FreeApiKeysPanel (unchanged) |
+
+Browser cannot spawn processes. Desktop may expose `window.desktop.startOllama()`.
 
 ## Architecture
 
@@ -25,6 +41,7 @@ Users **do not pick models**. Forge AI picks the **best available** provider for
 AIWorkerPanel → runOrchestratedConversation
   → classifyIntent
   → packsForIntent (knowledge)
+  → loadAiUserSettings (prompt + allowlist)
   → buildFailoverChain (probe fleet / Puter / BYOK / Ollama)
   → runConversation (existing tool loop + CommandStack)
 ```
@@ -32,6 +49,8 @@ AIWorkerPanel → runOrchestratedConversation
 **Extend, never fork:** one `aiClient`, one `AI_TOOLS` registry, one free-ai Worker.
 
 ## Failover order (default)
+
+Subject to **Allowed APIs** and offline/prefer-Ollama flags:
 
 1. Fleet Groq  
 2. Fleet Together  

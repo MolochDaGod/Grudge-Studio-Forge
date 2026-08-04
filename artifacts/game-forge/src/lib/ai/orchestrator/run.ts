@@ -13,6 +13,7 @@ import {
   roleForIntent,
   type ForgeIntent,
 } from "./intent";
+import { loadAiUserSettings } from "@/lib/ai/aiUserSettings";
 import {
   packsForIntent,
   renderPacks,
@@ -43,6 +44,7 @@ function filterTools(intent: ForgeIntent): ToolDef[] {
 function augmentSystem(intent: ForgeIntent, base: string): string {
   const packs = packsForIntent(intent);
   const packBlock = renderPacks(packs);
+  const userExtra = loadAiUserSettings().customSystemPrompt.trim();
   return [
     base,
     "",
@@ -52,7 +54,17 @@ function augmentSystem(intent: ForgeIntent, base: string): string {
     "Start complex work with a short <plan>…</plan> checklist when multi-step.",
     "",
     packBlock,
-  ].join("\n");
+    userExtra
+      ? [
+          "",
+          "--- USER SYSTEM PROMPT (settings) ---",
+          "Honor the following user preferences when they do not conflict with safety, CDN asset policy, or SI units:",
+          userExtra,
+        ].join("\n")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function isRetryableProviderError(msg: string): boolean {
