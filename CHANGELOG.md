@@ -5,6 +5,24 @@ All notable changes to **Grudge GameForge** are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/).
 
+## [0.4.1] — 2026-08-04
+
+### Added
+
+- **uMMORPG catalogs in SPA** — `/data/ummorpg-placeables.json` (118 / 111 spawnable), `/data/ummorpg-skills.json` (134), `ummorpgCatalog.ts` helpers + ObjectStore fallback, extract doc for agents
+- **`OrbitGizmoArbitration`** — keeps editor pan/zoom free while a selection gizmo is active
+
+### Fixed
+
+- **Selection hard-blocked viewport camera** — drei `TransformControls` set `OrbitControls.enabled = false` for the whole drag and could leave it stuck after remount; pan/zoom always stay on; rotate only suppressed while the gizmo is actively dragging
+- **Celestial star / weather `uTime` shader VALIDATE_STATUS** — vertex/fragment precision mismatch (`highp` vs `mediump`) on three r185; both stages use `highp`; star material named `CelestialStars`
+
+### Deploy
+
+- SPA: GHA Deploy Forge SPA → Vercel prebuilt → `forge.grudge-studio.com`
+- Workers: `grudge-gameforge-web`, `grudge-forge-free-ai` (wrangler from `workers/*`)
+- Live: https://forge.grudge-studio.com/editor
+
 ## [0.4.0] — 2026-07-30
 
 ### Added
@@ -56,6 +74,7 @@ Versioning follows [SemVer](https://semver.org/).
 
 - Offline AI, asset pipeline, dungeon prefab
 
+[0.4.1]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.1
 [0.4.0]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.0
 [0.3.1]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.3.1
 [0.3.0]: https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.3.0
