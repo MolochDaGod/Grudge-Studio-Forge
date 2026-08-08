@@ -37,18 +37,23 @@ nav_order: 16
 | Fast catalog / fleet search | free-ai `/api/catalog/*` |
 | Binary meshes | R2 `assets.grudge-studio.com` |
 | Weapon/class JSON | ObjectStore |
-| Player bag / XP | **Railway** Postgres — not Forge |
+| Player bag / XP / wallet | **Railway** Postgres — not Forge, not Puter SSOT |
+| Account mirror (optional) | Puter KV `grudge:forge:account-mirror:{id}` after Railway GET only |
+
+Full matrix: [ACCOUNT_PUTER_ENGINE_SSOT.md](./ACCOUNT_PUTER_ENGINE_SSOT.md) · Puter API patterns: [PUTER_PATTERNS.md](./PUTER_PATTERNS.md)
 
 ## AI stack
 
 | Layer | Endpoint / package | Role |
 |-------|-------------------|------|
-| Free edge proxy | `/api/free-ai/chat?provider=` | Groq, OpenRouter, Gemini, … (BYOK or secrets) |
+| **Legion brain** | `ai.grudge-studio.com` via free-ai `provider=grudge-ai` | Auto default · agent skills |
+| Free edge proxy | `/api/free-ai/chat?provider=` | Groq, Together, OpenRouter, Gemini, … |
 | Catalog | `/api/catalog/*` | Fast assets, fleet D1 search, gamedata |
 | Agent jobs | `/api/agent/jobs` | Durable generate/bake hints |
 | Knowledge brain | `/api/knowledge/*` | Docs, D1 research (read-only) |
-| Client providers | `lib/ai/providers/*` | Puter, Ollama, free, Anthropic |
+| Client providers | `lib/ai/providers/*` | grudge-ai, Puter, Ollama, free, Anthropic |
 | Tools | `project_storage_status`, `migrate_local_projects_to_puter`, `agent_stack_status` | Diagnose + migrate |
+| Account mirror | `lib/cloud/accountMirror.ts` | Railway snapshot → optional Puter KV |
 
 ## Migrate local → Puter
 

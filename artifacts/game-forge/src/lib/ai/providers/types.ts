@@ -61,6 +61,7 @@ export type ProviderKind =
   | "server-anthropic"
   | "puter"
   | "ollama"
+  | "grudge-ai"
   | "groq"
   | "openrouter"
   | "gemini"
@@ -77,14 +78,42 @@ export interface ModelOption {
   requiresPuterAuth?: boolean;
   /** True when this free provider needs a BYOK or server key. */
   requiresFreeApiKey?: boolean;
+  /** Prefer Grudge ID JWT for fleet Legion hub. */
+  requiresGrudgeAuth?: boolean;
 }
 
 export const MODELS: ModelOption[] = [
+  // ── Grudge AI Legion (fleet hub — auto first) ───────────────────
+  {
+    id: "grudge-ai:auto",
+    label: "Grudge AI Auto",
+    hint: "Fleet · Legion waterfall (Gemini / Workers AI / Groq)",
+    provider: "grudge-ai",
+    modelId: "auto",
+    requiresGrudgeAuth: true,
+  },
+  {
+    id: "grudge-ai:dev",
+    label: "Grudge AI Dev agent",
+    hint: "Fleet · code/scene tools skill",
+    provider: "grudge-ai",
+    modelId: "dev",
+    requiresGrudgeAuth: true,
+  },
+  {
+    id: "grudge-ai:toolkit",
+    label: "Grudge AI Toolkit agent",
+    hint: "Fleet · puter/toolkit skill",
+    provider: "grudge-ai",
+    modelId: "toolkit",
+    requiresGrudgeAuth: true,
+  },
+
   // ── Puter (free, no key — sign-in) ───────────────────────────────
   {
     id: "puter:claude-3-7-sonnet",
     label: "Claude 3.7 Sonnet (Puter)",
-    hint: "Default · Free via Puter sign-in",
+    hint: "Free via Puter sign-in",
     provider: "puter",
     modelId: "claude-3-7-sonnet",
     requiresPuterAuth: true,
@@ -302,11 +331,9 @@ export const MODELS: ModelOption[] = [
 ];
 
 /**
- * Agentic default — fleet Groq (edge key, no Puter gate).
- * MODELS[0] remains Puter Claude for the free sign-in picker; findModel(null)
- * always resolves DEFAULT_MODEL_ID so AI tools start on fleet Groq.
+ * Agentic default — Grudge AI Legion auto (fleet), then free-ai Groq failover.
  */
-export const DEFAULT_MODEL_ID = "groq:llama-3.3-70b-versatile";
+export const DEFAULT_MODEL_ID = "grudge-ai:auto";
 
 const LEGACY_SERVER_IDS = new Set([
   "claude-sonnet-4-6",

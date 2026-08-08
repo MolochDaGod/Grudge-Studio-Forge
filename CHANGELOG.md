@@ -5,6 +5,21 @@ All notable changes to **Grudge GameForge** are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/).
 
+## [0.4.3] — 2026-08-07
+
+### Added
+
+- **Grudge AI Auto** — primary orchestrator path via free-ai → `ai.grudge-studio.com` Legion skills (`dev`, `toolkit`, `warlords`, `convert`, …)
+- **Usage modes** in ⚙ Routing: auto | fleet_free | puter_first | byok | offline
+- **Legion agent role** selector (sub-agent skill) in settings
+- free-ai Worker **1.5.1**: `provider=grudge-ai` proxy, service binding `LEGION` → `grudge-legion-ai`, status `legionBinding` / `guestLegionKey`
+- Docs: [`docs/AI_FLEET_ATTACH_SSOT.md`](./docs/AI_FLEET_ATTACH_SSOT.md) step plan + inventory
+
+### Auth / env
+
+- Puter sign-in for FS/KV; Grudge ID JWT for Legion (`getGrudgeBearerToken`)
+- free-ai status: fleet Groq + Together live; Legion health probe
+
 ## [0.4.2] — 2026-08-04
 
 ### Added

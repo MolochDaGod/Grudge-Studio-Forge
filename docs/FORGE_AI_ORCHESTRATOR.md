@@ -48,16 +48,18 @@ AIWorkerPanel → runOrchestratedConversation
 
 **Extend, never fork:** one `aiClient`, one `AI_TOOLS` registry, one free-ai Worker.
 
-## Failover order (default)
+## Failover order (default · **Auto**)
 
-Subject to **Allowed APIs** and offline/prefer-Ollama flags:
+Subject to **Usage mode**, **Allowed APIs**, and offline/prefer-Ollama flags:
 
-1. Fleet Groq  
-2. Fleet Together  
-3. Puter (signed-in)  
-4. BYOK OpenRouter / Gemini / …  
-5. Ollama  
+1. **Grudge AI Legion** (`ai.grudge-studio.com` via `/api/free-ai/chat?provider=grudge-ai`) — needs Grudge ID JWT or worker `GRUDGE_AI_KEY`  
+2. Fleet Groq / Together (free-ai Worker secrets)  
+3. Puter (signed-in user-pays)  
+4. BYOK OpenRouter / Gemini / … (settings → Free API keys)  
+5. Ollama (local)  
 6. Error with Routing guidance  
+
+Auth baseline: **Puter** for cloud FS/KV · **Grudge ID** for Legion + Railway bag.
 
 ## Knowledge packs
 

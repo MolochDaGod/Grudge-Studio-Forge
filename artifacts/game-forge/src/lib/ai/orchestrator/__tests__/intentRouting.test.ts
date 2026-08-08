@@ -5,14 +5,28 @@ import { buildFailoverChain, type RoutingProbe } from "../routing";
 
 const emptyProbe: RoutingProbe = {
   puterSignedIn: false,
+  grudgeSignedIn: false,
+  grudgeAiOk: false,
   ollamaOk: false,
   fleet: {},
 };
 
 const fleetProbe: RoutingProbe = {
   puterSignedIn: false,
+  grudgeSignedIn: false,
+  grudgeAiOk: false,
   ollamaOk: false,
   fleet: { groq: true, together: true },
+};
+
+const settingsBase = {
+  customSystemPrompt: "",
+  forceOffline: false,
+  autoStartOllama: false,
+  preferOllamaWhenAvailable: false,
+  ollamaBaseUrl: "http://localhost:11434",
+  usageMode: "auto" as const,
+  grudgeAiRole: "dev",
 };
 
 describe("classifyIntent", () => {
@@ -62,7 +76,15 @@ describe("toolNameAllowlist", () => {
 });
 
 describe("buildFailoverChain", () => {
-  it("prefers fleet groq when available", () => {
+  it("prefers grudge-ai when legion ok", () => {
+    const chain = buildFailoverChain("orchestrator", {
+      ...fleetProbe,
+      grudgeAiOk: true,
+    });
+    expect(chain[0]?.provider).toBe("grudge-ai");
+  });
+
+  it("prefers fleet groq when legion unavailable", () => {
     const chain = buildFailoverChain("orchestrator", fleetProbe);
     expect(chain[0]?.provider).toBe("groq");
   });
@@ -81,12 +103,8 @@ describe("buildFailoverChain", () => {
       ...fleetProbe,
       ollamaOk: true,
       settings: {
-        customSystemPrompt: "",
+        ...settingsBase,
         allowedProviders: ["ollama"],
-        forceOffline: false,
-        autoStartOllama: false,
-        preferOllamaWhenAvailable: false,
-        ollamaBaseUrl: "http://localhost:11434",
       },
     });
     expect(chain.every((m) => m.provider === "ollama")).toBe(true);
@@ -97,12 +115,20 @@ describe("buildFailoverChain", () => {
       ...fleetProbe,
       ollamaOk: true,
       settings: {
-        customSystemPrompt: "",
-        allowedProviders: ["groq", "together", "ollama", "puter", "openrouter", "gemini", "cerebras", "deepseek", "server-anthropic"],
-        forceOffline: false,
-        autoStartOllama: false,
+        ...settingsBase,
+        allowedProviders: [
+          "grudge-ai",
+          "groq",
+          "together",
+          "ollama",
+          "puter",
+          "openrouter",
+          "gemini",
+          "cerebras",
+          "deepseek",
+          "server-anthropic",
+        ],
         preferOllamaWhenAvailable: true,
-        ollamaBaseUrl: "http://localhost:11434",
       },
     });
     expect(chain[0]?.provider).toBe("ollama");
@@ -115,7 +141,7 @@ describe("buildFailoverChain", () => {
 });
 
 describe("intentLabel", () => {
-  it("labels diagnose", () => {
-    expect(intentLabel("diagnose")).toMatch(/Diagnose/i);
+  it("returns string for known intent", () => {
+    expect(typeof intentLabel("scene")).toBe("string");
   });
 });

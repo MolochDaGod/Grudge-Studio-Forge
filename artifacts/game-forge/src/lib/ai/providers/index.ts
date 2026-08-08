@@ -14,11 +14,13 @@ import {
   deepseekProvider,
   togetherProvider,
 } from "./freeApiProvider";
+import { grudgeAiProvider } from "./grudgeAiProvider";
 
 const providers: Record<string, AIProvider> = {
   "server-anthropic": serverAnthropicProvider,
   puter: puterProvider,
   ollama: ollamaProvider,
+  "grudge-ai": grudgeAiProvider,
   groq: groqProvider,
   openrouter: openrouterProvider,
   gemini: geminiFreeProvider,
@@ -27,9 +29,9 @@ const providers: Record<string, AIProvider> = {
   together: togetherProvider,
 };
 
-/** Default to Puter (free) — server Anthropic key is optional / often missing. */
+/** Default Grudge AI Legion; puter/groq remain failover. */
 export function getProvider(id: string): AIProvider {
-  return providers[id] ?? puterProvider;
+  return providers[id] ?? grudgeAiProvider;
 }
 
 export { MODELS, DEFAULT_MODEL_ID, findModel } from "./types";

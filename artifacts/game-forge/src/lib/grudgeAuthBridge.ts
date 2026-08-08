@@ -77,6 +77,33 @@ export function clearGrudgeSession(): void {
 }
 
 /**
+ * Bearer JWT for fleet AI (ai.grudge-studio.com) and free-ai grudge-ai proxy.
+ * Also accepts standard fleet token keys used across Open / Puter toolkit.
+ */
+export function getGrudgeBearerToken(): string | null {
+  const sess = readGrudgeSession();
+  if (sess?.token && sess.token.length > 20) return sess.token;
+  try {
+    for (const k of [
+      "grudge_auth_token",
+      "grudge_session_token",
+      "grudge.token",
+      "sso_token",
+    ]) {
+      const v = localStorage.getItem(k);
+      if (v && v.length > 20) return v;
+    }
+  } catch {
+    /* private mode */
+  }
+  return null;
+}
+
+export function isGrudgeIdSignedIn(): boolean {
+  return Boolean(getGrudgeBearerToken() || readGrudgeSession()?.player?.grudgeId);
+}
+
+/**
  * Check for a `?grudge_token=` URL parameter (from cross-domain OAuth redirect).
  * If found, exchange it for a session and hydrate the auth store.
  * Returns true if a token was found and successfully exchanged.

@@ -24,7 +24,10 @@
  *   D1  env.DB  — durable agent_jobs table (see schema.sql)
  * Secrets (optional if client sends X-Api-Key BYOK):
  *   GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
- *   CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY
+ *   CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY,
+ *   GRUDGE_AI_KEY (Legion guest key)
+ * Service binding (optional):
+ *   env.LEGION → grudge-legion-ai (prefer over public HTTPS)
  */
 
 // Bundled at deploy from artifacts/game-forge export (prebuild / export:fast-assets).
@@ -110,6 +113,9 @@ const PROVIDERS = {
     env: "TOGETHER_API_KEY",
   },
 };
+
+/** Legion hub — not OpenAI-compatible upstream; special-cased in handleFreeAi. */
+const LEGION_URL = "https://ai.grudge-studio.com";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -891,6 +897,141 @@ async function handleAgent(path, request, env, ctx) {
   return null;
 }
 
+async function probeLegion() {
+  try {
+    const r = await fetch(`${LEGION_URL}/health`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!r.ok) return { ok: false };
+    const j = await r.json().catch(() => ({}));
+    return { ok: true, version: j.version, providers: j.providers };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/**
+ * Call Legion: prefer service binding env.LEGION (Workers best practice),
+ * else public HTTPS LEGION_URL / env.LEGION_PUBLIC_URL.
+ */
+async function legionFetch(env, pathAndQuery, init) {
+  const base = (env.LEGION_PUBLIC_URL || LEGION_URL).replace(/\/$/, "");
+  const url = pathAndQuery.startsWith("http")
+    ? pathAndQuery
+    : `${base}${pathAndQuery.startsWith("/") ? pathAndQuery : `/${pathAndQuery}`}`;
+  if (env.LEGION && typeof env.LEGION.fetch === "function") {
+    try {
+      return await env.LEGION.fetch(new Request(url, init));
+    } catch (bindErr) {
+      console.warn("LEGION binding failed, public HTTPS:", bindErr?.message || bindErr);
+    }
+  }
+  return fetch(url, init);
+}
+
+/** Proxy Forge AI turns to ai.grudge-studio.com Legion (agent skills + waterfall). */
+async function handleGrudgeAiChat(request, env, body) {
+  const auth =
+    request.headers.get("Authorization") ||
+    request.headers.get("authorization") ||
+    "";
+  const userJwt = auth.replace(/^Bearer\s+/i, "").trim();
+  const serverKey = env.GRUDGE_AI_KEY || env.LEGION_API_KEY || "";
+  const bearer = userJwt || serverKey;
+  if (!bearer) {
+    return json(
+      {
+        error:
+          "Grudge AI requires Grudge ID sign-in (Authorization Bearer) or GRUDGE_AI_KEY on free-ai worker.",
+        login: "https://id.grudge-studio.com/login",
+        skills: `${LEGION_URL}/v1/skills`,
+      },
+      401,
+    );
+  }
+
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return json({ error: "Missing messages[]" }, 400);
+  }
+
+  const role =
+    (typeof body.role === "string" && body.role) ||
+    (typeof body.model === "string" &&
+    body.model !== "auto" &&
+    !body.model.includes(":")
+      ? body.model
+      : "dev");
+
+  const apiPath =
+    role && role !== "general" && role !== "auto"
+      ? `/v1/agents/${encodeURIComponent(role)}/chat`
+      : `/v1/chat`;
+
+  let upstream;
+  try {
+    upstream = await legionFetch(env, apiPath, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${bearer}`,
+      },
+      body: JSON.stringify({
+        messages: body.messages,
+        model: body.model === "auto" ? undefined : body.model,
+        max_tokens: Math.min(Number(body.max_tokens) || 8192, 16384),
+      }),
+    });
+  } catch (err) {
+    return json(
+      { error: `Legion upstream failed: ${err.message || String(err)}` },
+      502,
+    );
+  }
+
+  const text = await upstream.text().catch(() => "");
+  if (!upstream.ok) {
+    return new Response(
+      text || JSON.stringify({ error: `Legion HTTP ${upstream.status}` }),
+      {
+        status: upstream.status,
+        headers: { "Content-Type": "application/json", ...CORS },
+      },
+    );
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return json({ error: "Legion returned non-JSON", raw: text.slice(0, 200) }, 502);
+  }
+
+  const content =
+    data.response ||
+    data.content ||
+    data.message ||
+    data.choices?.[0]?.message?.content ||
+    "";
+
+  // Normalize to OpenAI chat.completion shape for freeApiProvider consumers
+  return json({
+    id: data.request_id || `legion_${Date.now()}`,
+    object: "chat.completion",
+    model: data.model || role,
+    provider: data.provider || "grudge-ai-legion",
+    role: data.role || role,
+    response: content,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      },
+    ],
+    usage: data.usage,
+  });
+}
+
 async function handleFreeAi(path, request, env) {
   if (
     (path.endsWith("/api/free-ai/status") || path.endsWith("/status")) &&
@@ -901,15 +1042,33 @@ async function handleFreeAi(path, request, env) {
     for (const [pid, p] of Object.entries(PROVIDERS)) {
       available[pid] = Boolean(env[p.env]);
     }
+    const legion = await probeLegion();
+    available["grudge-ai"] = legion.ok;
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
+      version: "1.5.1",
       providers: available,
+      grudgeAi: legion.ok,
+      legion: legion.ok,
+      legionUrl: LEGION_URL,
+      legionVersion: legion.version || null,
+      legionBinding: Boolean(env.LEGION),
+      guestLegionKey: Boolean(env.GRUDGE_AI_KEY || env.LEGION_API_KEY),
       byok: true,
       catalog: "/api/catalog/fast-assets",
       agentJobs: "/api/agent/jobs",
       d1: Boolean(env.DB),
-      hint: "Send X-Api-Key for BYOK, or set server secrets for shared free keys.",
+      orchestrator: [
+        "grudge-ai (ai.grudge-studio.com)",
+        "groq",
+        "together",
+        "puter (client)",
+        "byok",
+        "ollama",
+      ],
+      docs: "https://github.com/MolochDaGod/Grudge-Studio-Forge/blob/main/docs/AI_FLEET_ATTACH_SSOT.md",
+      hint: "Send X-Api-Key for BYOK, Grudge JWT for Legion, or set server secrets for shared free keys.",
     });
   }
 
@@ -938,12 +1097,18 @@ async function handleFreeAi(path, request, env) {
   const url = new URL(request.url);
   const providerId =
     url.searchParams.get("provider") || body.provider || "groq";
+
+  // Special case: Legion hub (not OpenAI-compatible upstream)
+  if (providerId === "grudge-ai" || providerId === "legion") {
+    return handleGrudgeAiChat(request, env, body);
+  }
+
   const p = PROVIDERS[providerId];
   if (!p) {
     return json(
       {
         error: `Unknown provider '${providerId}'`,
-        known: Object.keys(PROVIDERS),
+        known: [...Object.keys(PROVIDERS), "grudge-ai"],
       },
       400,
     );

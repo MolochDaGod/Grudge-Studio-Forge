@@ -1,6 +1,6 @@
 name = "grudge-forge-free-ai"
 main = "worker.js"
-compatibility_date = "2025-09-01"
+compatibility_date = "2026-08-07"
 workers_dev = true
 
 # More-specific than grudge-gameforge-api's /api/* so catalog + agent + free-ai
@@ -22,9 +22,18 @@ binding = "DB"
 database_name = "forge-agent"
 database_id = "261db160-c45e-4688-a253-a943a01f75af"
 
+# Prefer service binding over public HTTPS hop (Workers best practice).
+# Legion path worker owns /v1/* — same account.
+[[services]]
+binding = "LEGION"
+service = "grudge-legion-ai"
+
 [vars]
 ORIGIN = "https://grudge-studio-forge.vercel.app"
+LEGION_PUBLIC_URL = "https://ai.grudge-studio.com"
 
 # Optional secrets (wrangler secret put NAME):
 # GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
-# CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY
+# CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY,
+# GRUDGE_AI_KEY (Legion API key when users have no Grudge JWT)
+

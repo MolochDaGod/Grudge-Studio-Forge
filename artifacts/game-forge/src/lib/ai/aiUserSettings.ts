@@ -10,6 +10,7 @@ const STORAGE_KEY = "grudge.ai.userSettings.v1";
 export type AllowableProvider = ProviderKind;
 
 export const ALL_ALLOWABLE_PROVIDERS: AllowableProvider[] = [
+  "grudge-ai",
   "groq",
   "together",
   "puter",
@@ -22,6 +23,7 @@ export const ALL_ALLOWABLE_PROVIDERS: AllowableProvider[] = [
 ];
 
 export const PROVIDER_LABELS: Record<AllowableProvider, string> = {
+  "grudge-ai": "Grudge AI Legion (auto · recommended)",
   groq: "Groq (fleet / BYOK)",
   together: "Together (fleet / BYOK)",
   puter: "Puter (sign-in free)",
@@ -32,6 +34,9 @@ export const PROVIDER_LABELS: Record<AllowableProvider, string> = {
   ollama: "Ollama (local)",
   "server-anthropic": "Server Anthropic (optional)",
 };
+
+/** High-level usage mode for orchestrator defaults. */
+export type AiUsageMode = "auto" | "fleet_free" | "puter_first" | "byok" | "offline";
 
 export type AiUserSettings = {
   /** Extra system prompt appended every turn (user “improve systems”). */
@@ -49,6 +54,17 @@ export type AiUserSettings = {
   preferOllamaWhenAvailable: boolean;
   /** Override Ollama base URL (default http://localhost:11434). */
   ollamaBaseUrl: string;
+  /**
+   * Usage profile:
+   *  auto — Grudge AI → fleet free → Puter → BYOK → Ollama
+   *  fleet_free — only grudge-ai + groq/together fleet
+   *  puter_first — Puter user-pays first
+   *  byok — user keys only (+ grudge-ai if signed in)
+   *  offline — Ollama only
+   */
+  usageMode: AiUsageMode;
+  /** Optional forced Legion agent role when using grudge-ai (dev|toolkit|…). */
+  grudgeAiRole: string;
 };
 
 const DEFAULTS: AiUserSettings = {
@@ -58,6 +74,8 @@ const DEFAULTS: AiUserSettings = {
   autoStartOllama: false,
   preferOllamaWhenAvailable: false,
   ollamaBaseUrl: "http://localhost:11434",
+  usageMode: "auto",
+  grudgeAiRole: "dev",
 };
 
 export function loadAiUserSettings(): AiUserSettings {
@@ -70,6 +88,16 @@ export function loadAiUserSettings(): AiUserSettings {
           ALL_ALLOWABLE_PROVIDERS.includes(p as AllowableProvider),
         ) as AllowableProvider[])
       : [...DEFAULTS.allowedProviders];
+    const usageModes: AiUsageMode[] = [
+      "auto",
+      "fleet_free",
+      "puter_first",
+      "byok",
+      "offline",
+    ];
+    const usageMode = usageModes.includes(parsed.usageMode as AiUsageMode)
+      ? (parsed.usageMode as AiUsageMode)
+      : DEFAULTS.usageMode;
     return {
       customSystemPrompt:
         typeof parsed.customSystemPrompt === "string"
@@ -77,7 +105,7 @@ export function loadAiUserSettings(): AiUserSettings {
           : "",
       allowedProviders:
         allowed.length > 0 ? allowed : [...DEFAULTS.allowedProviders],
-      forceOffline: !!parsed.forceOffline,
+      forceOffline: !!parsed.forceOffline || usageMode === "offline",
       autoStartOllama: !!parsed.autoStartOllama,
       preferOllamaWhenAvailable: !!parsed.preferOllamaWhenAvailable,
       ollamaBaseUrl:
@@ -85,9 +113,17 @@ export function loadAiUserSettings(): AiUserSettings {
         /^https?:\/\/[\w.:+-]+/i.test(parsed.ollamaBaseUrl)
           ? parsed.ollamaBaseUrl.replace(/\/$/, "")
           : DEFAULTS.ollamaBaseUrl,
+      usageMode,
+      grudgeAiRole:
+        typeof parsed.grudgeAiRole === "string" && parsed.grudgeAiRole.trim()
+          ? parsed.grudgeAiRole.trim().slice(0, 32)
+          : DEFAULTS.grudgeAiRole,
     };
   } catch {
-    return { ...DEFAULTS, allowedProviders: [...DEFAULTS.allowedProviders] };
+    return {
+      ...DEFAULTS,
+      allowedProviders: [...DEFAULTS.allowedProviders],
+    };
   }
 }
 

@@ -3,7 +3,7 @@
 How **Grudge Forge** reaches production. Read before changing Dockerfile, CI,
 workers, DNS, or the SPA build.
 
-**Related:** [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) · [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) · [README](./README.md)
+**Related:** [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) · [`docs/AI_FLEET_ATTACH_SSOT.md`](./docs/AI_FLEET_ATTACH_SSOT.md) · [`docs/FORGE_AI_ORCHESTRATOR.md`](./docs/FORGE_AI_ORCHESTRATOR.md) · [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) · [README](./README.md)
 
 ---
 
@@ -15,15 +15,23 @@ workers, DNS, or the SPA build.
     ▼
 forge.grudge-studio.com          Cloudflare DNS (proxied)
     │
-    ├─ /api/free-ai/*   → Worker grudge-forge-free-ai   (BYOK LLM + catalog + agent jobs)
-    ├─ /api/catalog/*   → same free-ai worker            (Fast assets JSON)
-    ├─ /api/agent/*     → same free-ai worker            (job queue; optional D1)
-    ├─ /api/*           → Worker grudge-gameforge-api / Railway  (Forge JSON / fleet)
+    ├─ /api/free-ai/*   → Worker grudge-forge-free-ai
+    │                         ├─ BYOK / fleet Groq+Together
+    │                         ├─ provider=grudge-ai → Legion (service binding LEGION)
+    │                         ├─ catalog + agent jobs (D1 forge-agent)
+    │                         └─ LEGION → grudge-legion-ai (ai.grudge-studio.com)
+    ├─ /api/catalog/*   → same free-ai worker
+    ├─ /api/agent/*     → same free-ai worker
+    ├─ /api/*           → Worker grudge-gameforge-api / Railway
     └─ /*               → Worker grudge-gameforge-web
                               │
                               ├─ ORIGIN        → https://grudge-studio-forge.vercel.app  (SPA)
                               ├─ ASSETS_ORIGIN → https://assets.grudge-studio.com        (R2)
                               └─ API_ORIGIN    → optional Railway fleet API (not Forge DB)
+
+ai.grudge-studio.com             ONE TRUTH LLM brain
+    ├─ grudge-ai-hub             domain + UI → grudaagent.vercel.app
+    └─ grudge-legion-ai          /v1/* Workers AI + Gemini BYOK + skills
 ```
 
 ### Stack principles (agentic editor)
@@ -32,7 +40,7 @@ forge.grudge-studio.com          Cloudflare DNS (proxied)
 | --- | --- | --- |
 | SPA / editor UI | Vercel prebuilt (GHA) | Docker Cloud / Railway for SPA |
 | Binaries / GLBs | **R2** `assets.grudge-studio.com` + `builtin:` keys | Random hosts, Replit, localhost |
-| Agentic LLM | free-ai Worker (BYOK) + client tools | Second AI host without need |
+| Agentic LLM | free-ai → **Legion** + client tools | Second public AI domain for Forge |
 | Agent jobs / Fast catalog | free-ai Worker + optional **D1** | New storage product |
 | Player / bag / wallet | Railway Postgres | Forge D1 |
 | Video | — | Stream until cinema is a product |
@@ -51,13 +59,18 @@ Without D1, jobs fall back to in-memory on the isolate.
 
 | Secret / var | Where | Purpose |
 | --- | --- | --- |
-| `GROQ_API_KEY` | `wrangler secret put` on **grudge-forge-free-ai** | Fleet agentic LLM (default) |
-| `TOGETHER_API_KEY` | free-ai Worker | Together models |
+| `GROQ_API_KEY` | **grudge-forge-free-ai** | Fleet agentic LLM (live) |
+| `TOGETHER_API_KEY` | free-ai Worker | Together models (live) |
+| `GRUDGE_AI_KEY` | free-ai Worker | Guest Legion when no user JWT |
 | `OPENROUTER_API_KEY` / `GEMINI_API_KEY` / … | free-ai Worker | Optional providers |
+| Service binding `LEGION` | free-ai → `grudge-legion-ai` | Prefer over public HTTPS |
+| Legion `GEMINI_API_KEY` / `JWT_SECRET` / `GROQ_API_KEY` | **grudge-legion-ai** + **grudge-ai-hub** | Brain waterfall |
 | `OBJECTSTORE_API_KEY` | ObjectStore / gameforge-api only | Presigned upload / catalog write |
 | Public CDN | SPA `fleetConfig` | `https://assets.grudge-studio.com` |
 | ObjectStore | SPA / fleet | `https://objectstore.grudge-studio.com` |
 | R2 bucket | ops docs | `grudge-assets` |
+
+Full attach checklist: **[docs/AI_FLEET_ATTACH_SSOT.md](./docs/AI_FLEET_ATTACH_SSOT.md)**.
 
 **Never** commit API keys or CF Access tokens. SPA only gets public URLs.
 Project save: **Puter** (signed-in) or **localStorage** (guest) — no Railway for Forge scenes.

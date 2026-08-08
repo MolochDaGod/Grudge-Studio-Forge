@@ -21,10 +21,15 @@ import {
   type AiUserSettings,
 } from "@/lib/ai/aiUserSettings";
 import { ensureOllamaRunning, probeOllama } from "@/lib/ai/ollamaLifecycle";
+import { isGrudgeIdSignedIn } from "@/lib/grudgeAuthBridge";
 import type { AgentRole } from "./intent";
 
 export type RoutingProbe = {
   puterSignedIn: boolean;
+  /** Grudge ID JWT available for Legion hub. */
+  grudgeSignedIn: boolean;
+  /** free-ai reports grudge-ai / legion reachable. */
+  grudgeAiOk: boolean;
   ollamaOk: boolean;
   fleet: Partial<Record<FreeProviderId, boolean>>;
   forceOffline?: boolean;
@@ -43,9 +48,11 @@ const FREE_PROVIDER_KINDS = new Set<ProviderKind>([
   "together",
 ]);
 
-/** Preferred model ids per role (first available wins). */
+/** Preferred model ids per role (first available wins). Grudge AI Auto first. */
 const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
   orchestrator: [
+    "grudge-ai:auto",
+    "grudge-ai:dev",
     "groq:llama-3.3-70b-versatile",
     "together:meta-llama/Llama-3.3-70B-Instruct-Turbo",
     "puter:claude-3-7-sonnet",
@@ -54,6 +61,7 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
     "ollama:llama3.2",
   ],
   scene_builder: [
+    "grudge-ai:auto",
     "groq:llama-3.3-70b-versatile",
     "puter:claude-3-7-sonnet",
     "together:meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -61,6 +69,7 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
     "ollama:qwen2.5-coder:7b",
   ],
   code: [
+    "grudge-ai:dev",
     "deepseek:deepseek-chat",
     "puter:claude-3-7-sonnet",
     "groq:llama-3.3-70b-versatile",
@@ -68,12 +77,14 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
     "ollama:deepseek-coder-v2:16b",
   ],
   design: [
+    "grudge-ai:auto",
     "puter:gpt-4o-mini",
     "gemini:gemini-2.0-flash",
     "puter:claude-3-7-sonnet",
     "groq:llama-3.3-70b-versatile",
   ],
   diagnose: [
+    "grudge-ai:auto",
     "groq:llama-3.1-8b-instant",
     "groq:gemma2-9b-it",
     "gemini:gemini-2.0-flash-lite",
@@ -81,6 +92,7 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
     "ollama:llama3.2",
   ],
   deploy: [
+    "grudge-ai:auto",
     "groq:llama-3.1-8b-instant",
     "groq:llama-3.3-70b-versatile",
     "puter:claude-3-5-sonnet",
@@ -98,11 +110,32 @@ function modelAvailable(m: ModelOption, probe: RoutingProbe): boolean {
   const settings = probe.settings ?? loadAiUserSettings();
   if (!isProviderAllowed(m.provider, settings)) return false;
 
-  if (probe.forceOffline || settings.forceOffline) {
+  // Usage modes tighten allowlist at runtime
+  if (settings.usageMode === "fleet_free") {
+    if (m.provider !== "grudge-ai" && m.provider !== "groq" && m.provider !== "together") {
+      return false;
+    }
+  }
+  if (settings.usageMode === "puter_first" && m.provider === "grudge-ai") {
+    // still allowed; puter is ordered first below
+  }
+  if (settings.usageMode === "byok") {
+    if (m.provider === "grudge-ai") {
+      /* ok if signed in */
+    } else if (m.provider === "puter" || m.provider === "ollama" || m.provider === "server-anthropic") {
+      return false;
+    }
+  }
+
+  if (probe.forceOffline || settings.forceOffline || settings.usageMode === "offline") {
     return m.provider === "ollama" && probe.ollamaOk;
   }
   if (m.provider === "ollama") return probe.ollamaOk;
   if (m.provider === "puter") return probe.puterSignedIn;
+  if (m.provider === "grudge-ai") {
+    // Legion: JWT user or free-ai reports fleet grudge-ai secret/reachable
+    return probe.grudgeSignedIn || probe.grudgeAiOk;
+  }
   if (m.provider === "server-anthropic") return true; // try; fail over on error
   if (FREE_PROVIDER_KINDS.has(m.provider)) {
     const id = m.provider as FreeProviderId;
@@ -137,6 +170,16 @@ export function buildFailoverChain(
   if (settings.preferOllamaWhenAvailable && probe.ollamaOk) {
     for (const m of MODELS) {
       if (m.provider !== "ollama" || seen.has(m.id)) continue;
+      if (!modelAvailable(m, probe)) continue;
+      chain.push(m);
+      seen.add(m.id);
+    }
+  }
+
+  // Puter-first usage mode
+  if (settings.usageMode === "puter_first" && probe.puterSignedIn) {
+    for (const m of MODELS) {
+      if (m.provider !== "puter" || seen.has(m.id)) continue;
       if (!modelAvailable(m, probe)) continue;
       chain.push(m);
       seen.add(m.id);
@@ -181,22 +224,40 @@ export async function probeRouting(opts: {
   tryStartOllama?: boolean;
 }): Promise<RoutingProbe> {
   const settings = loadAiUserSettings();
-  const forceOffline = opts.forceOffline ?? settings.forceOffline;
+  const forceOffline =
+    (opts.forceOffline ?? settings.forceOffline) ||
+    settings.usageMode === "offline";
 
   if (opts.tryStartOllama !== false && (settings.autoStartOllama || forceOffline)) {
     await ensureOllamaRunning({ forceAttempt: settings.autoStartOllama || forceOffline });
   }
 
-  const [ollamaOkTags, ollamaOkCustom, fleet] = await Promise.all([
+  const [ollamaOkTags, ollamaOkCustom, fleet, legionHealth] = await Promise.all([
     isOllamaAvailable().catch(() => false),
     probeOllama(settings.ollamaBaseUrl).catch(() => false),
     refreshFleetServerKeys(true).catch(
       () => ({}) as Partial<Record<FreeProviderId, boolean>>,
     ),
+    fetch("/api/free-ai/status", { cache: "no-store", signal: AbortSignal.timeout(5000) })
+      .then(async (r) => (r.ok ? ((await r.json()) as { grudgeAi?: boolean; legion?: boolean }) : null))
+      .catch(() => null),
   ]);
+
+  const grudgeAiOk = !!(
+    legionHealth?.grudgeAi ||
+    legionHealth?.legion ||
+    // free-ai status may only list provider keys — probe legion separately
+    (await fetch("https://ai.grudge-studio.com/health", {
+      signal: AbortSignal.timeout(4000),
+    })
+      .then((r) => r.ok)
+      .catch(() => false))
+  );
 
   return {
     puterSignedIn: opts.puterSignedIn,
+    grudgeSignedIn: isGrudgeIdSignedIn(),
+    grudgeAiOk,
     ollamaOk: !!(ollamaOkTags || ollamaOkCustom),
     fleet: fleet ?? {},
     forceOffline,
@@ -206,6 +267,11 @@ export async function probeRouting(opts: {
 }
 
 export function statusLabel(model: ModelOption, probe: RoutingProbe): string {
+  if (model.provider === "grudge-ai") {
+    return probe.grudgeSignedIn
+      ? `Legion · ${model.label}`
+      : `Legion (guest edge) · ${model.label}`;
+  }
   if (model.provider === "ollama") return `Ollama · ${model.label}`;
   if (model.provider === "puter") return `Puter · ${model.label}`;
   if (FREE_PROVIDER_KINDS.has(model.provider)) {

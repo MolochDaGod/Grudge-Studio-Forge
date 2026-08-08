@@ -13,7 +13,11 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 | **Docs site (Pages)** | [molochdagod.github.io/Grudge-Studio-Forge](https://molochdagod.github.io/Grudge-Studio-Forge/) |
 | **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) · latest **[v0.4.2](./RELEASE_NOTES_v0.4.2.md)** |
 | **Forge AI orchestrator** | [`docs/FORGE_AI_ORCHESTRATOR.md`](./docs/FORGE_AI_ORCHESTRATOR.md) |
+| **AI attach (Legion + Forge)** | [`docs/AI_FLEET_ATTACH_SSOT.md`](./docs/AI_FLEET_ATTACH_SSOT.md) |
+| **Account · Puter · engine DB** | [`docs/ACCOUNT_PUTER_ENGINE_SSOT.md`](./docs/ACCOUNT_PUTER_ENGINE_SSOT.md) |
+| **Puter patterns** | [`docs/PUTER_PATTERNS.md`](./docs/PUTER_PATTERNS.md) |
 | **Edge + MCP** | [`docs/EDGE_AND_MCP.md`](./docs/EDGE_AND_MCP.md) |
+| **Legion brain** | [ai.grudge-studio.com](https://ai.grudge-studio.com) · [skills](https://ai.grudge-studio.com/v1/skills) |
 
 ## Production status (current)
 
@@ -21,14 +25,15 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 |---|---|---|
 | Editor SPA (`artifacts/game-forge`) | Three **0.185** · R3F · Rapier · Monaco · Blazor WASM | **GHA → Vercel prebuilt** · CF edge `forge.grudge-studio.com` |
 | Edge SPA proxy | Worker `grudge-gameforge-web` | `ORIGIN` = Vercel · `ASSETS_ORIGIN` = R2 CDN |
-| Free AI + agent catalog | Worker `grudge-forge-free-ai` + optional **D1** `forge-agent` | `/api/free-ai/*` · `/api/catalog/*` · `/api/agent/*` |
+| Free AI + agent catalog | Worker `grudge-forge-free-ai` + **D1** `forge-agent` + service binding **LEGION** | `/api/free-ai/*` · `/api/catalog/*` · `/api/agent/*` |
+| LLM brain | Workers **grudge-ai-hub** + **grudge-legion-ai** | [ai.grudge-studio.com](https://ai.grudge-studio.com) |
 | JSON API | Worker `grudge-gameforge-api` / Railway fleet | `/api/*` (storage upload, health) |
 | Player (`artifacts/player`) | Same Three + R3F + Rapier as editor | Bundled / published with SPA |
 | Desktop | Electron 33 | GitHub Releases |
 | Assets CDN | R2 `grudge-assets` + `builtin:` keys | [assets.grudge-studio.com](https://assets.grudge-studio.com) |
 | ObjectStore | Fleet catalog / upload API | [objectstore.grudge-studio.com](https://objectstore.grudge-studio.com) |
 
-**Stack principles (agentic editor):** SPA on Vercel (not Docker); binaries on **R2**; agent jobs/catalog on **Workers + optional D1**; player bag/island on **Railway Postgres** (not Forge D1); models only `builtin:` or `assets.grudge-studio.com`.
+**Stack principles (agentic editor):** SPA on Vercel (not Docker); binaries on **R2**; agent jobs/catalog on **Workers + D1**; **one LLM brain** (Legion) via free-ai attach; player bag/island on **Railway Postgres** (not Forge D1); models only `builtin:` or `assets.grudge-studio.com`.
 
 **Hard rules (production):**
 
@@ -47,10 +52,10 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 - **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting, layer matrix
 - **Projects** — create/open/save scenes **local** (browser) or **Puter cloud** when signed in
 - **Fast options** — one-click races, maps, VFX, RTS, weapons (`list_fast_assets` / Asset Browser → Fast)
-- **Agent edge** — fleet Groq/Together via `/api/free-ai`, Fast catalog, D1 agent jobs
-- **Forge AI orchestrator** — no model dropdown; best-available failover + intent chips (Scene / Fix / Deploy / …); knowledge packs
-- **⚙ Routing settings** — custom system prompt, allowed APIs allowlist, offline / prefer Ollama, auto-start Ollama + URL check (localStorage)
-- **AI providers** — Puter · fleet free-ai (Groq/Together) · BYOK (OpenRouter, Gemini, …) · Ollama offline · optional Anthropic
+- **Agent edge** — free-ai → **Grudge AI Legion** + fleet Groq/Together, Fast catalog, D1 agent jobs
+- **Forge AI orchestrator** — no model dropdown; Auto (Legion first) + intent chips; knowledge packs
+- **⚙ Routing settings** — usage mode (auto/fleet/puter/byok/offline), Legion role, system prompt, API keys, Ollama
+- **AI providers** — **Grudge AI Auto** · Puter · fleet free-ai · BYOK · Ollama · optional Anthropic
 - **Inline AI** — contextual prompt bar on Console / Assets / Scripts / Prefabs / Nodes / Layers
 - **Visual scripting** — @xyflow node graph + AI prompt-to-graph
 - **Monaco scripts** — smart templates (WASD, third-person camera, Mirror-style NetworkManager, remotes, outline, R2 character) + Blazor packs
