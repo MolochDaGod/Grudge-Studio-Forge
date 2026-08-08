@@ -36,4 +36,5 @@ LEGION_PUBLIC_URL = "https://ai.grudge-studio.com"
 # GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
 # CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY,
 # GRUDGE_AI_KEY (Legion API key when users have no Grudge JWT)
+# POLY_PIZZA_API_KEY (poly.pizza catalog proxy — never commit)
 

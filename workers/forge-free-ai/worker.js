@@ -25,7 +25,8 @@
  * Secrets (optional if client sends X-Api-Key BYOK):
  *   GROQ_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY,
  *   CEREBRAS_API_KEY, DEEPSEEK_API_KEY, TOGETHER_API_KEY,
- *   GRUDGE_AI_KEY (Legion guest key)
+ *   GRUDGE_AI_KEY (Legion guest key),
+ *   POLY_PIZZA_API_KEY (poly.pizza 3D search — edge proxy only)
  * Service binding (optional):
  *   env.LEGION → grudge-legion-ai (prefer over public HTTPS)
  */
@@ -816,7 +817,9 @@ async function handleCatalog(path, env, url) {
         search: "/api/catalog/search?q=&category=&prefix=&format=&limit=",
         gamedata: "/api/catalog/gamedata?kind=weapons|equipment|materials&q=",
         fast: "/api/catalog/fast-assets",
+        polyPizza: "/api/catalog/poly-pizza?q=&limit=",
       },
+      polyPizza: Boolean(env.POLY_PIZZA_API_KEY || env.POLY_PIZZA_API),
     });
   }
   if (isCatalogPath(path, "fast-assets")) {
@@ -835,7 +838,102 @@ async function handleCatalog(path, env, url) {
   if (isCatalogPath(path, "gamedata")) {
     return handleGamedata(env, url);
   }
+  // Poly Pizza free CC0-ish low-poly search (edge proxy — key never in SPA)
+  if (isCatalogPath(path, "poly-pizza") || isCatalogPath(path, "polypizza")) {
+    return handlePolyPizza(env, url);
+  }
   return null;
+}
+
+/**
+ * Proxy https://api.poly.pizza search. Production meshes still prefer fleet CDN;
+ * Poly Pizza is optional kit/prop discovery for labs (not Warlords hero SSOT).
+ */
+async function handlePolyPizza(env, url) {
+  const key = (env.POLY_PIZZA_API_KEY || env.POLY_PIZZA_API || "").trim();
+  if (!key) {
+    return json(
+      {
+        ok: false,
+        error: "POLY_PIZZA_API_KEY not set on worker",
+        docs: "https://poly.pizza/docs/api/v1.1",
+      },
+      503,
+    );
+  }
+  const q = (url.searchParams.get("q") || url.searchParams.get("keyword") || "").trim();
+  if (!q) {
+    return json({ ok: false, error: "q or keyword required" }, 400);
+  }
+  const limit = Math.min(
+    Math.max(parseInt(url.searchParams.get("limit") || "24", 10) || 24, 1),
+    50,
+  );
+  const encoded = encodeURIComponent(q);
+  // v1.1 keyword search — try path form then query form
+  const candidates = [
+    `https://api.poly.pizza/v1.1/search/${encoded}?Limit=${limit}`,
+    `https://api.poly.pizza/v1/search/${encoded}?Limit=${limit}`,
+    `https://api.poly.pizza/v1.1/search?q=${encoded}&Limit=${limit}`,
+  ];
+  let lastStatus = 0;
+  let lastBody = "";
+  for (const upstreamUrl of candidates) {
+    try {
+      const r = await fetch(upstreamUrl, {
+        headers: {
+          Accept: "application/json",
+          "x-api-key": key,
+          "X-API-KEY": key,
+        },
+      });
+      lastStatus = r.status;
+      lastBody = await r.text();
+      if (!r.ok) continue;
+      let data;
+      try {
+        data = JSON.parse(lastBody);
+      } catch {
+        return json({ ok: false, error: "invalid poly.pizza JSON", status: r.status }, 502);
+      }
+      const raw = Array.isArray(data)
+        ? data
+        : data.results || data.models || data.items || data.Results || [];
+      const items = (Array.isArray(raw) ? raw : []).slice(0, limit).map((m, i) => ({
+        id: String(m.ID || m.id || m.Id || `poly-${i}`),
+        name: m.Title || m.title || m.Name || m.name || `model-${i}`,
+        download: m.Download || m.download || m.Glb || m.glb || m.url || null,
+        thumbnail: m.Thumbnail || m.thumbnail || m.Image || m.image || null,
+        creator: m.Creator || m.creator || m.Author || null,
+        licence: m.Licence || m.License || m.licence || m.license || "CC0/Poly Pizza",
+        source: "poly.pizza",
+        note: "lab prop discovery — not production Warlords/grudge6 hero SSOT",
+      }));
+      return json({
+        ok: true,
+        source: "poly.pizza",
+        q,
+        count: items.length,
+        items,
+        policy: {
+          production_heroes: "grudge6 + assets.grudge-studio.com only",
+          poly_pizza: "optional free low-poly discovery via edge proxy",
+        },
+      });
+    } catch (e) {
+      lastBody = e instanceof Error ? e.message : String(e);
+    }
+  }
+  return json(
+    {
+      ok: false,
+      error: "poly.pizza upstream failed",
+      status: lastStatus || 502,
+      detail: lastBody.slice(0, 240),
+      docs: "https://poly.pizza/docs/api/v1.1",
+    },
+    lastStatus && lastStatus >= 400 && lastStatus < 600 ? lastStatus : 502,
+  );
 }
 
 async function handleAgent(path, request, env, ctx) {
@@ -1047,7 +1145,7 @@ async function handleFreeAi(path, request, env) {
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
-      version: "1.5.1",
+      version: "1.5.2",
       providers: available,
       grudgeAi: legion.ok,
       legion: legion.ok,
@@ -1055,8 +1153,10 @@ async function handleFreeAi(path, request, env) {
       legionVersion: legion.version || null,
       legionBinding: Boolean(env.LEGION),
       guestLegionKey: Boolean(env.GRUDGE_AI_KEY || env.LEGION_API_KEY),
+      polyPizza: Boolean(env.POLY_PIZZA_API_KEY || env.POLY_PIZZA_API),
       byok: true,
       catalog: "/api/catalog/fast-assets",
+      polyPizzaSearch: "/api/catalog/poly-pizza?q=",
       agentJobs: "/api/agent/jobs",
       d1: Boolean(env.DB),
       orchestrator: [
