@@ -44,17 +44,23 @@ echo YOUR_KEY | npx wrangler secret put GRUDGE_AI_KEY
 curl -s https://forge.grudge-studio.com/api/free-ai/status   # guestLegionKey true
 ```
 
-## Step 4 — Forge SPA (next)
+## Step 4 — Forge SPA (done via GHA)
 
-Editor UI for Auto / usage modes / Legion role is in `artifacts/game-forge` — not live until SPA deploy:
+- [x] Deploy Forge SPA GHA on main (Auto / usage modes)
+
+Smoke: open editor → AI Worker → ⚙ Routing → Usage mode **Auto**.
+
+## Step 4b — Legion context 1.6 (docs + understanding)
+
+- [x] `GET /v1/context` pack (info, GRD/agentic, deploy hardening)
+- [x] Roles: `info`, `agentic`, `coder`, `grudachain`, `deploy`, `forge`
+- [x] Hub docs `AI_CONTEXT_SSOT.md` · `DEPLOY_HARDENING.md`
 
 ```bash
-cd F:\GitHub\Grudge-Studio-Forge
-pnpm deploy:forge
-# or wait for GHA on main
+curl -s https://ai.grudge-studio.com/v1/context | head
+curl -s https://ai.grudge-studio.com/v1/skills
+cd F:\GitHub\grudge-ai-hub && npm run smoke
 ```
-
-Smoke after SPA: open editor → AI Worker → ⚙ Routing → Usage mode **Auto**.
 
 ## Step 5 — Agent jobs → Legion (later)
 

@@ -14,7 +14,8 @@ nav_order: 14
 | **https://forge.grudge-studio.com/api/free-ai/** | **Hands** — same-origin proxy, catalog, agent jobs |
 | **Forge SPA** | **Face** — Puter + Grudge ID, Auto orchestrator, scene tools |
 
-Related: [FORGE_AI_ORCHESTRATOR.md](./FORGE_AI_ORCHESTRATOR.md) · [DEPLOYMENT.md](../DEPLOYMENT.md) · Legion repo `F:\GitHub\grudge-ai-hub`
+Related: [FORGE_AI_ORCHESTRATOR.md](./FORGE_AI_ORCHESTRATOR.md) · [DEPLOYMENT.md](../DEPLOYMENT.md) · Legion repo `F:\GitHub\grudge-ai-hub`  
+**Legion context pack (Studio + info + GRD/agentic):** `https://ai.grudge-studio.com/v1/context` · hub docs `AI_CONTEXT_SSOT.md` · `DEPLOY_HARDENING.md`
 
 ---
 
@@ -52,7 +53,9 @@ Related: [FORGE_AI_ORCHESTRATOR.md](./FORGE_AI_ORCHESTRATOR.md) · [DEPLOYMENT.m
 | `WORKERS_AI_USER_TOKEN` | optional | REST fallback only |
 | `OBSERVATORY_KEY` | optional | Telemetry |
 
-**Public routes:** `/health`, `/v1/agents`, `/v1/models`, `/v1/ssot`, `/v1/skills`, `POST /v1/chat`, `POST /v1/agents/:role/chat`
+**Public routes:** `/health`, `/v1/agents`, `/v1/models`, `/v1/ssot`, `/v1/skills`, **`/v1/context`**, `POST /v1/chat`, `POST /v1/agents/:role/chat`
+
+**Context for agents:** load `/v1/context` before inventing hosts — covers ONE TRUTH, **info.grudge-studio.com**, AI deployable systems, **agentic / GRD Grudachain**, deploy hardening.
 
 ### Forge edge
 
