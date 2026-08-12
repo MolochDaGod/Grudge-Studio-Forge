@@ -17,7 +17,16 @@
  */
 import { useAuth, type AuthUser, type PuterIdentity } from "@/store/auth";
 import { loadPuterSdk, getPuter, type PuterSdk } from "@/lib/puterSdk";
-import { checkGrudgeTokenParam, checkGrudgeSession, clearGrudgeSession } from "@/lib/grudgeAuthBridge";
+import {
+  captureAuthHandoffFromUrl,
+  checkGrudgeSession,
+  clearGrudgeSession,
+  getGrudgeBearerToken,
+  tryLinkPuterToGrudge,
+  isGrudgeIdSignedIn,
+  storeGrudgeSession,
+  type GrudgePlayer,
+} from "@/lib/grudgeAuthBridge";
 
 const GUEST_KEY = "grudge.auth.guestUser";
 
@@ -93,22 +102,29 @@ async function readPuterSession(sdk: PuterSdk): Promise<AuthUser | null> {
 /**
  * Boot the auth store. Called once from App.tsx on mount.
  *
- * Pure read path — never opens a popup. If the user already has a Puter
- * session it's restored; otherwise we check for a persisted guest choice,
- * and otherwise leave the store at `anon` so the Welcome modal renders.
+ * Pure read path — never opens a popup.
+ * Order (fleet SSOT):
+ *   1. URL/hash SSO handoff (sso_token preferred over grudge_token)
+ *   2. Grudge ID session (fleet keys + claim)
+ *   3. Puter shell (cloud only — not game account)
+ *   4. Local guest / Welcome
  */
 export async function bootstrapAuth(): Promise<void> {
   try {
-    // 1. Check for a ?grudge_token= URL param (cross-domain OAuth redirect)
-    //    — used by Grudge Studio (dev tool) module embeds for single login.
-    if (await checkGrudgeTokenParam()) return;
+    // 1. Fleet SSO return: ?sso_token= / #sso_token / grudge_token handoff
+    if (await captureAuthHandoffFromUrl()) {
+      // Optionally attach Puter if already logged in on that plane
+      void mergePuterIfPresent().catch(() => undefined);
+      return;
+    }
 
-    // 2. Check for an existing Grudge ID session in localStorage
-    //    (may have been injected by Studio webview SSO before this ran)
-    if (await checkGrudgeSession()) return;
+    // 2. Existing Grudge ID session (localStorage fleet keys + silent claim)
+    if (await checkGrudgeSession()) {
+      void mergePuterIfPresent().catch(() => undefined);
+      return;
+    }
 
-    // 3. Try the Puter SDK. We tolerate CDN load failures (corp networks
-    // that block puter.com) by falling through to the guest path.
+    // 3. Puter SDK — User-Pays cloud only (not Railway bag)
     // loadPuterSdk has an 8s timeout so a hung CDN never freezes the SPA.
     let sdk: PuterSdk | null = null;
     try {
@@ -121,6 +137,10 @@ export async function bootstrapAuth(): Promise<void> {
       const user = await readPuterSession(sdk);
       if (user) {
         useAuth.getState().setSignedIn(user);
+        // Soft-link Puter→Grudge only when fleet JWT already exists
+        if (isGrudgeIdSignedIn() && user.puter?.uuid) {
+          void tryLinkPuterToGrudge(getGrudgeBearerToken(), user.puter.uuid);
+        }
         return;
       }
     }
@@ -141,6 +161,32 @@ export async function bootstrapAuth(): Promise<void> {
     if (useAuth.getState().status === "idle") {
       useAuth.getState().reset();
     }
+  }
+}
+
+/** Merge Puter identity onto an existing Grudge-signed user without clearing JWT. */
+async function mergePuterIfPresent(): Promise<void> {
+  try {
+    const sdk = await loadPuterSdk();
+    const puterUser = await readPuterSession(sdk);
+    if (!puterUser?.puter) return;
+    const cur = useAuth.getState().user;
+    if (!cur) {
+      useAuth.getState().setSignedIn(puterUser);
+      return;
+    }
+    useAuth.getState().setSignedIn({
+      ...cur,
+      puter: puterUser.puter,
+      // Keep Grudge display name when both present
+      name: cur.grudgeId ? cur.name : puterUser.name,
+      id: puterUser.puter.uuid || cur.id,
+    });
+    if (cur.grudgeId || isGrudgeIdSignedIn()) {
+      void tryLinkPuterToGrudge(getGrudgeBearerToken(), puterUser.puter.uuid);
+    }
+  } catch {
+    /* Puter optional */
   }
 }
 
@@ -170,25 +216,19 @@ export function installStudioSsoHydrateListener(): () => void {
 
     // Prefer Grudge player identity from Studio SSO
     if (detail.player?.grudgeId && detail.token) {
-      try {
-        localStorage.setItem(
-          "grudge.auth.session",
-          JSON.stringify({
-            player: {
-              id: detail.player.id ?? 0,
-              username: detail.player.username ?? "player",
-              grudgeId: detail.player.grudgeId,
-              displayName: detail.player.displayName ?? detail.player.username ?? null,
-              avatarUrl: null,
-              gbuxBalance: "0",
-              role: "player",
-            },
-            token: detail.token,
-            storedAt: Date.now(),
-          }),
-        );
-      } catch { /* */ }
+      const player: GrudgePlayer = {
+        id: detail.player.id ?? 0,
+        username: detail.player.username ?? "player",
+        grudgeId: detail.player.grudgeId,
+        displayName: detail.player.displayName ?? detail.player.username ?? null,
+        avatarUrl: null,
+        gbuxBalance: "0",
+        role: "player",
+      };
+      // Dual-write fleet JWT keys (grudge.open.token + …)
+      storeGrudgeSession(player, detail.token);
 
+      // Real Puter only — never fake puter uuid from grudgeId (Cloud Save would break)
       const puter =
         detail.puterUser?.uuid && detail.puterUser?.username
           ? {
@@ -197,20 +237,12 @@ export function installStudioSsoHydrateListener(): () => void {
               email: detail.puterUser.email ?? null,
               isTemp: false,
             }
-          : detail.player.grudgeId
-            ? {
-                // Synthetic puter-shaped id so isPuterSignedIn gates work for
-                // Cloud Save when Studio already holds the real Puter token.
-                uuid: detail.puterUser?.uuid ?? detail.player.grudgeId,
-                username: detail.player.username ?? "player",
-                email: detail.puterUser?.email ?? null,
-                isTemp: false,
-              }
-            : undefined;
+          : undefined;
 
       useAuth.getState().setSignedIn({
         id: puter?.uuid ?? detail.player.grudgeId,
         name: detail.player.displayName || detail.player.username || "Player",
+        grudgeId: detail.player.grudgeId,
         puter,
       });
       return;
@@ -255,6 +287,24 @@ export async function signInWithPuter(): Promise<AuthUser> {
   // Guest record (if any) is no longer the source of truth — clear it so
   // a future sign-out doesn't unexpectedly revive a stale guest name.
   writeStoredGuest(null);
+
+  // Merge with existing Grudge ID session when present (dual plane)
+  const cur = useAuth.getState().user;
+  const grudgeTok = getGrudgeBearerToken();
+  if (cur?.grudgeId || grudgeTok) {
+    const merged: AuthUser = {
+      id: user.puter?.uuid || cur?.id || user.id,
+      name: cur?.grudgeId ? cur.name : user.name,
+      grudgeId: cur?.grudgeId,
+      puter: user.puter,
+    };
+    useAuth.getState().setSignedIn(merged);
+    if (user.puter?.uuid) {
+      void tryLinkPuterToGrudge(grudgeTok, user.puter.uuid);
+    }
+    return merged;
+  }
+
   useAuth.getState().setSignedIn(user);
   return user;
 }

@@ -110,9 +110,11 @@ export const grudgeAiProvider: AIProvider = {
       const text = await res.text().catch(() => "");
       yield {
         type: "error",
+        // Include 401/unauthorized so orchestrator failover treats this as retryable
+        // and falls through to fleet Groq/Together instead of hard-stopping the turn.
         error:
           res.status === 401
-            ? "Grudge AI: sign in with Grudge ID (or set GRUDGE_AI_KEY on free-ai worker)."
+            ? "Grudge AI 401 unauthorized — sign in with Grudge ID (or set GRUDGE_AI_KEY on free-ai worker)."
             : `Grudge AI HTTP ${res.status}: ${text.slice(0, 280)}`,
       };
       yield { type: "stop", stop_reason: "error" };

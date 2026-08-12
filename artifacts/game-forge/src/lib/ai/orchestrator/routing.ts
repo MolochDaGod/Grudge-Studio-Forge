@@ -28,8 +28,13 @@ export type RoutingProbe = {
   puterSignedIn: boolean;
   /** Grudge ID JWT available for Legion hub. */
   grudgeSignedIn: boolean;
-  /** free-ai reports grudge-ai / legion reachable. */
+  /** free-ai reports Legion reachable (health only — not enough alone to chat). */
   grudgeAiOk: boolean;
+  /**
+   * free-ai has GRUDGE_AI_KEY / LEGION_API_KEY so guests can use Legion
+   * without a Grudge ID JWT.
+   */
+  guestLegionKey: boolean;
   ollamaOk: boolean;
   fleet: Partial<Record<FreeProviderId, boolean>>;
   forceOffline?: boolean;
@@ -133,8 +138,12 @@ function modelAvailable(m: ModelOption, probe: RoutingProbe): boolean {
   if (m.provider === "ollama") return probe.ollamaOk;
   if (m.provider === "puter") return probe.puterSignedIn;
   if (m.provider === "grudge-ai") {
-    // Legion: JWT user or free-ai reports fleet grudge-ai secret/reachable
-    return probe.grudgeSignedIn || probe.grudgeAiOk;
+    // Legion chat needs auth: Grudge JWT and/or free-ai guest GRUDGE_AI_KEY.
+    // Health alone (grudgeAiOk) is not enough — that was causing guest 401s.
+    if (!probe.grudgeAiOk && !probe.grudgeSignedIn && !probe.guestLegionKey) {
+      return false;
+    }
+    return probe.grudgeSignedIn || probe.guestLegionKey;
   }
   if (m.provider === "server-anthropic") return true; // try; fail over on error
   if (FREE_PROVIDER_KINDS.has(m.provider)) {
@@ -239,13 +248,23 @@ export async function probeRouting(opts: {
       () => ({}) as Partial<Record<FreeProviderId, boolean>>,
     ),
     fetch("/api/free-ai/status", { cache: "no-store", signal: AbortSignal.timeout(5000) })
-      .then(async (r) => (r.ok ? ((await r.json()) as { grudgeAi?: boolean; legion?: boolean }) : null))
+      .then(async (r) =>
+        r.ok
+          ? ((await r.json()) as {
+              grudgeAi?: boolean;
+              legion?: boolean;
+              guestLegionKey?: boolean;
+              providers?: Record<string, boolean>;
+            })
+          : null,
+      )
       .catch(() => null),
   ]);
 
   const grudgeAiOk = !!(
     legionHealth?.grudgeAi ||
     legionHealth?.legion ||
+    legionHealth?.providers?.["grudge-ai"] ||
     // free-ai status may only list provider keys — probe legion separately
     (await fetch("https://ai.grudge-studio.com/health", {
       signal: AbortSignal.timeout(4000),
@@ -254,10 +273,13 @@ export async function probeRouting(opts: {
       .catch(() => false))
   );
 
+  const guestLegionKey = Boolean(legionHealth?.guestLegionKey);
+
   return {
     puterSignedIn: opts.puterSignedIn,
     grudgeSignedIn: isGrudgeIdSignedIn(),
     grudgeAiOk,
+    guestLegionKey,
     ollamaOk: !!(ollamaOkTags || ollamaOkCustom),
     fleet: fleet ?? {},
     forceOffline,
@@ -268,9 +290,9 @@ export async function probeRouting(opts: {
 
 export function statusLabel(model: ModelOption, probe: RoutingProbe): string {
   if (model.provider === "grudge-ai") {
-    return probe.grudgeSignedIn
-      ? `Legion · ${model.label}`
-      : `Legion (guest edge) · ${model.label}`;
+    if (probe.grudgeSignedIn) return `Legion · ${model.label}`;
+    if (probe.guestLegionKey) return `Legion (guest edge) · ${model.label}`;
+    return `Legion (sign-in required) · ${model.label}`;
   }
   if (model.provider === "ollama") return `Ollama · ${model.label}`;
   if (model.provider === "puter") return `Puter · ${model.label}`;

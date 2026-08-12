@@ -7,6 +7,7 @@ const emptyProbe: RoutingProbe = {
   puterSignedIn: false,
   grudgeSignedIn: false,
   grudgeAiOk: false,
+  guestLegionKey: false,
   ollamaOk: false,
   fleet: {},
 };
@@ -15,6 +16,7 @@ const fleetProbe: RoutingProbe = {
   puterSignedIn: false,
   grudgeSignedIn: false,
   grudgeAiOk: false,
+  guestLegionKey: false,
   ollamaOk: false,
   fleet: { groq: true, together: true },
 };
@@ -76,12 +78,34 @@ describe("toolNameAllowlist", () => {
 });
 
 describe("buildFailoverChain", () => {
-  it("prefers grudge-ai when legion ok", () => {
+  it("prefers grudge-ai when legion ok and guest key present", () => {
     const chain = buildFailoverChain("orchestrator", {
       ...fleetProbe,
       grudgeAiOk: true,
+      guestLegionKey: true,
     });
     expect(chain[0]?.provider).toBe("grudge-ai");
+  });
+
+  it("prefers grudge-ai when signed in even without guest key", () => {
+    const chain = buildFailoverChain("orchestrator", {
+      ...fleetProbe,
+      grudgeAiOk: true,
+      grudgeSignedIn: true,
+      guestLegionKey: false,
+    });
+    expect(chain[0]?.provider).toBe("grudge-ai");
+  });
+
+  it("skips grudge-ai when health ok but no JWT and no guest key", () => {
+    const chain = buildFailoverChain("orchestrator", {
+      ...fleetProbe,
+      grudgeAiOk: true,
+      guestLegionKey: false,
+      grudgeSignedIn: false,
+    });
+    expect(chain[0]?.provider).toBe("groq");
+    expect(chain.every((m) => m.provider !== "grudge-ai")).toBe(true);
   });
 
   it("prefers fleet groq when legion unavailable", () => {

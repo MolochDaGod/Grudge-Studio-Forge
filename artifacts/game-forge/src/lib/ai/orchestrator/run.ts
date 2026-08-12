@@ -76,6 +76,8 @@ function isRetryableProviderError(msg: string): boolean {
     m.includes("rate") ||
     m.includes("quota") ||
     m.includes("api key") ||
+    m.includes("grudge_ai_key") ||
+    m.includes("sign in with grudge") ||
     m.includes("unauthorized") ||
     m.includes("forbidden") ||
     m.includes("not configured") ||

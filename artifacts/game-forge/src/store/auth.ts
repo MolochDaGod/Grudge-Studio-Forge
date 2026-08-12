@@ -28,46 +28,70 @@ export interface PuterIdentity {
 }
 
 export interface AuthUser {
-  /** Stable id — Puter UUID for signed-in users, locally generated UUID
-   *  for guests. Persisted across reloads. */
+  /** Stable id — Puter UUID for Puter sessions, grudgeId for Grudge ID, local UUID for guests. */
   id: string;
   /** Display name shown in the toolbar. */
   name: string;
-  /** Present iff signed in via Puter. */
+  /** Present iff signed in via Puter cloud shell. */
   puter?: PuterIdentity;
+  /** Grudge ID account key when fleet JWT / ID SSO is active. */
+  grudgeId?: string;
 }
 
 interface AuthState {
   status: AuthStatus;
   user: AuthUser | null;
-  /** Convenience flag: real Puter session available — Cloud Save / Publish
-   *  / Puter AI provider may be used. Guests get `false` here. */
+  /** Real Puter session — Cloud Save / Publish / Puter AI only. */
   isPuterSignedIn: boolean;
+  /** Fleet JWT present (Grudge ID) — Railway bag, Legion, characters. */
+  isGrudgeSignedIn: boolean;
   setUser(user: AuthUser | null): void;
   setSignedIn(user: AuthUser): void;
   setGuest(user: AuthUser): void;
   reset(): void;
 }
 
+function grudgeFlag(user: AuthUser | null | undefined): boolean {
+  return Boolean(user?.grudgeId);
+}
+
 export const useAuth = create<AuthState>((set) => ({
   status: "idle",
   user: null,
   isPuterSignedIn: false,
+  isGrudgeSignedIn: false,
   setUser: (user) =>
     set({
-      status: user ? (user.puter ? "signedIn" : "guest") : "anon",
+      // Puter OR Grudge ID counts as signed-in for Welcome gate
+      status: user
+        ? user.puter || user.grudgeId
+          ? "signedIn"
+          : "guest"
+        : "anon",
       user,
       isPuterSignedIn: !!user?.puter,
+      isGrudgeSignedIn: grudgeFlag(user),
     }),
   setSignedIn: (user) =>
     set({
       status: "signedIn",
       user,
-      // Grudge ID SSO may call setSignedIn without a Puter identity — never
-      // fake isPuterSignedIn or Cloud Save / Puter AI will hit guest errors.
+      // Grudge ID SSO may call setSignedIn without Puter — never fake Puter.
       isPuterSignedIn: !!user?.puter,
+      isGrudgeSignedIn: grudgeFlag(user),
     }),
   setGuest: (user) =>
-    set({ status: "guest", user, isPuterSignedIn: false }),
-  reset: () => set({ status: "anon", user: null, isPuterSignedIn: false }),
+    set({
+      status: "guest",
+      user,
+      isPuterSignedIn: false,
+      isGrudgeSignedIn: false,
+    }),
+  reset: () =>
+    set({
+      status: "anon",
+      user: null,
+      isPuterSignedIn: false,
+      isGrudgeSignedIn: false,
+    }),
 }));

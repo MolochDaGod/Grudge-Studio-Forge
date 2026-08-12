@@ -21,8 +21,21 @@ Related: [PROJECT_STORAGE_AND_AI.md](./PROJECT_STORAGE_AND_AI.md) · [PUTER_PATT
 | 2 | **Puter** `js.puter.com` | User-Pays KV/FS/AI, optional link |
 | 3 | Guest | Local only; no cloud bag |
 
-**Signed-in for fleet games** = Grudge ID JWT (`grudge_auth_token` …).  
+**Signed-in for fleet games** = Grudge ID JWT (`grudge.open.token` + fleet keys).  
 **Puter signed-in** alone = `puterLinked` only — never show as full account for bag/heroes.
+
+### Forge editor login (hardened)
+
+| Do | Don't |
+|----|--------|
+| Open **`/login?redirect_uri=`** (+ `origin`, `app=forge`) | **`/auth/popup`** (404 on ID gateway) |
+| Prefer **`sso_token`** session JWT over **`grudge_token`** launch | Store only one ad-hoc key |
+| Dual-write `grudge.open.token`, `grudge_auth_token`, `sso_token`, … | Read Open AI without `grudge.open.token` |
+| postMessage: `grudge-auth:success` **and** `grudge:auth:success` | Only one legacy message type |
+| Full-page redirect if popup blocked | Dead-end error with no fallback |
+| Label planes: Grudge ID vs Puter cloud | “Signed in” for Puter-only as fleet account |
+
+Code: `artifacts/game-forge/src/lib/grudgeAuthBridge.ts` · `authBootstrap.ts` · Welcome + UserMenu.
 
 ---
 
