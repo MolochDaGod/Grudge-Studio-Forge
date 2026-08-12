@@ -16,7 +16,7 @@
  * one fetch instead of bypassing the store entirely.
  */
 
-import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
+import { DEFAULT_GRAVITY, type SceneEntity } from "@workspace/scene-schema";
 import {
   getListAssetsQueryKey,
   getListPrefabsQueryKey,
@@ -593,10 +593,182 @@ function roundXYZ(p: { x: number; y: number; z: number }) {
   return { x: round(p.x), y: round(p.y), z: round(p.z) };
 }
 
+// ── Verification tools (SI scale · textures · anim · terrain · standards) ─
+import {
+  runFullSceneVerification,
+  verifyCharacterAnimation,
+  verifyMeshScale,
+  verifyTerrainPhysics,
+  verifyTextures,
+} from "@/lib/ai/sceneVerification";
+import { getThreeStandards, type StandardsTopic } from "@/lib/ai/threeStandards";
+
+const VERIFY_MESH_SCALE: ToolDef = {
+  name: "verify_mesh_scale",
+  description:
+    "SI size audit for model/character entities. Flags 100× unit bugs, oversized/undersized heroes, and weapons wrongly fitted to 1.8 m human height. Returns findings[] with metrics in metres. Run before deploy.",
+  input_schema: {
+    type: "object",
+    properties: {
+      entityIds: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional subset; default = all entities.",
+      },
+      includeOk: { type: "boolean" },
+    },
+  },
+};
+
+const VERIFY_TEXTURES: ToolDef = {
+  name: "verify_textures",
+  description:
+    "Texture/material verification: placeholder hosts (Meshy/capsule/Replit), untrusted CDN, missing character models, material map hints. Prefer assets.grudge-studio.com / builtin:.",
+  input_schema: {
+    type: "object",
+    properties: {
+      entityIds: { type: "array", items: { type: "string" } },
+    },
+  },
+};
+
+const VERIFY_CHARACTER_ANIMATION: ToolDef = {
+  name: "verify_character_animation",
+  description:
+    "Character/player readiness: kinematic CCT vs dynamic, capsule hints, missing clips, Mixamo-on-Bip001, placeholder hero meshes. Pair with list_animations / apply_animation / set_physics.",
+  input_schema: {
+    type: "object",
+    properties: {
+      entityIds: { type: "array", items: { type: "string" } },
+    },
+  },
+};
+
+const VERIFY_TERRAIN_PHYSICS: ToolDef = {
+  name: "verify_terrain_physics",
+  description:
+    "Terrain + ground readiness for CCT/raycasts: fixed ground bodies, Terrain layer, dynamic-on-terrain mistakes.",
+  input_schema: {
+    type: "object",
+    properties: {},
+  },
+};
+
+const LIST_THREEJS_STANDARDS: ToolDef = {
+  name: "list_threejs_standards",
+  description:
+    "Return condensed Forge/fleet standards for a topic: terrain, textures, rapier, raycast, controller, animation, character, identity, redeploy, or all. Use before building or redeploying.",
+  input_schema: {
+    type: "object",
+    properties: {
+      topic: {
+        type: "string",
+        enum: [
+          "all",
+          "terrain",
+          "textures",
+          "rapier",
+          "raycast",
+          "controller",
+          "animation",
+          "character",
+          "identity",
+          "redeploy",
+        ],
+      },
+    },
+  },
+};
+
+const VERIFY_SCENE_FULL: ToolDef = {
+  name: "verify_scene_full",
+  description:
+    "Run full verification suite (scale + textures + character anim + terrain) and return summary + findings. Prefer after multi-tool builds before claiming done.",
+  input_schema: {
+    type: "object",
+    properties: {
+      includeOk: { type: "boolean" },
+    },
+  },
+};
+
+function filterEntities(entityIds: unknown): SceneEntity[] {
+  const all = useEditor.getState().sceneData.entities;
+  if (!Array.isArray(entityIds) || entityIds.length === 0) return [...all];
+  const set = new Set(entityIds.map(String));
+  return all.filter((e) => set.has(e.id));
+}
+
+const verifyMeshScaleHandler: ToolHandler = async (input) => {
+  const ents = filterEntities(input.entityIds);
+  const findings = verifyMeshScale(ents).filter(
+    (f) => input.includeOk === true || f.severity !== "ok",
+  );
+  const errors = findings.filter((f) => f.severity === "error").length;
+  return {
+    ok: true,
+    data: {
+      summary:
+        errors === 0
+          ? `Scale check: no errors (${findings.length} findings).`
+          : `Scale check: ${errors} error(s).`,
+      findings,
+      entityCount: ents.length,
+    },
+  };
+};
+
+const verifyTexturesHandler: ToolHandler = async (input) => {
+  const findings = verifyTextures(filterEntities(input.entityIds));
+  return {
+    ok: true,
+    data: {
+      summary: `${findings.filter((f) => f.severity === "error").length} texture error(s)`,
+      findings,
+    },
+  };
+};
+
+const verifyCharacterAnimationHandler: ToolHandler = async (input) => {
+  const findings = verifyCharacterAnimation(filterEntities(input.entityIds));
+  return {
+    ok: true,
+    data: {
+      summary: `${findings.length} character/anim finding(s)`,
+      findings,
+      tip: "list_animations → apply_animation; set_physics kinematicPosition + capsule for CCT.",
+    },
+  };
+};
+
+const verifyTerrainPhysicsHandler: ToolHandler = async () => {
+  const findings = verifyTerrainPhysics(useEditor.getState().sceneData.entities);
+  return { ok: true, data: { findings, summary: `${findings.length} terrain finding(s)` } };
+};
+
+const listThreejsStandardsHandler: ToolHandler = async (input) => {
+  const topic = (typeof input.topic === "string" ? input.topic : "all") as StandardsTopic;
+  const std = getThreeStandards(topic);
+  return { ok: true, data: std };
+};
+
+const verifySceneFullHandler: ToolHandler = async (input) => {
+  const report = runFullSceneVerification(useEditor.getState().sceneData.entities, {
+    includeOk: input.includeOk === true,
+  });
+  return { ok: report.ok, data: report };
+};
+
 // ── Bundled exports ────────────────────────────────────────────────────
 export const defs: ToolDef[] = [
   DIAGNOSE_SCENE,
   AUTO_FIX_SCENE,
+  VERIFY_MESH_SCALE,
+  VERIFY_TEXTURES,
+  VERIFY_CHARACTER_ANIMATION,
+  VERIFY_TERRAIN_PHYSICS,
+  VERIFY_SCENE_FULL,
+  LIST_THREEJS_STANDARDS,
   GET_ACTIVE_SCENE_META,
   GET_PROJECT_SUMMARY,
   LIST_ASSETS,
@@ -611,6 +783,12 @@ export const defs: ToolDef[] = [
 export const handlers: Record<string, ToolHandler> = {
   diagnose_scene: diagnoseSceneHandler,
   auto_fix_scene: autoFixSceneHandler,
+  verify_mesh_scale: verifyMeshScaleHandler,
+  verify_textures: verifyTexturesHandler,
+  verify_character_animation: verifyCharacterAnimationHandler,
+  verify_terrain_physics: verifyTerrainPhysicsHandler,
+  verify_scene_full: verifySceneFullHandler,
+  list_threejs_standards: listThreejsStandardsHandler,
   get_active_scene_meta: getActiveSceneMetaHandler,
   get_project_summary: getProjectSummaryHandler,
   list_assets: listAssetsHandler,

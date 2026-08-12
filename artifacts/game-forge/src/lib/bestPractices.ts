@@ -18,7 +18,11 @@ export type BestPracticeContext =
   | "deploy"
   | "ai"
   | "devtools"
-  | "physics";
+  | "physics"
+  | "terrain"
+  | "animation"
+  | "controller"
+  | "identity";
 
 export type BestPractice = {
   title: string;
@@ -186,9 +190,9 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
         "Each mutating tool snapshots scene before/after and pushes makeAITurnCommand — same undo stack as human edits.",
     },
     {
-      title: "Diagnose before mass rewrite",
+      title: "Diagnose + verify before mass rewrite",
       detail:
-        "Run diagnose / autoFix tools before batch_generate or multi-entity deletes.",
+        "diagnose_scene → verify_scene_full (scale/textures/anim/terrain) → auto_fix_scene → re-verify. list_threejs_standards for SSOT.",
     },
     {
       title: "Confirm destructive tools",
@@ -199,6 +203,11 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
       title: "Prefer design tools for lighting/camera",
       detail:
         "Use ai/tools/design (lighting, camera, layouts, palette) instead of inventing raw entity spam.",
+    },
+    {
+      title: "Sub-agents = free-ai D1 jobs + Legion roles",
+      detail:
+        "create_agent_job for edge work; Grudge AI roles (dev/toolkit) via free-ai. SPA redeploy via GHA only — not ad-hoc worker invent.",
     },
   ],
   devtools: [
@@ -234,6 +243,69 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
       title: "CCD for fast projectiles",
       detail:
         "Enable continuous collision detection on thin/fast colliders to prevent tunneling.",
+    },
+    {
+      title: "Characters = kinematic CCT + capsule",
+      detail:
+        "set_physics bodyType=kinematicPosition with capsuleHalfHeight≈0.9 and capsuleRadius≈0.3 (SI). Do not free-dynamic player bodies.",
+    },
+  ],
+  terrain: [
+    {
+      title: "Fixed ground for raycasts and feet",
+      detail:
+        "Plane / heightfield / trimesh as fixed; layer=Terrain; surface=Walk. Foot IK and body ground share the same height field.",
+    },
+    {
+      title: "Raycast down for grounding",
+      detail:
+        "Cast Rapier rays from character root (+εY) against terrain. Prefer castRay/shapeCast over mesh AABB for feet.",
+    },
+    {
+      title: "Instanced scatter for forests",
+      detail:
+        "Trees/props: InstancedMesh + LOD from biome kits — never one Mesh entity per tree at island scale.",
+    },
+  ],
+  animation: [
+    {
+      title: "One mixer; Bip001 packs",
+      detail:
+        "list_animations → apply_animation. grudge6 uses Bip001 packs (sword_shield, longbow, magic). Never two mixers on one skeleton.",
+    },
+    {
+      title: "Strip position tracks when grounded",
+      detail:
+        "Retarget rotation-only onto grounded kits to prevent hip-float. Re-ground after first anim sample.",
+    },
+    {
+      title: "No Mixamo on Bip001",
+      detail:
+        "mixamorig tracks fail rematch on Toon RTS kits — use baked Bip001 weapon packs.",
+    },
+  ],
+  controller: [
+    {
+      title: "One player controller per scene",
+      detail:
+        "diagnose_scene flags multiple controllerKind entities. Play camera sole writer = follow/TPS.",
+    },
+    {
+      title: "Map open keeps the same controller session",
+      detail:
+        "Rebind terrain height only — keep weapon skills, controller, view mode (fleet law).",
+    },
+  ],
+  identity: [
+    {
+      title: "Grudge ID is fleet account; Puter is cloud shell",
+      detail:
+        "Sign in via id.grudge-studio.com/login?redirect_uri=. Dual-write grudge.open.token + fleet keys. Puter never sole bag SSOT.",
+    },
+    {
+      title: "Never /auth/popup",
+      detail:
+        "That path 404s. Use /login with redirect_uri, origin, handoff=1. Prefer sso_token over short grudge_token.",
     },
   ],
   weapon: [

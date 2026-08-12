@@ -9,7 +9,7 @@ nav_order: 15
 **Audience:** agents, ops, product  
 **Goal:** one account model, correct Puter usage, no second player database.
 
-Related: [PROJECT_STORAGE_AND_AI.md](./PROJECT_STORAGE_AND_AI.md) · [PUTER_PATTERNS.md](./PUTER_PATTERNS.md) · [AI_FLEET_ATTACH_SSOT.md](./AI_FLEET_ATTACH_SSOT.md) · skill `grudge-production-wiring` · skill `puter`
+Related: [PROJECT_STORAGE_AND_AI.md](./PROJECT_STORAGE_AND_AI.md) · [PUTER_PATTERNS.md](./PUTER_PATTERNS.md) · [AI_FLEET_ATTACH_SSOT.md](./AI_FLEET_ATTACH_SSOT.md) · [AI_THREE_STANDARDS_AND_IDENTITY.md](./AI_THREE_STANDARDS_AND_IDENTITY.md) · skill `grudge-production-wiring` · skill `puter`
 
 ---
 

@@ -48,7 +48,7 @@ const LIST_BEST_PRACTICES: ToolDef = {
   name: "list_forge_best_practices",
   description:
     "List curated Forge editor best practices (active only) + purged anti-patterns. " +
-    "Optional context: viewport | scene | import | export | deploy | ai | devtools | physics | model | texture | hdri | weapon | item | enemy | quest | project-asset. " +
+    "Optional context: viewport | scene | import | export | deploy | ai | devtools | physics | terrain | animation | controller | identity | model | texture | hdri | weapon | item | enemy | quest | project-asset. " +
     "Optional uiSurface: hierarchy | publish_dialog | drop_zone | ai_worker | … for correct assignment. " +
     "Use before large scene edits, import pipelines, or deploy advice.",
   input_schema: {

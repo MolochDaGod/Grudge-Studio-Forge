@@ -42,6 +42,13 @@ describe("classifyIntent", () => {
     expect(classifyIntent("add rapier colliders")).toBe("physics");
   });
 
+  it("detects character anim, terrain, identity", () => {
+    // "fix" alone maps diagnose — use pack/bone language without fix/
+    expect(classifyIntent("apply sword_shield bip001 idle walk")).toBe("character");
+    expect(classifyIntent("raycast terrain heightfield feet")).toBe("terrain");
+    expect(classifyIntent("sign in with grudge id sso")).toBe("identity");
+  });
+
   it("honors override", () => {
     expect(classifyIntent("hello", "scene")).toBe("scene");
   });

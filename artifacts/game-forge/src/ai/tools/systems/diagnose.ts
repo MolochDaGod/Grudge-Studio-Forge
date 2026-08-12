@@ -11,6 +11,10 @@
  */
 
 import type { SceneEntity, BehaviorKind } from "@workspace/scene-schema";
+import {
+  findingsAsDiagnoseIssues,
+  runFullSceneVerification,
+} from "@/lib/ai/sceneVerification";
 
 export type IssueSeverity = "error" | "warn" | "info";
 
@@ -303,6 +307,12 @@ export function diagnoseScene(input: DiagnoseSceneInput): Issue[] {
         message: "Deathmatch scene has no enemy-tagged entities yet.",
       });
     }
+  }
+
+  // ── SI scale · textures · character anim · terrain (sceneVerification) ─
+  const report = runFullSceneVerification(ents, { includeOk: false });
+  for (const issue of findingsAsDiagnoseIssues(report.findings)) {
+    issues.push(issue);
   }
 
   return issues;
