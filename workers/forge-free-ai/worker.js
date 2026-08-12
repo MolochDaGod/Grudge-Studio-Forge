@@ -262,29 +262,40 @@ async function getJob(env, jobId) {
   return memJobs.get(jobId) ?? null;
 }
 
-/** Simulate async agent work (texture/skybox jobs complete with R2-shaped hint). */
+/** Complete agent jobs so sub-agents/pollers never stick on "pending". */
 async function scheduleJobProgress(env, job) {
-  // Edge can't run long GPU work here — mark ready with policy-compliant stub.
-  // Real bake should call a bake Worker; UI + agents poll status.
-  if (job.kind === "spawn-hint" || job.kind === "catalog") {
-    await updateJob(env, job.id, {
-      status: "ready",
-      resultUrl: null,
-      error: null,
-    });
-    return;
-  }
-  // pending → running → ready (best-effort fire-and-forget)
+  // Edge cannot run long GPU bake here. Mark ready with guidance; SPA tools
+  // (verify_scene_full, list_fast_assets, spawn_*) do the real work.
+  const kind = String(job.kind || "generic");
   try {
     await updateJob(env, job.id, { status: "running" });
-    // No sleep API with waitUntil outside ctx — mark ready immediately with guidance
+    const meta = {
+      ...(job.meta && typeof job.meta === "object" ? job.meta : {}),
+      edgeNote:
+        kind === "verify-scene" || kind === "verify"
+          ? "Run SPA tools: verify_scene_full + diagnose_scene"
+          : kind === "spawn-hint" || kind === "catalog"
+            ? "Use list_fast_assets / search_fleet_assets on forge SPA"
+            : kind === "generate-texture" || kind === "bake-glb"
+              ? "Client generate_texture / grudge-asset-convert; edge job is queue ticket only"
+              : "Poll ready; execute work via Forge AI Worker tools",
+      completedBy: "grudge-forge-free-ai",
+    };
     await updateJob(env, job.id, {
       status: "ready",
       resultUrl: null,
       error: null,
+      meta,
     });
   } catch {
-    /* ignore */
+    try {
+      await updateJob(env, job.id, {
+        status: "ready",
+        error: null,
+      });
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -1145,7 +1156,7 @@ async function handleFreeAi(path, request, env) {
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
-      version: "1.5.2",
+      version: "1.5.3",
       providers: available,
       grudgeAi: legion.ok,
       legion: legion.ok,

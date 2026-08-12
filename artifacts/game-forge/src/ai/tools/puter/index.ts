@@ -97,9 +97,35 @@ const cloudSaveProjectHandler: ToolHandler = async (input) => {
     entityCount: s.sceneData.entities.length,
     updatedAt: new Date().toISOString(),
   };
+  // Always dual-write local backup first (next visit / Puter outage)
+  let localBackup: "local" | "idb" | "none" = "none";
+  try {
+    const { localPayloadWrite, localJsonSet } = await import(
+      "@/lib/cloud/projectStorage"
+    );
+    localBackup = await localPayloadWrite(
+      "scenes",
+      s.sceneId ?? projectId,
+      s.sceneData,
+    );
+    localJsonSet(`grudge:forge:cloud_save_meta:${projectId}`, meta);
+  } catch {
+    /* still try Puter */
+  }
+
   const fsRes = await cloud.fs.write(scenePath, JSON.stringify(s.sceneData));
   if (!fsRes.ok) {
-    return { ok: false, error: `Cloud save failed: ${fsRes.message ?? fsRes.reason}` };
+    return {
+      ok: localBackup !== "none",
+      error:
+        localBackup !== "none"
+          ? `Puter write failed (${fsRes.message ?? fsRes.reason}) — local backup kept (${localBackup}).`
+          : `Cloud save failed: ${fsRes.message ?? fsRes.reason}`,
+      data:
+        localBackup !== "none"
+          ? { localBackup, label, dualWrite: false }
+          : undefined,
+    };
   }
   await cloud.fs.write(metaPath, JSON.stringify(meta));
   await upsertProjectIndex({
@@ -115,6 +141,8 @@ const cloudSaveProjectHandler: ToolHandler = async (input) => {
       metaPath,
       label,
       bytes: JSON.stringify(s.sceneData).length,
+      localBackup,
+      dualWrite: true,
     },
   };
 };

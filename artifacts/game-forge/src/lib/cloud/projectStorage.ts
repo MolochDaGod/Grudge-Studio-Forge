@@ -134,18 +134,30 @@ export function getProjectStorageStatus(): ProjectStorageStatus {
   const migrated = localStorage.getItem(MIGRATE_FLAG);
   const snap = forgeEnvSnapshot({ isPuterSignedIn: puter, storageBackend: backend });
   const hints: string[] = [];
+  // Always dual-write: local is backup even when Puter is primary.
+  hints.push(
+    "Dual-write: every save hits localStorage/IndexedDB backup for next visit.",
+  );
   if (!puter && localCount > 0) {
     hints.push(
-      "Projects are on this device only. Sign in with Puter to sync to Grudge cloud.",
+      "Primary plane is this device. Sign in with Puter to also sync Grudge cloud.",
     );
   }
   if (puter && localCount > 0 && !migrated) {
     hints.push(
-      `${localCount} local project(s) can be uploaded to Puter (migrateLocalProjectsToPuter).`,
+      `${localCount} local project(s) can be pushed to Puter (migrate / auto on sign-in).`,
     );
   }
   if (puter) {
-    hints.push("Cloud Save active — indexes in Puter KV, scenes in Puter FS.");
+    hints.push(
+      "Primary: Puter KV+FS (Grudge/forge). Backup: local LS/IDB (always written).",
+    );
+  }
+  try {
+    const last = localStorage.getItem("grudge.forge.lastSaveMeta");
+    if (last) hints.push(`Last save meta: ${last.slice(0, 120)}`);
+  } catch {
+    /* */
   }
   return {
     backend,

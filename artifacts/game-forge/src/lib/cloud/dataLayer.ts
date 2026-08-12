@@ -531,6 +531,8 @@ export {
   getProjectStorageStatus,
   activeStorageBackend,
   syncLocalProjectsToPuterCloud,
+  ensureDualStorageAfterPuterSignIn,
+  getLastSaveMeta,
 } from "./puterDataProvider";
 export type { PrefabData } from "../../../../../lib/api-client-react/src/generated/api.schemas";
 export {

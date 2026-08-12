@@ -1,9 +1,11 @@
 /**
  * Puter-backed data provider — replaces the Express + PostgreSQL api-server.
  *
- * Storage planes (see projectStorage.ts + forgeEnv.ts):
- *   Puter signed-in → KV indexes + FS payloads under Grudge/forge/
- *   Guest / local    → localStorage indexes + IndexedDB payloads (large scenes)
+ * Storage law (HARD — delivery on next visit):
+ *   - **Always dual-write** indexes + scene payloads to **local** (localStorage + IDB).
+ *   - When Puter signed-in: **also** write Puter KV + FS under Grudge/forge/.
+ *   - Read: Puter first when signed-in; **fallback / merge local** so offline
+ *     work and Puter outages never lose the last save.
  *
  * Edge free-ai D1 is for agent jobs only — never project bodies.
  * Railway is player bag SSOT — never Forge editor projects.
@@ -23,90 +25,199 @@ import {
 
 // ── ID generation ──────────────────────────────────────────────────────
 const LOCAL_COUNTER_KEY = "grudge.forge.nextId";
-
-async function nextId(): Promise<number> {
-  if (isPuterSignedIn()) {
-    const r = await cloud.kv.get<number>("grudge:forge:nextId");
-    const current = r.ok ? (r.data ?? 0) : 0;
-    const next = current + 1;
-    await cloud.kv.set("grudge:forge:nextId", next);
-    return next;
-  }
-  // Guest fallback: localStorage counter
-  const current = parseInt(localStorage.getItem(LOCAL_COUNTER_KEY) ?? "0", 10);
-  const next = current + 1;
-  localStorage.setItem(LOCAL_COUNTER_KEY, String(next));
-  return next;
-}
+const LAST_SAVE_META_KEY = "grudge.forge.lastSaveMeta";
 
 function now(): string {
   return new Date().toISOString();
 }
 
-// ── Generic KV-backed collection ───────────────────────────────────────
-// Each entity type stores:
-//   KV index:  grudge:forge:<collection>:index  →  <T>[]
-//   FS payload (optional, for large data like scene JSON):
-//              Grudge/forge/<collection>/<id>.json
-//   Local guest: same keys in localStorage; scene payloads may live in IDB.
+function stampLocalSave(meta: {
+  collection: string;
+  id?: number;
+  plane: "local" | "puter+local";
+}): void {
+  try {
+    localStorage.setItem(
+      LAST_SAVE_META_KEY,
+      JSON.stringify({ ...meta, at: now() }),
+    );
+  } catch {
+    /* */
+  }
+}
+
+export function getLastSaveMeta(): {
+  collection?: string;
+  id?: number;
+  plane?: string;
+  at?: string;
+} | null {
+  try {
+    const raw = localStorage.getItem(LAST_SAVE_META_KEY);
+    return raw ? (JSON.parse(raw) as { collection?: string; id?: number; plane?: string; at?: string }) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function nextId(): Promise<number> {
+  // Always advance local counter (backup SSOT for ids).
+  const localCur = parseInt(localStorage.getItem(LOCAL_COUNTER_KEY) ?? "0", 10) || 0;
+  let puterCur = 0;
+  if (isPuterSignedIn()) {
+    try {
+      const r = await cloud.kv.get<number>("grudge:forge:nextId");
+      if (r.ok && typeof r.data === "number") puterCur = r.data;
+    } catch {
+      /* */
+    }
+  }
+  const next = Math.max(localCur, puterCur) + 1;
+  localStorage.setItem(LOCAL_COUNTER_KEY, String(next));
+  if (isPuterSignedIn()) {
+    try {
+      await cloud.kv.set("grudge:forge:nextId", next);
+    } catch {
+      /* local still advanced */
+    }
+  }
+  return next;
+}
+
+// ── Generic dual-plane collection ──────────────────────────────────────
+// Index: grudge:forge:<collection>:index
+// Payload: local LS/IDB + Puter FS Grudge/forge/<collection>/<id>.json
 
 type HasId = { id: number };
 
-async function readIndex<T extends HasId>(collection: string): Promise<T[]> {
-  const kvKey = `grudge:forge:${collection}:index`;
-
-  if (isPuterSignedIn()) {
-    const r = await cloud.kv.get<T[]>(kvKey);
-    return r.ok && Array.isArray(r.data) ? r.data : [];
+/** Merge two indexes by id; prefer newer updatedAt when present. */
+function mergeIndexesById<T extends HasId & { updatedAt?: string }>(
+  primary: T[],
+  secondary: T[],
+): T[] {
+  const map = new Map<number, T>();
+  for (const item of secondary) {
+    if (item && typeof item.id === "number") map.set(item.id, item);
   }
-  return localJsonGet<T[]>(kvKey) ?? [];
+  for (const item of primary) {
+    if (!item || typeof item.id !== "number") continue;
+    const prev = map.get(item.id);
+    if (!prev) {
+      map.set(item.id, item);
+      continue;
+    }
+    const a = item.updatedAt || "";
+    const b = prev.updatedAt || "";
+    map.set(item.id, a >= b ? item : prev);
+  }
+  return Array.from(map.values()).sort((a, b) => a.id - b.id);
+}
+
+async function readIndex<T extends HasId & { updatedAt?: string }>(
+  collection: string,
+): Promise<T[]> {
+  const kvKey = `grudge:forge:${collection}:index`;
+  const local = localJsonGet<T[]>(kvKey) ?? [];
+
+  if (!isPuterSignedIn()) return local;
+
+  try {
+    const r = await cloud.kv.get<T[]>(kvKey);
+    const remote = r.ok && Array.isArray(r.data) ? r.data : [];
+    if (remote.length === 0) return local;
+    if (local.length === 0) {
+      // Warm local backup from cloud so next offline visit has data
+      localJsonSet(kvKey, remote);
+      return remote;
+    }
+    const merged = mergeIndexesById(remote, local);
+    // Keep local index as complete as merge (delivery on next use)
+    localJsonSet(kvKey, merged);
+    return merged;
+  } catch {
+    return local;
+  }
 }
 
 async function writeIndex<T extends HasId>(collection: string, items: T[]): Promise<void> {
   const kvKey = `grudge:forge:${collection}:index`;
+  // HARD: always local backup first
+  localJsonSet(kvKey, items);
+  stampLocalSave({
+    collection,
+    plane: isPuterSignedIn() ? "puter+local" : "local",
+  });
 
   if (isPuterSignedIn()) {
-    await cloud.kv.set(kvKey, items);
-  } else {
-    localJsonSet(kvKey, items);
+    try {
+      await cloud.kv.set(kvKey, items);
+    } catch (err) {
+      console.warn(
+        `[puterDataProvider] Puter KV index write failed for ${collection} — local backup kept`,
+        err,
+      );
+    }
   }
 }
 
 async function readPayload<T>(collection: string, id: number): Promise<T | null> {
-  const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
+  const local = await localPayloadRead<T>(collection, id);
 
-  if (isPuterSignedIn()) {
+  if (!isPuterSignedIn()) return local;
+
+  const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
+  try {
     const r = await cloud.fs.readJson<T>(fsPath);
-    return r.ok ? r.data : null;
+    if (r.ok && r.data != null) {
+      // Refresh local backup from cloud for next offline session
+      void localPayloadWrite(collection, id, r.data);
+      return r.data;
+    }
+  } catch {
+    /* fall through to local */
   }
-  return localPayloadRead<T>(collection, id);
+  return local;
 }
 
 async function writePayload(collection: string, id: number, data: unknown): Promise<void> {
-  const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
+  // HARD: always local (LS + IDB) so reload/next visit works without Puter
+  const where = await localPayloadWrite(collection, id, data);
+  if (where === "none") {
+    console.warn(
+      `[puterDataProvider] local persist failed for ${collection}/${id} (quota).`,
+    );
+  }
+  stampLocalSave({
+    collection,
+    id,
+    plane: isPuterSignedIn() ? "puter+local" : "local",
+  });
 
   if (isPuterSignedIn()) {
-    await cloud.fs.write(fsPath, JSON.stringify(data), {
-      overwrite: true,
-      createMissingParents: true,
-    });
-  } else {
-    const where = await localPayloadWrite(collection, id, data);
-    if (where === "none") {
+    const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
+    try {
+      await cloud.fs.write(fsPath, JSON.stringify(data), {
+        overwrite: true,
+        createMissingParents: true,
+      });
+    } catch (err) {
       console.warn(
-        `[puterDataProvider] failed to persist ${collection}/${id} (quota). Sign in with Puter for cloud storage.`,
+        `[puterDataProvider] Puter FS write failed for ${collection}/${id} — local backup kept`,
+        err,
       );
     }
   }
 }
 
 async function deletePayload(collection: string, id: number): Promise<void> {
-  const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
-
+  await localPayloadDelete(collection, id);
   if (isPuterSignedIn()) {
-    await cloud.fs.delete(fsPath).catch(() => {});
-  } else {
-    await localPayloadDelete(collection, id);
+    const fsPath = cloud.path("Grudge", "forge", collection, `${id}.json`);
+    try {
+      await cloud.fs.delete(fsPath);
+    } catch {
+      /* */
+    }
   }
 }
 
@@ -121,13 +232,31 @@ export async function syncLocalProjectsToPuterCloud(): Promise<{
   migratedScenes: number;
   error?: string;
   backend: string;
+  dualWrite: true;
+  lastSave: ReturnType<typeof getLastSaveMeta>;
 }> {
   const result = await migrateLocalProjectsToPuter({
     kvSet: async (key, value) => {
+      // Dual: keep local index while pushing Puter
+      try {
+        localJsonSet(key, value);
+      } catch {
+        /* */
+      }
       const r = await cloud.kv.set(key, value);
       return r.ok;
     },
     fsWrite: async (path, body) => {
+      // Also mirror scene bodies into local IDB when path matches scenes/N.json
+      const m = path.match(/scenes\/(\d+)\.json$/);
+      if (m) {
+        try {
+          const data = JSON.parse(body) as unknown;
+          await localPayloadWrite("scenes", Number(m[1]), data);
+        } catch {
+          /* */
+        }
+      }
       const r = await cloud.fs.write(path, body, {
         overwrite: true,
         createMissingParents: true,
@@ -135,7 +264,54 @@ export async function syncLocalProjectsToPuterCloud(): Promise<{
       return r.ok;
     },
   });
-  return { ...result, backend: activeStorageBackend() };
+  return {
+    ...result,
+    backend: activeStorageBackend(),
+    dualWrite: true,
+    lastSave: getLastSaveMeta(),
+  };
+}
+
+/**
+ * After Puter sign-in: push local → Puter (if local has work), then pull
+ * Puter indexes into local for next offline visit. Safe to call often.
+ */
+export async function ensureDualStorageAfterPuterSignIn(): Promise<{
+  ok: boolean;
+  migratedProjects: number;
+  migratedScenes: number;
+  pulledCollections: string[];
+  error?: string;
+}> {
+  if (!isPuterSignedIn()) {
+    return {
+      ok: false,
+      migratedProjects: 0,
+      migratedScenes: 0,
+      pulledCollections: [],
+      error: "Not signed in with Puter",
+    };
+  }
+
+  const up = await syncLocalProjectsToPuterCloud();
+  const pulled: string[] = [];
+  const collections = ["projects", "scenes", "scripts", "assets", "prefabs"] as const;
+  for (const col of collections) {
+    try {
+      // readIndex merges + warms local
+      await readIndex(col);
+      pulled.push(col);
+    } catch {
+      /* */
+    }
+  }
+  return {
+    ok: up.ok,
+    migratedProjects: up.migratedProjects,
+    migratedScenes: up.migratedScenes,
+    pulledCollections: pulled,
+    error: up.error,
+  };
 }
 
 // ── Projects ───────────────────────────────────────────────────────────

@@ -141,6 +141,10 @@ export async function bootstrapAuth(): Promise<void> {
         if (isGrudgeIdSignedIn() && user.puter?.uuid) {
           void tryLinkPuterToGrudge(getGrudgeBearerToken(), user.puter.uuid);
         }
+        // Warm dual storage for next visit
+        void import("@/lib/cloud/puterDataProvider")
+          .then((m) => m.ensureDualStorageAfterPuterSignIn())
+          .catch(() => undefined);
         return;
       }
     }
@@ -302,10 +306,17 @@ export async function signInWithPuter(): Promise<AuthUser> {
     if (user.puter?.uuid) {
       void tryLinkPuterToGrudge(grudgeTok, user.puter.uuid);
     }
+    void import("@/lib/cloud/puterDataProvider")
+      .then((m) => m.ensureDualStorageAfterPuterSignIn())
+      .catch(() => undefined);
     return merged;
   }
 
   useAuth.getState().setSignedIn(user);
+  // Dual storage: push local projects → Puter and warm local from cloud
+  void import("@/lib/cloud/puterDataProvider")
+    .then((m) => m.ensureDualStorageAfterPuterSignIn())
+    .catch(() => undefined);
   return user;
 }
 

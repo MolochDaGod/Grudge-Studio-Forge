@@ -661,6 +661,10 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
           catalog,
           freeAi,
           storage,
+          dualWrite:
+            "local LS/IDB always; Puter KV+FS when signed in; read merge for next visit",
+          agenticAuto:
+            "grudge-ai:auto → groq → together (fleet free-ai secrets live)",
           env: forgeEnvSnapshot({
             isPuterSignedIn: storage.puterSignedIn,
             storageBackend: storage.backend,
@@ -1754,6 +1758,7 @@ export function buildSystemPrompt(): string {
     `- Navigation: list_surfaces, set_surface, bake_navmesh, find_path / sample_navmesh, set_nav_agent (destructive where noted).`,
     `- Physics layers: list_layers, get_layer_matrix, set_layer, set_layer_matrix.`,
     `- Materials: list_materials, set_material, find_entities_by_material.`,
+    `- Storage dual-write (HARD): every project/scene save writes local LS/IDB backup AND Puter when signed in. project_storage_status · migrate_local_projects_to_puter · cloud_save_project (also local). Next visit loads Puter first with local fallback.`,
     `- Puter cloud: cloud_save_project, list_my_puter_projects, publish_to_puter — if "Sign in with Puter", tell the user; do not retry endlessly.`,
     `- Design polish: diagnose_scene → polish_scene; arrange_entities for patterns; apply_palette / apply_lighting_preset; frame_camera + capture_viewport before declaring creative work done.`,
     `- CF Workers AI: generate_texture / generate_skybox (auto-sets skyTexture) / lore tools when the user wants generated art — results land in R2 when projectId is set.`,
