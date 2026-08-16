@@ -80,6 +80,9 @@ build*.log
 # Accidental nested clone
 /Grudge-Studio-Forge/
 
+# Parked map/character GLBs — CDN at runtime (vite parks these during build)
+artifacts/game-forge/public/.builtin-parked-for-build/
+
 
 # pnpm local store (never commit; CI uses default runner store)
 .pnpm-store/

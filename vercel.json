@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/vercel-prepare-static.mjs",
+  "buildCommand": "node scripts/vercel-build.mjs",
   "installCommand": "echo skip-install",
   "outputDirectory": "artifacts/game-forge/dist/public",
   "framework": null,

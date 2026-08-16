@@ -5,8 +5,15 @@ artifacts/game-forge-desktop/**
 artifacts/api-server/**
 artifacts/mockup-sandbox/**
 artifacts/player/**
+artifacts/game-forge/public/.builtin-parked-for-build/**
 csharp/**
 screenshots/**
 docs/**
 .agents/**
 .git/**
+.venv/**
+.history/**
+.local/**
+Grudge-Studio-Forge/**
+node_modules/**
+*.log
