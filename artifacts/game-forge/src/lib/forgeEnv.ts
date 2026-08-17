@@ -40,6 +40,8 @@ export const FORGE_ENV = {
   ),
   appsAccount: viteEnv("VITE_APPS_URL", "https://apps.grudge-studio.com"),
   puterToolkit: viteEnv("VITE_PUTER_TOOLKIT_URL", "https://puter.grudge-studio.com"),
+  /** Player account User-Pays FS + puter.site deploy — never bag/roster */
+  puterSpace: viteEnv("VITE_PUTER_SPACE_URL", "https://ai.grudge-studio.com/puter-space"),
   wargus: viteEnv("VITE_WARGUS_URL", "https://grudge-studio.com/wargus"),
   warlordsClient: viteEnv(
     "VITE_WARLORDS_CLIENT_URL",
@@ -130,6 +132,7 @@ export function forgeEnvSnapshot(opts?: {
         accountApi: `${FORGE_ENV.gameApi}/api/account`,
         charactersApi: `${FORGE_ENV.gameApi}/api/characters`,
         walletApi: `${FORGE_ENV.gameApi}/api/wallet`,
+        accountCloud: FORGE_ENV.puterSpace,
       },
     },
     ai: {

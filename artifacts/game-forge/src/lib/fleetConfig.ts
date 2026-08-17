@@ -15,6 +15,10 @@ export const FLEET = {
   r2BucketAssets: "grudge-assets",
   /** Studio SSO. */
   grudgeId: "https://id.grudge-studio.com",
+  /** Player account cloud (Puter FS + site deploy). Never bag SSOT. */
+  puterSpace: "https://ai.grudge-studio.com/puter-space",
+  /** Legion AI + /v1/context machine SSOT. */
+  ai: "https://ai.grudge-studio.com",
   /** Forge production host. */
   forge: "https://forge.grudge-studio.com",
   /** Free AI + catalog + agent jobs (same-origin under forge). */
