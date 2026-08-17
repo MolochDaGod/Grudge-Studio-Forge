@@ -217,7 +217,7 @@ function SceneEditMode({
   }, []);
 
   // The whole r3f scene â€” needed for the ground-snap raycast.
-  const { scene: threeScene } = useThree();
+  const { scene: threeScene, controls: orbitControls } = useThree();
 
   // Listen for TransformControls' `dragging-changed` event so we know
   // exactly when a gizmo drag begins and ends. The drei wrapper forwards
@@ -233,6 +233,20 @@ function SceneEditMode({
         gizmoDragGate.active = false;
         gizmoDragGate.releasedAt = performance.now();
       }
+      // Never let TransformControls freeze the editor camera. Keep wheel
+      // zoom + pan; only suppress LMB orbit while the gizmo is dragging.
+      const o = orbitControls as unknown as {
+        enabled?: boolean;
+        enableRotate?: boolean;
+        enablePan?: boolean;
+        enableZoom?: boolean;
+      } | null;
+      if (o) {
+        o.enabled = true;
+        o.enableZoom = true;
+        o.enablePan = true;
+        o.enableRotate = !e.value;
+      }
     };
     ctl.addEventListener("dragging-changed", handler);
     return () => {
@@ -241,7 +255,7 @@ function SceneEditMode({
       gizmoDragGate.active = false;
       gizmoDragGate.releasedAt = performance.now();
     };
-  }, [selectedRef]);
+  }, [selectedRef, orbitControls]);
 
   const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
   const roots = childrenByParent.get(null) ?? [];
@@ -928,7 +942,10 @@ export function Viewport() {
   // Reset to false on play stop via the effect further down.
   const [isPointerLocked, setIsPointerLocked] = useState(false);
   useEffect(() => {
-    if (!isPlaying) setIsPointerLocked(false);
+    if (!isPlaying) {
+      setIsPointerLocked(false);
+      if (document.pointerLockElement) document.exitPointerLock?.();
+    }
   }, [isPlaying]);
 
   const { data: prefabs = [] } = useListPrefabs(projectId ?? 0, {

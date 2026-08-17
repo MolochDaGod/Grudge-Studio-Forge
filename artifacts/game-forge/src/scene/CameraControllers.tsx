@@ -228,48 +228,90 @@ export const EDITOR_ORBIT_MOUSE_BUTTONS = {
  * Wheel dolly has effectively no distance limit (0.01 → 1e9).
  * Middle-mouse drag pans in screen space.
  */
+type EditorOrbitHandle = OrbitLike & {
+  domElement?: HTMLElement;
+  minDistance: number;
+  maxDistance: number;
+  mouseButtons: typeof EDITOR_ORBIT_MOUSE_BUTTONS;
+  zoomToCursor?: boolean;
+  zoomSpeed?: number;
+};
+
+/**
+ * TransformControls writes `controls.enabled = false` on drag (and can
+ * leave it stuck). Editor orbit must stay live so wheel / pan never lock.
+ * Swallow `false`; only a true unmount should drop the interceptor.
+ */
+function pinOrbitAlwaysEnabled(c: OrbitLike): () => void {
+  let live = true;
+  const prev = Object.getOwnPropertyDescriptor(c, "enabled");
+  Object.defineProperty(c, "enabled", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return live;
+    },
+    set(v: boolean) {
+      live = v !== false;
+    },
+  });
+  c.enableZoom = true;
+  c.enablePan = true;
+  return () => {
+    if (prev) Object.defineProperty(c, "enabled", prev);
+    else delete (c as { enabled?: boolean }).enabled;
+  };
+}
+
 export function EditorOrbitControls({
   makeDefault = true,
 }: {
   makeDefault?: boolean;
 }) {
-  const controlsRef = useRef<{
-    domElement?: HTMLElement;
-    minDistance: number;
-    maxDistance: number;
-    mouseButtons: typeof EDITOR_ORBIT_MOUSE_BUTTONS;
-    enableZoom: boolean;
-    enablePan: boolean;
-  } | null>(null);
+  const { gl } = useThree();
+  const controlsRef = useRef<EditorOrbitHandle | null>(null);
 
   useEffect(() => {
     const c = controlsRef.current;
     if (!c) return;
-    // Re-assert after mount (drei sometimes resets defaults).
     c.mouseButtons = { ...EDITOR_ORBIT_MOUSE_BUTTONS };
     c.minDistance = 0.01;
     c.maxDistance = 1e9;
     c.enableZoom = true;
     c.enablePan = true;
+    c.enableRotate = true;
+    if ("zoomToCursor" in c) c.zoomToCursor = true;
+    if ("zoomSpeed" in c) c.zoomSpeed = 2.4;
 
-    // Stop browser "auto-scroll" / middle-click navigation on the canvas.
-    const el = c.domElement;
-    if (!el) return;
+    const unpin = pinOrbitAlwaysEnabled(c);
+
+    const el = c.domElement ?? gl.domElement;
     const blockMiddle = (e: MouseEvent) => {
       if (e.button === 1) e.preventDefault();
     };
-    const blockAuxClick = (e: MouseEvent) => {
-      if (e.button === 1) e.preventDefault();
+    const releaseLock = () => {
+      // Edit viewport never owns pointer-lock — a leftover play lock
+      // swallows wheel + orbit and feels like a frozen camera.
+      if (document.pointerLockElement) document.exitPointerLock?.();
+      c.enabled = true;
+      c.enableZoom = true;
+      c.enablePan = true;
     };
     el.addEventListener("mousedown", blockMiddle);
     el.addEventListener("pointerdown", blockMiddle);
-    el.addEventListener("auxclick", blockAuxClick);
+    el.addEventListener("auxclick", blockMiddle);
+    window.addEventListener("pointerup", releaseLock);
+    window.addEventListener("blur", releaseLock);
+    releaseLock();
     return () => {
+      unpin();
       el.removeEventListener("mousedown", blockMiddle);
       el.removeEventListener("pointerdown", blockMiddle);
-      el.removeEventListener("auxclick", blockAuxClick);
+      el.removeEventListener("auxclick", blockMiddle);
+      window.removeEventListener("pointerup", releaseLock);
+      window.removeEventListener("blur", releaseLock);
     };
-  }, []);
+  }, [gl]);
 
   return (
     <OrbitControls
@@ -277,18 +319,14 @@ export function EditorOrbitControls({
       makeDefault={makeDefault}
       enableDamping
       dampingFactor={0.08}
-      // Free zoom — Orbit's default maxDistance (~∞ is finite in practice)
-      // and a non-zero min so we never pass through the target.
       minDistance={0.01}
       maxDistance={1_000_000_000}
-      // Slightly snappier than stock for editor feel
-      zoomSpeed={1.35}
+      zoomSpeed={2.4}
       panSpeed={1.15}
       rotateSpeed={0.85}
-      // Pan parallel to the screen (Unity Scene view) rather than the ground plane only
       screenSpacePanning
-      // Plain dolly in/out (no zoom-to-cursor re-targeting of the pivot).
-      zoomToCursor={false}
+      // Zoom toward the cursor so the pivot is not locked to world origin.
+      zoomToCursor
       mouseButtons={EDITOR_ORBIT_MOUSE_BUTTONS}
       touches={{
         ONE: THREE.TOUCH.ROTATE,
