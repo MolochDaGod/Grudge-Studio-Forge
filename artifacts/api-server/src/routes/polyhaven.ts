@@ -112,6 +112,7 @@ router.get("/polyhaven/models", async (req, res, next) => {
  *       diffuse?:  { url, ext },
  *       normal?:   { url, ext },
  *       roughness?:{ url, ext },
+ *       metalness?:{ url, ext },
  *       ao?:       { url, ext },
  *       displacement?: { url, ext },
  *     } | null
@@ -206,6 +207,7 @@ router.get("/polyhaven/files/:slug", async (req, res, next) => {
     );
     const normal = tryKeys(["nor_gl", "nor_dx", "Normal", "normal"], IMG);
     const rough = tryKeys(["Rough", "rough", "roughness"], IMG);
+    const metal = tryKeys(["Metal", "metal", "Metallic", "metallic"], IMG);
     const ao = tryKeys(["AO", "ao"], IMG);
     const disp = tryKeys(["Displacement", "displacement", "disp"], IMG);
 
@@ -214,11 +216,12 @@ router.get("/polyhaven/files/:slug", async (req, res, next) => {
       model: gltf,
       hdri,
       texture:
-        diffuse || normal || rough || ao || disp
+        diffuse || normal || rough || metal || ao || disp
           ? {
               diffuse: diffuse ?? undefined,
               normal: normal ?? undefined,
               roughness: rough ?? undefined,
+              metalness: metal ?? undefined,
               ao: ao ?? undefined,
               displacement: disp ?? undefined,
             }

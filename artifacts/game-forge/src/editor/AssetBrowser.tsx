@@ -23,6 +23,7 @@ import { useViewportTabs } from "@/store/viewportTabs";
 import { openModelTabFromAsset } from "@/lib/openModelTab";
 import { getTierColor, type GrudgeItem } from "@/lib/grudge";
 import { usePolyHaven, fetchPolyHavenFiles, type PolyHavenAsset, type PolyHavenAssetKind } from "@/lib/polyhaven";
+import { materialPatchFromFiles, presetById } from "@/lib/polyHavenShader";
 import {
   FAST_ASSETS,
   fastAssetsByGroup,
@@ -1071,7 +1072,7 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
       await createAsset.mutateAsync({
         data: {
           projectId,
-          name: kind === "hdris" ? `${asset.name} (HDRI)` : `${asset.name} (diffuse)`,
+          name: kind === "hdris" ? `${asset.name} (HDRI)` : `${asset.name} (PBR)`,
           url,
           type: kind === "hdris" ? "image" : "texture",
           source: "polyhaven",
@@ -1079,7 +1080,20 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
       });
       qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
       qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
-      pushLog("info", `Imported ${kindLabel} "${asset.name}" — assign it from the inspector.`);
+      if (kind === "textures" && files.texture) {
+        const selectedId = useEditor.getState().selectedId;
+        if (selectedId) {
+          const patch = materialPatchFromFiles(files, presetById(asset.slug));
+          useEditor.getState().cmdUpdateEntity(selectedId, (d) => {
+            d.material = { ...(d.material ?? {}), ...patch };
+          });
+          pushLog("info", `Applied Poly Haven PBR "${asset.name}" to selection (diff/nor/rough/AO/height).`);
+        } else {
+          pushLog("info", `Imported ${kindLabel} "${asset.name}" — select a mesh and Import again, or use Inspector shader presets.`);
+        }
+      } else {
+        pushLog("info", `Imported ${kindLabel} "${asset.name}" — assign it from the inspector.`);
+      }
     } catch (err) {
       pushLog("error", `Failed to import "${asset.name}": ${err instanceof Error ? err.message : String(err)}`);
     } finally {

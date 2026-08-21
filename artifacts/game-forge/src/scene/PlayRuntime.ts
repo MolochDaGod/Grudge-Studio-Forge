@@ -182,6 +182,19 @@ export function makeContext(opts: {
     direction: [number, number, number],
     force?: number,
   ) => boolean;
+  knockback?: (
+    id: string,
+    direction: [number, number, number],
+    force?: number,
+  ) => boolean;
+  blowAway?: (origin: [number, number, number], force?: number, radius?: number) => number;
+  wake?: (id: string) => boolean;
+  takeSnapshot?: () => Uint8Array | null;
+  castShape?: ScriptContext["scene"]["castShape"];
+  meleeVolume?: ScriptContext["scene"]["meleeVolume"];
+  predictLanding?: ScriptContext["scene"]["predictLanding"];
+  wheelCast?: ScriptContext["scene"]["wheelCast"];
+  jointRevolute?: ScriptContext["scene"]["jointRevolute"];
   parentOf: (id: string) => ScriptEntity | undefined;
   childrenOf: (id: string) => ScriptEntity[];
   descendantsOf: (id: string) => ScriptEntity[];
@@ -238,6 +251,15 @@ export function makeContext(opts: {
       freeze: opts.freeze,
       unfreeze: opts.unfreeze,
       ragdoll: opts.ragdoll,
+      knockback: opts.knockback,
+      blowAway: opts.blowAway,
+      wake: opts.wake,
+      takeSnapshot: opts.takeSnapshot,
+      castShape: opts.castShape,
+      meleeVolume: opts.meleeVolume,
+      predictLanding: opts.predictLanding,
+      wheelCast: opts.wheelCast,
+      jointRevolute: opts.jointRevolute,
       parentOf: opts.parentOf,
       childrenOf: opts.childrenOf,
       descendantsOf: opts.descendantsOf,

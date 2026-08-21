@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { PlayCameraController } from "@/scene/CameraControllers";
 import { EffectsRig } from "@/scene/EffectsRig";
 import { PlayScriptRuntime } from "@/scene/PlayScriptRuntime";
+import { RapierPlaySystems } from "@/scene/RapierPlaySystems";
 import { useEditor } from "./playerStore";
 import { PlayerHUD } from "./PlayerHUD";
 import { DEFAULT_GRAVITY, DEFAULT_FOG } from "@workspace/scene-schema";
@@ -65,6 +66,7 @@ function ScenePlayMode(): React.ReactElement {
     <Physics gravity={gravity}>
       <PlayScriptRuntime bodyRefs={bodyRefs} scripts={scripts} />
       <PlayCameraController bodyRefs={bodyRefs} />
+      <RapierPlaySystems bodyRefs={bodyRefs} />
     </Physics>
   );
 }

@@ -715,7 +715,9 @@ exports.update = function(entity, ctx) {
     ctx.state.lastSwing = ctx.time.elapsed;
     const origin = ctx.scene.cameraPosition();
     const dir = ctx.scene.cameraDirection();
-    const hit = ctx.scene.castRay(origin, dir, MELEE_RANGE, [entity.id], undefined, { requireBlocksProjectiles: true });
+    const hit = (typeof ctx.scene.meleeVolume === "function")
+      ? ctx.scene.meleeVolume(origin, dir, MELEE_RANGE, [entity.id])
+      : ctx.scene.castRay(origin, dir, MELEE_RANGE, [entity.id], undefined, { requireBlocksProjectiles: true });
     ctx.events.emit("playerSwing", { origin: origin, dir: dir, hit: hit });
     if (hit && hit.entityId) {
       ctx.scene.send(hit.entityId, "damage", { amount: MELEE_DAMAGE, fromId: entity.id });

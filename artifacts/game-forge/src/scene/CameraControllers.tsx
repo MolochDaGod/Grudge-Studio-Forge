@@ -1,6 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, PointerLockControls } from "@react-three/drei";
-import type { RapierRigidBody } from "@react-three/rapier";
+import { useRapier, type RapierRigidBody } from "@react-three/rapier";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
@@ -13,6 +13,20 @@ import {
   climbProbe,
   isClimbSurface,
 } from "@/scene/PlayRuntime";
+import { DEFAULT_GRAVITY } from "@workspace/scene-schema";
+import {
+  CONTACT,
+  PLAY_CCT,
+  configurePlayCct,
+  rapierClimbProbe,
+  rapierGroundProbe,
+  stampProbeSurface,
+  stepPlayCct,
+  type RapierBodyLike,
+  type RapierCctLike,
+  type RapierNsLike,
+  type RapierWorldLike,
+} from "@/lib/rapierPlay";
 import { getRaceClips } from "@/lib/builtinModels";
 import { gizmoDragGate } from "@/editor/gizmoDragGate";
 
@@ -165,6 +179,57 @@ function moveBody(
     );
   }
   // Fixed bodies never move; intentional no-op.
+}
+
+function usePlayCct() {
+  const { world, rapier } = useRapier();
+  const cctRef = useRef<RapierCctLike | null>(null);
+  const vyRef = useRef(0);
+  const jumpHeldRef = useRef(false);
+  useEffect(() => {
+    const w = world as unknown as RapierWorldLike | undefined;
+    if (!w?.createCharacterController) return;
+    const cct = configurePlayCct(w.createCharacterController(PLAY_CCT.offset));
+    cctRef.current = cct;
+    return () => {
+      w.removeCharacterController?.(cct);
+      cctRef.current = null;
+    };
+  }, [world]);
+  return {
+    world: world as unknown as RapierWorldLike,
+    rapier: rapier as unknown as RapierNsLike,
+    cctRef,
+    vyRef,
+    jumpHeldRef,
+  };
+}
+
+function drivePlayer(
+  body: RapierRigidBody | THREE.Group | undefined,
+  desired: { x: number; z: number; y?: number },
+  delta: number,
+  climbing: boolean,
+  kit: ReturnType<typeof usePlayCct>,
+  gravityY: number,
+  wantJump: boolean,
+) {
+  const cct = kit.cctRef.current;
+  if (cct && isRapierBody(body) && body.bodyType() === RB_KIN_POS) {
+    stepPlayCct({
+      controller: cct,
+      body: body as unknown as RapierBodyLike,
+      desiredVel: { x: desired.x, y: desired.y ?? 0, z: desired.z },
+      dt: delta,
+      gravityY,
+      jumpSpeed: PLAY_CCT.jumpSpeed,
+      wantJump: wantJump && !climbing,
+      climbing,
+      verticalVel: kit.vyRef,
+    });
+    return;
+  }
+  moveBody(body, desired, delta, { climb: climbing });
 }
 
 function readBody(body: RapierRigidBody | THREE.Group | undefined): THREE.Vector3 | null {
@@ -531,6 +596,8 @@ export function ThirdPersonCameraController({
   const distRef = useRef(3.2);
   /** Sticky climb latch so we stay on the ladder until jump / leave. */
   const climbingRef = useRef(false);
+  const playCct = usePlayCct();
+  const gravityY = (env.gravity?.[1] ?? DEFAULT_GRAVITY[1]) as number;
   // True while the canvas owns pointer-lock — mouselook only applies then so
   // editor mode (no lock) doesn't accidentally orbit when the cursor moves.
   // The PointerLockBridge in Viewport.tsx is the canonical owner of the lock
@@ -613,18 +680,38 @@ export function ThirdPersonCameraController({
       0,
       -Math.cos(yawRef.current),
     ];
-    const ground = groundProbe(scene, feet, {
+    const excludeBody = isRapierBody(body) ? (body as unknown as RapierBodyLike) : null;
+    const physGround =
+      playCct.world && playCct.rapier
+        ? rapierGroundProbe(playCct.world, playCct.rapier, feet, {
+            excludeIds: [player.id],
+            excludeBody,
+          })
+        : null;
+    const meshGround = groundProbe(scene, feet, {
       maxDistance: 0.55,
       originOffset: 0.15,
       excludeEntityIds: [player.id],
     });
-    const front = climbProbe(scene, feet, faceDir, {
+    const ground = stampProbeSurface(physGround, meshGround);
+    const physFront =
+      playCct.world && playCct.rapier
+        ? rapierClimbProbe(playCct.world, playCct.rapier, feet, faceDir, {
+            excludeIds: [player.id],
+            excludeBody,
+          })
+        : null;
+    const meshFront = climbProbe(scene, feet, faceDir, {
       excludeEntityIds: [player.id],
     });
+    const front = stampProbeSurface(physFront, meshFront);
     const nearClimb =
       isClimbSurface(ground?.surface) || isClimbSurface(front?.surface);
+    const space = !!(k[" "] || k["Space"]);
+    const wantJump = space && !playCct.jumpHeldRef.current;
+    playCct.jumpHeldRef.current = space;
     // Jump detaches; otherwise latch while near climb and holding W/S or already climbing.
-    if (k[" "] || k["Space"]) climbingRef.current = false;
+    if (space) climbingRef.current = false;
     else if (nearClimb && (mz !== 0 || climbingRef.current)) climbingRef.current = true;
     else if (!nearClimb) climbingRef.current = false;
 
@@ -650,11 +737,28 @@ export function ThirdPersonCameraController({
     // the frame stamp so callback order doesn't matter. The camera still
     // follows the body either way.
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
-      moveBody(
+      const knock = getPlaySession().knockVel.get(player.id);
+      let kvx = climbing ? vx * 0.35 : vx;
+      let kvz = climbing ? vz * 0.35 : vz;
+      let kvy = climbVy;
+      if (knock) {
+        kvx += knock.x;
+        kvz += knock.z;
+        kvy += knock.y;
+        const damp = Math.exp(-CONTACT.knockDecay * delta);
+        knock.x *= damp;
+        knock.y *= damp;
+        knock.z *= damp;
+        if (Math.hypot(knock.x, knock.y, knock.z) < 0.05) getPlaySession().knockVel.delete(player.id);
+      }
+      drivePlayer(
         body,
-        { x: climbing ? vx * 0.35 : vx, z: climbing ? vz * 0.35 : vz, y: climbVy },
+        { x: kvx, z: kvz, y: kvy },
         delta,
-        { climb: climbing },
+        climbing,
+        playCct,
+        gravityY,
+        wantJump,
       );
       // Lock the character's facing to the camera yaw. The character GLB
       // points down -Z at rest (matching three.js' "forward = -Z"
@@ -768,6 +872,8 @@ export function FirstPersonCameraController({
   const pitchRef = useRef(0);
   const lockedRef = useRef(false);
   const climbingRef = useRef(false);
+  const playCct = usePlayCct();
+  const gravityY = (env.gravity?.[1] ?? DEFAULT_GRAVITY[1]) as number;
 
   useEffect(() => {
     const el = gl.domElement;
@@ -834,17 +940,37 @@ export function FirstPersonCameraController({
       0,
       -Math.cos(yawRef.current),
     ];
-    const ground = groundProbe(scene, feet, {
+    const excludeBody = isRapierBody(body) ? (body as unknown as RapierBodyLike) : null;
+    const physGround =
+      playCct.world && playCct.rapier
+        ? rapierGroundProbe(playCct.world, playCct.rapier, feet, {
+            excludeIds: [player.id],
+            excludeBody,
+          })
+        : null;
+    const meshGround = groundProbe(scene, feet, {
       maxDistance: 0.55,
       originOffset: 0.15,
       excludeEntityIds: [player.id],
     });
-    const front = climbProbe(scene, feet, faceDir, {
+    const ground = stampProbeSurface(physGround, meshGround);
+    const physFront =
+      playCct.world && playCct.rapier
+        ? rapierClimbProbe(playCct.world, playCct.rapier, feet, faceDir, {
+            excludeIds: [player.id],
+            excludeBody,
+          })
+        : null;
+    const meshFront = climbProbe(scene, feet, faceDir, {
       excludeEntityIds: [player.id],
     });
+    const front = stampProbeSurface(physFront, meshFront);
     const nearClimb =
       isClimbSurface(ground?.surface) || isClimbSurface(front?.surface);
-    if (k[" "] || k["Space"]) climbingRef.current = false;
+    const space = !!(k[" "] || k["Space"]);
+    const wantJump = space && !playCct.jumpHeldRef.current;
+    playCct.jumpHeldRef.current = space;
+    if (space) climbingRef.current = false;
     else if (nearClimb && (mz !== 0 || climbingRef.current)) climbingRef.current = true;
     else if (!nearClimb) climbingRef.current = false;
     const climbing = climbingRef.current;
@@ -860,15 +986,32 @@ export function FirstPersonCameraController({
     }
 
     if (!isExternallyOwned(player.id, state.clock.elapsedTime)) {
-      moveBody(
+      const knock = getPlaySession().knockVel.get(player.id);
+      let kvx = climbing ? vx * 0.35 : vx;
+      let kvz = climbing ? vz * 0.35 : vz;
+      let kvy = climbVy;
+      if (knock) {
+        kvx += knock.x;
+        kvz += knock.z;
+        kvy += knock.y;
+        const damp = Math.exp(-CONTACT.knockDecay * delta);
+        knock.x *= damp;
+        knock.y *= damp;
+        knock.z *= damp;
+        if (Math.hypot(knock.x, knock.y, knock.z) < 0.05) getPlaySession().knockVel.delete(player.id);
+      }
+      drivePlayer(
         body,
         {
-          x: climbing ? vx * 0.35 : vx,
-          z: climbing ? vz * 0.35 : vz,
-          y: climbVy,
+          x: kvx,
+          z: kvz,
+          y: kvy,
         },
         delta,
-        { climb: climbing },
+        climbing,
+        playCct,
+        gravityY,
+        wantJump,
       );
       // FPS: same convention as the TPS path above — yaw alone aligns the
       // body's forward axis with the camera's look direction.

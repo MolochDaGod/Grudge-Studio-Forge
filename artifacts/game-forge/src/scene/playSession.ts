@@ -52,8 +52,10 @@ export interface PlaySession {
    *  callback that ran AFTER setPosition will see "stamp === now" and skip.
    *  Stale entries from prior frames are harmless. */
   pendingTeleportFrame: Map<string, number>;
-  /** Monotonic id bumped on each reset so React subscribers can re-mount /
-   *  re-subscribe cleanly. */
+  /** Horizontal/vertical knock leftover for kinematic CCT (consumed in CameraControllers). */
+  knockVel: Map<string, { x: number; y: number; z: number }>;
+  /** entityId → how many Water sensors currently overlap (buoyancy). */
+  waterOverlaps: Map<string, number>;
   epoch: number;
 }
 
@@ -70,9 +72,13 @@ export function getPlaySession(): PlaySession {
       frozenBodies: new Set(),
       ragdolledBodies: new Set(),
       pendingTeleportFrame: new Map(),
+      knockVel: new Map(),
+      waterOverlaps: new Map(),
       epoch: 0,
     };
   }
+  session.knockVel ??= new Map();
+  session.waterOverlaps ??= new Map();
   return session;
 }
 
@@ -86,5 +92,7 @@ export function resetPlaySession(): void {
   session.frozenBodies.clear();
   session.ragdolledBodies.clear();
   session.pendingTeleportFrame.clear();
+  session.knockVel.clear();
+  session.waterOverlaps.clear();
   session.epoch += 1;
 }

@@ -205,17 +205,41 @@ export interface ScriptContext {
      *  geometry occlusion. Pass `layerMask` to limit hits to entities whose
      *  `layer` is included in the mask (decorative meshes with no entity are
      *  always returned). */
+    /** Rapier world.castRay (unit dir, maxToi = metres). THREE mesh fallback. */
     castRay: (
       origin: [number, number, number],
       direction: [number, number, number],
       maxDistance?: number,
       excludeIds?: string[],
       layerMask?: string[],
-      /** Material-aware filter. e.g. a bullet check passes
-       *  `{ requireBlocksProjectiles: true }` so glass / foliage /
-       *  smoke don't stop the ray; an audio occlusion check passes
-       *  `{ requireBlocksAudio: true }`. */
       materialFilter?: MaterialRayFilter,
+    ) => RaycastHit | null;
+    /** Sweep a capsule/ball — melee, landing, wheels. Not a thin ray. */
+    castShape?: (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      maxDistance: number,
+      shape?: "capsule" | "ball",
+      radius?: number,
+      excludeIds?: string[],
+    ) => RaycastHit | null;
+    meleeVolume?: (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      range?: number,
+      excludeIds?: string[],
+    ) => RaycastHit | null;
+    predictLanding?: (
+      origin: [number, number, number],
+      velocity: [number, number, number],
+      maxTime?: number,
+      excludeIds?: string[],
+    ) => RaycastHit | null;
+    wheelCast?: (
+      origin: [number, number, number],
+      maxDrop?: number,
+      radius?: number,
+      excludeIds?: string[],
     ) => RaycastHit | null;
     /** Cast a ray from the active camera through the current pointer
      *  (NDC from `ctx.input.mouse`). Used by RTS selection / ground orders.
@@ -290,6 +314,28 @@ export interface ScriptContext {
       id: string,
       direction: [number, number, number],
       force?: number,
+    ) => boolean;
+    /** Impulse without ragdoll. Kinematic CCT stores leftover knock vel. */
+    knockback?: (
+      id: string,
+      direction: [number, number, number],
+      force?: number,
+    ) => boolean;
+    /** Impulse all dynamic bodies in a radius (explosion / wind). */
+    blowAway?: (
+      origin: [number, number, number],
+      force?: number,
+      radius?: number,
+    ) => number;
+    wake?: (id: string) => boolean;
+    takeSnapshot?: () => Uint8Array | null;
+    /** Revolute joint (door / wheel). Anchors in local metres. */
+    jointRevolute?: (
+      idA: string,
+      idB: string,
+      anchorA?: [number, number, number],
+      anchorB?: [number, number, number],
+      axis?: [number, number, number],
     ) => boolean;
     // --- Hierarchy traversal (scene-graph parent/children/world space) -----
     /** Direct parent of `id`, or undefined for top-level entities. */

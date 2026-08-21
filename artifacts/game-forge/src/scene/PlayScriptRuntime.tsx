@@ -19,7 +19,19 @@
  * into this file once Viewport is broken up.
  */
 import { useFrame, useThree } from "@react-three/fiber";
-import type { RapierRigidBody } from "@react-three/rapier";
+import { useRapier, type RapierRigidBody } from "@react-three/rapier";
+import {
+  applyKnockbackImpulse,
+  blowAwayBodies,
+  meleeVolumeCast,
+  predictLanding as rapierPredictLanding,
+  rapierCastRay,
+  wheelCast as rapierWheelCast,
+  type RapierBodyLike,
+  type RapierNsLike,
+  type RapierWorldLike,
+} from "@/lib/rapierPlay";
+import { getRaceClips } from "@/lib/builtinModels";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useEditor } from "@/store/editor";
@@ -78,6 +90,7 @@ export function PlayScriptRuntime({
   const isPaused = useEditor((s) => s.isPaused);
   const keysRef = useKeyboardState(true);
   const { gl, scene: threeScene, camera } = useThree();
+  const { world: rapierWorld, rapier } = useRapier();
   const mouseRef = useMouseState(gl.domElement);
   const session = useMemo(() => {
     const s = getPlaySession();
@@ -625,13 +638,87 @@ export function PlayScriptRuntime({
         body.setLinvel({ x: 0, y: 0, z: 0 }, true);
         body.setAngvel({ x: 0, y: 0, z: 0 }, true);
         body.applyImpulse({ x: nx * k, y: ny * k, z: nz * k }, true);
+        body.wakeUp?.();
       } catch {
         // RigidBody types vary slightly across react-three-rapier
         // versions; if any setter is missing we still mark the body
         // as ragdolled so the FSM writes stop and the death pose plays.
       }
       session.ragdolledBodies.add(id);
+      session.frozenBodies.add(id);
+      const ent = sceneData.entities.find((e) => e.id === id);
+      const death = getRaceClips(ent?.raceId)?.death ?? "death";
+      const w = window as unknown as { __agentClips?: Map<string, string> };
+      w.__agentClips ??= new Map();
+      w.__agentClips.set(id, death);
       return true;
+    };
+    const asRapier = (id: string): RapierBodyLike | null => {
+      const b = bodyRefs.current.get(id);
+      if (!b || !("translation" in b)) return null;
+      return b as unknown as RapierBodyLike;
+    };
+    const knockback = (
+      id: string,
+      direction: [number, number, number],
+      force = 8,
+    ): boolean => {
+      const body = asRapier(id);
+      if (!body) return false;
+      const t = body.bodyType?.() ?? 0;
+      if (t === 2 || t === 3) {
+        const len = Math.hypot(direction[0], direction[1], direction[2]) || 1;
+        session.knockVel.set(id, {
+          x: (direction[0] / len) * force,
+          y: (direction[1] / len) * force,
+          z: (direction[2] / len) * force,
+        });
+        return true;
+      }
+      return applyKnockbackImpulse(body, direction, force);
+    };
+    const blowAway = (
+      origin: [number, number, number],
+      force = 14,
+      radius = 6,
+    ): number => {
+      const list: RapierBodyLike[] = [];
+      for (const b of bodyRefs.current.values()) {
+        if (b && "translation" in b) list.push(b as unknown as RapierBodyLike);
+      }
+      return blowAwayBodies(list, origin, force, radius);
+    };
+    const wake = (id: string): boolean => {
+      const b = asRapier(id);
+      if (!b) return false;
+      b.wakeUp?.();
+      return true;
+    };
+    const takeSnapshot = (): Uint8Array | null => {
+      const w = rapierWorld as unknown as RapierWorldLike;
+      return w.takeSnapshot?.() ?? null;
+    };
+    const jointRevolute = (
+      idA: string,
+      idB: string,
+      anchorA: [number, number, number] = [0, 0, 0],
+      anchorB: [number, number, number] = [0, 0, 0],
+      axis: [number, number, number] = [0, 1, 0],
+    ): boolean => {
+      const a = asRapier(idA);
+      const b = asRapier(idB);
+      const jd = (rapier as unknown as RapierNsLike).JointData?.revolute?.(
+        { x: anchorA[0], y: anchorA[1], z: anchorA[2] },
+        { x: anchorB[0], y: anchorB[1], z: anchorB[2] },
+        { x: axis[0], y: axis[1], z: axis[2] },
+      );
+      if (!a || !b || !jd) return false;
+      (rapierWorld as unknown as RapierWorldLike).createImpulseJoint?.(jd, a, b, true);
+      return true;
+    };
+    const excludeBodyOf = (ids?: string[]) => {
+      const b = ids?.[0] ? bodyRefs.current.get(ids[0]) : null;
+      return b && "translation" in b ? (b as unknown as RapierBodyLike) : null;
     };
     const cameraPosition = (): [number, number, number] => [
       camera.position.x,
@@ -650,8 +737,30 @@ export function PlayScriptRuntime({
       excludeIds: string[] | undefined,
       layerMask: string[] | undefined,
       materialFilter?: import("@/scene/PlayRuntime").MaterialRayFilter,
-    ) =>
-      raycastEntities(
+    ) => {
+      const excludeBody =
+        excludeIds?.[0] && bodyRefs.current.get(excludeIds[0]);
+      const phys =
+        rapierWorld && rapier
+          ? rapierCastRay(
+              rapierWorld as unknown as RapierWorldLike,
+              rapier as unknown as RapierNsLike,
+              origin,
+              direction,
+              maxDistance,
+              {
+                excludeIds,
+                layerMask,
+                materialFilter,
+                excludeBody:
+                  excludeBody && "translation" in excludeBody
+                    ? (excludeBody as unknown as RapierBodyLike)
+                    : null,
+              },
+            )
+          : null;
+      if (phys) return phys;
+      return raycastEntities(
         threeScene,
         origin,
         direction,
@@ -660,6 +769,72 @@ export function PlayScriptRuntime({
         layerMask,
         materialFilter,
       );
+    };
+    const ns = rapier as unknown as RapierNsLike;
+    const wld = rapierWorld as unknown as RapierWorldLike;
+    const castShape = (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      maxDistance: number,
+      shape: "capsule" | "ball" = "capsule",
+      radius = 0.28,
+      excludeIds?: string[],
+    ) => {
+      if (!rapierWorld || !rapier) return null;
+      if (shape === "ball") {
+        return rapierPredictLanding(
+          wld,
+          ns,
+          origin,
+          [direction[0] * maxDistance, direction[1] * maxDistance, direction[2] * maxDistance],
+          1,
+          { radius, excludeIds, excludeBody: excludeBodyOf(excludeIds) },
+        );
+      }
+      return meleeVolumeCast(wld, ns, origin, direction, maxDistance, {
+        radius,
+        excludeIds,
+        excludeBody: excludeBodyOf(excludeIds),
+      });
+    };
+    const meleeVolume = (
+      origin: [number, number, number],
+      direction: [number, number, number],
+      range = 2.2,
+      excludeIds?: string[],
+    ) => {
+      if (!rapierWorld || !rapier) return castRay(origin, direction, range, excludeIds, undefined, {
+        requireBlocksProjectiles: true,
+      });
+      return meleeVolumeCast(wld, ns, origin, direction, range, {
+        excludeIds,
+        excludeBody: excludeBodyOf(excludeIds),
+      });
+    };
+    const predictLandingFn = (
+      origin: [number, number, number],
+      velocity: [number, number, number],
+      maxTime = 2,
+      excludeIds?: string[],
+    ) => {
+      if (!rapierWorld || !rapier) return null;
+      return rapierPredictLanding(wld, ns, origin, velocity, maxTime, {
+        excludeIds,
+        excludeBody: excludeBodyOf(excludeIds),
+      });
+    };
+    const wheelCastFn = (
+      origin: [number, number, number],
+      maxDrop = 1.2,
+      radius = 0.35,
+      excludeIds?: string[],
+    ) => {
+      if (!rapierWorld || !rapier) return null;
+      return rapierWheelCast(wld, ns, origin, maxDrop, radius, {
+        excludeIds,
+        excludeBody: excludeBodyOf(excludeIds),
+      });
+    };
     const castScreenRay = (maxDistance: number) => {
       const mx = mouseRef.state.x;
       const my = mouseRef.state.y;
@@ -678,15 +853,18 @@ export function PlayScriptRuntime({
         ray.ray.direction.y,
         ray.ray.direction.z,
       ];
-      const hit = raycastEntities(
-        threeScene,
-        origin,
-        direction,
-        maxDistance,
-        undefined,
-        undefined,
-        undefined,
-      );
+      const hit =
+        (rapierWorld && rapier
+          ? rapierCastRay(
+              wld,
+              ns,
+              origin,
+              direction,
+              maxDistance,
+              { solid: true },
+            )
+          : null) ??
+        raycastEntities(threeScene, origin, direction, maxDistance, undefined, undefined, undefined);
       if (hit) return hit;
       // Ground-plane fallback (y = 0) so move orders land on open terrain.
       const dy = direction[1];
@@ -889,6 +1067,15 @@ export function PlayScriptRuntime({
         freeze,
         unfreeze,
         ragdoll,
+        knockback,
+        blowAway,
+        wake,
+        takeSnapshot,
+        jointRevolute,
+        castShape,
+        meleeVolume,
+        predictLanding: predictLandingFn,
+        wheelCast: wheelCastFn,
         parentOf,
         childrenOf,
         descendantsOf,

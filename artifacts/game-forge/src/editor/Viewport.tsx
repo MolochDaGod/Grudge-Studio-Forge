@@ -12,6 +12,7 @@ import { EntityRenderer } from "@/scene/EntityRenderer";
 import { NavmeshDebugOverlay } from "@/scene/NavmeshDebugOverlay";
 import { groundProbe } from "@/scene/PlayRuntime";
 import { PlayScriptRuntime } from "@/scene/PlayScriptRuntime";
+import { RapierPlaySystems } from "@/scene/RapierPlaySystems";
 import {
   resolveInheritedFields,
   indexEntitiesById,
@@ -368,6 +369,7 @@ function ScenePlayMode() {
     <Physics gravity={gravity} debug={physicsDebug}>
       <PlayScriptRuntime bodyRefs={bodyRefs} scripts={scripts} />
       <PlayCameraController bodyRefs={bodyRefs} />
+      <RapierPlaySystems bodyRefs={bodyRefs} />
     </Physics>
   );
 }
@@ -804,26 +806,19 @@ export function Viewport() {
   const spawnPrefabEntities = useEditor((s) => s.spawnPrefabEntities);
   const pushLog = useEditor((s) => s.pushLog);
   const cameraMode = env.cameraMode ?? "editor";
-  // Empty-scene overlay (T004): show a "pick a template" panel when the
-  // user opens the editor onto a scene with no entities. Hidden during
-  // play mode and inside the prefab sub-scene to avoid covering the
-  // intended content.
+  // Templates are optional. Never gate the viewport: empty scene = empty
+  // canvas. File → Load template… or the corner chip opens an in-view
+  // panel with an X. It does not re-arm on File → New.
   const sceneEntitiesCount = useEditor((s) => s.sceneData.entities.length);
   const prefabSubScene = useEditor((s) => s.prefabSubScene);
-  // Dismissable picker â€” user can X-out the "Pick a starting template"
-  // overlay if they want to build from scratch instead. Auto-resets the
-  // moment the scene becomes non-empty (so loading a template, adding a
-  // primitive, etc.) and re-arms when the scene goes empty again â€” that
-  // way "File â†’ New" still surfaces the picker on a fresh scene.
-  const [pickerDismissed, setPickerDismissed] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   useEffect(() => {
-    if (sceneEntitiesCount > 0 && pickerDismissed) setPickerDismissed(false);
-  }, [sceneEntitiesCount, pickerDismissed]);
-  const showEmptySceneOverlay =
-    !isPlaying &&
-    !prefabSubScene &&
-    sceneEntitiesCount === 0 &&
-    !pickerDismissed;
+    const onOpen = () => setTemplatesOpen(true);
+    window.addEventListener("forge:open-templates", onOpen);
+    return () => window.removeEventListener("forge:open-templates", onOpen);
+  }, []);
+  const showTemplatePanel =
+    templatesOpen && !isPlaying && !prefabSubScene;
 
   // Pull the manifest from the api-server (cached after the first call
   // by React Query, so the Toolbar dropdown and this overlay share the
@@ -841,13 +836,11 @@ export function Viewport() {
   const onPickTemplate = (key: string) => {
     const tpl = templateManifest.find((t) => t.key === key);
     if (!tpl) return;
+    setTemplatesOpen(false);
     templateLoader.start(tpl.key, tpl.label);
   };
 
-  // (No auto-load on first boot â€” opens straight into the empty-scene
-  // picker so the user chooses what to play instead of being dropped into
-  // a hard-coded demo. Manual triggers stay available via the picker
-  // overlay and the Toolbar / File menu.)
+  // No auto-load and no required picker on first boot. Scratch scene.
 
   // Right-click bookkeeping. R3F dispatches `onContextMenu` to the topmost
   // intersected entity DURING the same browser event that Radix later opens
@@ -1263,30 +1256,40 @@ export function Viewport() {
             </div>
           )}
 
-          {showEmptySceneOverlay && (
+          {!isPlaying && !prefabSubScene && sceneEntitiesCount === 0 && !templatesOpen && (
+            <button
+              type="button"
+              onClick={() => setTemplatesOpen(true)}
+              className="absolute left-3 bottom-3 z-20 pointer-events-auto rounded-md border border-card-border bg-card/85 px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-accent backdrop-blur"
+              data-testid="empty-scene-templates-chip"
+            >
+              Templates
+            </button>
+          )}
+
+          {showTemplatePanel && (
             <div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              className="absolute left-3 bottom-12 z-20 pointer-events-none"
               data-testid="empty-scene-overlay"
             >
-              <div className="pointer-events-auto relative max-w-md w-[420px] rounded-xl border border-card-border bg-card/95 backdrop-blur shadow-xl p-5">
+              <div className="pointer-events-auto relative w-[320px] max-w-[calc(100%-1.5rem)] rounded-lg border border-card-border bg-card/95 backdrop-blur shadow-xl p-3">
                 <button
                   type="button"
-                  onClick={() => setPickerDismissed(true)}
+                  onClick={() => setTemplatesOpen(false)}
                   aria-label="Close template picker"
-                  className="absolute top-2 right-2 w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 border border-transparent hover:border-card-border transition-colors"
+                  className="absolute top-1.5 right-1.5 w-7 h-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 border border-transparent hover:border-card-border transition-colors"
                   data-testid="empty-scene-overlay-close"
                 >
                   <X className="w-4 h-4" />
                 </button>
                 <div className="text-[11px] font-heading uppercase tracking-[0.18em] text-accent mb-1">
-                  New Scene
+                  Optional
                 </div>
-                <h2 className="text-lg font-heading mb-1 pr-7">
-                  Pick a starting template
+                <h2 className="text-sm font-heading mb-1 pr-7">
+                  Templates
                 </h2>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Each template ships with players, AI, lighting, and a level
-                  ready to play. You can edit anything afterwards.
+                <p className="text-xs text-muted-foreground mb-3">
+                  Optional starter scenes. Close this and build in the viewport.
                 </p>
                 {tplQuery.isError ||
                 (tplQuery.data !== undefined &&

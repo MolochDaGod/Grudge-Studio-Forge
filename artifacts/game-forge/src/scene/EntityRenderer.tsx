@@ -5,10 +5,12 @@ import {
   ConvexHullCollider,
   CylinderCollider,
   RigidBody,
+  type ContactForcePayload,
   type IntersectionEnterPayload,
   type IntersectionExitPayload,
   type RapierRigidBody,
 } from "@react-three/rapier";
+import { CONTACT } from "@/lib/rapierPlay";
 import { deserializeHullSet, type ConvexHullSet } from "@/lib/colliderBaker";
 import { getPlaySession } from "./playSession";
 import type { TriggerEvent } from "./GameBus";
@@ -46,7 +48,9 @@ import {
   useMaterialTextures,
   applyMapsToMaterial,
 } from "@/lib/useMaterialTextures";
+import { ensureAoUv2 } from "@/lib/polyHavenShader";
 import { resolveClipName } from "@/lib/animationClipResolve";
+import { applyMeshIdsExclusive } from "@/lib/meshEquipApply";
 
 interface RenderProps {
   entity: SceneEntity;
@@ -158,9 +162,15 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
   const maps = useMaterialTextures(mat);
   return (
     <>
-      <mesh {...meshProps}>
+      <mesh
+        {...meshProps}
+        onUpdate={(obj) => {
+          const mesh = obj as THREE.Mesh;
+          if (mesh.geometry) ensureAoUv2(mesh.geometry);
+        }}
+      >
         {TYPE_GEOMETRY[entity.type] ?? TYPE_GEOMETRY.box}
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           color={color}
           metalness={mat.metalness ?? 0.1}
           roughness={mat.roughness ?? 0.6}
@@ -171,6 +181,10 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
           roughnessMap={maps.roughnessMap ?? undefined}
           metalnessMap={maps.metalnessMap ?? undefined}
           emissiveMap={maps.emissiveMap ?? undefined}
+          aoMap={maps.aoMap ?? undefined}
+          aoMapIntensity={maps.aoMap ? 1 : 0}
+          displacementMap={maps.displacementMap ?? undefined}
+          displacementScale={maps.displacementMap ? 0.04 : 0}
           side={entity.type === "plane" ? THREE.DoubleSide : THREE.FrontSide}
           transparent={!!transparent}
           opacity={opacity}
@@ -304,6 +318,7 @@ function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProp
           selected={selected}
           onPick={onPick}
           yawOffset={entity.model?.yawOffset}
+          meshIds={entity.model?.meshIds}
           // Convention: any entity literally named "Map" is treated as
           // an environment / level mesh and drop-aligned to local Y=0
           // so its visible floor sits flush with the invisible Ground
@@ -430,9 +445,11 @@ interface LoadedModelProps {
    *  physics body's "forward" already points (-Z in three.js convention).
    *  Resolution: this prop > `BUILTIN_MODEL_YAW_OFFSETS[builtinKey]` > 0. */
   yawOffset?: number;
+  /** grudge6 exclusive mesh visibility (Main Panel equipment admin). */
+  meshIds?: string[];
 }
 
-function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag, yawOffset }: LoadedModelProps) {
+function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag, yawOffset, meshIds }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
   // `false, false` so drei does NOT install its own DRACO/Meshopt
@@ -532,6 +549,13 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
       }
     };
   }, [cloned, surfaceTag]);
+
+  // ── Equipment meshing (Main Panel admin → model.meshIds)
+  // Exclusive show of grudge6 body/armor/weapon child meshes (Unity parity).
+  useLayoutEffect(() => {
+    if (meshIds === undefined) return;
+    applyMeshIdsExclusive(cloned, meshIds);
+  }, [cloned, meshIds]);
 
   // ── Texture quality: bump anisotropic filtering on every texture in the
   // GLB so floor/wall textures stay sharp at oblique camera angles
@@ -660,7 +684,9 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     !!matMaps.normalMap ||
     !!matMaps.roughnessMap ||
     !!matMaps.metalnessMap ||
-    !!matMaps.emissiveMap;
+    !!matMaps.emissiveMap ||
+    !!matMaps.aoMap ||
+    !!matMaps.displacementMap;
   useEffect(() => {
     const hasMaterial =
       matColor !== undefined ||
@@ -683,6 +709,7 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
           m instanceof THREE.MeshBasicMaterial;
         if (!isStd) return m;
         const cm = m.clone();
+        if (child.geometry) ensureAoUv2(child.geometry);
         if (colorObj && "color" in cm) (cm as THREE.MeshStandardMaterial).color.copy(colorObj);
         if (cm instanceof THREE.MeshStandardMaterial) {
           if (matMetalness !== undefined) cm.metalness = matMetalness;
@@ -723,6 +750,8 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
     matMaps.roughnessMap,
     matMaps.metalnessMap,
     matMaps.emissiveMap,
+    matMaps.aoMap,
+    matMaps.displacementMap,
   ]);
 
   // ── Label: floating sprite above the model. Repositioned each frame would
@@ -921,17 +950,79 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     return (payload: IntersectionEnterPayload) => {
       const ev = buildTriggerEvent(payload);
       if (!ev) return;
-      getPlaySession().triggers.fireEnter(entity.id, ev);
+      const session = getPlaySession();
+      session.triggers.fireEnter(entity.id, ev);
+      if (layer === "Water") {
+        session.waterOverlaps.set(ev.otherId, (session.waterOverlaps.get(ev.otherId) ?? 0) + 1);
+      }
     };
-  }, [entity.id, buildTriggerEvent]);
+  }, [entity.id, buildTriggerEvent, layer]);
 
   const handleIntersectionExit = useMemo(() => {
     return (payload: IntersectionExitPayload) => {
       const ev = buildTriggerEvent(payload);
       if (!ev) return;
-      getPlaySession().triggers.fireExit(entity.id, ev);
+      const session = getPlaySession();
+      session.triggers.fireExit(entity.id, ev);
+      if (layer === "Water") {
+        const n = (session.waterOverlaps.get(ev.otherId) ?? 1) - 1;
+        if (n <= 0) session.waterOverlaps.delete(ev.otherId);
+        else session.waterOverlaps.set(ev.otherId, n);
+      }
     };
-  }, [entity.id, buildTriggerEvent]);
+  }, [entity.id, buildTriggerEvent, layer]);
+
+  const handleContactForce = useMemo(() => {
+    return (payload: ContactForcePayload) => {
+      const mag = payload.totalForceMagnitude;
+      const otherUd = (payload.other.rigidBodyObject?.userData ?? {}) as {
+        entityId?: string;
+        layer?: string;
+      };
+      const session = getPlaySession();
+      session.bus.emit("contactForce", {
+        entityId: entity.id,
+        otherId: otherUd.entityId ?? null,
+        magnitude: mag,
+      });
+      const otherLayer = otherUd.layer ?? "";
+      const hitByShot = otherLayer === "Projectile";
+      if (hitByShot && mag >= CONTACT.stagger) {
+        const self = payload.target.rigidBody;
+        const other = payload.other.rigidBody;
+        if (self && other) {
+          const a = self.translation();
+          const b = other.translation();
+          const dir: [number, number, number] = [a.x - b.x, a.y - b.y + 0.3, a.z - b.z];
+          const isPlayer = !!entity.controllerKind && entity.controllerKind !== "none";
+          if (isPlayer) {
+            const len = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+            session.knockVel.set(entity.id, {
+              x: (dir[0] / len) * 6,
+              y: (dir[1] / len) * 4,
+              z: (dir[2] / len) * 6,
+            });
+          } else if (mag >= CONTACT.ragdoll) {
+            session.ragdolledBodies.add(entity.id);
+            try {
+              self.setBodyType?.(0, true);
+              self.setEnabledRotations?.(true, true, true, true);
+              self.applyImpulse?.(
+                { x: dir[0] * 40, y: dir[1] * 40 + 80, z: dir[2] * 40 },
+                true,
+              );
+            } catch {
+              /* body API drift */
+            }
+            const w = window as unknown as { __agentClips?: Map<string, string> };
+            w.__agentClips ??= new Map();
+            w.__agentClips.set(entity.id, "death");
+          }
+        }
+      }
+      payload.other.rigidBody?.wakeUp?.();
+    };
+  }, [entity.id, entity.controllerKind]);
 
   // Clear this entity's trigger handlers when the renderer unmounts (the
   // entity was despawned mid-play, or play mode stopped). The wider
@@ -978,11 +1069,9 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     }
     const renderConvexHulls = useConvexDecomp && !!hullSet;
 
-    // Player-controlled bodies must yaw freely but never tip over from a
-    // sideways collision impulse. Allowing only Y-axis rotation gives us
-    // physics-friendly characters without needing a full kinematic-character
-    // controller. Non-player rigid bodies keep their default (full) rotation
-    // axes so prop physics looks natural.
+    // Play player uses Rapier CCT (kinematicPosition + capsule). NPCs that
+    // are not the camera target stay dynamic with Y-only rotation so they
+    // don't tip. Do not run CCT and a dynamic capsule on the same body.
     //
     // ⚠️ This prop must be conditionally SPREAD (not just set to undefined
     // for the non-player case) — react-three-rapier's `setRigidBodyOptions`
@@ -1016,25 +1105,29 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       (typeof entity.name === "string" &&
         entity.name.toLowerCase().includes("projectile"));
 
-    const capHalf = ph.capsuleHalfHeight ?? 0.85;
-    const capRadius = ph.capsuleRadius ?? 0.35;
+    const usePlayerCct = isPlayerControlled;
+    const capHalf = ph.capsuleHalfHeight ?? (usePlayerCct ? 0.58 : 0.85);
+    const capRadius = ph.capsuleRadius ?? (usePlayerCct ? 0.32 : 0.35);
     // Center capsule so feet sit at local y=0 (halfHeight + radius).
     const capY = capHalf + capRadius;
+    const bodyType = usePlayerCct ? "kinematicPosition" : (ph.bodyType ?? "dynamic");
+    const useCapsule = usePlayerCct || (explicitForModel && colliderShape === "cylinder");
 
     return (
       <RigidBody
         ref={ref as React.Ref<RapierRigidBody>}
-        type={ph.bodyType ?? "dynamic"}
+        type={bodyType}
         position={tr.position}
         rotation={tr.rotation}
         {...playerRotationLockProps}
         sensor={isSensor}
         onIntersectionEnter={handleIntersectionEnter}
         onIntersectionExit={handleIntersectionExit}
+        onContactForce={handleContactForce}
         collisionGroups={collisionGroups}
         solverGroups={collisionGroups}
         colliders={
-          explicitForModel || renderConvexHulls
+          useCapsule || explicitForModel || renderConvexHulls
             ? false
             : colliderShape === "ball"
               ? "ball"
@@ -1071,7 +1164,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
       >
         {/* Character capsule: half-height + radius ≈ 1.7 m tall humanoid.
             Feet at local y=0. Tunable via physics.capsuleHalfHeight / capsuleRadius. */}
-        {explicitForModel && colliderShape === "cylinder" && (
+        {useCapsule && (
           <CapsuleCollider args={[capHalf, capRadius]} position={[0, capY, 0]} />
         )}
         {explicitForModel && colliderShape === "ball" && (

@@ -259,7 +259,7 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
     {
       title: "Raycast down for grounding",
       detail:
-        "Cast Rapier rays from character root (+εY) against terrain. Prefer castRay/shapeCast over mesh AABB for feet.",
+        "Cast Rapier rays from character root (+εY) against terrain. Prefer world.castRay / CCT grounded over mesh AABB for feet.",
     },
     {
       title: "Instanced scatter for forests",
@@ -285,6 +285,11 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
     },
   ],
   controller: [
+    {
+      title: "Play player is Rapier CCT, not a dynamic capsule",
+      detail:
+        "kinematicPosition + capsule (r 0.32, halfH 0.58). Autostep / snap / push boxes. Space jump. Feet/LOS: world.castRay (unit dir, maxToi=m). Melee/landing/wheels: castShape. Knockback + contactForce + ragdoll death clip. Do not setLinvel a dynamic player.",
+    },
     {
       title: "One player controller per scene",
       detail:
@@ -403,6 +408,11 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
       title: "Use UV repeat for tileable surfaces",
       detail:
         "Brick, wood, ground textures should tile (set UV repeat 4×4 or 8×8 on a plane). Don't stretch a single 1K image across a 100m floor.",
+    },
+    {
+      title: "Poly Haven shader presets keep one art look",
+      detail:
+        "Inspector → Poly Haven shader applies the same CC0 PBR set (diffuse + GL normal + rough + AO + height). WebGL = MeshPhysical. WebGPU = MeshStandardNodeMaterial (TSL). Do not mix random atlas packs on the same prop.",
     },
   ],
   hdri: [

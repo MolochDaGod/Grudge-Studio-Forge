@@ -50,6 +50,7 @@ export type PolyHavenFiles = {
         diffuse?: PolyHavenFileRef;
         normal?: PolyHavenFileRef;
         roughness?: PolyHavenFileRef;
+        metalness?: PolyHavenFileRef;
         ao?: PolyHavenFileRef;
         displacement?: PolyHavenFileRef;
       }

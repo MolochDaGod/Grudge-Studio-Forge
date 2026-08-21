@@ -699,7 +699,9 @@ export const useEditor = create<EditorState>((set, get) => ({
             updated.physics = {
               ...(e.physics ?? {}),
               bodyType: "kinematicPosition",
-              colliderType: e.physics?.colliderType ?? "cuboid",
+              colliderType: "cylinder",
+              capsuleHalfHeight: e.physics?.capsuleHalfHeight ?? 0.58,
+              capsuleRadius: e.physics?.capsuleRadius ?? 0.32,
             };
           }
           return updated;

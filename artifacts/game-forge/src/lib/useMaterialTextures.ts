@@ -15,6 +15,8 @@ export interface MaterialTextures {
   roughnessMap: THREE.Texture | null;
   metalnessMap: THREE.Texture | null;
   emissiveMap: THREE.Texture | null;
+  aoMap: THREE.Texture | null;
+  displacementMap: THREE.Texture | null;
 }
 
 const EMPTY: MaterialTextures = {
@@ -23,6 +25,8 @@ const EMPTY: MaterialTextures = {
   roughnessMap: null,
   metalnessMap: null,
   emissiveMap: null,
+  aoMap: null,
+  displacementMap: null,
 };
 
 function loadTex(
@@ -82,6 +86,8 @@ export function useMaterialTextures(
   const roughnessMapUrl = material?.roughnessMapUrl;
   const metalnessMapUrl = material?.metalnessMapUrl;
   const emissiveMapUrl = material?.emissiveMapUrl;
+  const aoMapUrl = material?.aoMapUrl;
+  const displacementMapUrl = material?.displacementMapUrl;
   const rx = material?.mapRepeat?.[0];
   const ry = material?.mapRepeat?.[1];
   const repeatKey = `${rx ?? 1},${ry ?? 1}`;
@@ -94,13 +100,15 @@ export function useMaterialTextures(
       rx != null && ry != null ? [rx, ry] : undefined;
 
     void (async () => {
-      const [map, normalMap, roughnessMap, metalnessMap, emissiveMap] =
+      const [map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap, displacementMap] =
         await Promise.all([
           loadTex(mapUrl, true, repeat),
           loadTex(normalMapUrl, false, repeat),
           loadTex(roughnessMapUrl, false, repeat),
           loadTex(metalnessMapUrl, false, repeat),
           loadTex(emissiveMapUrl, true, repeat),
+          loadTex(aoMapUrl, false, repeat),
+          loadTex(displacementMapUrl, false, repeat),
         ]);
       if (cancelled) {
         map?.dispose();
@@ -108,9 +116,11 @@ export function useMaterialTextures(
         roughnessMap?.dispose();
         metalnessMap?.dispose();
         emissiveMap?.dispose();
+        aoMap?.dispose();
+        displacementMap?.dispose();
         return;
       }
-      setTex({ map, normalMap, roughnessMap, metalnessMap, emissiveMap });
+      setTex({ map, normalMap, roughnessMap, metalnessMap, emissiveMap, aoMap, displacementMap });
     })();
 
     return () => {
@@ -121,16 +131,27 @@ export function useMaterialTextures(
         prev.roughnessMap?.dispose();
         prev.metalnessMap?.dispose();
         prev.emissiveMap?.dispose();
+        prev.aoMap?.dispose();
+        prev.displacementMap?.dispose();
         return EMPTY;
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- key fields only
-  }, [mapUrl, normalMapUrl, roughnessMapUrl, metalnessMapUrl, emissiveMapUrl, repeatKey]);
+  }, [
+    mapUrl,
+    normalMapUrl,
+    roughnessMapUrl,
+    metalnessMapUrl,
+    emissiveMapUrl,
+    aoMapUrl,
+    displacementMapUrl,
+    repeatKey,
+  ]);
 
   return tex;
 }
 
-/** Apply loaded maps onto a MeshStandardMaterial (or Phong). */
+/** Apply loaded maps onto MeshStandard / MeshPhysical (Poly Haven PBR). */
 export function applyMapsToMaterial(
   mat: THREE.Material,
   maps: MaterialTextures,
@@ -145,6 +166,17 @@ export function applyMapsToMaterial(
   }
   if (maps.roughnessMap) mat.roughnessMap = maps.roughnessMap;
   if (maps.metalnessMap) mat.metalnessMap = maps.metalnessMap;
+  if (maps.aoMap) {
+    mat.aoMap = maps.aoMap;
+    mat.aoMapIntensity = 1;
+  }
+  if (maps.displacementMap && mat instanceof THREE.MeshPhysicalMaterial) {
+    mat.displacementMap = maps.displacementMap;
+    mat.displacementScale = 0.04;
+  } else if (maps.displacementMap) {
+    mat.bumpMap = maps.displacementMap;
+    mat.bumpScale = 0.04;
+  }
   if (maps.emissiveMap) {
     mat.emissiveMap = maps.emissiveMap;
     if (mat.emissive.r === 0 && mat.emissive.g === 0 && mat.emissive.b === 0) {

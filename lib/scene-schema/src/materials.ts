@@ -110,6 +110,20 @@ export interface MaterialComponent {
   metalnessMapUrl?: string;
   /** Emissive map. */
   emissiveMapUrl?: string;
+  /** Ambient occlusion map (needs uv2; renderer copies uv when missing). */
+  aoMapUrl?: string;
+  /** Height / displacement map (MeshPhysical / NodeMaterial). */
+  displacementMapUrl?: string;
+  /**
+   * Poly Haven shader preset id (slug). Inspector one-click PBR.
+   * Art stays on the Forge Poly Haven set — not a second texture library.
+   */
+  shaderPreset?: string;
+  /**
+   * `standard` = MeshStandard/Physical (WebGL canvas).
+   * `node` = MeshStandardNodeMaterial TSL graph (WebGPU / FX track).
+   */
+  shaderModel?: "standard" | "node";
   /** UV repeat for all maps on this material. Default [1,1]. */
   mapRepeat?: [number, number];
 

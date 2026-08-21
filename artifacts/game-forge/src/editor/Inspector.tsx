@@ -9,6 +9,8 @@ import { useEditor } from "@/store/editor";
 import { bakeEntityConvexHulls } from "@/lib/bakeEntityColliders";
 import type { BuildHullsOptions, HullFillMode } from "@/lib/colliderBaker";
 import { useState } from "react";
+import { toast } from "sonner";
+import { POLYHAVEN_SHADER_PRESETS, fetchPresetMaterial } from "@/lib/polyHavenShader";
 import { useListScripts, getListScriptsQueryKey } from "@workspace/api-client-react";
 import type { Vec3, CameraMode, ControllerKind, BehaviorKind } from "@/scene/types";
 import {
@@ -536,6 +538,7 @@ export function Inspector() {
   const setEntityController = useEditor((s) => s.cmdSetEntityController);
   const entities = useEditor((s) => s.sceneData.entities);
   const explodeGlbHierarchy = useEditor((s) => s.explodeGlbHierarchy);
+  const [presetBusy, setPresetBusy] = useState(false);
 
   const { data: scripts = [] } = useListScripts(projectId ?? 0, {
     query: { queryKey: getListScriptsQueryKey(projectId ?? 0), enabled: !!projectId },
@@ -1001,6 +1004,49 @@ export function Inspector() {
                 read by raycasts. Children inherit unless overridden.
               </p>
             </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                Poly Haven shader
+              </Label>
+              <Select
+                value={entity.material?.shaderPreset || undefined}
+                disabled={presetBusy}
+                onValueChange={(id) => {
+                  if (!id) return;
+                  setPresetBusy(true);
+                  void fetchPresetMaterial(id)
+                    .then((patch) => {
+                      updateEntity(entity.id, (d) => {
+                        d.material = { ...(d.material ?? {}), ...patch };
+                      });
+                      toast.success(`Applied ${id} PBR`, {
+                        description: "Diffuse · normal · rough · AO · height (1K Poly Haven)",
+                      });
+                    })
+                    .catch((err: unknown) => {
+                      toast.error("Preset failed", {
+                        description: err instanceof Error ? err.message : String(err),
+                      });
+                    })
+                    .finally(() => setPresetBusy(false));
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs" data-testid="select-polyhaven-shader">
+                  <SelectValue placeholder={presetBusy ? "Loading maps…" : "Preset (NodeMaterial / Physical)"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {POLYHAVEN_SHADER_PRESETS.map((p) => (
+                    <SelectItem key={p.id} value={p.id} className="text-xs">
+                      {p.label} · {p.kind}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                Same Poly Haven set as Assets. WebGL = MeshPhysical (PBR).
+                WebGPU = MeshStandardNodeMaterial TSL with the same maps.
+              </p>
+            </div>
           {/* Visual-only fields below are kept gated on entity.material so
               the existing color / metalness / roughness / emissive
               sub-controls only appear once the entity has its own
@@ -1067,6 +1113,23 @@ export function Inspector() {
                   })
                 }
                 className="h-8 cursor-pointer"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">
+                UV repeat: {(entity.material.mapRepeat?.[0] ?? 1).toFixed(0)}×
+              </Label>
+              <Slider
+                value={[entity.material.mapRepeat?.[0] ?? 1]}
+                min={1}
+                max={16}
+                step={1}
+                onValueChange={([v]) =>
+                  updateEntity(entity.id, (d) => {
+                    if (!d.material) d.material = {};
+                    d.material.mapRepeat = [v, v];
+                  })
+                }
               />
             </div>
           </>)}
