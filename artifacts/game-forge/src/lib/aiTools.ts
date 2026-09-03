@@ -44,6 +44,19 @@ import {
   queryEntities as ecsQueryEntities,
   type EcsFilter,
 } from "@/lib/ecs";
+import {
+  executeListTools,
+  executeCallTool,
+} from "@/lib/ai/toolDispatcher";
+import {
+  countEntities as ecsCountEntities,
+  queryEntities as ecsQueryEntities,
+  type EcsFilter,
+} from "@/lib/ecs";
+import {
+  executeListTools,
+  executeCallTool,
+} from "@/lib/ai/toolDispatcher";
 // Per-area AI tool folders all expose the same `{ defs, handlers,
 // destructiveToolNames }` shape so this file can spread them in uniformly —
 // each parallel AI-tools task touches one isolated import + spread, avoiding
@@ -299,6 +312,44 @@ function summarizeEntity(e: SceneEntity) {
  *  ──────────────────────────────────────────────────────────────────── */
 
 export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
+  // ── Tool dispatcher (for providers with low tool limits) ────────────
+  {
+    def: {
+      name: "list_tools",
+      description:
+        "List all available AI tools, optionally filtered by domain. Domains: scene, script, nav, materials, physics, design, assets, knowledge, systems, effects, puter, stats, ui, other.",
+      input_schema: {
+        type: "object",
+        properties: {
+          domain: {
+            type: "string",
+            description:
+              "Optional domain filter: scene | script | nav | materials | physics | design | assets | knowledge | systems | effects | puter | stats | ui | other",
+          },
+        },
+      },
+    },
+    exec: executeListTools,
+  },
+  {
+    def: {
+      name: "call_tool",
+      description:
+        "Execute a specific tool by name with the given arguments. Use list_tools first to discover available tools.",
+      input_schema: {
+        type: "object",
+        required: ["name", "arguments"],
+        properties: {
+          name: { type: "string", description: "Tool name from list_tools" },
+          arguments: {
+            type: "object",
+            description: "Tool arguments matching the input_schema from list_tools",
+          },
+        },
+      },
+    },
+    exec: executeCallTool,
+  },
   // ── Inspection ──────────────────────────────────────────────────────
   {
     def: {

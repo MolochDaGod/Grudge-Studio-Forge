@@ -7,6 +7,10 @@ import {
   type RunHandlers,
 } from "@/lib/aiClient";
 import { TOOL_DEFS, buildSystemPrompt, type ToolDef } from "@/lib/aiTools";
+import {
+  buildDispatcherTools,
+  shouldUseDispatcher,
+} from "@/lib/ai/toolDispatcher";
 import type { ModelOption } from "@/lib/ai/providers";
 import {
   classifyIntent,
@@ -34,7 +38,13 @@ export type OrchestratorResult = {
   attempts: Array<{ modelId: string; error?: string }>;
 };
 
-function filterTools(intent: ForgeIntent): ToolDef[] {
+function filterTools(intent: ForgeIntent, model: ModelOption): ToolDef[] {
+  // Use dispatcher pattern for providers with low tool limits (e.g. Groq ≤128)
+  if (shouldUseDispatcher(model.provider)) {
+    return buildDispatcherTools();
+  }
+
+  // Standard path: filter by intent allowlist
   const allow = toolNameAllowlist(intent);
   if (!allow) return TOOL_DEFS;
   const set = new Set(allow);
@@ -108,7 +118,6 @@ export async function runOrchestratedConversation(
   const intent = classifyIntent(opts.userText, opts.intentOverride);
   const role = roleForIntent(intent);
   const chain = buildFailoverChain(role, opts.probe);
-  const tools = filterTools(intent);
   const system = augmentSystem(intent, buildSystemPrompt());
 
   const attempts: Array<{ modelId: string; error?: string }> = [];
@@ -121,6 +130,9 @@ export async function runOrchestratedConversation(
 
     const status = statusLabel(model, opts.probe);
     opts.onRoute?.({ model, status, intent });
+
+    // Filter tools per model (dispatcher for Groq, standard for others)
+    const modelTools = filterTools(intent, model);
 
     let turnError: string | null = null;
     const wrapped: RunHandlers = {
@@ -136,7 +148,7 @@ export async function runOrchestratedConversation(
     };
 
     try {
-      const out = await runConversation(messages, tools, system, wrapped);
+      const out = await runConversation(messages, modelTools, system, wrapped);
       if (turnError && isRetryableProviderError(turnError)) {
         attempts.push({ modelId: model.id, error: turnError });
         lastError = turnError;
