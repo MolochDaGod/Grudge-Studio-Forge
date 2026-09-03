@@ -888,21 +888,17 @@ exports.start = function(entity, ctx) {
   ctx.state.distance = ${dist};
   ctx.state.minD = ${minD};
   ctx.state.maxD = ${maxD};
-  ctx.input.setCursorLock(false);
 };
 exports.update = function(entity, ctx) {
   var target = ctx.scene.find(${JSON.stringify(target)});
   if (!target) return;
-  var mx = ctx.input.mouseDeltaX || 0;
-  var my = ctx.input.mouseDeltaY || 0;
-  if (ctx.input.mouseRight || ctx.input.mouseLeft) {
+  var mx = ctx.input.mouse.dx || 0;
+  var my = ctx.input.mouse.dy || 0;
+  if (ctx.input.mouse.right || ctx.input.mouse.left) {
     ctx.state.yaw -= mx * 0.004;
     ctx.state.pitch = Math.max(-1.2, Math.min(1.2, ctx.state.pitch - my * 0.004));
   }
-  var wheel = ctx.input.wheelDelta || 0;
-  if (wheel) {
-    ctx.state.distance = Math.max(ctx.state.minD, Math.min(ctx.state.maxD, ctx.state.distance + wheel * 0.01));
-  }
+  // Note: wheel zoom not exposed in ScriptContext; use orbit controls in editor
   var lookY = target.position[1] + ${height};
   var cx = target.position[0] + Math.sin(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
   var cy = lookY + Math.sin(ctx.state.pitch) * ctx.state.distance;
@@ -1277,18 +1273,14 @@ exports.update = function(entity, ctx) {
   if (!target) return;
   
   // Mouse orbit (RMB or MMB)
-  var mx = ctx.input.mouse?.deltaX || 0;
-  var my = ctx.input.mouse?.deltaY || 0;
-  if (ctx.input.mouse?.right || ctx.input.mouse?.middle) {
+  var mx = ctx.input.mouse.dx || 0;
+  var my = ctx.input.mouse.dy || 0;
+  if (ctx.input.mouse.right || ctx.input.mouse.middle) {
     ctx.state.yaw -= mx * 0.005;
     ctx.state.pitch = Math.max(-1.3, Math.min(1.3, ctx.state.pitch - my * 0.005));
   }
   
-  // Wheel zoom
-  var wheel = ctx.input.mouse?.wheelDelta || 0;
-  if (wheel) {
-    ctx.state.distance = Math.max(ctx.state.minD, Math.min(ctx.state.maxD, ctx.state.distance - wheel * 0.15));
-  }
+  // Note: wheel zoom not exposed in ScriptContext; adjust distance via events or fixed keys
   
   // Smooth follow (exponential lerp)
   var lookY = target.position[1] + ${height};

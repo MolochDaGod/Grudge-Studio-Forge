@@ -74,4 +74,24 @@ describe("toolDispatcher", () => {
     expect(result.ok).toBe(true);
     expect(Array.isArray(result.data)).toBe(true);
   });
+
+  it("call_tool should block recursive call_tool", async () => {
+    const result = await executeCallTool({
+      name: "call_tool",
+      arguments: { name: "list_entities", arguments: {} },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Recursive call blocked");
+    expect(result.error).toContain("call_tool");
+  });
+
+  it("call_tool should block recursive list_tools", async () => {
+    const result = await executeCallTool({
+      name: "list_tools",
+      arguments: {},
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Recursive call blocked");
+    expect(result.error).toContain("list_tools");
+  });
 });
