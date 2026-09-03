@@ -16,6 +16,9 @@ nav_order: 11
 
 Do **not** put animations, island gen, weapon colliders, or network authority in C# or Lua.
 
+**For island-aware gameplay scripts (spawn, interactables, camera), use JS templates:**  
+See `.agents/skills/forge-gameplay-scripts/SKILL.md` for `island-spawn-on-terrain`, `simple-interactable`, and `camera-follow-island` patterns. These handle SI metres, Y-up, ground snap, and Rapier raycasts in the standard JS runtime.
+
 ## Directives
 
 ```csharp

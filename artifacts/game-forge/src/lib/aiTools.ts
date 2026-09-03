@@ -48,15 +48,6 @@ import {
   executeListTools,
   executeCallTool,
 } from "@/lib/ai/toolDispatcher";
-import {
-  countEntities as ecsCountEntities,
-  queryEntities as ecsQueryEntities,
-  type EcsFilter,
-} from "@/lib/ecs";
-import {
-  executeListTools,
-  executeCallTool,
-} from "@/lib/ai/toolDispatcher";
 // Per-area AI tool folders all expose the same `{ defs, handlers,
 // destructiveToolNames }` shape so this file can spread them in uniformly —
 // each parallel AI-tools task touches one isolated import + spread, avoiding

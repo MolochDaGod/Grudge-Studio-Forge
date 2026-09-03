@@ -1203,6 +1203,7 @@ exports.start = function(entity, ctx) {
 exports.start = function(entity, ctx) {
   ctx.state.canInteract = false;
   ctx.state.label = ${JSON.stringify(label)};
+  ctx.state.wasEPressed = false;
 };
 
 exports.update = function(entity, ctx) {
@@ -1222,8 +1223,9 @@ exports.update = function(entity, ctx) {
       distance: dist,
     });
     
-    // Check E key
-    if (ctx.input.keys && ctx.input.keys.e) {
+    // Check E key with rising edge detection
+    var ePressed = !!(ctx.input.keys && ctx.input.keys.E);
+    if (ePressed && !ctx.state.wasEPressed) {
       ctx.events.emit("interact", {
         entityId: entity.id,
         playerId: player.id,
@@ -1231,8 +1233,10 @@ exports.update = function(entity, ctx) {
       });
       ctx.log("Interacted with " + entity.name);
     }
+    ctx.state.wasEPressed = ePressed;
   } else {
     ctx.state.canInteract = false;
+    ctx.state.wasEPressed = false;
   }
 };
 `;
