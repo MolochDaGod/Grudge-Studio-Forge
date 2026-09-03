@@ -207,6 +207,14 @@ export async function executeCallTool(input: {
     return { ok: false, error: "call_tool requires 'name' parameter" };
   }
 
+  // Prevent recursive dispatcher calls (BLOCK verdict requirement)
+  if (name === "call_tool" || name === "list_tools") {
+    return {
+      ok: false,
+      error: `Recursive call blocked: cannot call "${name}" via call_tool. Use the tool directly instead.`,
+    };
+  }
+
   const args = input.arguments ?? {};
   if (typeof args !== "object" || Array.isArray(args)) {
     return {
