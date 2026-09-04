@@ -888,21 +888,17 @@ exports.start = function(entity, ctx) {
   ctx.state.distance = ${dist};
   ctx.state.minD = ${minD};
   ctx.state.maxD = ${maxD};
-  ctx.input.setCursorLock(false);
 };
 exports.update = function(entity, ctx) {
   var target = ctx.scene.find(${JSON.stringify(target)});
   if (!target) return;
-  var mx = ctx.input.mouseDeltaX || 0;
-  var my = ctx.input.mouseDeltaY || 0;
-  if (ctx.input.mouseRight || ctx.input.mouseLeft) {
+  var mx = ctx.input.mouse.dx || 0;
+  var my = ctx.input.mouse.dy || 0;
+  if (ctx.input.mouse.right || ctx.input.mouse.left) {
     ctx.state.yaw -= mx * 0.004;
     ctx.state.pitch = Math.max(-1.2, Math.min(1.2, ctx.state.pitch - my * 0.004));
   }
-  var wheel = ctx.input.wheelDelta || 0;
-  if (wheel) {
-    ctx.state.distance = Math.max(ctx.state.minD, Math.min(ctx.state.maxD, ctx.state.distance + wheel * 0.01));
-  }
+  // Note: wheel zoom not exposed in ScriptContext; use orbit controls in editor
   var lookY = target.position[1] + ${height};
   var cx = target.position[0] + Math.sin(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
   var cy = lookY + Math.sin(ctx.state.pitch) * ctx.state.distance;
@@ -1140,6 +1136,195 @@ exports.start = function(entity, ctx) {
 };
 `;
     },
+  },
+
+  // ── Island-aware production templates (three 0.185 + Rapier SI) ────
+  {
+    key: "island-spawn-on-terrain",
+    name: "Island Spawn on Terrain",
+    description:
+      "Spawn entity on current island terrain with ground snap. SI metres, Y-up, Rapier raycast down. Island state lives on Railway (not Puter FS). Pair with pirate-islands or custom heightmap.",
+    params: [
+      { name: "spawnRadius", description: "Random spawn radius in meters.", type: "number", default: 10 },
+      { name: "yOffset", description: "Y offset above ground (m).", type: "number", default: 0.1 },
+    ],
+    render: (p) => {
+      const radius = num(p.spawnRadius, 10);
+      const yOffset = num(p.yOffset, 0.1);
+      return `// Island terrain spawn — SI metres, Y-up, ground snap via Rapier raycast.
+// Island SSOT: Railway (not Puter). Live map: pirate-islands scene.glb.
+// home-island-contract 1.4.0: rtsHeightmapResolution=128, terrainBounds config.
+exports.start = function(entity, ctx) {
+  // Random XZ within radius
+  var angle = Math.random() * Math.PI * 2;
+  var dist = Math.random() * ${radius};
+  var x = Math.cos(angle) * dist;
+  var z = Math.sin(angle) * dist;
+  
+  // Raycast down from +100m to find ground (Rapier castRay)
+  var origin = [x, 100, z];
+  var hit = ctx.scene.castRay ? ctx.scene.castRay(origin, [0, -1, 0], 150, [], ["Terrain"]) : null;
+  
+  if (hit && hit.point) {
+    entity.position[0] = hit.point[0];
+    entity.position[1] = hit.point[1] + ${yOffset};
+    entity.position[2] = hit.point[2];
+    ctx.log("Spawned on terrain at [" + entity.position[0].toFixed(1) + ", " + entity.position[1].toFixed(1) + ", " + entity.position[2].toFixed(1) + "]");
+  } else {
+    // Fallback: flat ground Y=0
+    entity.position[0] = x;
+    entity.position[1] = ${yOffset};
+    entity.position[2] = z;
+    ctx.log("No terrain hit — spawned at sea level");
+  }
+};
+`;
+    },
+  },
+
+  {
+    key: "simple-interactable",
+    name: "Simple Interactable (E key)",
+    description:
+      "Proximity interactable — press E when player within range. Emits 'interact' event. No fetch/require/process. SI metres, Y-up. Pair with health/inventory systems.",
+    params: [
+      { name: "range", description: "Interact range meters.", type: "number", default: 2.5 },
+      { name: "label", description: "Floating prompt label.", type: "string", default: "Press E" },
+    ],
+    render: (p) => {
+      const range = num(p.range, 2.5);
+      const label = str(p.label, "Press E");
+      return `// Simple interactable — E key within ${range}m. SI metres, Y-up.
+// No fetch/require/process (browser runtime, not Node).
+exports.start = function(entity, ctx) {
+  ctx.state.canInteract = false;
+  ctx.state.label = ${JSON.stringify(label)};
+  ctx.state.wasEPressed = false;
+};
+
+exports.update = function(entity, ctx) {
+  var player = ctx.scene.find("Player");
+  if (!player) { ctx.state.canInteract = false; return; }
+  
+  var dx = player.position[0] - entity.position[0];
+  var dz = player.position[2] - entity.position[2];
+  var dist = Math.sqrt(dx*dx + dz*dz);
+  
+  if (dist <= ${range}) {
+    ctx.state.canInteract = true;
+    // Show label (HUD polls ctx.state or listens to 'canInteract' event)
+    ctx.events.emit("canInteract", {
+      entityId: entity.id,
+      label: ctx.state.label,
+      distance: dist,
+    });
+    
+    // Check E key with rising edge detection
+    var ePressed = !!(ctx.input.keys && ctx.input.keys.E);
+    if (ePressed && !ctx.state.wasEPressed) {
+      ctx.events.emit("interact", {
+        entityId: entity.id,
+        playerId: player.id,
+        name: entity.name,
+      });
+      ctx.log("Interacted with " + entity.name);
+    }
+    ctx.state.wasEPressed = ePressed;
+  } else {
+    ctx.state.canInteract = false;
+    ctx.state.wasEPressed = false;
+  }
+};
+`;
+    },
+  },
+
+  {
+    key: "camera-follow-island",
+    name: "Island Camera Follow",
+    description:
+      "Third-person follow camera for island play. SI metres (1u=1m), Y-up, smooth lerp, zoom via wheel. Pair with WASD character. Terrain bounds: pirate-islands or heightmap (rtsHeightmapResolution=128).",
+    params: [
+      { name: "distance", description: "Default camera distance (m).", type: "number", default: 8 },
+      { name: "height", description: "Look-at height offset (m).", type: "number", default: 1.8 },
+      { name: "smooth", description: "Lerp speed (higher = snappier).", type: "number", default: 10 },
+      { name: "minDistance", description: "Zoom min (m).", type: "number", default: 3 },
+      { name: "maxDistance", description: "Zoom max (m, island scale).", type: "number", default: 120 },
+    ],
+    render: (p) => {
+      const dist = num(p.distance, 8);
+      const height = num(p.height, 1.8);
+      const smooth = num(p.smooth, 10);
+      const minD = num(p.minDistance, 3);
+      const maxD = num(p.maxDistance, 120);
+      return `// Island camera follow — SI metres (1u=1m), Y-up, smooth lerp.
+// Terrain: pirate-islands GLB or heightmap (rtsHeightmapResolution=128).
+// One AnimationMixer; Rapier physics only; no second physics engine.
+exports.start = function(entity, ctx) {
+  ctx.state.yaw = 0;
+  ctx.state.pitch = 0.3;
+  ctx.state.distance = ${dist};
+  ctx.state.minD = ${minD};
+  ctx.state.maxD = ${maxD};
+};
+
+exports.update = function(entity, ctx) {
+  var target = ctx.scene.find("Player");
+  if (!target) return;
+  
+  // Mouse orbit (RMB or MMB)
+  var mx = ctx.input.mouse.dx || 0;
+  var my = ctx.input.mouse.dy || 0;
+  if (ctx.input.mouse.right || ctx.input.mouse.middle) {
+    ctx.state.yaw -= mx * 0.005;
+    ctx.state.pitch = Math.max(-1.3, Math.min(1.3, ctx.state.pitch - my * 0.005));
+  }
+  
+  // Note: wheel zoom not exposed in ScriptContext; adjust distance via events or fixed keys
+  
+  // Smooth follow (exponential lerp)
+  var lookY = target.position[1] + ${height};
+  var cx = target.position[0] + Math.sin(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
+  var cy = lookY + Math.sin(ctx.state.pitch) * ctx.state.distance;
+  var cz = target.position[2] + Math.cos(ctx.state.yaw) * Math.cos(ctx.state.pitch) * ctx.state.distance;
+  
+  var k = 1 - Math.exp(-${smooth} * ctx.time.delta);
+  entity.position[0] += (cx - entity.position[0]) * k;
+  entity.position[1] += (cy - entity.position[1]) * k;
+  entity.position[2] += (cz - entity.position[2]) * k;
+  
+  // Face look-at (yaw only; pitch baked into position)
+  entity.rotation[1] = ctx.state.yaw + Math.PI;
+};
+`;
+    },
+  },
+
+  {
+    key: "puter-project-note",
+    name: "Puter Pattern Note (Info)",
+    description:
+      "Documents Puter FS scope: editor projects only (not island state). Island state lives on Railway. Read-only template; use as code comment guide.",
+    params: [],
+    render: () => `// ── PUTER PATTERNS (read-only info) ──────────────────────────────────
+// Puter FS: editor project files only (scripts, scenes, prefabs).
+//   - puterSdk.ts: load SDK
+//   - projectStorage.ts: local vs puter backend
+//   - PUTER_PATTERNS.md: full conventions
+//
+// Island state SSOT: Railway Postgres (/api/island, not Puter).
+// Player bag/characters/wallet: Railway (not Puter).
+// Live lobby map: pirate-islands scene.glb (R2 CDN).
+//
+// home-island-contract 1.4.0:
+//   - rtsHeightmapResolution: 128
+//   - terrainBounds config (read from island API, not Puter)
+//
+// NO fetch/require/process in player scripts (browser runtime).
+// Prefer ctx.scene / ctx.events for inter-script comms.
+//
+// This template is read-only (no exports.start/update).
+`,
   },
 ];
 

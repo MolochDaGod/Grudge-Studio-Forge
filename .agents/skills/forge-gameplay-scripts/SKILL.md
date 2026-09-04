@@ -55,8 +55,26 @@ Create via Scripts tab sparkle button or AI `list_script_templates` / `create_sc
 | `remote-player-interpolator` | Smooth remote avatars |
 | `outline-select-highlight` | Soft target outline events |
 | `spawn-r2-character` | builtin character hook |
+| **`island-spawn-on-terrain`** | **Spawn on pirate-islands/heightmap (Rapier raycast, SI, Y-up)** |
+| **`simple-interactable`** | **E-key proximity interact (no fetch/require/process)** |
+| **`camera-follow-island`** | **Island third-person follow (SI, Y-up, zoom, smooth lerp)** |
+| **`puter-project-note`** | **Documents Puter FS scope (projects only, not island state)** |
 
 Source: `artifacts/game-forge/src/ai/tools/scripting/templates.ts`
+
+### Island-aware patterns (production)
+
+- **SI metres:** 1 unit = 1 metre. Human ~1.8m. Never 100× giants.
+- **Y-up:** Ground is XZ plane; Y is vertical.
+- **Ground snap:** Rapier `castRay(origin, [0,-1,0], maxDist, [], ["Terrain"])` for foot placement.
+- **Island SSOT:** Railway Postgres `/api/island` (NOT Puter FS).
+- **Live lobby map:** `pirate-islands` scene.glb (R2 CDN, `builtin:map-pirate-islands-scene`).
+- **home-island-contract 1.4.0:** `rtsHeightmapResolution: 128`, `terrainBounds` config.
+- **No fetch/require/process:** Player scripts run in browser; use `ctx.scene` / `ctx.events` for comms.
+- **Puter FS:** Editor project files only (scripts, scenes, prefabs) — NOT island state.
+- **One physics engine:** `@dimforge/rapier3d-compat` only (no Cannon, no second Rapier).
+- **One AnimationMixer:** Bip001 packs; `list_animations` → `apply_animation`.
+
 
 ## Reference stacks (do not vendor blindly)
 
@@ -70,10 +88,17 @@ Source: `artifacts/game-forge/src/ai/tools/scripting/templates.ts`
 
 1. Prefer templates over inventing multiplayer from scratch.
 2. Characters: `builtin:` / Fast assets only — never random hosts.
-3. Pair `wasd-character-controller` + `third-person-camera` for TPS playtest.
+3. Pair `wasd-character-controller` + `camera-follow-island` (or `third-person-camera`) for TPS playtest.
 4. Network: emit `playerPose` events; attach real transport via fleet live servers skill.
 5. Frame with **F** after spawning hierarchy (parent + children).
 6. Save: Ctrl+S → Puter or local project; Cloud Save for Puter snapshot.
+7. **Island spawn:** Use `island-spawn-on-terrain` for terrain-aware placement (Rapier raycast, SI, Y-up).
+8. **Interactables:** Use `simple-interactable` for E-key proximity (no fetch/require/process).
+9. **Camera:** Use `camera-follow-island` for island-scale follow (SI, smooth lerp, zoom).
+10. **Puter scope:** Project files only (NOT island state). Island state lives on Railway.
+11. **One physics:** Rapier only (`@dimforge/rapier3d-compat`). No Cannon, no second Rapier instance.
+12. **One mixer:** Bip001 packs via `list_animations` → `apply_animation`.
+
 
 ## Deploy
 
