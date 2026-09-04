@@ -152,36 +152,30 @@ export const MODELS: ModelOption[] = [
   },
 
   // ── Groq (fleet edge key + BYOK — ultra fast) ────────────────────
+  // Llama 3.1/3.3 + Gemma 2 + QwQ were shut down for free/dev keys
+  // 2026-08-16. GPT-OSS + Qwen 3.6 are the live replacements.
   {
-    id: "groq:llama-3.3-70b-versatile",
-    label: "Llama 3.3 70B (Groq)",
-    hint: "Fleet · ultra-fast · agentic default",
+    id: "groq:openai/gpt-oss-120b",
+    label: "GPT-OSS 120B (Groq)",
+    hint: "Fleet · tools · replaces Llama 3.3 70B",
     provider: "groq",
-    modelId: "llama-3.3-70b-versatile",
+    modelId: "openai/gpt-oss-120b",
     requiresFreeApiKey: true,
   },
   {
-    id: "groq:llama-3.1-8b-instant",
-    label: "Llama 3.1 8B Instant (Groq)",
-    hint: "Fleet · fastest · tools",
+    id: "groq:openai/gpt-oss-20b",
+    label: "GPT-OSS 20B (Groq)",
+    hint: "Fleet · fastest · tools · replaces Llama 3.1 8B",
     provider: "groq",
-    modelId: "llama-3.1-8b-instant",
+    modelId: "openai/gpt-oss-20b",
     requiresFreeApiKey: true,
   },
   {
-    id: "groq:gemma2-9b-it",
-    label: "Gemma 2 9B (Groq)",
-    hint: "Fleet · compact",
-    provider: "groq",
-    modelId: "gemma2-9b-it",
-    requiresFreeApiKey: true,
-  },
-  {
-    id: "groq:qwen-qwq-32b",
-    label: "Qwen QwQ 32B (Groq)",
+    id: "groq:qwen/qwen3.6-27b",
+    label: "Qwen 3.6 27B (Groq)",
     hint: "Fleet · reasoning",
     provider: "groq",
-    modelId: "qwen-qwq-32b",
+    modelId: "qwen/qwen3.6-27b",
     requiresFreeApiKey: true,
   },
 
@@ -344,6 +338,13 @@ const LEGACY_SERVER_IDS = new Set([
   "anthropic:claude-sonnet-4-6",
 ]);
 
+const LEGACY_GROQ_IDS: Record<string, string> = {
+  "groq:llama-3.3-70b-versatile": "groq:openai/gpt-oss-120b",
+  "groq:llama-3.1-8b-instant": "groq:openai/gpt-oss-20b",
+  "groq:gemma2-9b-it": "groq:openai/gpt-oss-20b",
+  "groq:qwen-qwq-32b": "groq:qwen/qwen3.6-27b",
+};
+
 function defaultModelOption(): ModelOption {
   return MODELS.find((m) => m.id === DEFAULT_MODEL_ID) ?? MODELS[0];
 }
@@ -357,5 +358,6 @@ export function findModel(id: string | null | undefined): ModelOption {
   ) {
     return defaultModelOption();
   }
-  return MODELS.find((m) => m.id === id) ?? defaultModelOption();
+  const mapped = LEGACY_GROQ_IDS[id] ?? id;
+  return MODELS.find((m) => m.id === mapped) ?? defaultModelOption();
 }

@@ -21,6 +21,24 @@ const proxyPath = (provider: string) => freeAiChatUrl(provider);
 
 
 const GROQ_TOOL_CAP = 128;
+/** Groq free/dev Llama + Gemma + QwQ shut down 2026-08-16. */
+const GROQ_MODEL_ALIASES: Record<string, string> = {
+  "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+  "gemma2-9b-it": "openai/gpt-oss-20b",
+  "qwen-qwq-32b": "qwen/qwen3.6-27b",
+  "llama-3.1-70b-versatile": "openai/gpt-oss-120b",
+  "qwen/qwen3-32b": "qwen/qwen3.6-27b",
+};
+
+function resolveUpstreamModel(providerId: string, model: string | undefined) {
+  if (!model) return model;
+  if (providerId === "groq" && GROQ_MODEL_ALIASES[model]) {
+    return GROQ_MODEL_ALIASES[model];
+  }
+  return model;
+}
+
 const CORE_TOOL_NAMES = [
   "get_scene_summary",
   "list_entities",
@@ -279,7 +297,7 @@ export function createFreeApiProvider(providerId: FreeProviderId): AIProvider {
 
       const body = {
         provider: providerId,
-        model: req.model,
+        model: resolveUpstreamModel(providerId, req.model),
         messages: translateMessages(req.system, req.messages),
         tools: req.tools.length > 0
           ? capTranslatedTools(translateTools(req.tools), providerId, req.system, req.messages)

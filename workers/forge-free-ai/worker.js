@@ -101,6 +101,24 @@ const PROVIDER_TOOL_CAPS = {
   openrouter: 128,
 };
 
+/** Groq free/dev Llama + Gemma + QwQ shut down 2026-08-16. */
+const GROQ_MODEL_ALIASES = {
+  "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+  "gemma2-9b-it": "openai/gpt-oss-20b",
+  "qwen-qwq-32b": "qwen/qwen3.6-27b",
+  "llama-3.1-70b-versatile": "openai/gpt-oss-120b",
+  "qwen/qwen3-32b": "qwen/qwen3.6-27b",
+};
+
+function resolveUpstreamModel(providerId, model) {
+  if (!model) return model;
+  if (providerId === "groq" && GROQ_MODEL_ALIASES[model]) {
+    return GROQ_MODEL_ALIASES[model];
+  }
+  return model;
+}
+
 const CORE_TOOL_NAMES = [
   "get_scene_summary",
   "list_entities",
@@ -1217,7 +1235,7 @@ async function handleFreeAi(path, request, env) {
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
-      version: "1.5.4",
+      version: "1.5.5",
       providers: available,
       grudgeAi: legion.ok,
       legion: legion.ok,
@@ -1303,7 +1321,10 @@ async function handleFreeAi(path, request, env) {
     return json({ error: "Missing messages[]" }, 400);
   }
 
-  const model = typeof body.model === "string" ? body.model : undefined;
+  const model = resolveUpstreamModel(
+    providerId,
+    typeof body.model === "string" ? body.model : undefined,
+  );
   if (!model) {
     return json({ error: "Missing model" }, 400);
   }
