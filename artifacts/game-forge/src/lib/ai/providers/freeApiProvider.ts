@@ -19,6 +19,45 @@ import { freeAiChatUrl } from "@/lib/forgeEnv";
 /** Same-origin free-ai worker proxy (avoids browser CORS). */
 const proxyPath = (provider: string) => freeAiChatUrl(provider);
 
+
+const GROQ_TOOL_CAP = 128;
+const CORE_TOOL_NAMES = [
+  "get_scene_summary",
+  "list_entities",
+  "list_fast_assets",
+  "spawn_fast_asset",
+  "search_fleet_assets",
+  "list_builtin_models",
+  "add_model_entity",
+  "update_entity",
+  "delete_entity",
+  "verify_scene_full",
+  "diagnose_scene",
+];
+
+function capTranslatedTools(
+  tools: ReturnType<typeof translateTools>,
+  providerId: string,
+  system: string,
+  messages: ProviderRequest["messages"],
+) {
+  const cap = providerId === "openrouter" ? 128 : GROQ_TOOL_CAP;
+  if (tools.length <= cap) return tools;
+  const hay = `${system}\n${JSON.stringify(messages)}`.toLowerCase();
+  const scored = tools.map((t, i) => {
+    const n = t.function.name;
+    let score = 0;
+    if (CORE_TOOL_NAMES.includes(n)) score += 500;
+    if (hay.includes(n.toLowerCase())) score += 200;
+    for (const w of n.toLowerCase().split(/[_-]/)) {
+      if (w.length > 3 && hay.includes(w)) score += 8;
+    }
+    return { t, i, score };
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return scored.slice(0, cap).map((x) => x.t);
+}
+
 function translateTools(tools: ProviderRequest["tools"]) {
   return tools.map((t) => ({
     type: "function" as const,
@@ -242,7 +281,9 @@ export function createFreeApiProvider(providerId: FreeProviderId): AIProvider {
         provider: providerId,
         model: req.model,
         messages: translateMessages(req.system, req.messages),
-        tools: req.tools.length > 0 ? translateTools(req.tools) : undefined,
+        tools: req.tools.length > 0
+          ? capTranslatedTools(translateTools(req.tools), providerId, req.system, req.messages)
+          : undefined,
         max_tokens: req.maxTokens ?? 8192,
         stream: true,
       };

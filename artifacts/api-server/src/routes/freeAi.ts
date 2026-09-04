@@ -8,6 +8,71 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
+
+/** Groq rejects >128 tools: "'tools' : maximum number of items is 128". */
+const PROVIDER_TOOL_CAPS: Record<string, number> = {
+  groq: 128,
+  cerebras: 128,
+  gemini: 128,
+  deepseek: 128,
+  together: 128,
+  openrouter: 128,
+};
+
+const CORE_TOOL_NAMES = [
+  "get_scene_summary",
+  "list_entities",
+  "list_fast_assets",
+  "spawn_fast_asset",
+  "search_fleet_assets",
+  "list_builtin_models",
+  "add_model_entity",
+  "update_entity",
+  "delete_entity",
+  "verify_scene_full",
+  "diagnose_scene",
+];
+
+function toolNameOf(t: unknown): string {
+  if (!t || typeof t !== "object") return "";
+  const o = t as { name?: string; function?: { name?: string } };
+  return String(o.function?.name || o.name || "");
+}
+
+function capToolsForProvider(
+  tools: unknown[],
+  providerId: string,
+  messages: unknown,
+): unknown[] {
+  const cap = PROVIDER_TOOL_CAPS[providerId] ?? 256;
+  if (!Array.isArray(tools) || tools.length <= cap) return tools;
+  const hay = JSON.stringify(messages || []).toLowerCase();
+  const used = new Set<string>();
+  const msgs = Array.isArray(messages) ? messages : [];
+  for (const m of msgs) {
+    const rec = m as { name?: string; tool_calls?: Array<{ name?: string; function?: { name?: string } }> };
+    for (const tc of rec.tool_calls || []) {
+      const n = tc?.function?.name || tc?.name;
+      if (n) used.add(String(n));
+    }
+    if (typeof rec.name === "string") used.add(rec.name);
+  }
+  const scored = tools.map((t, i) => {
+    const n = toolNameOf(t);
+    let score = 0;
+    if (used.has(n)) score += 1000;
+    if (CORE_TOOL_NAMES.includes(n)) score += 500;
+    const nl = n.toLowerCase();
+    if (nl && hay.includes(nl)) score += 200;
+    for (const w of nl.split(/[_-]/)) {
+      if (w.length > 3 && hay.includes(w)) score += 8;
+    }
+    return { t, i, score };
+  });
+  scored.sort((a, b) => b.score - a.score || a.i - b.i);
+  return scored.slice(0, cap).map((x) => x.t);
+}
+
 const PROVIDERS: Record<
   string,
   { base: string; env: string }
@@ -87,7 +152,7 @@ router.post("/free-ai/chat", async (req, res) => {
     max_tokens: Math.min(Number(body.max_tokens) || 8192, 16384),
   };
   if (Array.isArray(body.tools) && body.tools.length > 0) {
-    upstreamBody.tools = body.tools;
+    upstreamBody.tools = capToolsForProvider(body.tools, providerId, body.messages);
     upstreamBody.tool_choice = body.tool_choice ?? "auto";
   }
 
