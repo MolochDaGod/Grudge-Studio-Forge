@@ -19,6 +19,23 @@ const PROVIDER_TOOL_CAPS: Record<string, number> = {
   openrouter: 128,
 };
 
+const GROQ_MODEL_ALIASES: Record<string, string> = {
+  "llama-3.1-8b-instant": "openai/gpt-oss-20b",
+  "llama-3.3-70b-versatile": "openai/gpt-oss-120b",
+  "gemma2-9b-it": "openai/gpt-oss-20b",
+  "qwen-qwq-32b": "qwen/qwen3.6-27b",
+  "llama-3.1-70b-versatile": "openai/gpt-oss-120b",
+  "qwen/qwen3-32b": "qwen/qwen3.6-27b",
+};
+
+function resolveUpstreamModel(providerId: string, model: string | null) {
+  if (!model) return model;
+  if (providerId === "groq" && GROQ_MODEL_ALIASES[model]) {
+    return GROQ_MODEL_ALIASES[model];
+  }
+  return model;
+}
+
 const CORE_TOOL_NAMES = [
   "get_scene_summary",
   "list_entities",
@@ -138,7 +155,10 @@ router.post("/free-ai/chat", async (req, res) => {
     res.status(400).json({ error: "Missing messages[]" });
     return;
   }
-  const model = typeof body.model === "string" ? body.model : null;
+  const model = resolveUpstreamModel(
+    providerId,
+    typeof body.model === "string" ? body.model : null,
+  );
   if (!model) {
     res.status(400).json({ error: "Missing model" });
     return;

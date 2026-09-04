@@ -1,0 +1,57 @@
+# Ship grudge-forge-free-ai (Groq 128-tool cap + model aliases).
+# Needs CLOUDFLARE_API_TOKEN (Workers Write) and optional CLOUDFLARE_ACCOUNT_ID.
+name: Deploy free-ai Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/forge-free-ai/**"
+      - ".github/workflows/deploy-free-ai.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-free-ai
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: wrangler deploy grudge-forge-free-ai
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Cloudflare token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing CLOUDFLARE_API_TOKEN. Add a Workers Write token so Groq tool-cap 1.5.5 can ship."
+            exit 1
+          fi
+
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/forge-free-ai
+          command: deploy
+
+      - name: Smoke free-ai status
+        if: success()
+        run: |
+          sleep 8
+          curl -sS -m 15 "https://forge.grudge-studio.com/api/free-ai/status"
+          echo
+          node -e '
+            const u="https://forge.grudge-studio.com/api/free-ai/status";
+            fetch(u).then(r=>r.json()).then(j=>{
+              console.log("version", j.version);
+              if (j.version !== "1.5.5") {
+                console.error("expected 1.5.5, got", j.version);
+                process.exitCode = 1;
+              }
+            });
+          '
+        continue-on-error: true
