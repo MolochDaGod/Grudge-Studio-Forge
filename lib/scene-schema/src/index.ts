@@ -310,6 +310,18 @@ export type BehaviorKind =
   /** RTS match controller — selection, orders, economy, production, win/lose. */
   | "gamemode-rts";
 
+/** Super Terrain / island bake stored on a Terrain entity. */
+export interface HeightfieldComponent {
+  cols: number;
+  rows: number;
+  /** 0–1 normalized, row-major z then x, length cols*rows. */
+  heights: number[];
+  cellSize: number;
+  maxHeight: number;
+  seaLevel?: number;
+  biomes?: number[];
+}
+
 export interface SceneEntity {
   id: string;
   name: string;
@@ -360,6 +372,11 @@ export interface SceneEntity {
    *  mode, the agent runtime instantiates one XState machine to drive
    *  it (idle/patrol/chase/climb/swim/stuck/dead). */
   navAgent?: NavAgentComponent;
+  /**
+   * Super Terrain / island heightfield. Heights 0–1, row-major (z then x).
+   * Renderer displaces a grid mesh; play uses trimesh on layer Terrain + Walk.
+   */
+  heightfield?: HeightfieldComponent;
   /** Per-entity soft-body / particle tuning consumed by the verlet
    *  simulation in `EntityRenderer` for `cloth` / `flag` / `particles`
    *  types. All fields optional — sensible per-type defaults are

@@ -49,7 +49,12 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Tropical (Haven Shore) — lush, safe starter zone ─────────────── */
   tropical: {
     groundColor: "#1a4a1a",
-    foliage: ["nature-tropical-pack", "nature-tree"],
+    foliage: [
+      "https://assets.grudge-studio.com/models/nature/CommonTree_1.glb",
+      "https://assets.grudge-studio.com/models/nature/CommonTree_2.glb",
+      "https://assets.grudge-studio.com/models/nature/Bush_Common.glb",
+      "https://assets.grudge-studio.com/models/nature/Plant_1.glb",
+    ],
     structures: ["bldg-woodcutter-hut", "bldg-tavern"],
     props: ["prop-survival-items", "prop-survivors-tent"],
     harvestables: ["prop-crystal-gems"],
@@ -64,7 +69,12 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Forest (Thornwood Wilds) — dense, hostile ancient forest ──────── */
   forest: {
     groundColor: "#1a3010",
-    foliage: ["nature-tree-pack", "nature-autumn-trees", "nature-tree"],
+    foliage: [
+      "https://assets.grudge-studio.com/models/nature/CommonTree_3.glb",
+      "https://assets.grudge-studio.com/models/nature/Pine_1.glb",
+      "https://assets.grudge-studio.com/models/nature/Pine_2.glb",
+      "https://assets.grudge-studio.com/models/nature/Bush_Common.glb",
+    ],
     structures: ["bldg-woodcutter-hut"],
     props: ["prop-medieval", "prop-crystal-gems"],
     harvestables: ["prop-crystal-gems"],

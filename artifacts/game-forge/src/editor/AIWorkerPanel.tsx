@@ -70,9 +70,9 @@ type HistoryEntry =
   | { id: string; kind: "ai"; turn: AITurn };
 
 const SUGGESTIONS: string[] = [
-  "Generate a small city map and drop Blake in it",
+  "Replace this map with Super Terrain alpine-mesh (terrain, trees, rocks, paths)",
+  "Restamp only trees and paths on the current heightfield",
   "Add a red point light above the player",
-  "Create a script that spins the selected entity",
   "Set the sky to a dusk gradient with warm sun",
 ];
 

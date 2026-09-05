@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { generateMap, type MapKind } from "@/lib/mapGen";
-import { addEntitiesCommand } from "@/lib/commands";
+import { replaceEntitiesCommand } from "@/lib/commands";
 import { reidTree } from "@/lib/hierarchy";
 import {
   WORLD_SECTORS,
@@ -35,6 +35,7 @@ import {
   BIOME_LABELS,
   type ForgeSector,
 } from "@/lib/worldSectors";
+import { WORLD_RECIPES, collectWorldDressingIds, getWorldRecipe } from "@/lib/worldBiomeKit";
 
 export interface MapGenDialogProps {
   open: boolean;
@@ -50,11 +51,12 @@ const KIND_LABELS: { value: MapKind; label: string; help: string }[] = [
 ];
 
 export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
-  const [kind, setKind] = useState<MapKind>("cityGrid");
-  const [size, setSize] = useState(40);
+  const [kind, setKind] = useState<MapKind>("openWorld");
+  const [size, setSize] = useState(80);
   const [density, setDensity] = useState(0.6);
   const [seedStr, setSeedStr] = useState("1");
-  const [sectorId, setSectorId] = useState<string>("none");
+  const [sectorId, setSectorId] = useState<string>("haven_shore");
+  const [recipeId, setRecipeId] = useState<string>("alpine-mesh");
 
   const activeSector: ForgeSector | undefined = useMemo(
     () => (sectorId !== "none" ? getSectorById(sectorId) : undefined),
@@ -73,11 +75,18 @@ export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
   // Live preview count (cheap — the generator is fast enough on these sizes)
   const previewCount = useMemo(() => {
     try {
-      return generateMap({ kind, size, density, seed, sectorId: sectorId === "none" ? undefined : sectorId }).length;
+      return generateMap({
+        kind,
+        size,
+        density,
+        seed,
+        sectorId: sectorId === "none" ? undefined : sectorId,
+        terrainKind: getWorldRecipe(recipeId)?.terrainKind,
+      }).length;
     } catch {
       return 0;
     }
-  }, [kind, size, density, seed, sectorId]);
+  }, [kind, size, density, seed, sectorId, recipeId]);
 
   const commandStack = useEditor((s) => s.commandStack);
   const getEntities = () => useEditor.getState().sceneData.entities;
@@ -104,19 +113,31 @@ export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
     } else {
       setActiveSector(null);
     }
-    const fresh = generateMap({ kind, size, density, seed, sectorId: sectorId === "none" ? undefined : sectorId });
+    const fresh = generateMap({
+      kind,
+      size,
+      density,
+      seed,
+      sectorId: sectorId === "none" ? undefined : sectorId,
+      terrainKind: getWorldRecipe(recipeId)?.terrainKind,
+    });
     // Re-id everything we hand to the scene so subsequent generations don't collide.
     const { entities: prepared } = reidTree(fresh, null);
     const rootId = prepared[0]?.id ?? null;
-    const cmd = addEntitiesCommand(
+    const removeIds = collectWorldDressingIds(getEntities());
+    const cmd = replaceEntitiesCommand(
       { getEntities, setEntities, selectEntity },
+      removeIds,
       prepared,
-      `Generate ${KIND_LABELS.find((k) => k.value === kind)!.label} (${prepared.length} entities)`,
+      `Replace map · ${KIND_LABELS.find((k) => k.value === kind)!.label} (${prepared.length} entities)`,
       rootId,
     );
     commandStack.push(cmd);
     const sectorNote = activeSector ? ` in ${activeSector.name}` : "";
-    pushLog("info", `Generated ${prepared.length} entities${sectorNote}. Undo (Ctrl+Z) reverses the whole map.`);
+    pushLog(
+      "info",
+      `Replaced ${removeIds.length} old terrain/trees/rocks/paths with ${prepared.length} entities${sectorNote}. Undo (Ctrl+Z) restores the previous map.`,
+    );
     onOpenChange(false);
   };
 
@@ -220,6 +241,40 @@ export function MapGenDialog({ open, onOpenChange }: MapGenDialogProps) {
                 Choose a world sector to set the scene sky, fog, and lighting.
               </p>
             )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-heading uppercase tracking-[0.16em] text-muted-foreground">
+              Terrain recipe
+            </Label>
+            <Select
+              value={recipeId}
+              onValueChange={(v) => {
+                setRecipeId(v);
+                const rec = getWorldRecipe(v);
+                if (rec) {
+                  setSectorId(rec.defaultSectorId);
+                  setKind("openWorld");
+                }
+              }}
+            >
+              <SelectTrigger data-testid="select-terrain-recipe">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORLD_RECIPES.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.label}
+                    <span className="ml-2 text-[10px] uppercase text-muted-foreground">
+                      {r.source === "super-terrain" ? "Super Terrain" : "Island"}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              {getWorldRecipe(recipeId)?.description ?? "Heightfield + biome scatter. Super Terrain is a bake, not a second editor."}
+            </p>
           </div>
 
           {/* Map type */}

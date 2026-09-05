@@ -103,7 +103,7 @@ Player bag/island remains Railway Postgres (fleet games, not this editor).
 | Desktop | `release.yml` on `v*` tags | GitHub Releases |
 | Builtins / maps | ObjectStore / R2 bake | `assets.grudge-studio.com` |
 
-**Do not** rely on Vercel’s git auto-build for the full SPA (8 GB builders OOM). Production uses **prebuilt** deploy from GHA.
+**Do not** rely on Vercel’s git auto-build for the full SPA (8 GB builders OOM). Production uses **prebuilt** deploy from GHA. Repo-root `vercel.json` sets `ignoreCommand` to `node scripts/vercel-ignore-build.mjs` so Git-connected Vercel skips the 8 GB build (exit 0) unless `VERCEL_FORCE_BUILD=1` or Enhanced Builds (~14 GB+).
 
 ---
 

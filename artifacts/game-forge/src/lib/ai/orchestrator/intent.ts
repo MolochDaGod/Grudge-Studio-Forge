@@ -43,11 +43,11 @@ const PATTERNS: Array<{ intent: ForgeIntent; re: RegExp }> = [
   },
   {
     intent: "nav",
-    re: /\b(navmesh|nav mesh|pathfind|patrol|bake nav|agent path|yuka|recast)\b/i,
+    re: /\b(navmesh|nav mesh|pathfind|patrol|bake nav|agent path|yuka|recast|snap to terrain|assets? to (ground|terrain)|drop to ground)\b/i,
   },
   {
     intent: "terrain",
-    re: /\b(terrain|heightfield|height map|ground mesh|raycast|castRay|foot ik|ground snap)\b/i,
+    re: /\b(terrain|heightfield|height map|ground mesh|raycast|castRay|foot ik|ground snap|snap_to_terrain|create_world|super[- ]?terrain|alpine-mesh|paint_world|replace map)\b/i,
   },
   {
     intent: "physics",
