@@ -62,7 +62,7 @@ const PACKS: Record<KnowledgePackId, string> = {
     "TERRAIN + RAYCAST:",
     "- Ground = fixed plane/heightfield/trimesh; layer=Terrain; surface=Walk.",
     "- Worlds: create_world({ recipe, replace:true }) replaces terrain/trees/rocks/paths (keeps player). layers=['foliage','path'] restamps only those. paint_world_brush({ channel, replace:true }). Super Terrain = heightfield bake, not the WebGPU editor.",
-    "- Foliage = biome kit scatter + CDN nature_vegetation / ore_nodes. Torches warm decay-2.",
+    "- Foliage/rocks = Kenney singles (CommonTree_N, Pine_N, Rock_Medium_N). Never nature_vegetation.glb / *-pack / pirate-islands scene as one tree. ore_nodes needs meshName isolation — do not drop the whole file. Torches warm decay-2.",
     "- CCT/feet: castRay down from root; same height field for body + foot IK.",
     "- Rapier castRay/shapeCast for physics; three-mesh-bvh for pure mesh queries.",
     "- Aim ray: camera/center-screen for ranged — not editor orbit.",

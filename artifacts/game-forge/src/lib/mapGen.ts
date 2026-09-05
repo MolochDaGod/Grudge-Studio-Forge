@@ -17,7 +17,7 @@ import type { SceneEntity, Vec3 } from "@/scene/types";
 import { DEFAULT_TRANSFORM } from "@/scene/types";
 import { getSectorById } from "@/lib/worldSectors";
 import { SECTOR_ASSETS, pick } from "@/lib/sectorAssets";
-import { isNaturePackKey } from "@/lib/worldBiomeKit";
+import { isNaturePackKey, scatterFoliageKeys, scatterRockKeys } from "@/lib/worldBiomeKit";
 import type { BiomeAssets } from "@/lib/sectorAssets";
 import {
   dominantGroundColor,
@@ -782,17 +782,19 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     );
   }
 
-  // Foliage (trees / plants) — dense scatter
-  if (assets && assets.foliage.length > 0) {
-    const foliageDensity = (assets.foliageDensity ?? 0.5) * opts.density;
+  // Foliage — Kenney singles only (never a vegetation/tree pack as one tree)
+  {
+    const foliagePool = (
+      assets?.foliage?.length ? assets.foliage : scatterFoliageKeys()
+    ).filter((k) => !isNaturePackKey(k));
+    const pool = foliagePool.length ? foliagePool : scatterFoliageKeys();
+    const foliageDensity = (assets?.foliageDensity ?? 0.5) * opts.density;
     const foliageStep = 4;
     const jitter = foliageStep * 0.8;
     for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
       for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
         if (rng() > foliageDensity) continue;
-        const foliagePool = assets.foliage.filter((k) => !isNaturePackKey(k));
-        if (!foliagePool.length) continue;
-        const key = pick(foliagePool, rng)!;
+        const key = pick(pool, rng)!;
         const px = x + (rng() - 0.5) * jitter;
         const pz = z + (rng() - 0.5) * jitter;
         out.push(modelEntity(
@@ -838,11 +840,12 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Structures — sparsely scattered
-  if (assets && assets.structures.length > 0) {
+  // Structures — sparsely scattered (skip pack / 404 builtins)
+  const structurePool = (assets?.structures ?? []).filter((k) => !isNaturePackKey(k));
+  if (structurePool.length > 0) {
     const structureCount = Math.round(2 + opts.density * 4);
     for (let i = 0; i < structureCount; i++) {
-      const key = pick(assets.structures, rng)!;
+      const key = pick(structurePool, rng)!;
       const sx = (rng() - 0.5) * (size - 10);
       const sz = (rng() - 0.5) * (size - 10);
       out.push(modelEntity(
@@ -855,8 +858,8 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
       ));
 
       // Place a friendly NPC near each structure
-      if (assets.npcs.length > 0 && rng() < 0.6) {
-        const npcKey = pick(assets.npcs, rng)!;
+      if ((assets?.npcs.length ?? 0) > 0 && rng() < 0.6) {
+        const npcKey = pick(assets!.npcs, rng)!;
         out.push(modelEntity(
           "NPC",
           npcKey,
@@ -870,20 +873,21 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Fallback boxes when no structures defined
-  if (!assets || assets.structures.length === 0) {
-    for (let i = 0; i < 6; i++) {
+  {
+    const rockPool = scatterRockKeys();
+    const rockCount = Math.round(4 + opts.density * 6);
+    for (let i = 0; i < rockCount; i++) {
+      const key = pick(rockPool, rng)!;
       const sx = (rng() - 0.5) * (size - 10);
       const sz = (rng() - 0.5) * (size - 10);
-      const s = 2 + rng() * 3;
-      out.push(entity({
-        name: `Rock ${i + 1}`,
-        type: "box",
-        parentId: root.id,
-        transform: { position: [sx, s / 2, sz], rotation: [0, rng() * Math.PI, 0], scale: [s, s * 0.6, s] },
-        material: { color: "#5a5048", metalness: 0, roughness: 1 },
-        physics: { bodyType: "fixed", colliderType: "cuboid" },
-      }));
+      out.push(modelEntity(
+        `Rock ${i + 1}`,
+        key,
+        [sx, 0, sz],
+        rng() * Math.PI,
+        0.8 + rng() * 0.6,
+        root.id,
+      ));
     }
   }
 
@@ -906,22 +910,23 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Harvestable resource nodes
-  const harvestCount = Math.round(4 + opts.density * 8);
-  for (let i = 0; i < harvestCount; i++) {
-    const key = assets && assets.harvestables.length > 0
-      ? pick(assets.harvestables, rng)!
-      : "prop-crystal-gems";
-    const hx = (rng() - 0.5) * (size - 6);
-    const hz = (rng() - 0.5) * (size - 6);
-    out.push(modelEntity(
-      `Resource Node ${i + 1}`,
-      key,
-      [hx, 0.5, hz],
-      rng() * Math.PI * 2,
-      0.6 + rng() * 0.4,
-      root.id,
-    ));
+  // Harvest — only isolated singles (no ore_nodes / crystal pack as one node)
+  const harvestPool = (assets?.harvestables ?? []).filter((k) => !isNaturePackKey(k));
+  if (harvestPool.length > 0) {
+    const harvestCount = Math.round(4 + opts.density * 8);
+    for (let i = 0; i < harvestCount; i++) {
+      const key = pick(harvestPool, rng)!;
+      const hx = (rng() - 0.5) * (size - 6);
+      const hz = (rng() - 0.5) * (size - 6);
+      out.push(modelEntity(
+        `Resource Node ${i + 1}`,
+        key,
+        [hx, 0.5, hz],
+        rng() * Math.PI * 2,
+        0.6 + rng() * 0.4,
+        root.id,
+      ));
+    }
   }
 
   // VFX emitters near interesting spots

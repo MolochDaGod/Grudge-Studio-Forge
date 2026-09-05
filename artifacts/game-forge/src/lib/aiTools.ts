@@ -129,6 +129,7 @@ import {
   destructiveToolNames as worldDestructiveTools,
   commitGeneratedWorld,
 } from "@/ai/tools/world";
+import { isNaturePackKey } from "@/lib/worldBiomeKit";
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
  *  running any of these so the AI can never wipe / overwrite without sign-off.
@@ -469,6 +470,13 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         return {
           ok: false,
           error: `Unknown fast asset id "${id}". Call list_fast_assets first.`,
+        };
+      }
+      if (a.group !== "maps" && isNaturePackKey(a.modelUrl)) {
+        return {
+          ok: false,
+          error:
+            `Refusing to spawn "${a.id}" as one tree/rock/prop. That file is a pack or lobby shell. Use Kenney singles (nature-tree-1, nature-pine-1, nature-rock-1) or spawn maps from the Maps group.`,
         };
       }
       let modelUrl: string;

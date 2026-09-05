@@ -18,8 +18,14 @@ describe("world biome kits", () => {
     expect(isNaturePackKey(NATURE_CDN.vegetation)).toBe(true);
     expect(isNaturePackKey(NATURE_CDN.pirateIslands)).toBe(true);
     expect(isNaturePackKey("nature-tree-pack")).toBe(true);
+    expect(isNaturePackKey("nature-icicles")).toBe(true);
+    expect(isNaturePackKey("prop-medieval")).toBe(true);
+    expect(isNaturePackKey("prop-crystal-gems")).toBe(true);
     expect(isNaturePackKey(scatterFoliageKeys()[0]!)).toBe(false);
     expect(paintKeys(SECTOR_ASSETS.tropical, "foliage").some(isNaturePackKey)).toBe(false);
+    expect(paintKeys(SECTOR_ASSETS.frozen, "foliage").some(isNaturePackKey)).toBe(false);
+    expect(paintKeys(SECTOR_ASSETS.ethereal, "foliage").some(isNaturePackKey)).toBe(false);
+    expect(paintKeys(SECTOR_ASSETS.tropical, "path")).toEqual([]);
     expect(paintKeys(SECTOR_ASSETS.tropical, "rock").every((k) => k.includes("Rock_Medium"))).toBe(
       true,
     );
@@ -100,5 +106,25 @@ describe("world biome kits", () => {
     expect(foliage!.transform.position[1]).not.toBe(0);
     expect(ents.some((e) => e.name.startsWith("Path"))).toBe(true);
     expect(ents.some((e) => e.name.startsWith("Rock") || e.name.startsWith("Structure"))).toBe(true);
+    const models = ents.filter((e) => e.type === "model");
+    for (const e of models) {
+      const url = e.model?.url ?? "";
+      expect(isNaturePackKey(url), url).toBe(false);
+    }
+  });
+
+  it("openWorld frostbite uses Pine singles not 404 icicle pack", () => {
+    const ents = generateMap({
+      kind: "openWorld",
+      size: 40,
+      density: 0.4,
+      seed: 3,
+      sectorId: "frostbite_expanse",
+    });
+    const foliage = ents.filter((e) => e.name === "Foliage");
+    expect(foliage.length).toBeGreaterThan(0);
+    expect(foliage.every((e) => (e.model?.url ?? "").includes("Pine_") || (e.model?.url ?? "").includes("Rock_Medium"))).toBe(true);
+    expect(ents.some((e) => (e.model?.url ?? "").includes("nature-icicles"))).toBe(false);
+    expect(ents.some((e) => (e.model?.url ?? "").includes("prop-crystal-gems"))).toBe(false);
   });
 });

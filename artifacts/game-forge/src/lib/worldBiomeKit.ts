@@ -23,16 +23,28 @@ export const NATURE_CDN = {
   pirateIslands: `${CDN}/models/lobby/pirate-islands/scene.glb`,
 } as const;
 
-/** Whole-file packs — spawn once as a MAP/shell, never as one tree/rock instance. */
+/** Whole-file packs / 404 builtins — never scatter as one tree/rock/harvest. */
 export const NATURE_PACK_DENY = [
   NATURE_CDN.vegetation,
+  NATURE_CDN.oreNodes,
   NATURE_CDN.pirateIslands,
   "nature-tree-pack",
   "nature-tropical-pack",
   "nature-autumn-trees",
+  "nature-tree",
+  "nature-icicles",
+  "prop-crystal-gems",
+  "prop-medieval",
+  "prop-survival-items",
+  "prop-toon-weapons",
+  "bldg-woodcutter-hut",
   "builtin:nature-tree-pack",
   "builtin:nature-tropical-pack",
   "builtin:nature-autumn-trees",
+  "builtin:nature-tree",
+  "builtin:nature-icicles",
+  "builtin:prop-crystal-gems",
+  "builtin:prop-medieval",
   "builtin:map-pirate-islands-scene",
 ];
 
@@ -52,7 +64,14 @@ export function isNaturePackKey(key: string): boolean {
     NATURE_PACK_DENY.some((p) => k === p.toLowerCase() || k.endsWith(p.toLowerCase())) ||
     k.includes("-pack") ||
     k.includes("vegetation.glb") ||
-    k.includes("pirate-islands/scene")
+    k.includes("ore_nodes") ||
+    k.includes("pirate-islands/scene") ||
+    k.includes("nature-icicles") ||
+    k.includes("nature-autumn") ||
+    k.includes("prop-medieval") ||
+    k.includes("prop-crystal-gems") ||
+    k.includes("prop-survival") ||
+    k.includes("prop-toon-weapons")
   );
 }
 
@@ -273,7 +292,8 @@ export function paintKeys(assets: BiomeAssets, channel: PaintChannel): string[] 
     case "structure":
       return assets.structures;
     case "path":
-      return assets.props.length ? assets.props : [];
+      // Dirt path boxes in paint_world_brush — never a prop pack as a road tile.
+      return [];
     default:
       return [];
   }
@@ -393,11 +413,11 @@ export function worldBiomeSnapshot() {
       "Do not import Island Terrain WorldTerrain into Forge.",
       "Do not vendor the Super Terrain WebGPU editor — heightfield bake only.",
       "Ground = Terrain layer + Walk surface (heightfield when recipe.terrainKind). Same height for feet.",
-      "Foliage/rocks = one Kenney mesh per instance (CommonTree_N, Pine_N, Rock_Medium_N). Never scatter nature_vegetation.glb or *-pack as one tree.",
-      "pirate-islands/scene.glb = lobby MAP shell only — terrain/shovel/harvest upgrade that mesh, do not instance it as a rock.",
-      "Chicken Gun maps (mistytown, …) = map plates. Physics = Rapier Terrain/Walk + Water/Swim.",
-      "This repo is Forge editor (forge.grudge-studio.com). Warlords play is GrudgeBuilder / grudgewarlords.com.",
-      "Ocean is Environment.ocean caribbean Gerstner — not a cyan clay plane.",
+      "Foliage/rocks = one Kenney mesh per instance (CommonTree_N, Pine_N, Rock_Medium_N). Never scatter nature_vegetation.glb, ore_nodes.glb, or *-pack as one tree/rock.",
+      "pirate-islands/scene.glb = lobby MAP shell only — terrain/shovel/harvest/Ground_N upgrade that mesh, do not instance it as a rock.",
+      "Chicken Gun / island plates (mistytown, map-pirate-island, …) = map entities. Physics = Rapier Terrain/Walk + Water/Swim. Keep their water meshes; do not stack a second clay ocean.",
+      "This repo is Forge editor (F:\\GitHub\\Grudge-Studio-Forge → forge.grudge-studio.com). Warlords play is GrudgeBuilder / grudgewarlords.com — different frontend deploy.",
+      "Water: Rapier Water/Swim on map water; no cyan clay plane. Gerstner caribbean is the island/Warlords look — do not invent a second water engine in Forge.",
       "Torches: warm point lights decay 2, intensity ≤ 2.2 — not white bloom.",
       "Complete world = look + heightfield + Gerstner ocean + foliage + harvest + spawn + verify_scene_full.",
     ],

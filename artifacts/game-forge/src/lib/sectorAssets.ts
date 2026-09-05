@@ -19,6 +19,14 @@
 
 import type { SectorBiome } from "@/lib/worldSectors";
 
+const CDN = "https://assets.grudge-studio.com/models/nature";
+const tree = (n: number) => `${CDN}/CommonTree_${n}.glb`;
+const pine = (n: number) => `${CDN}/Pine_${n}.glb`;
+const rock = (n: number) => `${CDN}/Rock_Medium_${n}.glb`;
+const BUSH = `${CDN}/Bush_Common.glb`;
+const PLANT = `${CDN}/Plant_1.glb`;
+const FERN = `${CDN}/Fern_1.glb`;
+
 export interface BiomeAssets {
   /** Ground plane material color (hex) */
   groundColor: string;
@@ -49,15 +57,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Tropical (Haven Shore) — lush, safe starter zone ─────────────── */
   tropical: {
     groundColor: "#1a4a1a",
-    foliage: [
-      "https://assets.grudge-studio.com/models/nature/CommonTree_1.glb",
-      "https://assets.grudge-studio.com/models/nature/CommonTree_2.glb",
-      "https://assets.grudge-studio.com/models/nature/Bush_Common.glb",
-      "https://assets.grudge-studio.com/models/nature/Plant_1.glb",
-    ],
-    structures: ["bldg-woodcutter-hut", "bldg-tavern"],
-    props: ["prop-survival-items", "prop-survivors-tent"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [tree(1), tree(2), BUSH, PLANT],
+    structures: [],
+    props: [rock(1), rock(2)],
+    harvestables: [],
     monsters: ["char-shark", "char-crow"],
     npcs: ["char-survivor-male", "char-ncr-ranger"],
     vfx: ["vfx-leaves"],
@@ -69,15 +72,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Forest (Thornwood Wilds) — dense, hostile ancient forest ──────── */
   forest: {
     groundColor: "#1a3010",
-    foliage: [
-      "https://assets.grudge-studio.com/models/nature/CommonTree_3.glb",
-      "https://assets.grudge-studio.com/models/nature/Pine_1.glb",
-      "https://assets.grudge-studio.com/models/nature/Pine_2.glb",
-      "https://assets.grudge-studio.com/models/nature/Bush_Common.glb",
-    ],
-    structures: ["bldg-woodcutter-hut"],
-    props: ["prop-medieval", "prop-crystal-gems"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [tree(3), pine(1), pine(2), BUSH],
+    structures: [],
+    props: [rock(1), rock(2), rock(3)],
+    harvestables: [],
     monsters: ["char-wolf", "char-skeleton-sword", "char-skeleton-axe"],
     npcs: ["char-survivor-male"],
     vfx: ["vfx-leaves"],
@@ -89,10 +87,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Frozen (Frostbite Expanse) — icy wasteland, blizzards ────────── */
   frozen: {
     groundColor: "#aac8e0",
-    foliage: ["nature-icicles"],
-    structures: ["prop-survival-items"],
-    props: ["prop-medieval"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [pine(3), pine(4), pine(5), rock(1)],
+    structures: [],
+    props: [rock(2), rock(3)],
+    harvestables: [],
     monsters: ["char-wolf", "race:frost-dwarf", "char-skeleton-sword"],
     npcs: ["race:dwarf"],
     vfx: ["vfx-freeze"],
@@ -104,10 +102,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Volcanic (Ember Depths) — lava-floored caldera ───────────────── */
   volcanic: {
     groundColor: "#2a1005",
-    foliage: [],
-    structures: ["prop-medieval"],
-    props: ["prop-toon-weapons"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [rock(1), rock(2), rock(3)],
+    structures: [],
+    props: [rock(1)],
+    harvestables: [],
     monsters: ["char-lava-sancho", "char-boss-orc", "race:orc"],
     npcs: ["char-lava-sancho"],
     vfx: ["vfx-stylized-fire", "vfx-fire-anim", "vfx-stylized-fire-tornado"],
@@ -119,10 +117,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Desert (Ashen Wastes) — scorched ruins, bandits ──────────────── */
   desert: {
     groundColor: "#9a6a30",
-    foliage: [],
-    structures: ["prop-medieval", "bldg-tavern"],
-    props: ["prop-medieval", "prop-survival-items"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [PLANT, BUSH, rock(1)],
+    structures: [],
+    props: [rock(2), rock(3)],
+    harvestables: [],
     monsters: ["char-bandit", "char-crow", "char-ncr-ranger"],
     npcs: ["char-ncr-ranger"],
     vfx: [],
@@ -134,10 +132,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Storm (Stormbreak Reef) — reef, shipwrecks, lightning ────────── */
   storm: {
     groundColor: "#1a2035",
-    foliage: [],
-    structures: ["prop-survivors-tent"],
-    props: ["prop-survival-items", "prop-toon-weapons"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [rock(2), rock(3), BUSH],
+    structures: [],
+    props: [rock(1)],
+    harvestables: [],
     monsters: ["char-shark", "char-crow", "char-bandit"],
     npcs: ["char-survivor-male"],
     vfx: [],
@@ -149,10 +147,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Ethereal (Ethereal Falls) — floating islands, spectral mist ─── */
   ethereal: {
     groundColor: "#180828",
-    foliage: ["nature-tree"],
-    structures: ["prop-crystal-gems"],
-    props: ["prop-crystal-gems", "prop-toon-weapons"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [tree(4), tree(5), FERN],
+    structures: [],
+    props: [rock(1), FERN],
+    harvestables: [],
     monsters: ["char-distortus-rex", "char-crow", "char-skeleton-sword"],
     npcs: [],
     vfx: ["vfx-stylized-fire-tornado", "vfx-fire-hurricane"],
@@ -164,10 +162,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Abyssal (Abyssal Trench) — crushing deep, undead leviathans ─── */
   abyssal: {
     groundColor: "#020510",
-    foliage: [],
+    foliage: [rock(1)],
     structures: [],
-    props: ["prop-medieval"],
-    harvestables: ["prop-crystal-gems"],
+    props: [rock(2)],
+    harvestables: [],
     monsters: ["char-skeleton-axe", "char-skeleton-sword", "char-distortus-rex"],
     npcs: [],
     vfx: [],
@@ -179,10 +177,10 @@ export const SECTOR_ASSETS: Record<SectorBiome, BiomeAssets> = {
   /* ─── Nexus (Convergence Nexus) — contested PvP heart of the world ── */
   nexus: {
     groundColor: "#1a1040",
-    foliage: [],
-    structures: ["bldg-tavern", "prop-medieval"],
-    props: ["prop-crystal-gems", "prop-toon-weapons"],
-    harvestables: ["prop-crystal-gems"],
+    foliage: [tree(1), BUSH, rock(1)],
+    structures: [],
+    props: [rock(2), rock(3)],
+    harvestables: [],
     monsters: ["char-boss-orc", "race:warrior", "race:orc", "race:skeleton"],
     npcs: ["race:warrior", "race:elf"],
     vfx: ["vfx-stylized-fire-tornado"],
