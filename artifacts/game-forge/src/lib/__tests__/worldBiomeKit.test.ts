@@ -12,6 +12,7 @@ import {
   worldBiomeSnapshot,
 } from "../worldBiomeKit";
 import { SECTOR_ASSETS } from "../sectorAssets";
+import { isRaceKitKey, planCamps } from "../campKit";
 
 describe("world biome kits", () => {
   it("does not scatter vegetation or pirate lobby packs as one tree", () => {
@@ -26,6 +27,8 @@ describe("world biome kits", () => {
     expect(paintKeys(SECTOR_ASSETS.frozen, "foliage").some(isNaturePackKey)).toBe(false);
     expect(paintKeys(SECTOR_ASSETS.ethereal, "foliage").some(isNaturePackKey)).toBe(false);
     expect(paintKeys(SECTOR_ASSETS.tropical, "path")).toEqual([]);
+    expect(Object.values(SECTOR_ASSETS).every((a) => !a.monsters.some(isRaceKitKey))).toBe(true);
+    expect(Object.values(SECTOR_ASSETS).every((a) => !a.npcs.some(isRaceKitKey))).toBe(true);
     expect(paintKeys(SECTOR_ASSETS.tropical, "rock").every((k) => k.includes("Rock_Medium"))).toBe(
       true,
     );
@@ -60,14 +63,36 @@ describe("world biome kits", () => {
     expect(ents.length).toBeGreaterThan(4);
   });
 
+  it("openWorld Super Terrain kind stamps heightfield, Poly Haven shader, Kenney foliage", () => {
+    const ents = generateMap({
+      kind: "openWorld",
+      size: 48,
+      density: 0.55,
+      seed: 22,
+      sectorId: "thornwood_wilds",
+      terrainKind: "spline-forest",
+    });
+    const ground = ents.find((e) => e.name === "Terrain");
+    expect(ground?.heightfield?.heights.length).toBeGreaterThan(8);
+    expect(ground?.material?.shaderPreset).toBe("dirt");
+    const foliage = ents.filter((e) => e.name.startsWith("Foliage"));
+    expect(foliage.length).toBeGreaterThan(4);
+    expect(foliage.every((e) => !isNaturePackKey(e.model?.url ?? ""))).toBe(true);
+    expect(ents.some((e) => e.name.startsWith("Rock"))).toBe(true);
+  });
+
   it("snapshot lists paint channels", () => {
     const snap = worldBiomeSnapshot();
     expect(snap.paintChannels).toContain("foliage");
     expect(snap.sectors.length).toBe(9);
+    expect(snap.superTerrain.forestPresets).toContain("mossy-old-growth");
+    expect(snap.superTerrain.foliageSpecies).toContain("bracken");
+    expect(snap.superTerrain.materialChannels).toEqual(["Grass", "Rock", "Soil", "Snow"]);
   });
 
   it("classifies trees/rocks/paths without tagging the player", () => {
     expect(classifyWorldDressing({ name: "Foliage" })).toBe("foliage");
+    expect(classifyWorldDressing({ name: "Foliage cover" })).toBe("foliage");
     expect(classifyWorldDressing({ name: "Rock 3" })).toBe("rock");
     expect(classifyWorldDressing({ name: "Path 2", layer: "Terrain" })).toBe("path");
     expect(classifyWorldDressing({ name: "Terrain", heightfield: { cols: 2 } })).toBe("terrain");
@@ -105,7 +130,7 @@ describe("world biome kits", () => {
     expect(foliage).toBeTruthy();
     expect(foliage!.transform.position[1]).not.toBe(0);
     expect(ents.some((e) => e.name.startsWith("Path"))).toBe(true);
-    expect(ents.some((e) => e.name.startsWith("Rock") || e.name.startsWith("Structure"))).toBe(true);
+    expect(ents.some((e) => e.name.startsWith("Rock") || e.name.startsWith("Structure") || e.name.startsWith("Camp"))).toBe(true);
     const models = ents.filter((e) => e.type === "model");
     for (const e of models) {
       const url = e.model?.url ?? "";
@@ -126,5 +151,26 @@ describe("world biome kits", () => {
     expect(foliage.every((e) => (e.model?.url ?? "").includes("Pine_") || (e.model?.url ?? "").includes("Rock_Medium"))).toBe(true);
     expect(ents.some((e) => (e.model?.url ?? "").includes("nature-icicles"))).toBe(false);
     expect(ents.some((e) => (e.model?.url ?? "").includes("prop-crystal-gems"))).toBe(false);
+  });
+
+  it("openWorld stamps seeded camps; race kits are occupants not foliage", () => {
+    expect(planCamps(80, 0.5, () => 0.2).some((c) => c.side === "ally")).toBe(true);
+    expect(classifyWorldDressing({ name: "Camp Enemy Camp Occupant" })).toBe("structure");
+    const ents = generateMap({
+      kind: "openWorld",
+      size: 80,
+      density: 0.5,
+      seed: 9,
+      sectorId: "ember_depths",
+      terrainKind: "volcanic-ridge",
+    });
+    expect(ents.some((e) => e.name.startsWith("Camp"))).toBe(true);
+    expect(ents.some((e) => e.name.includes("Tent") || e.name.includes("Tower") || e.name.includes("Hut"))).toBe(true);
+    const occupants = ents.filter((e) => e.name.includes("Occupant"));
+    expect(occupants.length).toBeGreaterThan(0);
+    expect(occupants.every((e) => (e.model?.url ?? "").includes("builtin:race:"))).toBe(true);
+    expect(occupants.every((e) => e.layer === "NPC")).toBe(true);
+    const foliage = ents.filter((e) => e.name === "Foliage");
+    expect(foliage.every((e) => !(e.model?.url ?? "").includes("builtin:race:"))).toBe(true);
   });
 });
