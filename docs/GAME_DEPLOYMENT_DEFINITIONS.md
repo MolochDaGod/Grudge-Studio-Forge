@@ -13,6 +13,20 @@ nav_order: 14
 
 This document **defines** how games, editors, and APIs are classified for deployment. It **replaces** vague â€œpublishâ€ language and purged practices that assumed â€œassets ship inside the SPA bundle.â€
 
+### This repo vs Warlords play
+
+| You are in | Path | Live | Frontend deploy |
+|-------------|------|------|-----------------|
+| **Forge editor** (this repo) | `F:\GitHub\Grudge-Studio-Forge` | `forge.grudge-studio.com` | `pnpm run deploy:forge` → Vercel `grudge-studio-forge` SPA. Edge: `grudge-forge-free-ai` Worker. |
+| **Warlords play client** | `F:\GitHub\GrudgeBuilder` (or Documents clone) | `grudgewarlords.com` / `client.grudge-studio.com` | GrudgeBuilder deploy — **not** this SPA. |
+| **Open library** | `Documents/gameopen` | `open.grudge-studio.com` | `npm run deploy:prod` |
+
+Forge **authors** `.gfscene` maps (chicken-gun plates, pirate lobby, islands). Warlords **plays** them. Do not merge the SPA deploys.
+
+**Pirate islands** `models/lobby/pirate-islands/scene.glb` = **lobby map shell** (one scene). Upgrade that mesh (terrain paint, Ground_N, harvest, shovel). Never instance the whole file as a rock/tree.
+
+**Chicken Gun / island plates** (`map-mistytown`, `map-pirate-island`, …) = map entities + Rapier Terrain/Walk. Quality = water column + Gerstner, isolated Kenney nature, physics layers — not a second world engine.
+
 ---
 
 ## 1. Five-layer data SSOT (every game)

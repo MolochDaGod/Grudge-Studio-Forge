@@ -224,6 +224,32 @@ export function addEntitiesCommand(
   };
 }
 
+/** Remove a set and add another set in one undo step (replace map dressing). */
+export function replaceEntitiesCommand(
+  store: StoreLike,
+  removeIds: string[],
+  add: SceneEntity[],
+  label: string,
+  selectId?: string | null,
+): Command {
+  const drop = new Set(removeIds);
+  let before: SceneEntity[] = [];
+  return {
+    kind: "replaceEntities",
+    label,
+    do: () => {
+      before = store.getEntities();
+      store.setEntities([...before.filter((e) => !drop.has(e.id)), ...add]);
+      if (selectId !== undefined) store.selectEntity(selectId);
+      else if (add[0]) store.selectEntity(add[0].id);
+    },
+    undo: () => {
+      store.setEntities(before);
+      store.selectEntity(null);
+    },
+  };
+}
+
 /**
  * Remove an entity AND its descendants. We capture the removed slice in
  * its original order so undo restores positions exactly.

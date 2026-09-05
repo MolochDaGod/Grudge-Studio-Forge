@@ -51,6 +51,7 @@ import {
 import { ensureAoUv2 } from "@/lib/polyHavenShader";
 import { resolveClipName } from "@/lib/animationClipResolve";
 import { applyMeshIdsExclusive } from "@/lib/meshEquipApply";
+import { HeightfieldTerrainMesh } from "./HeightfieldTerrain";
 
 interface RenderProps {
   entity: SceneEntity;
@@ -107,6 +108,9 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
     receiveShadow: true,
   };
 
+  if (entity.heightfield) {
+    return <HeightfieldTerrainMesh entity={entity} selected={selected} onPick={onPick} />;
+  }
   if (entity.type === "model") {
     // Proxy locators (created by "Expose Children" on a parent GLB) are
     // transform-only — the parent already renders the geometry. Show a small
@@ -1040,7 +1044,13 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
     const ph = entity.physics!;
     const colliderShape =
       ph.colliderType ??
-      (entity.type === "sphere" ? "ball" : entity.type === "cylinder" ? "cylinder" : "cuboid");
+      (entity.heightfield
+        ? "trimesh"
+        : entity.type === "sphere"
+          ? "ball"
+          : entity.type === "cylinder"
+            ? "cylinder"
+            : "cuboid");
 
     // For model entities we never want auto-generated colliders that wrap the
     // mesh (a humanoid like Blake would produce a wonky convex hull). Instead,

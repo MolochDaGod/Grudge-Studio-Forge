@@ -17,7 +17,17 @@ import type { SceneEntity, Vec3 } from "@/scene/types";
 import { DEFAULT_TRANSFORM } from "@/scene/types";
 import { getSectorById } from "@/lib/worldSectors";
 import { SECTOR_ASSETS, pick } from "@/lib/sectorAssets";
+import { isNaturePackKey } from "@/lib/worldBiomeKit";
 import type { BiomeAssets } from "@/lib/sectorAssets";
+import {
+  dominantGroundColor,
+  generateSuperTerrain,
+  isLandBiome,
+  isSuperTerrainKind,
+  sampleHeightfieldY,
+  toHeightfieldComponent,
+  type SuperTerrainKind,
+} from "@/lib/superTerrainWorld";
 
 export type MapKind = "cityGrid" | "openArena" | "dungeonRooms" | "maze" | "openWorld";
 
@@ -31,6 +41,8 @@ export interface MapGenOptions {
   /** Optional Grudge world sector id. When set, generators replace primitive
    *  geometry with biome-appropriate GLB models from sectorAssets. */
   sectorId?: string;
+  /** Super Terrain / island-engine heightfield kind for openWorld. */
+  terrainKind?: SuperTerrainKind | string;
 }
 
 /* ---------------- PRNG (mulberry32, deterministic and tiny) ------------- */
@@ -81,7 +93,12 @@ function modelEntity(
     type: "model",
     parentId,
     transform: { position: pos, rotation: [0, yaw, 0], scale: [scale, scale, scale] },
-    model: { url: `builtin:${key}` },
+    model: {
+      url:
+        key.startsWith("http") || key.startsWith("builtin:")
+          ? key
+          : `builtin:${key}`,
+    },
     physics: { bodyType: "fixed", colliderType: "cuboid" },
     ...(opts ?? {}),
   });
@@ -728,18 +745,42 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
   const out: SceneEntity[] = [root];
   const size = Math.max(40, opts.size);
   const half = size / 2;
+  const terrainKind =
+    opts.terrainKind && isSuperTerrainKind(String(opts.terrainKind))
+      ? (opts.terrainKind as SuperTerrainKind)
+      : undefined;
+  const bake = terrainKind
+    ? generateSuperTerrain({ kind: terrainKind, worldMeters: size, seed: opts.seed })
+    : null;
 
-  // Ground
-  out.push(
-    entity({
-      name: "Terrain",
-      type: "plane",
-      parentId: root.id,
-      transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
-      material: { color: assets?.groundColor ?? "#2a3a1a", metalness: 0, roughness: 1 },
-      physics: { bodyType: "fixed", colliderType: "cuboid" },
-    }),
-  );
+  if (bake) {
+    out.push(
+      entity({
+        name: "Terrain",
+        type: "plane",
+        parentId: root.id,
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+        material: { color: dominantGroundColor(bake), metalness: 0, roughness: 0.92 },
+        physics: { bodyType: "fixed", colliderType: "trimesh" },
+        layer: "Terrain",
+        surface: "Walk",
+        heightfield: toHeightfieldComponent(bake),
+      }),
+    );
+  } else {
+    out.push(
+      entity({
+        name: "Terrain",
+        type: "plane",
+        parentId: root.id,
+        transform: { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0], scale: [size, size, 1] },
+        material: { color: assets?.groundColor ?? "#2a3a1a", metalness: 0, roughness: 1 },
+        physics: { bodyType: "fixed", colliderType: "cuboid" },
+        layer: "Terrain",
+        surface: "Walk",
+      }),
+    );
+  }
 
   // Foliage (trees / plants) — dense scatter
   if (assets && assets.foliage.length > 0) {
@@ -749,7 +790,9 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
       for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
         if (rng() > foliageDensity) continue;
-        const key = pick(assets.foliage, rng)!;
+        const foliagePool = assets.foliage.filter((k) => !isNaturePackKey(k));
+        if (!foliagePool.length) continue;
+        const key = pick(foliagePool, rng)!;
         const px = x + (rng() - 0.5) * jitter;
         const pz = z + (rng() - 0.5) * jitter;
         out.push(modelEntity(
@@ -761,6 +804,37 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
           root.id,
         ));
       }
+    }
+  }
+
+  {
+    const steps = 10;
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      const x = (t - 0.5) * size * 0.68;
+      const z = Math.sin(t * Math.PI) * size * 0.1;
+      const nx = ((i + 1) / (steps - 1) - 0.5) * size * 0.68;
+      const nz = Math.sin(((i + 1) / (steps - 1)) * Math.PI) * size * 0.1;
+      const dx = nx - x;
+      const dz = nz - z;
+      const len = Math.hypot(dx, dz) || 2.2;
+      const yaw = Math.atan2(dx, dz);
+      out.push(
+        entity({
+          name: `Path ${i + 1}`,
+          type: "box",
+          parentId: root.id,
+          transform: {
+            position: [x, 0.06, z],
+            rotation: [0, yaw, 0],
+            scale: [1.7, 0.08, len * 1.05],
+          },
+          material: { color: "#6b5344", metalness: 0, roughness: 1 },
+          physics: { bodyType: "fixed", colliderType: "cuboid" },
+          layer: "Terrain",
+          surface: "Walk",
+        }),
+      );
     }
   }
 
@@ -875,6 +949,26 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
       transform: { position: [lx, 8, lz], rotation: [0, 0, 0], scale: [1, 1, 1] },
       light: { kind: "point", color: lightColor, intensity: lightIntensity, distance: size * 0.4 },
     }));
+  }
+
+  if (bake) {
+    for (const e of out) {
+      if (e.id === root.id || e.name === "Terrain") continue;
+      const p = e.transform.position;
+      const gy = sampleHeightfieldY(bake, p[0], p[2]);
+      const h01 = bake.maxHeight > 0 ? gy / bake.maxHeight : 0;
+      if (e.type === "light") {
+        p[1] = gy + 8;
+        continue;
+      }
+      if (!isLandBiome(0, bake.seaLevel, h01) && e.layer !== "NPC") {
+        p[1] = Math.max(gy, bake.seaLevel * bake.maxHeight);
+        continue;
+      }
+      if (e.type === "box") p[1] = gy + (e.transform.scale[1] ?? 1) / 2;
+      else if (e.name.startsWith("Resource")) p[1] = gy + 0.45;
+      else p[1] = gy;
+    }
   }
 
   return out;

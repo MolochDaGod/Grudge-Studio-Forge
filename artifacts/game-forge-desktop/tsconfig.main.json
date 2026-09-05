@@ -13,7 +13,11 @@
     "isolatedModules": false,
     "customConditions": ["workspace"],
     "skipLibCheck": true,
-    "noImplicitAny": false
+    "noImplicitAny": false,
+    "baseUrl": ".",
+    "paths": {
+      "@workspace/desktop-bridge": ["../../lib/desktop-bridge/dist/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }

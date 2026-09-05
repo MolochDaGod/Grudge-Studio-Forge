@@ -123,6 +123,12 @@ import {
   handlers as uiToolHandlers,
   destructiveToolNames as uiDestructiveTools,
 } from "@/ai/tools/ui";
+import {
+  defs as worldToolDefs,
+  handlers as worldToolHandlers,
+  destructiveToolNames as worldDestructiveTools,
+  commitGeneratedWorld,
+} from "@/ai/tools/world";
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
  *  running any of these so the AI can never wipe / overwrite without sign-off.
@@ -148,6 +154,7 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...knowledgeDestructiveTools,
   ...motionDestructiveTools,
   ...uiDestructiveTools,
+  ...worldDestructiveTools,
 ]);
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
@@ -1066,34 +1073,53 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def: {
       name: "generate_map",
       description:
-        "Procedurally generate a layout (cityGrid / openArena / dungeonRooms / maze) and add the resulting entities to the scene. Optional size, density, and rng seed.",
+        "Procedural layout: cityGrid / openArena / dungeonRooms / maze / openWorld. " +
+        "openWorld uses biome kits + Super Terrain heightfield when terrainKind is set. " +
+        "replace=true (default) restamps terrain/trees/rocks/paths instead of stacking.",
       input_schema: {
         type: "object",
         properties: {
           kind: {
             type: "string",
-            enum: ["cityGrid", "openArena", "dungeonRooms", "maze"],
+            enum: ["cityGrid", "openArena", "dungeonRooms", "maze", "openWorld"],
           },
-          size: { type: "number", description: "Grid extent in meters (default 40)." },
-          density: { type: "number", description: "0..1 density of obstacles (default 0.5)." },
+          size: { type: "number", description: "Extent in meters (default 40; openWorld 80)." },
+          density: { type: "number", description: "0..1 (default 0.5)." },
           seed: { type: "number" },
+          sectorId: { type: "string" },
+          terrainKind: {
+            type: "string",
+            description: "alpine-mesh | granite-csg | spline-forest | tunnel-cavern | harbor-atoll | volcanic-ridge | frozen-fjord",
+          },
+          replace: { type: "boolean" },
         },
         required: ["kind"],
       },
     },
     exec: async (input) => {
       const kind = input.kind as MapKind;
+      const sectorId = typeof input.sectorId === "string" ? input.sectorId : undefined;
       const entities = generateMap({
         kind,
-        size: typeof input.size === "number" ? input.size : 40,
+        size: typeof input.size === "number" ? input.size : kind === "openWorld" ? 80 : 40,
         density: typeof input.density === "number" ? input.density : 0.5,
         seed: typeof input.seed === "number" ? input.seed : Date.now() & 0xffff,
+        sectorId,
+        terrainKind: typeof input.terrainKind === "string" ? input.terrainKind : undefined,
       });
-      const s = useEditor.getState();
-      s.commandStack.push(
-        addEntitiesCommand(makeStoreLike(), entities, `Generate map: ${kind}`, entities[0]?.id ?? null),
-      );
-      return { ok: true, data: { added: entities.length, kind } };
+      const stats = commitGeneratedWorld(entities, `Generate map: ${kind}`, {
+        replace: input.replace !== false,
+      });
+      return {
+        ok: true,
+        data: {
+          ...stats,
+          kind,
+          sectorId: sectorId ?? null,
+          terrainKind: typeof input.terrainKind === "string" ? input.terrainKind : null,
+          replaced: input.replace !== false,
+        },
+      };
     },
   },
 
@@ -1687,6 +1713,12 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: uiToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // Super Terrain / biome worlds — create or replace terrain, trees, rocks, paths
+  ...worldToolDefs.map((def) => ({
+    def,
+    exec: worldToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1779,7 +1811,7 @@ export function buildSystemPrompt(): string {
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,
-    `- Take initiative. For a "playable scene": generate_map → spawn_fast_asset (blake / race) → set_player → set_environment / apply_atmosphere_preset as needed.`,
+    `- Take initiative. Scratch scene is enough. Playable request → list_game_examples then tps-playtest. Complete outdoor world → list_world_biomes → create_world({ recipe:'alpine-mesh'|island }) → paint_world_brush → spawn_toon_race → WASD → verify_scene_full. Super Terrain is a heightfield bake, not a second editor.`,
     `- For "feel" tweaks prefer set_tunable_param after list_tunable_params.`,
     `- Bulk scene questions → count_entities / query_entities (ECS mirror).`,
     `- BEFORE big builds: get_active_scene_meta, get_project_summary or get_brain_catalog, describe_layout, list_scenes / list_prefabs / list_assets / list_r2_storage.`,

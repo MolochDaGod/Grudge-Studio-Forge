@@ -16,6 +16,14 @@ export default defineConfig({
         replacement: path.resolve(__dirname, "./src/__tests__/__mocks__/assetStub.ts"),
       },
       { find: "@", replacement: path.resolve(__dirname, "./src") },
+      {
+        find: "@workspace/scene-schema",
+        replacement: path.resolve(__dirname, "../../lib/scene-schema/src/index.ts"),
+      },
+      {
+        find: "@workspace/api-client-react",
+        replacement: path.resolve(__dirname, "./src/lib/cloud/dataLayer.ts"),
+      },
     ],
   },
   test: {
