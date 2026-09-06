@@ -17,7 +17,16 @@ import {
   type PaintChannel,
   type WorldLayer,
 } from "@/lib/worldBiomeKit";
-import { sampleHeightfieldY } from "@/lib/superTerrainWorld";
+import {
+  SUPER_TERRAIN_CATALOG_URLS,
+  coverKeysForBiomeIndex,
+  fetchSuperTerrainBake,
+  fetchSuperTerrainCatalog,
+  foliageKeysForBiomeIndex,
+  isSuperTerrainKind,
+  sampleBiomeIndex,
+  sampleHeightfieldY,
+} from "@/lib/superTerrainWorld";
 import type { SceneEntity } from "@/scene/types";
 import { nanoid } from "nanoid";
 
@@ -59,13 +68,24 @@ function storeLike(): StoreLike {
 const LIST: ToolDef = {
   name: "list_world_biomes",
   description:
-    "Forge world kits: 9 Warlords sectors, Island Terrain recipes (showcase/island/wild/flat), " +
-    "paint channels (foliage|harvest|rock|structure|path), CDN nature packs. " +
-    "Recipes include Super Terrain alpine-mesh / granite-csg / spline-forest / tunnel-cavern (heightfield bake, not the WebGPU editor). Then generate_map openWorld + paint_world_brush.",
+    "Forge world kits: 9 Warlords sectors, Super Terrain kinds (harbor-atoll, alpine-mesh, granite-csg, spline-forest, tunnel-cavern, volcanic-ridge, frozen-fjord), " +
+    "forest presets (mossy-old-growth, boreal-conifer, tropical-wet, …), foliage species, Grass/Rock/Soil/Snow channels, Poly Haven 1K (not 20MB Ground_N). " +
+    "Catalog: https://info.grudge-studio.com/api/v1/super-terrain.json (proxy objectstore, CDN catalogs/super-terrain.json). " +
+    "Heightfield bake only — not the WebGPU editor. Then generate_map openWorld + paint_world_brush.",
   input_schema: { type: "object", properties: {}, additionalProperties: false },
 };
 
-const listHandler: ToolHandler = async () => ({ ok: true, data: worldBiomeSnapshot() });
+const listHandler: ToolHandler = async () => {
+  const fleet = await fetchSuperTerrainCatalog();
+  return {
+    ok: true,
+    data: {
+      ...worldBiomeSnapshot(),
+      fleetCatalog: fleet,
+      catalogUrl: SUPER_TERRAIN_CATALOG_URLS.info,
+    },
+  };
+};
 
 const APPLY: ToolDef = {
   name: "apply_biome_look",
@@ -185,7 +205,16 @@ const paintHandler: ToolHandler = async (input) => {
       });
       continue;
     }
-    const key = keys[Math.floor(rng() * keys.length)]!;
+    let pool = keys;
+    if (ground?.heightfield && (channel === "foliage" || channel === "rock")) {
+      const bi = sampleBiomeIndex(ground.heightfield, x, z);
+      if (channel === "foliage") {
+        const biomeKeys = [...foliageKeysForBiomeIndex(bi), ...coverKeysForBiomeIndex(bi)];
+        if (biomeKeys.length) pool = biomeKeys;
+        if (!biomeKeys.length) continue;
+      }
+    }
+    const key = pool[Math.floor(rng() * pool.length)]!;
     const url =
       key.startsWith("http") || key.startsWith("builtin:") ? key : `builtin:${key}`;
     ents.push({
@@ -254,13 +283,17 @@ const createHandler: ToolHandler = async (input) => {
   const size = typeof input.size === "number" ? input.size : 80;
   const density = typeof input.density === "number" ? input.density : 0.55;
   const seed = typeof input.seed === "number" ? input.seed : Date.now() & 0xffff;
+  const kind = rec?.terrainKind;
+  const fleetBake =
+    kind && isSuperTerrainKind(String(kind)) ? await fetchSuperTerrainBake(kind, size) : null;
   const entities = generateMap({
     kind: "openWorld",
     size,
     density,
     seed,
     sectorId: sector.id,
-    terrainKind: rec?.terrainKind,
+    terrainKind: kind,
+    fleetBake: fleetBake ?? undefined,
   });
   const layers = Array.isArray(input.layers) ? (input.layers as WorldLayer[]) : undefined;
   const stats = commitGeneratedWorld(entities, `World · ${sector.name}`, {
@@ -274,7 +307,8 @@ const createHandler: ToolHandler = async (input) => {
       biome: sector.biome,
       ...stats,
       terrainKind: rec?.terrainKind ?? null,
-      engine: rec?.source ?? "island-engine",
+      engine: fleetBake?.engine ?? rec?.source ?? "island-engine",
+      catalog: SUPER_TERRAIN_CATALOG_URLS.info,
       replaced: input.replace !== false,
       layers: layers ?? ["map"],
       next: ["paint_world_brush", "spawn_toon_race", "create_script_from_template wasd-character-controller", "verify_scene_full"],

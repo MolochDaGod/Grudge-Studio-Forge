@@ -324,7 +324,7 @@ export function classifyWorldDressing(e: {
   if (n.startsWith("foliage") || n.includes("tree") || n.startsWith("paint foliage")) return "foliage";
   if (n.startsWith("rock") || n.startsWith("paint rock")) return "rock";
   if (n.startsWith("resource") || n.startsWith("paint harvest") || n.includes("harvest")) return "harvest";
-  if (n.startsWith("structure") || n.startsWith("paint structure")) return "structure";
+  if (n.startsWith("structure") || n.startsWith("paint structure") || n.startsWith("camp")) return "structure";
   return null;
 }
 
@@ -401,6 +401,53 @@ export function worldBiomeSnapshot() {
     })),
     cdn: NATURE_CDN,
     paintChannels: ["foliage", "harvest", "rock", "structure", "path"],
+    superTerrain: {
+      catalog: "https://info.grudge-studio.com/api/v1/super-terrain.json",
+      catalogProxy: "https://objectstore.grudge-studio.com/api/v1/super-terrain.json",
+      catalogCdn: "https://assets.grudge-studio.com/catalogs/super-terrain.json",
+      bakes: "https://assets.grudge-studio.com/worlds/super-terrain/",
+      textureHost: "https://assets.grudge-studio.com/textures/super-terrain/",
+      repo: "https://github.com/vibe-stack/super-terrain",
+      kinds: [
+        "harbor-atoll",
+        "volcanic-ridge",
+        "frozen-fjord",
+        "alpine-mesh",
+        "granite-csg",
+        "spline-forest",
+        "tunnel-cavern",
+      ],
+      forestPresets: [
+        "mossy-old-growth",
+        "temperate-mixed",
+        "ancient-oak-grove",
+        "boreal-conifer",
+        "primeval-redwood",
+        "tropical-wet",
+        "palm-oasis",
+        "savanna",
+        "arid-woodland",
+      ],
+      foliageSpecies: [
+        "meadow-fescue",
+        "tussock",
+        "dry-steppe",
+        "clover-mat",
+        "broadleaf-weed",
+        "woodland-fern",
+        "wildflower",
+        "sedge-reed",
+        "forest-moss",
+        "wood-rush",
+        "bramble",
+        "bracken",
+      ],
+      materialChannels: ["Grass", "Rock", "Soil", "Snow"],
+      proceduralSurfaces: ["rock-ground", "cliff-side", "alpine-cliff-rock", "ember-fault-rock"],
+      textures:
+        "CDN channel-{grass,rock,soil,snow}.png (~18KB) + kind-{id}.png. Poly Haven 1K optional. Ground_N not autoloaded.",
+      climate: "montane → treeline 0.54 → alpine turf → fellfield → snow; trees refuse slope > 40°",
+    },
     replaceLayers: WORLD_LAYERS,
     tools: [
       "list_world_biomes",
@@ -413,12 +460,15 @@ export function worldBiomeSnapshot() {
       "Do not import Island Terrain WorldTerrain into Forge.",
       "Do not vendor the Super Terrain WebGPU editor — heightfield bake only.",
       "Ground = Terrain layer + Walk surface (heightfield when recipe.terrainKind). Same height for feet.",
-      "Foliage/rocks = one Kenney mesh per instance (CommonTree_N, Pine_N, Rock_Medium_N). Never scatter nature_vegetation.glb, ore_nodes.glb, or *-pack as one tree/rock.",
+      "Foliage/rocks = Super Terrain forest presets + foliage species mapped to Kenney singles (CommonTree_N, Pine_N, Rock_Medium_N, Bush, Fern, Plant). Never scatter nature_vegetation.glb, ore_nodes.glb, or *-pack as one tree/rock.",
+      "Textures = fleet CDN channel-{grass,rock,soil,snow}.png (~18KB) + kind-{id}.png. Do not autoload Ground_N 20MB maps.",
+      "Heightfields: assets…/worlds/super-terrain/{kind}.json (grudge-island-bake/v1). Catalog: info…/api/v1/super-terrain.json — same hosts as weapons/nature, not a second store.",
       "pirate-islands/scene.glb = lobby MAP shell only — terrain/shovel/harvest/Ground_N upgrade that mesh, do not instance it as a rock.",
       "Chicken Gun / island plates (mistytown, map-pirate-island, …) = map entities. Physics = Rapier Terrain/Walk + Water/Swim. Keep their water meshes; do not stack a second clay ocean.",
       "This repo is Forge editor (F:\\GitHub\\Grudge-Studio-Forge → forge.grudge-studio.com). Warlords play is GrudgeBuilder / grudgewarlords.com — different frontend deploy.",
       "Water: Rapier Water/Swim on map water; no cyan clay plane. Gerstner caribbean is the island/Warlords look — do not invent a second water engine in Forge.",
       "Torches: warm point lights decay 2, intensity ≤ 2.2 — not white bloom.",
+      "Race kits (builtin:race:orc/…) are camp OCCUPANTS (NPC mesh_ids), never foliage. Camps = RTS tent/hut/archer tower + palisade; Kenney retro-fantasy walls when on CDN. Seeded outpost/camp/fort, enemy or ally.",
       "Complete world = look + heightfield + Gerstner ocean + foliage + harvest + spawn + verify_scene_full.",
     ],
   };

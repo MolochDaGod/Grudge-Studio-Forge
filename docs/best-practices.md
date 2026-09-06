@@ -39,11 +39,16 @@ Auth: **Grudge ID** + Puter for cloud FS/publish. Player bag/wallet stay on Rail
 | Ctrl+Z / Ctrl+Y | Undo / redo |
 | Ctrl+C / Ctrl+V | Copy / paste hierarchy |
 | Ctrl+D | Duplicate |
-| **F** | Frame selection **+ children** |
+| **F** | Frame selection (asked only) |
+| **G** | Ground snap selected |
+| **H** | Hide / show selected |
+| **Ctrl+P** | Unparent to root |
 | Ctrl+S | Save scene |
 | P | Play / stop |
 
 Viewport: far plane ~500 000, fog defaults for islands, infinite grid with long fade.
+
+**Mesh pull:** spawn/drop an asset GLB → each mesh is a child entity (`model.subNode`). Pack root is `childrenOnly`. Do **not** pull play kits or map shells. Nested meshes keep parent/child. Cap 128; over that stays fused.
 
 ## Agentic AI
 

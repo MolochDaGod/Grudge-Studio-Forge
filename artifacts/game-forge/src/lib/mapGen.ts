@@ -17,15 +17,27 @@ import type { SceneEntity, Vec3 } from "@/scene/types";
 import { DEFAULT_TRANSFORM } from "@/scene/types";
 import { getSectorById } from "@/lib/worldSectors";
 import { SECTOR_ASSETS, pick } from "@/lib/sectorAssets";
-import { isNaturePackKey, scatterFoliageKeys, scatterRockKeys } from "@/lib/worldBiomeKit";
+import { NATURE_SINGLES, isNaturePackKey, scatterFoliageKeys, scatterRockKeys } from "@/lib/worldBiomeKit";
+import { isRaceKitKey, layoutCamp, occupantRace, planCamps } from "@/lib/campKit";
 import type { BiomeAssets } from "@/lib/sectorAssets";
 import {
+  SUPER_CLIMATE,
+  coverKeysForBiomeIndex,
   dominantGroundColor,
+  foliageKeysForBiomeIndex,
+  foliageKeysForKind,
+  forestPresetForKind,
   generateSuperTerrain,
   isLandBiome,
   isSuperTerrainKind,
+  pickForestStem,
+  rockBudgetForKind,
+  sampleBiomeIndex,
   sampleHeightfieldY,
+  sampleSlopeDeg,
+  terrainMaterialForKind,
   toHeightfieldComponent,
+  type SuperTerrainBake,
   type SuperTerrainKind,
 } from "@/lib/superTerrainWorld";
 
@@ -43,6 +55,8 @@ export interface MapGenOptions {
   sectorId?: string;
   /** Super Terrain / island-engine heightfield kind for openWorld. */
   terrainKind?: SuperTerrainKind | string;
+  /** Fleet CDN bake (`worlds/super-terrain/{kind}.json`). Falls back to generateSuperTerrain. */
+  fleetBake?: SuperTerrainBake;
 }
 
 /* ---------------- PRNG (mulberry32, deterministic and tiny) ------------- */
@@ -341,15 +355,16 @@ function openArena(opts: MapGenOptions): SceneEntity[] {
     }
   }
 
-  // Monsters near arena center
-  if (assets && assets.monsters.length > 0) {
+  // Wildlife near arena center — never race kits (those are camp occupants)
+  if (assets && assets.monsters.filter((k) => !isRaceKitKey(k)).length > 0) {
+    const pool = assets.monsters.filter((k) => !isRaceKitKey(k));
     const count = Math.round(1 + opts.density * 3);
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const radius = half * 0.4;
       const mx = Math.cos(angle) * radius;
       const mz = Math.sin(angle) * radius;
-      const key = pick(assets.monsters, rng)!;
+      const key = pick(pool, rng)!;
       out.push(modelEntity(
         `Arena Enemy ${i + 1}`,
         key,
@@ -749,9 +764,11 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     opts.terrainKind && isSuperTerrainKind(String(opts.terrainKind))
       ? (opts.terrainKind as SuperTerrainKind)
       : undefined;
-  const bake = terrainKind
-    ? generateSuperTerrain({ kind: terrainKind, worldMeters: size, seed: opts.seed })
-    : null;
+  const bake = opts.fleetBake
+    ? opts.fleetBake
+    : terrainKind
+      ? generateSuperTerrain({ kind: terrainKind, worldMeters: size, seed: opts.seed })
+      : null;
 
   if (bake) {
     out.push(
@@ -760,7 +777,7 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
         type: "plane",
         parentId: root.id,
         transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-        material: { color: dominantGroundColor(bake), metalness: 0, roughness: 0.92 },
+        material: terrainMaterialForKind(terrainKind, dominantGroundColor(bake)),
         physics: { bodyType: "fixed", colliderType: "trimesh" },
         layer: "Terrain",
         surface: "Walk",
@@ -782,29 +799,88 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     );
   }
 
-  // Foliage — Kenney singles only (never a vegetation/tree pack as one tree)
+  // Super Terrain forest presets when a kind is set; else sector Kenney singles
   {
-    const foliagePool = (
-      assets?.foliage?.length ? assets.foliage : scatterFoliageKeys()
-    ).filter((k) => !isNaturePackKey(k));
-    const pool = foliagePool.length ? foliagePool : scatterFoliageKeys();
-    const foliageDensity = (assets?.foliageDensity ?? 0.5) * opts.density;
-    const foliageStep = 4;
-    const jitter = foliageStep * 0.8;
-    for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
-      for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
-        if (rng() > foliageDensity) continue;
-        const key = pick(pool, rng)!;
-        const px = x + (rng() - 0.5) * jitter;
-        const pz = z + (rng() - 0.5) * jitter;
-        out.push(modelEntity(
-          "Foliage",
-          key,
-          [px, 0, pz],
-          rng() * Math.PI * 2,
-          0.7 + rng() * 0.8,
-          root.id,
-        ));
+    const sectorPool = (assets?.foliage ?? []).filter((k) => !isNaturePackKey(k));
+    if (terrainKind) {
+      const preset = forestPresetForKind(terrainKind);
+      const hectares = (size * size) / 10_000;
+      const treeBudget = Math.min(
+        140,
+        Math.max(8, Math.round(preset.treesPerHectare * hectares * opts.density * 0.28)),
+      );
+      const kindPool = foliageKeysForKind(terrainKind);
+      let planted = 0;
+      for (let i = 0; i < treeBudget * 4 && planted < treeBudget; i++) {
+        const px = (rng() - 0.5) * (size - 8);
+        const pz = (rng() - 0.5) * (size - 8);
+        if (bake) {
+          const gy = sampleHeightfieldY(bake, px, pz);
+          const h01 = bake.maxHeight > 0 ? gy / bake.maxHeight : 0;
+          const bi = sampleBiomeIndex(bake, px, pz);
+          if (!isLandBiome(bi, bake.seaLevel, h01)) continue;
+          if (h01 > SUPER_CLIMATE.treeLine) continue;
+          if (sampleSlopeDeg(bake, px, pz) > SUPER_CLIMATE.treeMaxSlopeDeg) continue;
+          if (rng() < preset.gapRate) continue;
+        }
+        const stem = pickForestStem(preset, rng);
+        const biomePool = bake
+          ? foliageKeysForBiomeIndex(sampleBiomeIndex(bake, px, pz))
+          : kindPool;
+        const key =
+          stem && !stem.cover ? stem.key : pick(biomePool.length ? biomePool : kindPool, rng);
+        if (!key || isNaturePackKey(key)) continue;
+        out.push(
+          modelEntity(
+            "Foliage",
+            key,
+            [px, 0, pz],
+            rng() * Math.PI * 2,
+            stem && !stem.cover ? stem.scale : 0.7 + rng() * 0.8,
+            root.id,
+          ),
+        );
+        planted += 1;
+      }
+      const coverStep = 3.2;
+      const coverJitter = coverStep * 0.75;
+      for (let x = -half + coverStep; x < half - coverStep; x += coverStep) {
+        for (let z = -half + coverStep; z < half - coverStep; z += coverStep) {
+          if (rng() > 0.42 * opts.density) continue;
+          const px = x + (rng() - 0.5) * coverJitter;
+          const pz = z + (rng() - 0.5) * coverJitter;
+          let pool = [NATURE_SINGLES.bush];
+          if (bake) {
+            const gy = sampleHeightfieldY(bake, px, pz);
+            const h01 = bake.maxHeight > 0 ? gy / bake.maxHeight : 0;
+            const bi = sampleBiomeIndex(bake, px, pz);
+            if (!isLandBiome(bi, bake.seaLevel, h01)) continue;
+            if (h01 > SUPER_CLIMATE.alpineTurfTop) continue;
+            if (sampleSlopeDeg(bake, px, pz) > 50) continue;
+            const cover = coverKeysForBiomeIndex(bi);
+            if (cover.length) pool = cover;
+          }
+          const key = pick(pool, rng);
+          if (!key || isNaturePackKey(key)) continue;
+          out.push(
+            modelEntity("Foliage cover", key, [px, 0, pz], rng() * Math.PI * 2, 0.45 + rng() * 0.4, root.id),
+          );
+        }
+      }
+    } else {
+      const kindPool = sectorPool.length ? sectorPool : scatterFoliageKeys();
+      const foliageDensity = (assets?.foliageDensity ?? 0.5) * opts.density;
+      const foliageStep = 4;
+      const jitter = foliageStep * 0.8;
+      for (let x = -half + foliageStep; x < half - foliageStep; x += foliageStep) {
+        for (let z = -half + foliageStep; z < half - foliageStep; z += foliageStep) {
+          if (rng() > foliageDensity) continue;
+          const px = x + (rng() - 0.5) * jitter;
+          const pz = z + (rng() - 0.5) * jitter;
+          const key = pick(kindPool, rng);
+          if (!key || isNaturePackKey(key)) continue;
+          out.push(modelEntity("Foliage", key, [px, 0, pz], rng() * Math.PI * 2, 0.7 + rng() * 0.8, root.id));
+        }
       }
     }
   }
@@ -875,38 +951,109 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
 
   {
     const rockPool = scatterRockKeys();
-    const rockCount = Math.round(4 + opts.density * 6);
-    for (let i = 0; i < rockCount; i++) {
-      const key = pick(rockPool, rng)!;
+    const rockCount = rockBudgetForKind(terrainKind ?? "harbor-atoll", opts.density);
+    let placed = 0;
+    for (let i = 0; i < rockCount * 4 && placed < rockCount; i++) {
       const sx = (rng() - 0.5) * (size - 10);
       const sz = (rng() - 0.5) * (size - 10);
-      out.push(modelEntity(
-        `Rock ${i + 1}`,
-        key,
-        [sx, 0, sz],
-        rng() * Math.PI,
-        0.8 + rng() * 0.6,
-        root.id,
-      ));
+      if (bake) {
+        const gy = sampleHeightfieldY(bake, sx, sz);
+        const h01 = bake.maxHeight > 0 ? gy / bake.maxHeight : 0;
+        if (h01 < bake.seaLevel + 0.04) continue;
+        const slope = sampleSlopeDeg(bake, sx, sz);
+        // Super Terrain debris: rest on a break in slope, not the cliff or the flat.
+        if (slope < 6 || slope > 48) continue;
+      }
+      const key = pick(rockPool, rng)!;
+      out.push(
+        modelEntity(`Rock ${placed + 1}`, key, [sx, 0, sz], rng() * Math.PI, 0.8 + rng() * 0.7, root.id),
+      );
+      placed += 1;
+    }
+    for (let guard = 0; placed < Math.max(3, Math.round(rockCount * 0.4)) && guard < 80; guard++) {
+      const sx = (rng() - 0.5) * (size - 10);
+      const sz = (rng() - 0.5) * (size - 10);
+      if (bake) {
+        const h01 = bake.maxHeight > 0 ? sampleHeightfieldY(bake, sx, sz) / bake.maxHeight : 0;
+        if (h01 < bake.seaLevel + 0.04) continue;
+      }
+      const key = pick(rockPool, rng)!;
+      out.push(
+        modelEntity(`Rock ${placed + 1}`, key, [sx, 0, sz], rng() * Math.PI, 0.8 + rng() * 0.6, root.id),
+      );
+      placed += 1;
     }
   }
 
-  // Monsters — scattered throughout
-  if (assets && assets.monsters.length > 0) {
-    const monsterCount = Math.round(3 + opts.density * 8);
-    for (let i = 0; i < monsterCount; i++) {
-      const key = pick(assets.monsters, rng)!;
+  {
+    let occI = 0;
+    for (const camp of planCamps(size, opts.density, rng)) {
+      const gy = bake ? sampleHeightfieldY(bake, camp.x, camp.z) : 0;
+      if (bake && bake.maxHeight > 0 && gy / bake.maxHeight < bake.seaLevel + 0.05) continue;
+      for (const piece of layoutCamp(camp.size, camp.side)) {
+        const px = camp.x + piece.dx;
+        const pz = camp.z + piece.dz;
+        const py = bake ? sampleHeightfieldY(bake, px, pz) : 0;
+        const yaw = camp.yaw + piece.yaw;
+        if (piece.kind === "fence-box") {
+          out.push(
+            entity({
+              name: piece.name,
+              type: "box",
+              parentId: root.id,
+              transform: {
+                position: [px, py + 0.7, pz],
+                rotation: [0, yaw, 0],
+                scale: [2.2, 1.4, 0.18],
+              },
+              material: { color: camp.side === "ally" ? "#6b5344" : "#3d2a22", metalness: 0, roughness: 1 },
+              physics: { bodyType: "fixed", colliderType: "cuboid" },
+              layer: "Default",
+            }),
+          );
+          continue;
+        }
+        if (piece.kind === "occupant") {
+          const race = occupantRace(camp.side, occI++);
+          out.push(
+            entity({
+              name: `${camp.name} Occupant`,
+              type: "model",
+              parentId: root.id,
+              transform: {
+                position: [px, py, pz],
+                rotation: [0, yaw, 0],
+                scale: [1, 1, 1],
+              },
+              model: { url: `builtin:race:${race}` },
+              physics: { bodyType: "kinematicPosition", colliderType: "capsule" },
+              behavior: camp.side === "ally" ? "ally" : "enemy-rpg",
+              layer: "NPC",
+              surface: "Walk",
+            }),
+          );
+          continue;
+        }
+        if (piece.key) {
+          out.push(modelEntity(piece.name, piece.key, [px, py, pz], yaw, piece.scale, root.id));
+        }
+      }
+    }
+  }
+
+  const wildlife = (assets?.monsters ?? []).filter((k) => !isRaceKitKey(k));
+  if (wildlife.length > 0) {
+    const n = Math.min(4, Math.round(1 + opts.density * 2));
+    for (let i = 0; i < n; i++) {
+      const key = pick(wildlife, rng)!;
       const mx = (rng() - 0.5) * (size - 8);
       const mz = (rng() - 0.5) * (size - 8);
-      out.push(modelEntity(
-        `Enemy ${i + 1}`,
-        key,
-        [mx, 0, mz],
-        rng() * Math.PI * 2,
-        1,
-        root.id,
-        { behavior: "enemy-rpg", layer: "NPC" },
-      ));
+      out.push(
+        modelEntity(`Wildlife ${i + 1}`, key, [mx, 0, mz], rng() * Math.PI * 2, 1, root.id, {
+          behavior: "animal",
+          layer: "NPC",
+        }),
+      );
     }
   }
 

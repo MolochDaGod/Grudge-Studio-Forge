@@ -3,7 +3,7 @@
  * Run: node scripts/export-fast-assets.mjs  (from artifacts/game-forge)
  * Or from root: node artifacts/game-forge/scripts/export-fast-assets.mjs
  *
- * Parses src/lib/fastAssets.ts without a TS loader (simple object-literal extract).
+ * Transpiles src/lib/fastAssets.ts with esbuild (CJS) and writes JSON.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,38 +16,11 @@ const outDir = path.join(root, "public/catalog");
 const outPath = path.join(outDir, "fast-assets.json");
 
 const src = fs.readFileSync(srcPath, "utf8");
-const start = src.indexOf("export const FAST_ASSETS");
-if (start < 0) throw new Error("FAST_ASSETS not found");
-// Skip TypeScript array type annotation: FAST_ASSETS: FastAsset[] = [
-const eq = src.indexOf("=", start);
-const bracket = src.indexOf("[", eq >= 0 ? eq : start);
-let depth = 0;
-let end = -1;
-for (let i = bracket; i < src.length; i++) {
-  const c = src[i];
-  if (c === "[") depth++;
-  else if (c === "]") {
-    depth--;
-    if (depth === 0) {
-      end = i + 1;
-      break;
-    }
-  }
-}
-if (end < 0) throw new Error("Could not find end of FAST_ASSETS array");
-// Strip TS-only trailing commas before } and type assertions — eval as JS
-let lit = src.slice(bracket, end);
-// Strip line + block comments so Function() can eval
-lit = lit.replace(/\/\*[\s\S]*?\*\//g, "");
-lit = lit.replace(/\/\/[^\n]*/g, "");
-// Remove trailing commas in objects/arrays
-lit = lit.replace(/,(\s*[}\]])/g, "$1");
-let items;
-try {
-  items = Function(`"use strict"; return (${lit});`)();
-} catch (e) {
-  throw new Error(`Parse FAST_ASSETS failed: ${e.message}\n${lit.slice(0, 180)}`);
-}
+const { transformSync } = await import("esbuild");
+const { code } = transformSync(src, { loader: "ts", format: "cjs", target: "node18" });
+const mod = { exports: {} };
+Function("module", "exports", code)(mod, mod.exports);
+const items = mod.exports.FAST_ASSETS;
 if (!Array.isArray(items) || items.length === 0) {
   throw new Error("Parsed FAST_ASSETS empty");
 }

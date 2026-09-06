@@ -203,12 +203,53 @@ export function buildEditorHotkeys(deps: EditorHotkeyDeps): Hotkey[] {
     {
       id: "view.focus",
       label: "F",
-      description: "Frame camera on selection + hierarchy children",
+      description: "Frame selected — keeps look direction (never auto)",
       category: "Camera",
       key: "f",
       action: () => {
         if (!get().selectedId) return false;
         get().requestFocus();
+        return true;
+      },
+    },
+    {
+      id: "gizmo.ground",
+      label: "G",
+      description: "Snap selected to terrain (does not move camera)",
+      category: "Gizmo",
+      key: "g",
+      action: () => {
+        if (!get().selectedId) return false;
+        get().requestGroundSnap();
+        return true;
+      },
+    },
+    {
+      id: "edit.hide",
+      label: "H",
+      description: "Hide / show selected",
+      category: "Selection",
+      key: "h",
+      action: () => {
+        const id = get().selectedId;
+        if (!id) return false;
+        const e = get().sceneData.entities.find((x) => x.id === id);
+        if (!e) return false;
+        get().cmdSetEntityVisible(id, e.visible === false);
+        return true;
+      },
+    },
+    {
+      id: "edit.unparent",
+      label: "Ctrl+P",
+      description: "Unparent selected (move to root)",
+      category: "Selection",
+      key: "p",
+      ctrlOrMeta: true,
+      action: () => {
+        const id = get().selectedId;
+        if (!id) return false;
+        get().cmdSetEntityParent(id, null);
         return true;
       },
     },

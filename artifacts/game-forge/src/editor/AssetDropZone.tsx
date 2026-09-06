@@ -31,8 +31,7 @@ import { UploadCloud, FileBox, Image as ImageIcon, FileJson, Music2, Boxes, File
 export function AssetDropZone({ children }: { children: React.ReactNode }) {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.cmdAddEntity);
-  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const spawnModelAndPull = useEditor((s) => s.spawnModelAndPull);
   const setSceneData = useEditor((s) => s.setSceneData);
   const setSceneName = useEditor((s) => s.setSceneName);
 
@@ -264,14 +263,17 @@ export function AssetDropZone({ children }: { children: React.ReactNode }) {
 
   const onAddToScene = useCallback(
     (p: InspectorPayload) => {
-      const e = addEntity("model", p.fileName.replace(/\.(glb|gltf)$/i, ""));
-      updateEntity(e.id, (d) => {
-        d.model = { url: p.modelUrl, assetId: p.assetId };
+      void spawnModelAndPull(p.fileName.replace(/\.(glb|gltf)$/i, ""), p.modelUrl, {
+        assetId: p.assetId,
+      }).then((r) => {
+        pushLog(
+          "info",
+          `Added "${p.fileName}" to scene as ${r.id}${r.pulled ? ` · ${r.pulled} child meshes` : ""}.`,
+        );
       });
-      pushLog("info", `Added "${p.fileName}" to scene as ${e.id}`);
       setInspector(null);
     },
-    [addEntity, updateEntity, pushLog],
+    [spawnModelAndPull, pushLog],
   );
 
   // Document-level drag listeners

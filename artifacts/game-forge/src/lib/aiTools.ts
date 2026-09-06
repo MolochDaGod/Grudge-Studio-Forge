@@ -25,6 +25,7 @@ import {
   searchFleetAssets,
 } from "@/lib/agentEdge";
 import { generateMap, type MapKind } from "@/lib/mapGen";
+import { fetchSuperTerrainBake, isSuperTerrainKind } from "@/lib/superTerrainWorld";
 import { STARTER_VFX } from "@/lib/starterPrefabs";
 import {
   addEntityCommand,
@@ -503,9 +504,16 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         return { ok: false, error: "Failed to build model entity" };
       }
       useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      const pulled = await useEditor.getState().explodeGlbHierarchy(e.id);
       return {
         ok: true,
-        data: { id: e.id, name: e.name, modelUrl: e.model.url, fastId: a.id },
+        data: {
+          id: e.id,
+          name: e.name,
+          modelUrl: e.model.url,
+          fastId: a.id,
+          pulledMeshes: pulled,
+        },
       };
     },
   },
@@ -1107,13 +1115,20 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     exec: async (input) => {
       const kind = input.kind as MapKind;
       const sectorId = typeof input.sectorId === "string" ? input.sectorId : undefined;
+      const terrainKind = typeof input.terrainKind === "string" ? input.terrainKind : undefined;
+      const size = typeof input.size === "number" ? input.size : kind === "openWorld" ? 80 : 40;
+      const fleetBake =
+        terrainKind && isSuperTerrainKind(terrainKind)
+          ? await fetchSuperTerrainBake(terrainKind, size)
+          : null;
       const entities = generateMap({
         kind,
-        size: typeof input.size === "number" ? input.size : kind === "openWorld" ? 80 : 40,
+        size,
         density: typeof input.density === "number" ? input.density : 0.5,
         seed: typeof input.seed === "number" ? input.seed : Date.now() & 0xffff,
         sectorId,
-        terrainKind: typeof input.terrainKind === "string" ? input.terrainKind : undefined,
+        terrainKind,
+        fleetBake: fleetBake ?? undefined,
       });
       const stats = commitGeneratedWorld(entities, `Generate map: ${kind}`, {
         replace: input.replace !== false,
