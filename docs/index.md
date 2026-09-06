@@ -18,7 +18,7 @@ Browser **Three.js / R3F / Rapier** scene editor with agentic AI, Puter projects
 | **Repo README** | [README.md](https://github.com/MolochDaGod/Grudge-Studio-Forge/blob/main/README.md) |
 
 [Open editor](https://forge.grudge-studio.com/editor){: .btn .btn-primary }
-[Latest release](https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/latest){: .btn }
+[Latest release v0.4.4](https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.4){: .btn }
 [Deployment mechanisms]({% link deployment.md %}){: .btn }
 
 ## Documentation map
@@ -48,9 +48,9 @@ Browser → forge.grudge-studio.com (Cloudflare)
 
 Full detail: [Deployment mechanisms]({% link deployment.md %}).
 
-## v0.4.4 — mesh pull
+## v0.4.4 — mesh pull · Kenney singles
 
-Asset GLBs spawn as a **pack** parent plus independent **mesh** children (move, script, physics, deploy each). Play kits and map shells stay fused. Catalog: [forge-editor.json](https://forge.grudge-studio.com/catalog/forge-editor.json).
+Asset GLBs spawn as a **pack** parent plus independent **mesh** children (move, script, physics, deploy each). Play kits and map shells stay fused. Fast nature is Kenney singles — never a pack as one tree. Catalog: [forge-editor.json](https://info.grudge-studio.com/api/v1/forge-editor.json).
 
 ## Agent skills (in-repo)
 

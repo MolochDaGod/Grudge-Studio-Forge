@@ -1,7 +1,7 @@
 {
   "format": "grudge-forge-editor/v1",
   "version": "0.4.4",
-  "updated": "2026-09-05",
+  "updated": "2026-09-06",
   "live": "https://forge.grudge-studio.com/editor",
   "docs": "https://molochdagod.github.io/Grudge-Studio-Forge/",
   "release": "https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.4",
@@ -34,5 +34,9 @@
   "catalogs": {
     "fastAssets": "https://forge.grudge-studio.com/api/catalog/fast-assets",
     "superTerrain": "https://info.grudge-studio.com/api/v1/super-terrain.json"
+  },
+  "nature": {
+    "fast": "Kenney singles only (CommonTree / Pine / Rock / Bush / Fern). No tree-pack as one tree.",
+    "count": 57
   }
 }

@@ -5,7 +5,7 @@ All notable changes to **Grudge GameForge** are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/).
 
-## [0.4.4] — 2026-09-05
+## [0.4.4] — 2026-09-06
 
 ### Added
 
@@ -21,6 +21,7 @@ Versioning follows [SemVer](https://semver.org/).
 - Fast / catalog / drop spawn auto-pulls child meshes (`spawnModelAndPull`, `spawn_fast_asset.pulledMeshes`).
 - **F** frames selection only when asked (no auto-frame).
 - Player Vite `@workspace/*` aliases for Windows `symlink=false`.
+- **Fast nature is Kenney singles only** — Tree / Tropical / Autumn / Icicle **packs** removed from Fast (57 items). Packs still refuse scatter as one tree.
 
 ### Kept fused
 

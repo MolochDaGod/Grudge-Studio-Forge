@@ -1,9 +1,9 @@
-# v0.4.4 — Pull child meshes · pack parent/child · Super Terrain
+# v0.4.4 — Pull child meshes · Kenney singles · Super Terrain
 
 **Live editor:** https://forge.grudge-studio.com/editor  
 **Docs:** https://molochdagod.github.io/Grudge-Studio-Forge/  
 **Changelog:** [CHANGELOG.md](https://github.com/MolochDaGod/Grudge-Studio-Forge/blob/main/CHANGELOG.md)  
-**Info catalog:** https://forge.grudge-studio.com/catalog/forge-editor.json
+**Info catalog:** https://info.grudge-studio.com/api/v1/forge-editor.json · [SPA copy](https://forge.grudge-studio.com/catalog/forge-editor.json)
 
 ### Highlights
 
@@ -11,6 +11,7 @@
 - Nested meshes keep parent/child (lid stays on crate). Unparent with **Ctrl+P**.
 - Play kits (skinned + bones) and map shells stay **one fused body**.
 - Super Terrain worlds from the fleet Cloudflare catalog (harbor-atoll, volcanic-ridge, …).
+- Fast nature is **Kenney singles only** — no Tree/Tropical/Autumn/Icicle pack as one tree.
 - Editor: **F** frames only when asked, **G** ground snap, **H** hide, KTX2 bind.
 
 ### Added
@@ -32,6 +33,7 @@
 | `spawn_fast_asset` | Returns `pulledMeshes` count |
 | **F** | Frame selection only (no auto-frame) |
 | Viewport hint | LMB orbit · RMB/MMB pan · W/E/R · F · G · H |
+| Fast nature | Kenney singles only (57 Fast items). Packs stay blocked as scatter. |
 
 ### Kept fused (do not pull)
 
@@ -49,6 +51,7 @@ Play kits (`SkinnedMesh` + ≥8 bones). Map shells (`pirate-islands`, `map-misty
 
 ```bash
 pnpm run smoke:forge
-# editor: spawn a Kenney / nature pack → hierarchy shows pack + mesh children
+# Fast nature: Common Tree / Pine / Rock — not Tree Pack
+# spawn a multi-mesh asset → hierarchy shows pack + mesh children
 # play kit / pirate-islands → stays one entity
 ```

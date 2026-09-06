@@ -16,7 +16,7 @@ description: Semver, GitHub Releases, and desktop vs SPA ship process for Forge.
 | **MINOR** | Features (agent edge, scripts, projects) |
 | **PATCH** | Fixes only |
 
-Tags: `vX.Y.Z` (e.g. `v0.4.4`). Latest product notes: root [`RELEASE_NOTES_v0.4.4.md`](https://github.com/MolochDaGod/Grudge-Studio-Forge/blob/main/RELEASE_NOTES_v0.4.4.md) + `CHANGELOG.md`.
+Tags: `vX.Y.Z` (e.g. `v0.4.4`). Latest product notes: root [`RELEASE_NOTES_v0.4.4.md`](https://github.com/MolochDaGod/Grudge-Studio-Forge/blob/main/RELEASE_NOTES_v0.4.4.md) + `CHANGELOG.md`. Live: [GitHub Releases](https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.4).
 
 ## SPA (primary product)
 
