@@ -402,6 +402,11 @@ export function worldBiomeSnapshot() {
     cdn: NATURE_CDN,
     paintChannels: ["foliage", "harvest", "rock", "structure", "path"],
     superTerrain: {
+      catalog: "https://info.grudge-studio.com/api/v1/super-terrain.json",
+      catalogProxy: "https://objectstore.grudge-studio.com/api/v1/super-terrain.json",
+      catalogCdn: "https://assets.grudge-studio.com/catalogs/super-terrain.json",
+      bakes: "https://assets.grudge-studio.com/worlds/super-terrain/",
+      textureHost: "https://assets.grudge-studio.com/textures/super-terrain/",
       repo: "https://github.com/vibe-stack/super-terrain",
       kinds: [
         "harbor-atoll",
@@ -440,7 +445,7 @@ export function worldBiomeSnapshot() {
       materialChannels: ["Grass", "Rock", "Soil", "Snow"],
       proceduralSurfaces: ["rock-ground", "cliff-side", "alpine-cliff-rock", "ember-fault-rock"],
       textures:
-        "Poly Haven 1K (dirt / sand_01 / rock_wall) + Super Terrain channel canvas. Ground_N 15–85MB PNGs exist on CDN but are not autoloaded.",
+        "CDN channel-{grass,rock,soil,snow}.png (~18KB) + kind-{id}.png. Poly Haven 1K optional. Ground_N not autoloaded.",
       climate: "montane → treeline 0.54 → alpine turf → fellfield → snow; trees refuse slope > 40°",
     },
     replaceLayers: WORLD_LAYERS,
@@ -456,7 +461,8 @@ export function worldBiomeSnapshot() {
       "Do not vendor the Super Terrain WebGPU editor — heightfield bake only.",
       "Ground = Terrain layer + Walk surface (heightfield when recipe.terrainKind). Same height for feet.",
       "Foliage/rocks = Super Terrain forest presets + foliage species mapped to Kenney singles (CommonTree_N, Pine_N, Rock_Medium_N, Bush, Fern, Plant). Never scatter nature_vegetation.glb, ore_nodes.glb, or *-pack as one tree/rock.",
-      "Textures = Super Terrain Grass/Rock/Soil/Snow channels + Forge Poly Haven 1K. Do not autoload Ground_N 20MB maps.",
+      "Textures = fleet CDN channel-{grass,rock,soil,snow}.png (~18KB) + kind-{id}.png. Do not autoload Ground_N 20MB maps.",
+      "Heightfields: assets…/worlds/super-terrain/{kind}.json (grudge-island-bake/v1). Catalog: info…/api/v1/super-terrain.json — same hosts as weapons/nature, not a second store.",
       "pirate-islands/scene.glb = lobby MAP shell only — terrain/shovel/harvest/Ground_N upgrade that mesh, do not instance it as a rock.",
       "Chicken Gun / island plates (mistytown, map-pirate-island, …) = map entities. Physics = Rapier Terrain/Walk + Water/Swim. Keep their water meshes; do not stack a second clay ocean.",
       "This repo is Forge editor (F:\\GitHub\\Grudge-Studio-Forge → forge.grudge-studio.com). Warlords play is GrudgeBuilder / grudgewarlords.com — different frontend deploy.",

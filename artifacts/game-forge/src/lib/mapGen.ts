@@ -37,6 +37,7 @@ import {
   sampleSlopeDeg,
   terrainMaterialForKind,
   toHeightfieldComponent,
+  type SuperTerrainBake,
   type SuperTerrainKind,
 } from "@/lib/superTerrainWorld";
 
@@ -54,6 +55,8 @@ export interface MapGenOptions {
   sectorId?: string;
   /** Super Terrain / island-engine heightfield kind for openWorld. */
   terrainKind?: SuperTerrainKind | string;
+  /** Fleet CDN bake (`worlds/super-terrain/{kind}.json`). Falls back to generateSuperTerrain. */
+  fleetBake?: SuperTerrainBake;
 }
 
 /* ---------------- PRNG (mulberry32, deterministic and tiny) ------------- */
@@ -761,9 +764,11 @@ function openWorld(opts: MapGenOptions): SceneEntity[] {
     opts.terrainKind && isSuperTerrainKind(String(opts.terrainKind))
       ? (opts.terrainKind as SuperTerrainKind)
       : undefined;
-  const bake = terrainKind
-    ? generateSuperTerrain({ kind: terrainKind, worldMeters: size, seed: opts.seed })
-    : null;
+  const bake = opts.fleetBake
+    ? opts.fleetBake
+    : terrainKind
+      ? generateSuperTerrain({ kind: terrainKind, worldMeters: size, seed: opts.seed })
+      : null;
 
   if (bake) {
     out.push(
