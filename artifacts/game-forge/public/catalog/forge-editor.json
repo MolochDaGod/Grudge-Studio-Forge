@@ -1,0 +1,38 @@
+{
+  "format": "grudge-forge-editor/v1",
+  "version": "0.4.4",
+  "updated": "2026-09-05",
+  "live": "https://forge.grudge-studio.com/editor",
+  "docs": "https://molochdagod.github.io/Grudge-Studio-Forge/",
+  "release": "https://github.com/MolochDaGod/Grudge-Studio-Forge/releases/tag/v0.4.4",
+  "info": "https://info.grudge-studio.com/api/v1/forge-editor.json",
+  "self": "https://forge.grudge-studio.com/catalog/forge-editor.json",
+  "meshPull": {
+    "action": "Pull child meshes",
+    "spawn": "spawnModelAndPull / spawn_fast_asset",
+    "schema": {
+      "childrenOnly": "pack root — do not render fused GLB",
+      "subNode": "isolate key (mesh name or #ordinal)",
+      "proxy": "legacy locator only — pull does not create locators"
+    },
+    "parentChild": "nearest pullable ancestor mesh becomes entity parentId",
+    "maxMeshes": 128,
+    "keepFused": ["play kits (skinned + ≥8 bones)", "map shells (pirate-islands, map-mistytown, map-cyberpunk, map-encampment, map-fort, map-underground, map-pirate)"],
+    "code": [
+      "artifacts/game-forge/src/lib/glbHierarchy.ts",
+      "artifacts/game-forge/src/store/editor.ts",
+      "artifacts/game-forge/src/lib/meshEquipApply.ts"
+    ]
+  },
+  "hotkeys": {
+    "F": "Frame selection (asked only)",
+    "G": "Ground snap selected",
+    "H": "Hide / show selected",
+    "Ctrl+P": "Unparent to root",
+    "W/E/R": "Translate / rotate / scale"
+  },
+  "catalogs": {
+    "fastAssets": "https://forge.grudge-studio.com/api/catalog/fast-assets",
+    "superTerrain": "https://info.grudge-studio.com/api/v1/super-terrain.json"
+  }
+}

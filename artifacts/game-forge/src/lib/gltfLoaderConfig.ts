@@ -26,6 +26,7 @@
  * sharing) and the broader Three.js performance guidance.
  */
 
+import type { WebGLRenderer } from "three";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -55,12 +56,38 @@ function getDracoLoader(): DRACOLoader {
  *   - bare GLTFLoader:  `extendGltfLoader(new GLTFLoader())`
  *   - `useLoader`:      `useLoader(GLTFLoader, url, extendGltfLoader)`
  */
+let _ktx2Bound = false;
+let _ktx2Pending: Promise<void> | null = null;
+const _loaders = new Set<GLTFLoader>();
+
 export function extendGltfLoader(loader: GLTFLoader): void {
   loader.setDRACOLoader(getDracoLoader());
-  // Meshopt's decoder exports a single object that exposes async `ready`
-  // and `decodeGltfBuffer` — three's GLTFLoader detects the right shape
-  // automatically.
   loader.setMeshoptDecoder(MeshoptDecoder);
+  _loaders.add(loader);
+}
+
+/**
+ * Lazy KTX2 (Basis) — ThreeFlow production loader. Call once the WebGL
+ * renderer exists. Does not pull Basis WASM on first paint.
+ */
+export function bindGltfKtx2(renderer: WebGLRenderer | null | undefined): Promise<void> {
+  if (!renderer || _ktx2Bound) return Promise.resolve();
+  if (_ktx2Pending) return _ktx2Pending;
+  _ktx2Pending = import("three/examples/jsm/loaders/KTX2Loader.js")
+    .then(({ KTX2Loader }) => {
+      const ktx2 = new KTX2Loader();
+      ktx2.setTranscoderPath("https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/libs/basis/");
+      ktx2.detectSupport(renderer);
+      for (const loader of _loaders) loader.setKTX2Loader(ktx2);
+      _ktx2Bound = true;
+    })
+    .catch((err) => {
+      console.warn("[Forge] KTX2 transcoder skipped", err);
+    })
+    .finally(() => {
+      _ktx2Pending = null;
+    });
+  return _ktx2Pending;
 }
 
 /** Manually dispose decoders. Call this from a global teardown if you

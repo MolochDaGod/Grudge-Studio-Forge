@@ -322,6 +322,29 @@ export function setTransformCommand(
   };
 }
 
+export function setVisibleCommand(
+  store: StoreLike,
+  id: string,
+  prev: boolean | undefined,
+  next: boolean,
+): Command {
+  return {
+    kind: "visible",
+    target: id,
+    label: next ? "Show" : "Hide",
+    do: () => {
+      store.setEntities(
+        store.getEntities().map((e) => (e.id === id ? { ...e, visible: next } : e)),
+      );
+    },
+    undo: () => {
+      store.setEntities(
+        store.getEntities().map((e) => (e.id === id ? { ...e, visible: prev } : e)),
+      );
+    },
+  };
+}
+
 export function renameEntityCommand(
   store: StoreLike,
   id: string,

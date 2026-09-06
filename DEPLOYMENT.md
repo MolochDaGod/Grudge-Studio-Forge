@@ -147,6 +147,9 @@ git add artifacts/game-forge/public/_framework
 
 ```bash
 pnpm install
+# Authoritative local prebuilt (Windows): always --rebuild for latest source
+node scripts/deploy-forge-vercel.mjs --rebuild
+# or:
 pnpm --filter @workspace/game-forge exec vite build --config vite.config.ts
 # dist: artifacts/game-forge/dist/public
 # Then vercel deploy that folder with project secrets (see GHA job)

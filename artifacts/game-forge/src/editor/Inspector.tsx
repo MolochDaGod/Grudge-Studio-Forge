@@ -1544,20 +1544,24 @@ export function Inspector() {
                 data-testid="input-model-url"
               />
             </div>
-            {entity.model.proxy ? (
+            {entity.model.subNode ? (
               <p className="text-[11px] text-muted-foreground">
-                Locator (proxy) for sub-node{" "}
-                <span className="font-mono text-foreground">{entity.model.subNode ?? "?"}</span> of
-                its parent GLB. Geometry is rendered by the parent — this entity is a
-                transform-only anchor you can target by name (Spawn_*, Cover_*, etc.) or attach
-                scripts/behaviors to.
+                Isolated mesh{" "}
+                <span className="font-mono text-foreground">{entity.model.subNode}</span>
+                {entity.model.proxy ? " (locator)" : ""} — move, script, and deploy this child
+                independently of the pack.
+              </p>
+            ) : entity.model.childrenOnly ? (
+              <p className="text-[11px] text-muted-foreground">
+                Pack root — child meshes are independent entities. Move this to move the set.
+                Select a child to script, edit physics, or deploy that mesh.
               </p>
             ) : (
               entity.model.url && (
                 <div className="space-y-1.5">
                   {(() => {
                     const alreadyExposed = entities.some(
-                      (e) => e.parentId === entity.id && e.model?.proxy,
+                      (e) => e.parentId === entity.id && !!e.model?.subNode,
                     );
                     return (
                       <>
@@ -1571,12 +1575,11 @@ export function Inspector() {
                           }}
                           data-testid="button-expose-children"
                         >
-                          {alreadyExposed ? "Children already exposed" : "Expose Children"}
+                          {alreadyExposed ? "Meshes already pulled" : "Pull child meshes"}
                         </Button>
                         <p className="text-[11px] text-muted-foreground">
-                          Walks the GLB and adds a transform-only locator child for each top-level
-                          named node (Spawn_*, Cover_*, Door_*, …). Lets scripts/AI target sub-parts
-                          by name and attach behaviors.
+                          Pulls every mesh in this GLB as a child you can move, script, and
+                          deploy. Pack root stays the parent. Play kits and map shells stay fused.
                         </p>
                       </>
                     );

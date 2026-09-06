@@ -41,6 +41,27 @@ export function wouldCycle(
   return desc.has(newParentId);
 }
 
+/** Root → leaf names for the selected entity (`Haven › Dock › Crate`). */
+export function parentPath(entities: SceneEntity[], id: string, sep = " › "): string {
+  const byId = new Map(entities.map((e) => [e.id, e]));
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let cur = byId.get(id);
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    names.unshift(cur.name);
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+  }
+  return names.join(sep);
+}
+
+/** Direct child count (not descendants). */
+export function childCount(entities: SceneEntity[], id: string): number {
+  let n = 0;
+  for (const e of entities) if (e.parentId === id) n += 1;
+  return n;
+}
+
 /** Build a children-by-parent map. Root entities live at key `null`. */
 export function buildTree(entities: SceneEntity[]): Map<string | null, SceneEntity[]> {
   const m = new Map<string | null, SceneEntity[]>();

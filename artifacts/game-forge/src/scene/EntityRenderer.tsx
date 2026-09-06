@@ -50,7 +50,7 @@ import {
 } from "@/lib/useMaterialTextures";
 import { ensureAoUv2 } from "@/lib/polyHavenShader";
 import { resolveClipName } from "@/lib/animationClipResolve";
-import { applyMeshIdsExclusive } from "@/lib/meshEquipApply";
+import { applyMeshIdsExclusive, isolateNamedMeshAtOrigin } from "@/lib/meshEquipApply";
 import { HeightfieldTerrainMesh } from "./HeightfieldTerrain";
 
 interface RenderProps {
@@ -112,10 +112,18 @@ function MeshBody({ entity, selected, onPick, effectiveMaterial }: RenderProps) 
     return <HeightfieldTerrainMesh entity={entity} selected={selected} onPick={onPick} />;
   }
   if (entity.type === "model") {
-    // Proxy locators (created by "Expose Children" on a parent GLB) are
-    // transform-only — the parent already renders the geometry. Show a small
-    // wireframe gizmo only when the proxy is selected so the user can find it
-    // in the viewport; otherwise render nothing visual.
+    // Pack root after mesh pull: children isolate each mesh. Wire cube only
+    // when selected so the pack is still pickable. Locators (legacy proxy)
+    // stay transform-only — the parent already renders the geometry.
+    if (entity.model?.childrenOnly) {
+      if (!selected) return null;
+      return (
+        <mesh {...meshProps}>
+          <boxGeometry args={[0.35, 0.35, 0.35]} />
+          <meshBasicMaterial color={SELECTION_COLOR} wireframe />
+        </mesh>
+      );
+    }
     if (entity.model?.proxy) {
       if (!selected) return null;
       return (
@@ -323,6 +331,7 @@ function ModelEntity({ entity, selected, onPick, effectiveMaterial }: RenderProp
           onPick={onPick}
           yawOffset={entity.model?.yawOffset}
           meshIds={entity.model?.meshIds}
+          subNode={entity.model?.subNode}
           // Convention: any entity literally named "Map" is treated as
           // an environment / level mesh and drop-aligned to local Y=0
           // so its visible floor sits flush with the invisible Ground
@@ -451,9 +460,11 @@ interface LoadedModelProps {
   yawOffset?: number;
   /** grudge6 exclusive mesh visibility (Main Panel equipment admin). */
   meshIds?: string[];
+  /** Isolate one named mesh from a pack GLB (pulled child). */
+  subNode?: string;
 }
 
-function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag, yawOffset, meshIds }: LoadedModelProps) {
+function LoadedModel({ entityId, url, clip, tint, material, label, selected, onPick, dropToGround, surfaceTag, yawOffset, meshIds, subNode }: LoadedModelProps) {
   const resolved = useMemo(() => resolveModelUrl(url), [url]);
   // useGLTF(url, useDraco, useMeshOpt, extendLoader). We deliberately pass
   // `false, false` so drei does NOT install its own DRACO/Meshopt
@@ -479,7 +490,12 @@ function LoadedModel({ entityId, url, clip, tint, material, label, selected, onP
   );
   // SkeletonUtils.clone preserves bone bindings for skinned meshes (regular
   // .clone() breaks them — would T-pose every instance after the first).
-  const cloned = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf]);
+  const cloned = useMemo(() => {
+    const c = SkeletonUtils.clone(gltf.scene);
+    const want = subNode?.trim();
+    if (!want) return c;
+    return isolateNamedMeshAtOrigin(c, want) ?? c;
+  }, [gltf, subNode]);
   const groupRef = useRef<THREE.Group>(null);
   // Augment the GLB's clip list with procedural idle/walk/run/attack
   // when the rig is a Max biped (`Bip001 …` bones) AND no clips were
@@ -1194,6 +1210,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
             r3f synthetic event for the entity's visible geometry. */}
         <group
           scale={tr.scale}
+          visible={entity.visible !== false}
           onContextMenu={handleContext}
           onPointerOver={handlePointerOver}
           onPointerOut={handlePointerOut}
@@ -1208,6 +1225,7 @@ export const EntityRenderer = forwardRef<THREE.Group | RapierRigidBody, RenderPr
   return (
     <group
       ref={ref as React.Ref<THREE.Group>}
+      visible={entity.visible !== false}
       position={tr.position}
       rotation={tr.rotation}
       scale={tr.scale}

@@ -85,6 +85,7 @@ describe("world biome kits", () => {
     const snap = worldBiomeSnapshot();
     expect(snap.paintChannels).toContain("foliage");
     expect(snap.sectors.length).toBe(9);
+    expect(snap.superTerrain.catalog).toContain("super-terrain.json");
     expect(snap.superTerrain.forestPresets).toContain("mossy-old-growth");
     expect(snap.superTerrain.foliageSpecies).toContain("bracken");
     expect(snap.superTerrain.materialChannels).toEqual(["Grass", "Rock", "Soil", "Snow"]);

@@ -11,7 +11,7 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 | **Hybrid C# docs** | [`docs/HYBRID_CSHARP.md`](./docs/HYBRID_CSHARP.md) |
 | **Deploy guide** | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
 | **Docs site (Pages)** | [molochdagod.github.io/Grudge-Studio-Forge](https://molochdagod.github.io/Grudge-Studio-Forge/) |
-| **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) · latest **[v0.4.2](./RELEASE_NOTES_v0.4.2.md)** |
+| **Changelog** | [`CHANGELOG.md`](./CHANGELOG.md) · latest **[v0.4.4](./RELEASE_NOTES_v0.4.4.md)** |
 | **Forge AI orchestrator** | [`docs/FORGE_AI_ORCHESTRATOR.md`](./docs/FORGE_AI_ORCHESTRATOR.md) |
 | **AI attach (Legion + Forge)** | [`docs/AI_FLEET_ATTACH_SSOT.md`](./docs/AI_FLEET_ATTACH_SSOT.md) |
 | **Account · Puter · engine DB** | [`docs/ACCOUNT_PUTER_ENGINE_SSOT.md`](./docs/ACCOUNT_PUTER_ENGINE_SSOT.md) |
@@ -46,7 +46,8 @@ Three.js scene editor, physics, AI-assisted game builder, and hybrid scripting r
 ## Features
 
 - **Visual Scene Editor** — hierarchy, inspector, transform gizmos, asset browser, drag-and-drop
-- **Editor hotkeys** — **Ctrl+Z/Y** undo/redo · **Ctrl+C/V** copy/paste hierarchy · **Ctrl+D** duplicate · **F** frame selection **+ children** · **Ctrl+S** save
+- **Pull child meshes** — asset GLBs become a **pack** parent plus independent **mesh** children (move / script / physics / deploy each). Play kits and map shells stay fused.
+- **Editor hotkeys** — **Ctrl+Z/Y** undo/redo · **Ctrl+C/V** copy/paste hierarchy · **Ctrl+D** duplicate · **F** frame selection (asked) · **G** ground snap · **H** hide · **Ctrl+P** unparent · **Ctrl+S** save
 - **Long-range viewport** — camera far **500 000**, log depth, fog/grid sized for islands & city maps
 - **Three.js + R3F** — React Three Fiber, postprocessing (SSAO, bloom, ACES, SMAA)
 - **Rapier 3D Physics** — rigid bodies, colliders, joints, raycasting, layer matrix
@@ -208,7 +209,10 @@ Ctrl+S saves the open scene into the active project. Hierarchy auto-loads the fi
 | **Ctrl+Y** / **Ctrl+Shift+Z** | Redo |
 | **Ctrl+C** / **Ctrl+V** | Copy / paste entity + hierarchy |
 | **Ctrl+D** | Duplicate |
-| **F** | Frame selection **including children** |
+| **F** | Frame selection (asked only — does not auto-frame) |
+| **G** | Snap selected to terrain |
+| **H** | Hide / show selected |
+| **Ctrl+P** | Unparent selected (move to root) |
 | **Ctrl+S** | Save scene / prefab |
 | **P** | Play / stop |
 | **W E R** | Translate / rotate / scale gizmo |

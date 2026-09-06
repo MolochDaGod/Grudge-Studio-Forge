@@ -55,6 +55,7 @@ Grudge-Studio-Forge/
 - Entity types: box, sphere, cylinder, plane, light, camera, model, empty, cloth, flag, particles
 - IDs: nanoid(8) for existing entities, UUID v4 via `projectConventions.ts` for new ones
 - `lib/builtinModels.ts` — GLB asset registry (resolves `builtin:` scheme)
+- **Mesh pull (v0.4.4):** `lib/glbHierarchy.ts` `collectPullableMeshes` → `store/editor.ts` `explodeGlbHierarchy` / `spawnModelAndPull`. Pack root `model.childrenOnly`; children isolate `model.subNode`. Nested meshes keep `parentId`. Play kits + map shells stay fused. Cap 128.
 
 ### Script System (hybrid — canonical)
 - `editor/ScriptEditor.tsx` — Monaco editor with script CRUD
@@ -118,6 +119,7 @@ Grudge-Studio-Forge/
 | toJSON project | `.gfscene.json` + GitHub pack (not raw ObjectLoader by default) |
 | Viewport helpers | R3F Viewport + `threeDevtools.ts` bridge |
 | Sidebar / Menubar | Hierarchy, Inspector, MenuBar |
+| Object3D children | **Pull child meshes** — real entities, not locators |
 | **Plus** | Rapier, AI Worker (70+ tools), fleet R2 deploy |
 
 **Agent rules when editing the editor:**

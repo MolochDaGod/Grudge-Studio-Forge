@@ -20,6 +20,7 @@ import {
   type SurfaceKind,
 } from "@workspace/scene-schema";
 import { computeFramingPose } from "@/lib/framing";
+import { bindGltfKtx2 } from "@/lib/gltfLoaderConfig";
 import {
   applyGroundSnap,
   DEFAULT_WALKABLE_SURFACES,
@@ -162,6 +163,14 @@ function RenderNode({
 // component (Fast Refresh requires consistent component exports â€” a
 // non-component named export here was breaking HMR).
 
+function BindKtx2() {
+  const { gl } = useThree();
+  useEffect(() => {
+    void bindGltfKtx2(gl);
+  }, [gl]);
+  return null;
+}
+
 function SceneEditMode({
   data,
   onContextEntity,
@@ -185,6 +194,7 @@ function SceneEditMode({
   // a single undo step (the command coalesces same-axis edits within ~800ms).
   const cmdSetEntityTransform = useEditor((s) => s.cmdSetEntityTransform);
   const transformMode = useEditor((s) => s.transformMode);
+  const groundSnapToken = useEditor((s) => s.groundSnapToken);
 
   const groupRefs = useRef<Map<string, THREE.Group>>(new Map());
   const selectedRef = selectedId ? groupRefs.current.get(selectedId) : undefined;
@@ -260,6 +270,24 @@ function SceneEditMode({
 
   const childrenByParent = useMemo(() => buildTree(sceneData.entities), [sceneData.entities]);
   const roots = childrenByParent.get(null) ?? [];
+
+  useEffect(() => {
+    if (groundSnapToken === 0) return;
+    const id = useEditor.getState().selectedId;
+    if (!id) return;
+    const o = groupRefs.current.get(id);
+    if (!o) return;
+    const draggedSurface = getEntitySurfaceTag(o);
+    if (draggedSurface && DEFAULT_WALKABLE_SURFACES.includes(draggedSurface)) return;
+    const hit = groundProbe(threeScene, [o.position.x, o.position.y, o.position.z], {
+      originOffset: 50,
+      maxDistance: 200,
+      excludeEntityIds: [id],
+    });
+    if (!shouldGroundSnap({ hit, draggedEntitySurface: draggedSurface })) return;
+    applyGroundSnap(o, hit);
+    cmdSetEntityTransform(id, "position", [o.position.x, o.position.y, o.position.z]);
+  }, [groundSnapToken, threeScene, cmdSetEntityTransform]);
 
   return (
     <>
@@ -586,7 +614,8 @@ function FocusCameraController() {
       currentTarget: [curTarget.x, curTarget.y, curTarget.z],
       fovDegrees: fov,
       aspect,
-      margin: 1.65,
+      // ThreeFlow: keep look direction, FOV/aspect fit (padding 1.4).
+      margin: 1.4,
       minRadius: 0.75,
       maxDistance: 5_000,
       minDistance: 1.5,
@@ -951,7 +980,7 @@ export function Viewport() {
   }, [prefabs]);
 
   const hint = !isPlaying
-    ? "Edit â€” LMB orbit Â· MMB/RMB pan Â· wheel zoom Â· F focus Â· right-click menu"
+    ? "Edit — LMB orbit · RMB/MMB pan · wheel zoom · W/E/R gizmo · F frame (asked) · G ground · H hide"
     : cameraMode === "rts"
       ? "â–¶ RTS â€” WASD/edge pan Â· MMB drag pan Â· wheel zoom"
       : cameraMode === "thirdPerson"
@@ -1179,6 +1208,7 @@ export function Viewport() {
                       OrbitGizmoArbitration keeps pan/zoom free while selected —
                       selection must never hard-block the viewport camera. */}
                   <EditorOrbitControls makeDefault />
+                  <BindKtx2 />
                   <OrbitGizmoArbitration />
                   <FocusCameraController />
                 </>

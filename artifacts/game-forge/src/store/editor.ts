@@ -10,7 +10,7 @@ import {
   DEFAULT_TRANSFORM,
 } from "@/scene/types";
 import { cloneSubtree, getDescendants, wouldCycle, reidTree, sanitizeEntities } from "@/lib/hierarchy";
-import { loadGlbTopLevelNodes, type GlbChildNode } from "@/lib/glbHierarchy";
+import { loadGlbPullableNodes, MAX_PULL_MESHES, type GlbChildNode } from "@/lib/glbHierarchy";
 import {
   CommandStack,
   addEntityCommand,
@@ -18,6 +18,7 @@ import {
   removeEntityCommand,
   setTransformCommand,
   renameEntityCommand,
+  setVisibleCommand,
   setParentCommand,
   setLayersCommand,
   setEnvironmentCommand,
@@ -124,12 +125,16 @@ interface EditorState {
 
   addEntity: (type: EntityType, name?: string, parentId?: string | null) => SceneEntity;
   addEntityRaw: (entity: SceneEntity) => SceneEntity;
-  /** Walk the GLB referenced by `parentEntityId` and create a transform-only
-   *  proxy child entity for each top-level named node. The parent GLB still
-   *  renders the geometry — proxies are pure locators (see ModelComponent.proxy).
-   *  Resolves with the number of children added (0 if the GLB has none, the
-   *  parent already has proxies, or the parent isn't a model). */
+  /** Pull named meshes out of the parent GLB as real child entities
+   *  (isolate + parentId). Each child can move, script, and deploy.
+   *  Play kits and map shells stay fused. */
   explodeGlbHierarchy: (parentEntityId: string) => Promise<number>;
+  /** Spawn a model from a CDN/builtin URL and pull its meshes. */
+  spawnModelAndPull: (
+    name: string,
+    url: string,
+    extra?: { assetId?: number; position?: Vec3; scale?: Vec3 },
+  ) => Promise<{ id: string; pulled: number }>;
   removeEntity: (id: string) => void;
   duplicateEntity: (id: string) => void;
   selectEntity: (id: string | null) => void;
@@ -201,6 +206,11 @@ interface EditorState {
   setHotbarSlot: (index: number, prefabId: number | null) => void;
   setHotbar: (slots: (number | null)[]) => void;
   requestFocus: () => void;
+  /** Bump to snap selected entity Y to terrain (G). Camera is never moved. */
+  requestGroundSnap: () => void;
+  groundSnapToken: number;
+  /** Undoable: hide / show (ThreeFlow H). */
+  cmdSetEntityVisible: (id: string, visible: boolean) => void;
   /** Replace the entire entities array (used by command undo/redo). */
   setEntities: (entities: SceneEntity[]) => void;
 
@@ -357,6 +367,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   playerPrefabResolver: null,
   hotbar: Array(8).fill(null) as (number | null)[],
   focusToken: 0,
+  groundSnapToken: 0,
   commandStack: new CommandStack(100),
   renderQuality: "high",
   showStats: false,
@@ -526,16 +537,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   explodeGlbHierarchy: async (parentEntityId) => {
-    // command-stack: bypass — async GLB load + late entity append doesn't fit
-    // the synchronous before/after capture model the CommandStack expects.
-    // Re-running undo would also have to re-fetch the GLB to know which
-    // proxies to recreate. Treated as a one-shot derived action; users can
-    // remove the proxies via cmdRemoveEntity.
-    // Mutex against concurrent / double-click re-entry on the same parent.
-    // The async load below means a fast second click could otherwise pass the
-    // `alreadyExposed` guard a second time and append duplicate proxies.
+    // Async GLB load, then one undoable command (pack root childrenOnly +
+    // isolated child entities). Mutex against double-click re-entry.
     if (explodeInFlight.has(parentEntityId)) {
-      get().pushLog("info", `Expose Children: already in progress.`);
+      get().pushLog("info", `Pull meshes: already in progress.`);
       return 0;
     }
     explodeInFlight.add(parentEntityId);
@@ -543,71 +548,126 @@ export const useEditor = create<EditorState>((set, get) => ({
       const state = get();
       const parent = state.sceneData.entities.find((e) => e.id === parentEntityId);
       if (!parent) {
-        state.pushLog("warn", `Expose Children: entity ${parentEntityId} not found.`);
+        state.pushLog("warn", `Pull meshes: entity ${parentEntityId} not found.`);
         return 0;
       }
       if (parent.type !== "model" || !parent.model?.url) {
-        state.pushLog("warn", `Expose Children: "${parent.name}" has no GLB url.`);
+        state.pushLog("warn", `Pull meshes: "${parent.name}" has no GLB url.`);
         return 0;
       }
-      if (parent.model.proxy) {
-        state.pushLog("warn", `Expose Children: "${parent.name}" is itself a proxy locator.`);
+      if (parent.model.proxy || parent.model.subNode) {
+        state.pushLog("warn", `Pull meshes: "${parent.name}" is itself a child mesh.`);
         return 0;
       }
       const alreadyExposed = state.sceneData.entities.some(
-        (e) => e.parentId === parent.id && e.model?.proxy,
+        (e) => e.parentId === parent.id && !!e.model?.subNode,
       );
       if (alreadyExposed) {
-        state.pushLog("info", `Expose Children: "${parent.name}" already exposed.`);
+        state.pushLog("info", `Pull meshes: "${parent.name}" already has children.`);
         return 0;
       }
       const url = parent.model.url;
-      let nodes: GlbChildNode[];
+      let pulled: Awaited<ReturnType<typeof loadGlbPullableNodes>>;
       try {
-        nodes = await loadGlbTopLevelNodes(url);
+        pulled = await loadGlbPullableNodes(url);
       } catch (err) {
         state.pushLog(
           "error",
-          `Expose Children: failed to load ${url}: ${err instanceof Error ? err.message : String(err)}`,
+          `Pull meshes: failed to load ${url}: ${err instanceof Error ? err.message : String(err)}`,
         );
         return 0;
       }
-      if (nodes.length === 0) {
-        state.pushLog("warn", `Expose Children: "${parent.name}" has no named top-level nodes.`);
+      if (pulled.mapShell) {
+        state.pushLog("info", `Pull meshes: "${parent.name}" is a map shell — keep fused.`);
         return 0;
       }
-      // Re-check after the await — the parent could have been deleted, the
-      // url could have changed, or another exploder could have raced us.
+      if (pulled.skinned) {
+        state.pushLog("info", `Pull meshes: "${parent.name}" is a play kit — keep one body.`);
+        return 0;
+      }
+      if (pulled.truncated) {
+        state.pushLog(
+          "warn",
+          `Pull meshes: "${parent.name}" has more than ${MAX_PULL_MESHES} meshes — keep fused so nothing is hidden.`,
+        );
+        return 0;
+      }
+      const nodes: GlbChildNode[] = pulled.nodes;
+      if (nodes.length < 2) {
+        state.pushLog("info", `Pull meshes: "${parent.name}" is a single mesh.`);
+        return 0;
+      }
       const fresh = get();
       const freshParent = fresh.sceneData.entities.find((e) => e.id === parentEntityId);
       if (!freshParent || freshParent.model?.url !== url) {
-        fresh.pushLog("warn", `Expose Children: parent changed during load — aborting.`);
+        fresh.pushLog("warn", `Pull meshes: parent changed during load — abort.`);
         return 0;
       }
-      if (fresh.sceneData.entities.some((e) => e.parentId === parentEntityId && e.model?.proxy)) {
-        // Another call won the race.
+      if (fresh.sceneData.entities.some((e) => e.parentId === parentEntityId && e.model?.subNode)) {
         return 0;
       }
-      const newChildren: SceneEntity[] = nodes.map((n) => ({
-        id: nanoid(8),
+      const childIds = nodes.map(() => nanoid(8));
+      const newChildren: SceneEntity[] = nodes.map((n, i) => ({
+        id: childIds[i]!,
         name: n.name,
-        type: "model",
-        parentId: parentEntityId,
+        type: "model" as const,
+        parentId:
+          n.parentOrdinal != null && childIds[n.parentOrdinal]
+            ? childIds[n.parentOrdinal]
+            : parentEntityId,
+        layer: freshParent.layer,
         transform: { position: n.position, rotation: n.rotation, scale: n.scale },
-        model: { url, proxy: true, subNode: n.name },
+        model: { url, subNode: n.subNode ?? n.name },
       }));
-      set((s) => ({
-        sceneData: { ...s.sceneData, entities: [...s.sceneData.entities, ...newChildren] },
-        isDirty: true,
-      }));
-      fresh.pushLog(
+      const afterParent: SceneEntity = {
+        ...freshParent,
+        model: { ...freshParent.model, url, childrenOnly: true },
+        collapsed: false,
+      };
+      const beforeEntities = fresh.sceneData.entities;
+      const afterEntities = beforeEntities
+        .map((e) => (e.id === parentEntityId ? afterParent : e))
+        .concat(newChildren);
+      const store = makeStoreLike(get);
+      const selectId = newChildren[0]?.id ?? parentEntityId;
+      get().commandStack.push({
+        kind: "pullMeshes",
+        target: parentEntityId,
+        label: `Pull ${newChildren.length} meshes`,
+        do: () => {
+          store.setEntities(afterEntities);
+          store.selectEntity(selectId);
+        },
+        undo: () => {
+          store.setEntities(beforeEntities);
+          store.selectEntity(parentEntityId);
+        },
+      });
+      set({ isDirty: true });
+      get().pushLog(
         "info",
-        `Expose Children: added ${newChildren.length} locator${newChildren.length === 1 ? "" : "s"} under "${freshParent.name}".`,
+        `Pull meshes: ${newChildren.length} child meshes under "${freshParent.name}" — move / script / deploy each.`,
       );
       return newChildren.length;
     } finally {
       explodeInFlight.delete(parentEntityId);
     }
+  },
+
+  spawnModelAndPull: async (name, url, extra) => {
+    const e = get().cmdAddEntity("model", name);
+    get().cmdUpdateEntity(e.id, (d) => {
+      d.model = { url, assetId: extra?.assetId };
+      if (extra?.position || extra?.scale) {
+        d.transform = {
+          ...d.transform,
+          position: extra.position ?? d.transform.position,
+          scale: extra.scale ?? d.transform.scale,
+        };
+      }
+    });
+    const pulled = await get().explodeGlbHierarchy(e.id);
+    return { id: e.id, pulled };
   },
 
   removeEntity: (id) =>
@@ -966,6 +1026,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     })),
 
   requestFocus: () => set((s) => ({ focusToken: s.focusToken + 1 })),
+  requestGroundSnap: () => set((s) => ({ groundSnapToken: s.groundSnapToken + 1 })),
 
   setEntities: (entities) =>
     set((s) => ({
@@ -1029,6 +1090,16 @@ export const useEditor = create<EditorState>((set, get) => ({
     if (!entity || entity.name === name) return;
     const store = makeStoreLike(get);
     get().commandStack.push(renameEntityCommand(store, id, entity.name, name));
+    set({ isDirty: true });
+  },
+
+  cmdSetEntityVisible: (id, visible) => {
+    const entity = get().sceneData.entities.find((e) => e.id === id);
+    if (!entity) return;
+    const prev = entity.visible;
+    if ((prev !== false) === visible) return;
+    const store = makeStoreLike(get);
+    get().commandStack.push(setVisibleCommand(store, id, prev, visible));
     set({ isDirty: true });
   },
 

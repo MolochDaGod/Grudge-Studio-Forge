@@ -431,6 +431,7 @@ function GrudgeGrid({
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.cmdAddEntity);
   const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const spawnModelAndPull = useEditor((s) => s.spawnModelAndPull);
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const [query, setQuery] = useState("");
@@ -472,12 +473,12 @@ function GrudgeGrid({
     const name = String(it.name ?? it.key ?? it.id ?? `Grudge ${type}`);
     const url = String(it.model ?? "");
     if (url && /\.(glb|gltf)$/i.test(url)) {
-      const e = addEntity("model", name);
-      updateEntity(e.id, (d) => {
-        d.model = { url };
-        d.transform = { ...d.transform, position: [0, 1, 0] };
+      void spawnModelAndPull(name, url, { position: [0, 1, 0] }).then((r) => {
+        pushLog(
+          "info",
+          `Spawned model "${name}"${r.pulled ? ` · ${r.pulled} child meshes` : ""} at (0, 1, 0).`,
+        );
       });
-      pushLog("info", `Spawned model "${name}" at (0, 1, 0).`);
     } else {
       // Fallback: tier-coloured cube floating above the floor where it's visible.
       const e = addEntity("box", name);
@@ -568,6 +569,7 @@ function ProjectAssets() {
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.cmdAddEntity);
   const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const spawnModelAndPull = useEditor((s) => s.spawnModelAndPull);
   const openTab = useViewportTabs((s) => s.openTab);
   const qc = useQueryClient();
   const { data: assets = [], isLoading } = useListAssets(projectId ?? 0, {
@@ -715,10 +717,7 @@ function ProjectAssets() {
                     variant="ghost"
                     className="h-6 text-[10px] opacity-0 group-hover:opacity-100"
                     onClick={() => {
-                      const e = addEntity("model", a.name);
-                      updateEntity(e.id, (d) => {
-                        d.model = { url: a.url };
-                      });
+                      void spawnModelAndPull(a.name, a.url);
                     }}
                   >
                     <Plus className="size-3 mr-1" /> Spawn
@@ -984,6 +983,7 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
   const pushLog = useEditor((s) => s.pushLog);
   const addEntity = useEditor((s) => s.cmdAddEntity);
   const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const spawnModelAndPull = useEditor((s) => s.spawnModelAndPull);
   const qc = useQueryClient();
   const createAsset = useCreateAsset();
   const { data, isLoading, error } = usePolyHaven(kind);
@@ -1046,12 +1046,11 @@ function PolyHavenGrid({ kind }: { kind: PolyHavenAssetKind }) {
       });
       qc.invalidateQueries({ queryKey: getListAssetsQueryKey(projectId) });
       qc.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
-      const e = addEntity("model", asset.name);
-      updateEntity(e.id, (d) => {
-        d.model = { url };
-        d.transform = { ...d.transform, position: [0, 0, 0] };
-      });
-      pushLog("info", `Spawned Poly Haven model "${asset.name}" (${files.model?.resolution}).`);
+      const r = await spawnModelAndPull(asset.name, url);
+      pushLog(
+        "info",
+        `Spawned Poly Haven model "${asset.name}" (${files.model?.resolution})${r.pulled ? ` · ${r.pulled} child meshes` : ""}.`,
+      );
     } catch (err) {
       pushLog("error", `Failed to load "${asset.name}": ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -1443,8 +1442,7 @@ export type AssetBrowserTab =
 function FastAssetsGrid() {
   const projectId = useEditor((s) => s.projectId);
   const pushLog = useEditor((s) => s.pushLog);
-  const addEntity = useEditor((s) => s.cmdAddEntity);
-  const updateEntity = useEditor((s) => s.cmdUpdateEntity);
+  const spawnModelAndPull = useEditor((s) => s.spawnModelAndPull);
   const [query, setQuery] = useState("");
   const groups = fastAssetsByGroup();
 
@@ -1456,18 +1454,17 @@ function FastAssetsGrid() {
       );
       return;
     }
-    const e = addEntity("model", a.label);
     const y = a.spawnY ?? 0;
     const s = a.scale ?? 1;
-    updateEntity(e.id, (d) => {
-      d.model = { url: a.modelUrl };
-      d.transform = {
-        ...d.transform,
-        position: [0, y, 0],
-        scale: [s, s, s],
-      };
+    void spawnModelAndPull(a.label, a.modelUrl, {
+      position: [0, y, 0],
+      scale: [s, s, s],
+    }).then((r) => {
+      pushLog(
+        "info",
+        `Spawned Fast asset "${a.label}" (${a.modelUrl})${r.pulled ? ` · ${r.pulled} child meshes` : ""}.`,
+      );
     });
-    pushLog("info", `Spawned Fast asset "${a.label}" (${a.modelUrl}).`);
   };
 
   const filteredGroups = groups

@@ -32,7 +32,7 @@ Browser **Three.js / R3F / Rapier** scene editor with agentic AI, Puter projects
 | [Releases]({% link releases.md %}) | Semver, tags, desktop + SPA ship process |
 | [Edge & MCP]({% link EDGE_AND_MCP.md %}) | CF edge, MCP, workers |
 | [Hybrid C#]({% link HYBRID_CSHARP.md %}) | JS / transpile / Blazor packs |
-| [three.js editor parity]({% link THREEJS_EDITOR_PARITY.md %}) | Commands, hierarchy, loaders |
+| [three.js editor parity]({% link THREEJS_EDITOR_PARITY.md %}) | Commands, hierarchy, mesh pull, loaders |
 | [Puter patterns]({% link PUTER_PATTERNS.md %}) | Auth, cloud FS, publish |
 | [Game deploy defs]({% link GAME_DEPLOYMENT_DEFINITIONS.md %}) | Fleet game surfaces |
 
@@ -47,6 +47,10 @@ Browser → forge.grudge-studio.com (Cloudflare)
 ```
 
 Full detail: [Deployment mechanisms]({% link deployment.md %}).
+
+## v0.4.4 — mesh pull
+
+Asset GLBs spawn as a **pack** parent plus independent **mesh** children (move, script, physics, deploy each). Play kits and map shells stay fused. Catalog: [forge-editor.json](https://forge.grudge-studio.com/catalog/forge-editor.json).
 
 ## Agent skills (in-repo)
 

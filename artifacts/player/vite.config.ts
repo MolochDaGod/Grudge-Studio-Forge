@@ -77,6 +77,27 @@ export default defineConfig({
         find: "@dimforge/rapier3d-compat",
         replacement: path.resolve(GAME_FORGE_SRC, "lib/rapierShim.ts"),
       },
+      // Windows pnpm symlink=false — same @workspace aliases as game-forge.
+      {
+        find: "@workspace/scene-schema",
+        replacement: path.resolve(import.meta.dirname, "../../lib/scene-schema/src/index.ts"),
+      },
+      {
+        find: "@workspace/scene-templates",
+        replacement: path.resolve(import.meta.dirname, "../../lib/scene-templates/src/index.ts"),
+      },
+      {
+        find: "@workspace/object-storage-web",
+        replacement: path.resolve(import.meta.dirname, "../../lib/object-storage-web/src/index.ts"),
+      },
+      {
+        find: "@workspace/desktop-bridge",
+        replacement: path.resolve(import.meta.dirname, "../../lib/desktop-bridge/src/index.ts"),
+      },
+      {
+        find: "@workspace/api-client-react",
+        replacement: path.resolve(GAME_FORGE_SRC, "lib/cloud/dataLayer.ts"),
+      },
     ],
     dedupe: ["react", "react-dom", "three"],
   },

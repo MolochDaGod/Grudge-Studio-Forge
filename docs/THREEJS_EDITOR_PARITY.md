@@ -9,7 +9,7 @@ nav_order: 12
 **Live editor:** https://forge.grudge-studio.com  
 **Reference:** [mrdoob/three.js `editor/`](https://github.com/mrdoob/three.js/tree/master/editor) Â· [threejs.org/docs](https://threejs.org/docs/) Â· [threejs.org/manual](https://threejs.org/manual/) Â· [threejs.org/editor](https://threejs.org/editor/)  
 **Code root:** `artifacts/game-forge/`  
-**Last review:** 2026-07-27  
+**Last review:** 2026-09-05  
 
 This document is the **SSOT** for making Grudge Studio Forge a *genuine* production scene editor: three.js-editor DNA, AI + devtools, importâ†’scene conversion, and deploy discipline.
 
@@ -43,7 +43,7 @@ It is **not** a game engine: no Rapier, no fleets, no AI tools, no R2. Forge **e
 | Command history | `lib/commands.ts` `CommandStack` | âœ… | Coalescing transform drags (800 ms) â€” same idea as three.js |
 | AI undo | `ai/aiTurn.ts` `makeAITurnCommand` | âœ… | Snapshot before/after each tool |
 | Menubar | `editor/MenuBar.tsx` | âœ… | File / Edit / View / Help |
-| Hierarchy sidebar | `editor/Hierarchy.tsx` | âœ… | Entity tree + parent/child |
+| Hierarchy sidebar | `editor/Hierarchy.tsx` | ✅ | Entity tree + pack/mesh pull (`subNode`, `childrenOnly`) |
 | Inspector | `editor/Inspector.tsx` | âœ… | Transform, physics, materials, scripts |
 | Viewport + gizmos | `editor/Viewport.tsx` + TransformControls | âœ… | Skill: `threejs-controls` |
 | Helpers (grid/light/skeleton) | Viewport toggles + R3F helpers | ðŸŸ¡ | Ensure skeleton + light helpers match three.js View menu completeness |
@@ -273,7 +273,8 @@ Summary (Forge SPA only):
 | AI tools | `â€¦/ai/tools/**`, `â€¦/lib/aiTools.ts` |
 | Scene schema | `lib/scene-schema/` |
 | Deploy | `DEPLOYMENT.md`, `scripts/build-spa.*`, `scripts/deploy-*` |
-| Skills | `.agents/skills/forge-editor`, `threejs-asset-io`, `threejs-controls`, â€¦ |
+| Skills | `.agents/skills/forge-editor`, `threejs-asset-io`, `threejs-controls`, … |
+| Mesh pull | `…/lib/glbHierarchy.ts`, `…/lib/meshEquipApply.ts`, `store/editor.ts` `explodeGlbHierarchy` |
 
 ---
 
@@ -286,5 +287,21 @@ Summary (Forge SPA only):
 - glTF: https://www.khronos.org/gltf/  
 - three.js DevTools: https://github.com/threejs/devtools  
 
-**Product line:** Forge is the **genuine Grudge Studio editor** â€” three.js-editor architecture + game ECS + AI + Rapier + fleet deploy â€” not a fork of the stock editor, and not a generic sandbox.
+**Product line:** Forge is the **genuine Grudge Studio editor** — three.js-editor architecture + game ECS + AI + Rapier + fleet deploy — not a fork of the stock editor, and not a generic sandbox.
+
+---
+
+## 12. Mesh pull (v0.4.4)
+
+Asset GLBs must not stay one fused object when they contain multiple static meshes.
+
+| Step | Path |
+|------|------|
+| Walk meshes | `lib/glbHierarchy.ts` `collectPullableMeshes` |
+| Spawn + explode | `store/editor.ts` `spawnModelAndPull` / `explodeGlbHierarchy` |
+| Isolate | `lib/meshEquipApply.ts` `isolateNamedMeshAtOrigin` |
+| Schema | `model.subNode` + `model.childrenOnly` (not locators) |
+| Nested | `parentOrdinal` → entity `parentId` |
+
+Keep fused: play kits, map shells, packs over 128 meshes. Info: `/catalog/forge-editor.json`.
 

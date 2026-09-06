@@ -5,6 +5,32 @@ All notable changes to **Grudge GameForge** are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [SemVer](https://semver.org/).
 
+## [0.4.4] — 2026-09-05
+
+### Added
+
+- **Pull child meshes** — asset GLBs explode named (and unnamed) meshes into real child entities (`model.subNode` isolate, pack `childrenOnly`). Nested meshes keep parent/child. Each child can move, script, edit, and deploy independently.
+- Hierarchy **pack / mesh** badges, parent › child breadcrumb, Inspector + context-menu pull.
+- **Super Terrain** worlds from fleet Cloudflare catalog (`info.grudge-studio.com/api/v1/super-terrain.json`).
+- Seeded RTS enemy/ally camps with race-kit occupants.
+- Editor **G** ground snap, **H** hide/show, **Ctrl+P** unparent; KTX2 decoder bind on the viewport.
+- Info catalog: `catalog/forge-editor.json` (also `info.grudge-studio.com/api/v1/forge-editor.json`).
+
+### Changed
+
+- Fast / catalog / drop spawn auto-pulls child meshes (`spawnModelAndPull`, `spawn_fast_asset.pulledMeshes`).
+- **F** frames selection only when asked (no auto-frame).
+- Player Vite `@workspace/*` aliases for Windows `symlink=false`.
+
+### Kept fused
+
+- Play kits (skinned + ≥8 bones) and map shells (pirate-islands / Chicken Gun plates). Packs over 128 meshes stay fused.
+
+### Deploy
+
+- SPA: prebuilt Vercel `grudge-studio-forge` → https://forge.grudge-studio.com
+- Notes: [`RELEASE_NOTES_v0.4.4.md`](./RELEASE_NOTES_v0.4.4.md)
+
 ## [0.4.3] — 2026-08-07
 
 ### Added

@@ -113,15 +113,20 @@ export interface ModelComponent {
   /** Floating sprite label shown above the model (player name, NPC tag, etc.). */
   label?: string;
   /** When true, this entity is a *transform-only locator* mirroring a sub-node
-   *  of its parent's GLB (created by the "Expose Children" action). The renderer
-   *  skips loading a model for proxies — only the parent GLB renders the geometry.
-   *  Proxies still expose a transform (queryable from scripts via
-   *  `ctx.scene.worldPosition`) and can host their own children, scripts, and
-   *  behaviors (e.g. attach `behavior:"spawnpoint"` to a `Spawn_*` proxy). */
+   *  of its parent's GLB (legacy "Expose Children" for Spawn_* empties). The
+   *  renderer skips loading a model for proxies — only the parent GLB renders
+   *  the geometry. Asset mesh pull uses `subNode` without `proxy` instead. */
   proxy?: boolean;
-  /** Name of the GLB sub-node this proxy refers to (informational, used by the
-   *  inspector and for debugging — runtime does not key off it). */
+  /** Isolate key for a pulled child mesh (`name` or `#ordinal`). When set and
+   *  `proxy` is false, the renderer isolates that mesh so it can move / script
+   *  / deploy independently of the pack. */
   subNode?: string;
+  /**
+   * Pack root after child meshes were pulled: do not render the fused GLB.
+   * Child entities isolate `subNode` meshes under this parent. Move the pack
+   * to move the set; select a child to script that mesh.
+   */
+  childrenOnly?: boolean;
   /** Extra Y rotation (radians) applied to the rendered GLB to compensate
    *  for asset-pack authoring conventions where "forward" is +Z instead of
    *  three.js' default -Z. Does NOT change physics or rigidbody yaw — the
@@ -356,6 +361,8 @@ export interface SceneEntity {
   prefabId?: number | null;
   /** UI: collapsed in the hierarchy panel. */
   collapsed?: boolean;
+  /** Scene-tree visibility (ThreeFlow H). Undefined = visible. */
+  visible?: boolean;
   /** Unity-style physics layer. Drives Rapier `collisionGroups` plus the
    *  global `Environment.collisionMatrix`. Defaults to `"Default"` when
    *  unset; the editor's loader runs an inference pass to upgrade Map /

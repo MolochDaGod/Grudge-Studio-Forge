@@ -43,7 +43,7 @@ import {
 } from "@workspace/api-client-react";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import type { EntityType, SceneData, SceneEntity } from "@/scene/types";
-import { buildTree, wouldCycle } from "@/lib/hierarchy";
+import { buildTree, childCount, parentPath, wouldCycle } from "@/lib/hierarchy";
 
 const ICONS: Record<EntityType, typeof Box> = {
   box: Box,
@@ -66,6 +66,7 @@ interface RowProps {
   entity: SceneEntity;
   depth: number;
   hasChildren: boolean;
+  kidsN: number;
   collapsed: boolean;
   selected: boolean;
   matchesFilter: boolean;
@@ -77,7 +78,9 @@ interface RowProps {
   onSavePrefab: () => void;
   onRename: () => void;
   onAddChild: () => void;
+  onHide: () => void;
   onFocus: () => void;
+  onPullMeshes?: () => void;
   onDragStart: (id: string) => void;
   onDragOverRow: (id: string, e: React.DragEvent) => void;
   onDragLeaveRow: (id: string) => void;
@@ -90,6 +93,7 @@ function HierarchyRow({
   entity,
   depth,
   hasChildren,
+  kidsN,
   collapsed,
   selected,
   matchesFilter,
@@ -101,7 +105,9 @@ function HierarchyRow({
   onSavePrefab,
   onRename,
   onAddChild,
+  onHide,
   onFocus,
+  onPullMeshes,
   onDragStart,
   onDragOverRow,
   onDragLeaveRow,
@@ -128,7 +134,10 @@ function HierarchyRow({
         onDropRow(entity.id);
       }}
       onClick={onPick}
-      onDoubleClick={onFocus}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (hasChildren) onToggle();
+      }}
       onContextMenu={onPick}
       style={{ paddingLeft: 6 + depth * 14 }}
       className={`group flex items-center gap-1 pr-2 py-1 rounded text-sm cursor-pointer hover-elevate ${
@@ -155,7 +164,39 @@ function HierarchyRow({
         <span className="size-3.5" />
       )}
       <Icon className="size-3.5 shrink-0 opacity-70" />
-      <span className="flex-1 truncate">{entity.name}</span>
+      <span
+        className={`flex-1 truncate ${entity.visible === false ? "opacity-50 line-through" : ""}`}
+        title={
+          entity.model?.childrenOnly
+            ? `pack · ${kidsN} meshes`
+            : entity.model?.subNode
+              ? `mesh ${entity.model.subNode}`
+              : entity.name
+        }
+      >
+        {entity.name}
+      </span>
+      {kidsN > 0 && (
+        <em className="text-[10px] text-muted-foreground not-italic tabular-nums">{kidsN}</em>
+      )}
+      {entity.model?.childrenOnly && (
+        <span className="font-heading text-[9px] uppercase tracking-[0.18em] px-1 py-px rounded-sm bg-sidebar-accent text-muted-foreground">
+          pack
+        </span>
+      )}
+      {entity.model?.subNode && !entity.model.proxy && (
+        <span
+          className="font-heading text-[9px] uppercase tracking-[0.18em] px-1 py-px rounded-sm bg-sidebar-accent text-muted-foreground"
+          title={entity.model.subNode}
+        >
+          mesh
+        </span>
+      )}
+      {entity.model?.proxy && (
+        <span className="font-heading text-[9px] uppercase tracking-[0.18em] px-1 py-px rounded-sm text-muted-foreground">
+          loc
+        </span>
+      )}
       {isPrefabInstance && (
         <span
           className="font-heading text-[9px] uppercase tracking-[0.18em] px-1.5 py-px rounded-sm bg-primary/15 text-primary border border-primary/40"
@@ -228,6 +269,15 @@ function HierarchyRow({
           <span className="ml-auto text-[10px] text-muted-foreground">Del</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
+        <ContextMenuItem onClick={onHide}>
+          {entity.visible === false ? "Show" : "Hide"}
+          <span className="ml-auto text-[10px] text-muted-foreground">H</span>
+        </ContextMenuItem>
+        {onPullMeshes && (
+          <ContextMenuItem onClick={onPullMeshes}>
+            <PackageOpen className="size-3.5 mr-2" /> Pull child meshes
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onClick={onAddChild}>
           <Plus className="size-3.5 mr-2" /> Add empty child
         </ContextMenuItem>
@@ -261,8 +311,10 @@ export function Hierarchy() {
   const cmdSetEntityParent = useEditor((s) => s.cmdSetEntityParent);
   const cmdRenameEntity = useEditor((s) => s.cmdRenameEntity);
   const cmdAddEmptyChild = useEditor((s) => s.cmdAddEmptyChild);
+  const cmdSetEntityVisible = useEditor((s) => s.cmdSetEntityVisible);
   const requestFocus = useEditor((s) => s.requestFocus);
   const toggleCollapsed = useEditor((s) => s.cmdToggleCollapsed);
+  const explodeGlbHierarchy = useEditor((s) => s.explodeGlbHierarchy);
   const snapshotSubtree = useEditor((s) => s.snapshotSubtree);
   const pushLog = useEditor((s) => s.pushLog);
   const setBottomTab = useEditor((s) => s.setBottomTab);
@@ -286,7 +338,11 @@ export function Hierarchy() {
     if (!filterQ) return null;
     const m = new Set<string>();
     for (const e of entities) {
-      if (e.name.toLowerCase().includes(filterQ) || e.type.toLowerCase().includes(filterQ)) {
+      if (
+        e.name.toLowerCase().includes(filterQ) ||
+        e.type.toLowerCase().includes(filterQ) ||
+        (e.model?.subNode ?? "").toLowerCase().includes(filterQ)
+      ) {
         m.add(e.id);
       }
     }
@@ -418,6 +474,7 @@ export function Hierarchy() {
         entity={entity}
         depth={depth}
         hasChildren={kids.length > 0}
+        kidsN={kids.length}
         collapsed={collapsed}
         selected={selectedId === entity.id}
         matchesFilter={matchesFilter}
@@ -432,10 +489,22 @@ export function Hierarchy() {
           if (next && next.trim() && next !== entity.name) cmdRenameEntity(entity.id, next.trim());
         }}
         onAddChild={() => cmdAddEmptyChild(entity.id)}
+        onHide={() => cmdSetEntityVisible(entity.id, entity.visible === false)}
         onFocus={() => {
           selectEntity(entity.id);
           requestFocus();
         }}
+        onPullMeshes={
+          entity.type === "model" &&
+          !!entity.model?.url &&
+          !entity.model.proxy &&
+          !entity.model.subNode &&
+          !entity.model.childrenOnly
+            ? () => {
+                void explodeGlbHierarchy(entity.id);
+              }
+            : undefined
+        }
         onDragStart={onDragStart}
         onDragOverRow={onDragOverRow}
         onDragLeaveRow={onDragLeaveRow}
@@ -452,6 +521,12 @@ export function Hierarchy() {
 
   return (
     <div className="flex flex-col h-full bg-sidebar text-sidebar-foreground">
+      {selectedId && (
+        <div className="px-3 py-1.5 border-b border-sidebar-border text-[11px] text-muted-foreground truncate" title={parentPath(entities, selectedId)}>
+          {parentPath(entities, selectedId)}
+          {childCount(entities, selectedId) > 0 ? ` · ${childCount(entities, selectedId)} child` : ""}
+        </div>
+      )}
       {/* Scenes — hidden in prefab edit mode to keep focus on the prefab */}
       {!prefabSubScene && (
         <div className="px-3 py-2 border-b border-sidebar-border">

@@ -504,9 +504,16 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
         return { ok: false, error: "Failed to build model entity" };
       }
       useEditor.getState().commandStack.push(addEntityCommand(makeStoreLike(), e));
+      const pulled = await useEditor.getState().explodeGlbHierarchy(e.id);
       return {
         ok: true,
-        data: { id: e.id, name: e.name, modelUrl: e.model.url, fastId: a.id },
+        data: {
+          id: e.id,
+          name: e.name,
+          modelUrl: e.model.url,
+          fastId: a.id,
+          pulledMeshes: pulled,
+        },
       };
     },
   },
