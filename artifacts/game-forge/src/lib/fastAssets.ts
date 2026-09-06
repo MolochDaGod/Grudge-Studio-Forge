@@ -271,14 +271,7 @@ export const FAST_ASSETS: FastAsset[] = [
     blurb: "Tech FX",
   },
 
-  // ── Nature ────────────────────────────────────────────────────────
-  {
-    id: "nature-trees",
-    label: "Tree Pack",
-    group: "nature",
-    modelUrl: "builtin:nature-tree-pack",
-    blurb: "PACK / often 404 — do not spawn. Use CommonTree_N singles.",
-  },
+  // ── Nature (Kenney singles only — never a pack as one tree) ──────
   {
     id: "nature-tree-1",
     label: "Common Tree 1",
@@ -306,27 +299,6 @@ export const FAST_ASSETS: FastAsset[] = [
     group: "nature",
     modelUrl: "https://assets.grudge-studio.com/models/nature/Bush_Common.glb",
     blurb: "Single bush mesh",
-  },
-  {
-    id: "nature-tropical",
-    label: "Tropical Pack",
-    group: "nature",
-    modelUrl: "builtin:nature-tropical-pack",
-    blurb: "PACK / often 404 — isolate or skip; never one plant.",
-  },
-  {
-    id: "nature-autumn",
-    label: "Autumn Trees",
-    group: "nature",
-    modelUrl: "builtin:nature-autumn-trees",
-    blurb: "PACK / 404 on CDN — do not spawn as one tree.",
-  },
-  {
-    id: "nature-icicles",
-    label: "Icicles",
-    group: "nature",
-    modelUrl: "builtin:nature-icicles",
-    blurb: "PACK / 404 on CDN — use Pine_N singles for frost biomes.",
   },
   {
     id: "nature-tree-2",
