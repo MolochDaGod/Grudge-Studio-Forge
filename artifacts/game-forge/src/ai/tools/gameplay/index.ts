@@ -5,7 +5,8 @@
  */
 import type { SceneEntity } from "@workspace/scene-schema";
 import { useEditor } from "@/store/editor";
-import { FAST_ASSETS, fetchFastCatalog } from "@/lib/fastAssets";
+import { FAST_ASSETS } from "@/lib/fastAssets";
+import { fetchFastCatalog } from "@/lib/agentEdge";
 import { requireAgentAssetUrl } from "@/lib/assetUrlPolicy";
 import { isNaturePackKey } from "@/lib/worldBiomeKit";
 import { addEntityCommand, type StoreLike } from "@/lib/commands";
