@@ -99,6 +99,9 @@ const PROVIDER_TOOL_CAPS = {
   deepseek: 128,
   together: 128,
   openrouter: 128,
+  // Legion may ignore tools today; keep payload modest when forwarded
+  "grudge-ai": 64,
+  legion: 64,
 };
 
 /** Groq free/dev Llama + Gemma + QwQ shut down 2026-08-16. */
@@ -131,6 +134,15 @@ const CORE_TOOL_NAMES = [
   "delete_entity",
   "verify_scene_full",
   "diagnose_scene",
+  // ALE / Catsot force-build
+  "list_game_examples",
+  "apply_game_mode",
+  "spawn_toon_race",
+  "verify_playable",
+  "start_playtest",
+  "stop_playtest",
+  "create_world",
+  "set_player",
 ];
 
 function toolNameOf(t) {
@@ -1117,7 +1129,9 @@ async function legionFetch(env, pathAndQuery, init) {
   return fetch(url, init);
 }
 
-/** Proxy Forge AI turns to ai.grudge-studio.com Legion (agent skills + waterfall). */
+/** Proxy Forge AI turns to ai.grudge-studio.com Legion (agent skills + waterfall).
+ *  Forward tools when present (future-proof — Legion may gain tool_calls).
+ *  Preserve tool_calls in the OpenAI-compat response for grudgeAiProvider. */
 async function handleGrudgeAiChat(request, env, body) {
   const auth =
     request.headers.get("Authorization") ||
@@ -1157,17 +1171,42 @@ async function handleGrudgeAiChat(request, env, body) {
 
   let upstream;
   try {
+    const puterTok = request.headers.get("X-Puter-Token") || request.headers.get("x-puter-token") || "";
+    const model = body.model === "auto" ? undefined : body.model;
+    const wantPuter =
+      body.prefer === "puter" ||
+      (typeof model === "string" &&
+        (model.startsWith("claude-fable") ||
+          model.startsWith("gpt-6-astra") ||
+          model.startsWith("claude-opus-5")));
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${bearer}`,
+    };
+    if (puterTok) headers["X-Puter-Token"] = puterTok;
+
+    // Cap tools like other providers (Legion may ignore; SPA still sends them)
+    const tools =
+      Array.isArray(body.tools) && body.tools.length > 0
+        ? capToolsForProvider(body.tools, "grudge-ai", body.messages)
+        : undefined;
+
+    const legionBody = {
+      messages: body.messages,
+      model,
+      prefer: wantPuter && puterTok ? "puter" : body.prefer,
+      max_tokens: Math.min(Number(body.max_tokens) || 8192, 16384),
+    };
+    if (tools) {
+      legionBody.tools = tools;
+      // OpenAI-compat hint — ignored until Legion supports function calling
+      if (body.tool_choice) legionBody.tool_choice = body.tool_choice;
+    }
+
     upstream = await legionFetch(env, apiPath, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${bearer}`,
-      },
-      body: JSON.stringify({
-        messages: body.messages,
-        model: body.model === "auto" ? undefined : body.model,
-        max_tokens: Math.min(Number(body.max_tokens) || 8192, 16384),
-      }),
+      headers,
+      body: JSON.stringify(legionBody),
     });
   } catch (err) {
     return json(
@@ -1201,7 +1240,23 @@ async function handleGrudgeAiChat(request, env, body) {
     data.choices?.[0]?.message?.content ||
     "";
 
-  // Normalize to OpenAI chat.completion shape for freeApiProvider consumers
+  // Preserve tool_calls when Legion (or a future waterfall hop) returns them
+  const toolCalls =
+    data.choices?.[0]?.message?.tool_calls ||
+    data.tool_calls ||
+    data.message?.tool_calls ||
+    null;
+  const finishReason =
+    toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0
+      ? "tool_calls"
+      : data.choices?.[0]?.finish_reason || "stop";
+
+  const assistantMessage = { role: "assistant", content };
+  if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
+    assistantMessage.tool_calls = toolCalls;
+  }
+
+  // Normalize to OpenAI chat.completion shape for freeApiProvider / grudgeAiProvider
   return json({
     id: data.request_id || `legion_${Date.now()}`,
     object: "chat.completion",
@@ -1209,11 +1264,12 @@ async function handleGrudgeAiChat(request, env, body) {
     provider: data.provider || "grudge-ai-legion",
     role: data.role || role,
     response: content,
+    tool_calls: toolCalls || undefined,
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content },
-        finish_reason: "stop",
+        message: assistantMessage,
+        finish_reason: finishReason,
       },
     ],
     usage: data.usage,
@@ -1235,7 +1291,7 @@ async function handleFreeAi(path, request, env) {
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
-      version: "1.5.5",
+      version: "1.5.6",
       providers: available,
       grudgeAi: legion.ok,
       legion: legion.ok,

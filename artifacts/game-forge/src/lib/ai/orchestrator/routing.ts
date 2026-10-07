@@ -65,11 +65,13 @@ const ROLE_PREFERENCE: Record<AgentRole, string[]> = {
     "openrouter:meta-llama/llama-3.3-70b-instruct:free",
     "ollama:llama3.2",
   ],
+  // Groq first: Legion hub has no tools/tool_calls yet — scene builds need
+  // native function calling for apply_game_mode / spawn_fast_asset.
   scene_builder: [
-    "grudge-ai:auto",
     "groq:llama-3.3-70b-versatile",
-    "puter:claude-3-7-sonnet",
     "together:meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "puter:claude-3-7-sonnet",
+    "grudge-ai:auto",
     "gemini:gemini-2.0-flash",
     "ollama:qwen2.5-coder:7b",
   ],

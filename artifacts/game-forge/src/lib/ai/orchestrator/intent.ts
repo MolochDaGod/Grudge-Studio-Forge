@@ -41,6 +41,11 @@ const PATTERNS: Array<{ intent: ForgeIntent; re: RegExp }> = [
     intent: "deploy",
     re: /\b(deploy|production|live|smoke|vercel|railway|wrangler|ship|publish|redeploy|sub[- ]?agent|ai worker)\b/i,
   },
+  // ALE force-build: make/create a playable game → scene_builder (before script/model)
+  {
+    intent: "scene",
+    re: /\b(make|create|build|scaffold|spin\s*up|apply)\b[\s\S]{0,48}\b(game|tps|fps|shooter|parkour|arena|sandbox|survival|lobby|playable|mode)\b|\b(third[-\s]?person|tps|fps|parkour|platformer|deathmatch)\b|\b(apply_game_mode|start_playtest|playable)\b/i,
+  },
   {
     intent: "nav",
     re: /\b(navmesh|nav mesh|pathfind|patrol|bake nav|agent path|yuka|recast|snap to terrain|assets? to (ground|terrain)|drop to ground)\b/i,

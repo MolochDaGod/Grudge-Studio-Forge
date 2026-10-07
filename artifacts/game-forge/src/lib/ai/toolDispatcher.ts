@@ -18,6 +18,7 @@ import { runTool, TOOL_DEFS, type ToolDef, type ToolResult } from "@/lib/aiTools
 function groupToolsByDomain(): Record<string, ToolDef[]> {
   const groups: Record<string, ToolDef[]> = {
     scene: [],
+    gameplay: [],
     script: [],
     nav: [],
     materials: [],
@@ -36,6 +37,14 @@ function groupToolsByDomain(): Record<string, ToolDef[]> {
   for (const tool of TOOL_DEFS) {
     const name = tool.name.toLowerCase();
     if (
+      name.includes("game_mode") ||
+      name.includes("playtest") ||
+      name.includes("playable") ||
+      name.includes("game_example") ||
+      name.includes("toon_race")
+    ) {
+      groups.gameplay.push(tool);
+    } else if (
       name.includes("script") ||
       name.includes("behavior") ||
       name.includes("animation") ||
@@ -101,6 +110,8 @@ function groupToolsByDomain(): Record<string, ToolDef[]> {
  * Always includes: list_tools, call_tool, plus a small always-on set.
  */
 export function buildDispatcherTools(): ToolDef[] {
+  // ALE force-build always-on: Catsot parity — make/create → apply_game_mode
+  // without requiring list_tools first.
   const alwaysOn: string[] = [
     "get_scene_summary",
     "list_entities",
@@ -108,6 +119,12 @@ export function buildDispatcherTools(): ToolDef[] {
     "list_fast_assets",
     "list_threejs_standards",
     "verify_scene_full",
+    "list_game_examples",
+    "apply_game_mode",
+    "spawn_toon_race",
+    "verify_playable",
+    "start_playtest",
+    "stop_playtest",
   ];
 
   const coreTools = TOOL_DEFS.filter((t) => alwaysOn.includes(t.name));
@@ -116,14 +133,14 @@ export function buildDispatcherTools(): ToolDef[] {
     {
       name: "list_tools",
       description:
-        "List all available AI tools, optionally filtered by domain. Call this first to discover what tools you can use. Domains: scene, script, nav, materials, physics, design, assets, knowledge, systems, effects, puter, stats, ui, other. Returns tool names and descriptions grouped by domain.",
+        "List all available AI tools, optionally filtered by domain. Call this first to discover what tools you can use. Domains: scene, gameplay, script, nav, materials, physics, design, assets, knowledge, systems, effects, puter, stats, ui, other. Returns tool names and descriptions grouped by domain.",
       input_schema: {
         type: "object",
         properties: {
           domain: {
             type: "string",
             description:
-              "Optional domain filter: scene | script | nav | materials | physics | design | assets | knowledge | systems | effects | puter | stats | ui | other. Omit to list all domains.",
+              "Optional domain filter: scene | gameplay | script | nav | materials | physics | design | assets | knowledge | systems | effects | puter | stats | ui | other. Omit to list all domains.",
           },
         },
       },

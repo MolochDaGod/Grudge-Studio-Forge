@@ -28,6 +28,7 @@ const PACKS: Record<KnowledgePackId, string> = {
     "CORE:",
     "- SI units: 1 unit = 1 m; human ~1.8 m. Never ship 100× giants.",
     "- All scene edits via tools (CommandStack). Prefer list_fast_assets → spawn_fast_asset.",
+    "- ALE: make/create TPS/parkour/arena → apply_game_mode({ mode, autoPlay:true }) — ban essays.",
     "- Models: only builtin:<key> or https://assets.grudge-studio.com/… — never invent CDN paths.",
     "- Before claiming done: diagnose_scene → verify_mesh_scale → verify_textures → verify_character_animation.",
     "- Identity: Grudge ID = fleet JWT; Puter = cloud only; guest = local.",

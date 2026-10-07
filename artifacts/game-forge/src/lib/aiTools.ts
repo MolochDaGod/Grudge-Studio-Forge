@@ -130,6 +130,11 @@ import {
   destructiveToolNames as worldDestructiveTools,
   commitGeneratedWorld,
 } from "@/ai/tools/world";
+import {
+  defs as gameplayToolDefs,
+  handlers as gameplayToolHandlers,
+  destructiveToolNames as gameplayDestructiveTools,
+} from "@/ai/tools/gameplay";
 import { isNaturePackKey } from "@/lib/worldBiomeKit";
 /** Tool names that mutate the scene irrecoverably (or change global config /
  *  spawn arbitrary code). The aiClient asks the user to confirm before
@@ -140,7 +145,6 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   "clear_scene",
   "delete_entity",
   "create_script",
-  "set_player",
   "generate_map",
   ...systemsDestructiveTools,
   ...scriptingDestructiveTools,
@@ -157,7 +161,26 @@ export const DESTRUCTIVE_TOOLS = new Set<string>([
   ...motionDestructiveTools,
   ...uiDestructiveTools,
   ...worldDestructiveTools,
+  ...gameplayDestructiveTools,
 ]);
+
+/** ALE force-build: these mutate the scene but must NOT block on confirm
+ *  (Catsot parity — make/create/TPS → apply_game_mode silently). */
+const AUTO_ALLOW_MUTATIONS = new Set<string>([
+  "set_player",
+  "apply_game_mode",
+  "spawn_toon_race",
+  "start_playtest",
+  "stop_playtest",
+  "create_script_from_template",
+  "create_world",
+  "paint_world_brush",
+  "spawn_fast_asset",
+]);
+
+for (const name of AUTO_ALLOW_MUTATIONS) {
+  DESTRUCTIVE_TOOLS.delete(name);
+}
 
 /** Build the StoreLike adapter that the command factories need. We rebuild
  *  it per command so the closures capture a stable getEntities/setEntities
@@ -1742,6 +1765,12 @@ export const AI_TOOLS: { def: ToolDef; exec: ToolExecutor }[] = [
     def,
     exec: worldToolHandlers[def.name] as ToolExecutor,
   })),
+
+  // ALE / Catsot game modes — list_game_examples, apply_game_mode, start_playtest
+  ...gameplayToolDefs.map((def) => ({
+    def,
+    exec: gameplayToolHandlers[def.name] as ToolExecutor,
+  })),
 ];
 
 export const TOOL_DEFS: ToolDef[] = AI_TOOLS.map((t) => t.def);
@@ -1834,7 +1863,7 @@ export function buildSystemPrompt(): string {
     `- knowledge_status diagnoses broken R2/D1/GitHub wiring. Surface configuration errors clearly to the user.`,
     ``,
     `WORKING STYLE:`,
-    `- Take initiative. Scratch scene is enough. Playable request → list_game_examples then tps-playtest. Complete outdoor world → list_world_biomes → create_world({ recipe:'alpine-mesh'|island }) → paint_world_brush → spawn_toon_race → WASD → verify_scene_full. Super Terrain is a heightfield bake, not a second editor.`,
+    `- ALE companion (better-than-Spawn): on make/create/TPS/parkour/arena ALWAYS call apply_game_mode({ mode, autoPlay:true }) — ban essay/example-code replies. Modes: list_game_examples. Outdoor only: create_world → spawn_toon_race → set_player → verify_playable → start_playtest. Super Terrain is a heightfield bake, not a second editor.`,
     `- For "feel" tweaks prefer set_tunable_param after list_tunable_params.`,
     `- Bulk scene questions → count_entities / query_entities (ECS mirror).`,
     `- BEFORE big builds: get_active_scene_meta, get_project_summary or get_brain_catalog, describe_layout, list_scenes / list_prefabs / list_assets / list_r2_storage.`,

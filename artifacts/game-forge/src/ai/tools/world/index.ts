@@ -311,7 +311,13 @@ const createHandler: ToolHandler = async (input) => {
       catalog: SUPER_TERRAIN_CATALOG_URLS.info,
       replaced: input.replace !== false,
       layers: layers ?? ["map"],
-      next: ["paint_world_brush", "spawn_toon_race", "create_script_from_template wasd-character-controller", "verify_scene_full"],
+      next: [
+        "paint_world_brush",
+        "spawn_toon_race({ race:'human', asPlayer:true })",
+        "verify_playable",
+        "start_playtest",
+        "or apply_game_mode({ mode:'tps-shooter', autoPlay:true })",
+      ],
     },
   };
 };

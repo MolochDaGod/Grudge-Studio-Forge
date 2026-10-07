@@ -1,12 +1,14 @@
 /**
  * Orchestrated conversation: intent → packs → route → runConversation with failover.
+ * ALE force-build: playable make/create runs apply_game_mode before the LLM turn
+ * (Catsot / better-than-Spawn — ban essay replies).
  */
 import {
   runConversation,
   type ChatMessage,
   type RunHandlers,
 } from "@/lib/aiClient";
-import { TOOL_DEFS, buildSystemPrompt, type ToolDef } from "@/lib/aiTools";
+import { TOOL_DEFS, buildSystemPrompt, runTool, type ToolDef } from "@/lib/aiTools";
 import {
   buildDispatcherTools,
   shouldUseDispatcher,
@@ -28,6 +30,10 @@ import {
   type RoutingProbe,
   statusLabel,
 } from "./routing";
+import {
+  inferGameMode,
+  isPlayableBuildRequest,
+} from "@/ai/tools/gameplay";
 
 export type OrchestratorResult = {
   intent: ForgeIntent;
@@ -118,7 +124,47 @@ export async function runOrchestratedConversation(
   const intent = classifyIntent(opts.userText, opts.intentOverride);
   const role = roleForIntent(intent);
   const chain = buildFailoverChain(role, opts.probe);
-  const system = augmentSystem(intent, buildSystemPrompt());
+  let system = augmentSystem(intent, buildSystemPrompt());
+
+  // ALE force-build (better-than-Spawn): make/create TPS/parkour/arena →
+  // apply_game_mode immediately so the scene is playable before any essay.
+  if (isPlayableBuildRequest(opts.userText)) {
+    const mode = inferGameMode(opts.userText);
+    const forceId = `force_apply_${Date.now().toString(36)}`;
+    const forceInput = { mode, autoPlay: true };
+    opts.handlers.onBeforeTool?.({
+      id: forceId,
+      name: "apply_game_mode",
+      input: forceInput,
+    });
+    try {
+      const result = await runTool("apply_game_mode", forceInput);
+      opts.handlers.onTool({
+        id: forceId,
+        name: "apply_game_mode",
+        input: forceInput,
+        result,
+      });
+      system = [
+        system,
+        "",
+        "--- ALE FORCE-BUILD (already executed) ---",
+        `apply_game_mode({ mode: '${mode}', autoPlay: true }) already ran.`,
+        "Do NOT essay how to build a game. Confirm briefly, then call verify_playable",
+        "and start_playtest only if needed. Prefer tools over more text.",
+      ].join("\n");
+    } catch (err) {
+      opts.handlers.onTool({
+        id: forceId,
+        name: "apply_game_mode",
+        input: forceInput,
+        result: {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
+  }
 
   const attempts: Array<{ modelId: string; error?: string }> = [];
   let usedFailover = false;

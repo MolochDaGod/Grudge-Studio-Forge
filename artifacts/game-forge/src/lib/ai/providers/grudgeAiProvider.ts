@@ -4,6 +4,11 @@
  * Path: browser → /api/free-ai/chat?provider=grudge-ai → ai.grudge-studio.com/v1/chat
  * Auth: Grudge ID JWT (local session) or server GRUDGE_AI_KEY on free-ai worker.
  * Never put provider secrets in the SPA.
+ *
+ * Legion hub currently has no native tools/tool_calls. We still forward tools
+ * (future-proof) and parse:
+ *   1) OpenAI-style message.tool_calls when present
+ *   2) fenced ```tool_use``` text blocks (same as Puter fallback)
  */
 import type { AIProvider, ProviderEvent, ProviderRequest } from "./types";
 import { freeAiChatUrl } from "@/lib/forgeEnv";
@@ -53,6 +58,101 @@ function translateTools(tools: ProviderRequest["tools"]) {
   }));
 }
 
+type ParsedToolUse = {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+};
+
+/** Extract tool_calls from OpenAI-compat JSON and/or ```tool_use``` fences. */
+function extractToolUses(
+  data: {
+    choices?: Array<{
+      message?: {
+        content?: string;
+        tool_calls?: Array<{
+          id?: string;
+          type?: string;
+          function?: { name?: string; arguments?: string };
+        }>;
+      };
+    }>;
+    tool_calls?: Array<{
+      id?: string;
+      function?: { name?: string; arguments?: string };
+    }>;
+  },
+  text: string,
+): ParsedToolUse[] {
+  const out: ParsedToolUse[] = [];
+  const seen = new Set<string>();
+  const push = (
+    name: string,
+    input: Record<string, unknown>,
+    id?: string,
+  ) => {
+    const key = `${name}:${JSON.stringify(input)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      id: id || `legion_tu_${out.length}_${Date.now().toString(36)}`,
+      name,
+      input,
+    });
+  };
+
+  const rawCalls =
+    data.choices?.[0]?.message?.tool_calls || data.tool_calls || [];
+  for (const tc of rawCalls) {
+    const name = tc.function?.name;
+    if (!name) continue;
+    let input: Record<string, unknown> = {};
+    const args = tc.function?.arguments;
+    if (typeof args === "string" && args.trim()) {
+      try {
+        input = JSON.parse(args) as Record<string, unknown>;
+      } catch {
+        input = {};
+      }
+    }
+    push(name, input, typeof tc.id === "string" ? tc.id : undefined);
+  }
+
+  const toolRe = /```tool_use\s*([\s\S]*?)```/gi;
+  let m: RegExpExecArray | null;
+  while ((m = toolRe.exec(text)) !== null) {
+    try {
+      const parsed = JSON.parse(m[1]!.trim()) as {
+        name?: string;
+        input?: Record<string, unknown>;
+        id?: string;
+      };
+      if (parsed.name) push(parsed.name, parsed.input ?? {}, parsed.id);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return out;
+}
+
+function toolHintSuffix(tools: ProviderRequest["tools"]): string {
+  if (!tools.length) return "";
+  const lines = [
+    "",
+    "When you need to call a Forge editor tool, respond with a fenced block:",
+    "```tool_use",
+    '{"name":"tool_name","input":{...}}',
+    "```",
+    "Prefer apply_game_mode / spawn_fast_asset / verify_playable over essays.",
+    "Available tools (sample):",
+  ];
+  for (const t of tools.slice(0, 48)) {
+    lines.push(`- ${t.name}: ${String(t.description).slice(0, 100)}`);
+  }
+  return lines.join("\n");
+}
+
 export const grudgeAiProvider: AIProvider = {
   id: "grudge-ai",
   label: "Grudge AI Legion",
@@ -79,11 +179,14 @@ export const grudgeAiProvider: AIProvider = {
       role = modelOrRole;
     }
 
+    const systemWithTools =
+      req.system + (req.tools.length > 0 ? toolHintSuffix(req.tools) : "");
+
     const body = {
       provider: "grudge-ai",
       model: modelOrRole === "auto" ? "auto" : modelOrRole,
       role,
-      messages: messagesForLegion(req.system, req.messages),
+      messages: messagesForLegion(systemWithTools, req.messages),
       tools: req.tools.length > 0 ? translateTools(req.tools) : undefined,
       max_tokens: req.maxTokens ?? 8192,
       stream: false,
@@ -159,15 +262,40 @@ export const grudgeAiProvider: AIProvider = {
       } finally {
         reader.releaseLock();
       }
+      const toolUses = extractToolUses({}, full);
       if (full) yield { type: "text_block", text: full };
-      yield { type: "stop", stop_reason: "end_turn" };
+      for (const tu of toolUses) {
+        yield {
+          type: "tool_use",
+          id: tu.id,
+          name: tu.name,
+          input: tu.input,
+        };
+      }
+      yield {
+        type: "stop",
+        stop_reason: toolUses.length > 0 ? "tool_use" : "end_turn",
+      };
       return;
     }
 
     let data: {
       response?: string;
       content?: string;
-      choices?: Array<{ message?: { content?: string }; delta?: { content?: string } }>;
+      choices?: Array<{
+        message?: {
+          content?: string;
+          tool_calls?: Array<{
+            id?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+        delta?: { content?: string };
+      }>;
+      tool_calls?: Array<{
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
       error?: string;
     };
     try {
@@ -187,10 +315,22 @@ export const grudgeAiProvider: AIProvider = {
       data.content ||
       data.choices?.[0]?.message?.content ||
       "";
+    const toolUses = extractToolUses(data, text);
     if (text) {
       yield { type: "text_delta", text };
       yield { type: "text_block", text };
     }
-    yield { type: "stop", stop_reason: "end_turn" };
+    for (const tu of toolUses) {
+      yield {
+        type: "tool_use",
+        id: tu.id,
+        name: tu.name,
+        input: tu.input,
+      };
+    }
+    yield {
+      type: "stop",
+      stop_reason: toolUses.length > 0 ? "tool_use" : "end_turn",
+    };
   },
 };

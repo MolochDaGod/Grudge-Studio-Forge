@@ -70,10 +70,11 @@ type HistoryEntry =
   | { id: string; kind: "ai"; turn: AITurn };
 
 const SUGGESTIONS: string[] = [
+  "Make a TPS shooter I can play now",
+  "Build a parkour course and start playtest",
+  "Create an arena deathmatch with a Toon hero",
   "Replace this map with Super Terrain alpine-mesh (terrain, trees, rocks, paths)",
-  "Restamp only trees and paths on the current heightfield",
-  "Add a red point light above the player",
-  "Set the sky to a dusk gradient with warm sun",
+  "Verify this scene is playable",
 ];
 
 const MAX_PERSISTED_ENTRIES = 100;
@@ -615,15 +616,23 @@ export function AIWorkerPanel({
       data-testid="panel-ai-worker"
     >
       <div className="h-10 px-3 flex items-center justify-between border-b border-border bg-sidebar shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <AIIcon3D size={18} active={streaming} />
-          <span className="font-heading text-[11px] uppercase tracking-[0.22em] brand-gold">
-            Forge AI
-          </span>
-          {streaming && <Loader2 className="size-3 animate-spin text-primary" />}
+          <div className="flex flex-col min-w-0 leading-none gap-0.5">
+            <span className="font-heading text-[11px] uppercase tracking-[0.22em] brand-gold">
+              ALE · Forge AI
+            </span>
+            <span
+              className="text-[8px] text-muted-foreground/80 truncate max-w-[160px]"
+              title="Build → verify → Play. Better-than-Spawn companion on Forge."
+            >
+              build → verify → Play
+            </span>
+          </div>
+          {streaming && <Loader2 className="size-3 animate-spin text-primary shrink-0" />}
           <span
             className={cn(
-              "text-[9px] max-w-[140px] truncate tracking-wider px-1.5 py-0.5 rounded border border-primary/30 text-primary",
+              "text-[9px] max-w-[120px] truncate tracking-wider px-1.5 py-0.5 rounded border border-primary/30 text-primary shrink-0",
             )}
             title={routeStatus}
           >
@@ -631,7 +640,7 @@ export function AIWorkerPanel({
           </span>
           <span
             className={cn(
-              "text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border",
+              "text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0",
               ollamaOk
                 ? "border-sky-500/40 text-sky-400"
                 : "border-border text-muted-foreground",
@@ -715,8 +724,9 @@ export function AIWorkerPanel({
           {isEmpty && (
             <div className="text-xs text-muted-foreground space-y-3 pt-4">
               <p>
-                I can build scenes, generate maps, write game scripts, configure the
-                environment — anything you can do in the editor, just ask.
+                ALE builds playable games on Forge — say make a TPS / parkour /
+                arena and it runs <code className="text-[10px]">apply_game_mode</code>{" "}
+                then Play. No essay replies.
               </p>
               <div className="space-y-1.5">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">

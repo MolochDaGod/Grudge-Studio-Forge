@@ -26,6 +26,9 @@ describe("toolDispatcher", () => {
     const names = dispatcherTools.map((t) => t.name);
     expect(names).toContain("list_tools");
     expect(names).toContain("call_tool");
+    expect(names).toContain("apply_game_mode");
+    expect(names).toContain("start_playtest");
+    expect(names).toContain("verify_playable");
     expect(names).toContain("get_scene_summary");
     expect(names).toContain("list_entities");
   });

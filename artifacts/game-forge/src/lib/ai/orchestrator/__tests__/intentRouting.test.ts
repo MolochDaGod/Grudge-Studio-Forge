@@ -42,6 +42,12 @@ describe("classifyIntent", () => {
     expect(classifyIntent("add rapier colliders")).toBe("physics");
   });
 
+  it("maps ALE make/create playable game to scene", () => {
+    expect(classifyIntent("make a TPS shooter")).toBe("scene");
+    expect(classifyIntent("create a parkour game")).toBe("scene");
+    expect(classifyIntent("build an arena deathmatch")).toBe("scene");
+  });
+
   it("detects character anim, terrain, identity", () => {
     // "fix" alone maps diagnose — use pack/bone language without fix/
     expect(classifyIntent("apply sword_shield bip001 idle walk")).toBe("character");
@@ -118,6 +124,16 @@ describe("buildFailoverChain", () => {
   it("prefers fleet groq when legion unavailable", () => {
     const chain = buildFailoverChain("orchestrator", fleetProbe);
     expect(chain[0]?.provider).toBe("groq");
+  });
+
+  it("scene_builder prefers Groq before Legion (tools)", () => {
+    const chain = buildFailoverChain("scene_builder", {
+      ...fleetProbe,
+      grudgeAiOk: true,
+      guestLegionKey: true,
+    });
+    expect(chain[0]?.provider).toBe("groq");
+    expect(chain.some((m) => m.provider === "grudge-ai")).toBe(true);
   });
 
   it("uses ollama when forceOffline", () => {
