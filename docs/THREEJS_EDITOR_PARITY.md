@@ -175,8 +175,30 @@ Physics-specific: skill **`rapier-physics-patterns`** + layer matrix.
 [ ] Hotkey cheatsheet (W/E/R, F focus, P play, Esc stop)
 [ ] GlbInspectorDialog for dropped assets
 [ ] History labels readable (Command.label)
-[ ] Performance: entity count, draw calls, physics bodies in status bar
+[x] Renderer Inspector MVP — bottom tab Perf/Scene/Mem/Phys/Log + Copy
 ```
+
+### Renderer Inspector (MVP)
+
+Forge-native ops HUD for live viewport telemetry. **Not** a Spawn Tome/ECS port.
+
+| Piece | Path |
+|-------|------|
+| Snapshot store + Copy formatter | `artifacts/game-forge/src/lib/rendererInspector.ts` |
+| R3F sampler (FPS / draws / tris / scene walk / GPU mem) | `…/scene/RendererStatsSampler.tsx` |
+| Rapier sampler (play mode bodies/colliders) | same file → `RendererPhysicsSampler` |
+| Bottom-panel UI | `…/editor/RendererInspector.tsx` |
+| Entry | Bottom **Renderer** tab · View → Show Renderer Inspector · `Ctrl+Alt+I` |
+
+| Tab | Live counters |
+|-----|---------------|
+| Performance | FPS, frame ms, draw calls, triangles, backend, quality |
+| Scene | entities, physics-authored ents, Object3D / mesh / skinned / bone / light / camera |
+| Memory | `renderer.info.memory` geometries/textures · Chromium JS heap |
+| Physics | authored physics ents · Rapier bodies/colliders in Play |
+| Log | console tail + Clear · included in Copy |
+
+**Rules:** extend this module / panel — do not invent a second inspector brand. Quality ladder and WebGPU frame-graph are later ranked steps (see workspace memory `grudge-studio-forge.md`).
 
 ---
 
@@ -268,8 +290,9 @@ Summary (Forge SPA only):
 | File kinds | `â€¦/lib/fileKind.ts` |
 | Convert pipeline | `â€¦/lib/assetConverter.ts` |
 | Drop zone | `â€¦/editor/AssetDropZone.tsx` |
-| DevTools | `â€¦/lib/threeDevtools.ts` |
-| Best practices UI | `â€¦/lib/bestPractices.ts`, `â€¦/editor/BestPracticesMenu.tsx` |
+| DevTools | `…/lib/threeDevtools.ts` |
+| Renderer Inspector | `…/lib/rendererInspector.ts`, `…/editor/RendererInspector.tsx`, `…/scene/RendererStatsSampler.tsx` |
+| Best practices UI | `…/lib/bestPractices.ts`, `…/editor/BestPracticesMenu.tsx` |
 | AI tools | `â€¦/ai/tools/**`, `â€¦/lib/aiTools.ts` |
 | Scene schema | `lib/scene-schema/` |
 | Deploy | `DEPLOYMENT.md`, `scripts/build-spa.*`, `scripts/deploy-*` |

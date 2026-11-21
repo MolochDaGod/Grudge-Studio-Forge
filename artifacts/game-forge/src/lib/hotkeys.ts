@@ -34,6 +34,7 @@ export interface Hotkey {
   key: string;
   ctrlOrMeta?: boolean;
   shift?: boolean;
+  alt?: boolean;
   /** Fire even while playing? Defaults to false (most editor hotkeys). */
   whilePlaying?: boolean;
   /** Skip when typing in inputs. Default true — only set false for Escape. */
@@ -60,6 +61,8 @@ export function matches(h: Hotkey, e: KeyboardEvent): boolean {
   if (wantCtrl !== hasCtrl) return false;
   const wantShift = !!h.shift;
   if (wantShift !== e.shiftKey) return false;
+  const wantAlt = !!h.alt;
+  if (wantAlt !== e.altKey) return false;
   // Single letters: case-insensitive
   if (h.key.length === 1 && /[a-zA-Z]/.test(h.key)) {
     return e.key.toLowerCase() === h.key.toLowerCase();

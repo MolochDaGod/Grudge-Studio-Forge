@@ -214,7 +214,7 @@ const BEST_PRACTICES: Record<BestPracticeContext, BestPractice[]> = {
     {
       title: "Install three.js Developer Tools",
       detail:
-        "Chrome extension + Forge __THREE_DEVTOOLS__ bridge (lib/threeDevtools.ts). Observe each viewport scene/renderer on mount.",
+        "Chrome extension + Forge __THREE_DEVTOOLS__ bridge (lib/threeDevtools.ts). Observe each viewport scene/renderer on mount. In-app ops HUD: bottom Renderer tab (lib/rendererInspector.ts) — FPS/draws/tris/Rapier/Copy.",
       href: "https://github.com/threejs/devtools",
     },
     {

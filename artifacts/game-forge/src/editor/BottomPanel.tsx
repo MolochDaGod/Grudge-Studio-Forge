@@ -3,6 +3,7 @@ import { Console } from "./Console";
 import { AssetBrowser } from "./AssetBrowser";
 import { PrefabsPanel } from "./PrefabsPanel";
 import { LayersPanel } from "./LayersPanel";
+import { RendererInspector } from "./RendererInspector";
 import { useEditor } from "@/store/editor";
 import {
   Terminal,
@@ -13,6 +14,7 @@ import {
   Network,
   FlaskConical,
   Shield,
+  Activity,
 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { AIInlinePrompt } from "./AIInlinePrompt";
@@ -120,6 +122,10 @@ export function BottomPanel() {
         <TabsTrigger value="layers" className="text-xs gap-1.5" data-testid="tab-layers" title="Physics — collision matrix & navmesh (Ctrl+Shift+L)">
           <Shield className="size-3" /> Physics
         </TabsTrigger>
+        <div className="w-px h-4 bg-border/60 mx-1 self-center" aria-hidden />
+        <TabsTrigger value="renderer" className="text-xs gap-1.5" data-testid="tab-renderer" title="Renderer Inspector — FPS, draws, tris, memory, Rapier (Ctrl+Alt+I)">
+          <Activity className="size-3" /> Renderer
+        </TabsTrigger>
       </TabsList>
       <div className="flex-1 min-h-0">
         <TabsContent value="console" className="m-0 h-full flex flex-col">
@@ -152,6 +158,10 @@ export function BottomPanel() {
         <TabsContent value="layers" className="m-0 h-full flex flex-col">
           <div className="flex-1 min-h-0"><LayersPanel /></div>
           <AIInlinePrompt tabContext="layers" />
+        </TabsContent>
+        <TabsContent value="renderer" className="m-0 h-full flex flex-col">
+          <div className="flex-1 min-h-0"><RendererInspector /></div>
+          <AIInlinePrompt tabContext="renderer" />
         </TabsContent>
       </div>
     </Tabs>
