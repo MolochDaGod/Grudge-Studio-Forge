@@ -21,6 +21,10 @@ import {
 import { useAuth } from "@/store/auth";
 import { signInWithPuter } from "@/lib/authBootstrap";
 import { AIIcon3D } from "@/editor/AIIcon3D";
+import {
+  formatSnapshotForCopy,
+  getRendererSnapshot,
+} from "@/lib/rendererInspector";
 
 // ── Tab-specific AI context ──────────────────────────────────────────
 
@@ -30,7 +34,8 @@ export type AITabContext =
   | "scripts"
   | "prefabs"
   | "nodes"
-  | "layers";
+  | "layers"
+  | "renderer";
 
 interface TabConfig {
   label: string;
@@ -155,6 +160,19 @@ When writing scripts:
         .map(([k, v]) => `  ${k}: ${v} entities`)
         .join("\n");
       return `You are helping the user organize entities into layers for physics, visibility, and collision grouping.\nCurrent layer distribution:\n${summary}\n${getSceneContext()}`;
+    },
+  },
+  renderer: {
+    label: "Renderer",
+    placeholder: "Ask about FPS, draws, memory, or Rapier…",
+    suggestions: [
+      "Why are draw calls high?",
+      "How do I lower GPU memory?",
+      "Explain the Physics tab counts",
+    ],
+    buildContext: () => {
+      const snap = getRendererSnapshot();
+      return `You are helping the user with the Forge Renderer Inspector (live R3F/WebGL + Rapier telemetry).\n${formatSnapshotForCopy(snap)}\n${getSceneContext()}`;
     },
   },
 };

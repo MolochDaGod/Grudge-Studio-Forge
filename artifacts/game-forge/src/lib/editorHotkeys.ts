@@ -350,6 +350,19 @@ export function buildEditorHotkeys(deps: EditorHotkeyDeps): Hotkey[] {
         return true;
       },
     },
+    {
+      id: "panel.renderer",
+      label: "Ctrl+Alt+I",
+      description: "Focus Renderer Inspector tab",
+      category: "Panel",
+      key: "i",
+      ctrlOrMeta: true,
+      alt: true,
+      action: () => {
+        get().setBottomTab("renderer");
+        return true;
+      },
+    },
 
     // --- View / cheatsheet
     {

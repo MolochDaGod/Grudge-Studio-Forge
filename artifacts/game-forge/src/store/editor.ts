@@ -84,7 +84,7 @@ interface EditorState {
   isPaused: boolean;
   transformMode: TransformMode;
   consoleMessages: ConsoleMessage[];
-  bottomTab: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers";
+  bottomTab: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers" | "renderer";
   /** When non-null, the editor is in Prefab Edit Mode and the viewport
    *  reflects the prefab buffer instead of the scene buffer. */
   prefabSubScene: PrefabSubScene | null;
@@ -188,7 +188,7 @@ interface EditorState {
     meta?: { scriptId?: number | null; entityId?: string | null },
   ) => void;
   clearConsole: () => void;
-  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers") => void;
+  setBottomTab: (t: "console" | "assets" | "scripts" | "prefabs" | "nodes" | "layers" | "renderer") => void;
 
   // Prefab sub-scene editing — temporarily swap sceneData for a prefab's
   // entities, then restore the original scene on close.

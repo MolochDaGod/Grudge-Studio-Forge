@@ -1,6 +1,11 @@
 /**
  * Bridge to the official three.js devtools Chrome extension.
  *
+ * In-app ops HUD (FPS / draws / tris / Rapier / Copy) lives in
+ * `lib/rendererInspector.ts` + `editor/RendererInspector.tsx` — see
+ * docs/THREEJS_EDITOR_PARITY.md § Renderer Inspector. This file only wires
+ * the Chrome extension observe/dispose bridge.
+ *
  * The devtools extension (https://github.com/threejs/devtools — published as
  * "three.js developer tools" on the Chrome Web Store) waits for a global
  * `__THREE_DEVTOOLS__` EventTarget that the page populates on page load. The

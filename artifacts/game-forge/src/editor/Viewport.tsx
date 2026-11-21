@@ -52,6 +52,10 @@ import {
 import { Hotbar } from "@/editor/Hotbar";
 import { gizmoDragGate, isGizmoSwallowingClick } from "@/editor/gizmoDragGate";
 import { DevtoolsBridge } from "@/scene/DevtoolsBridge";
+import {
+  RendererPhysicsSampler,
+  RendererStatsSampler,
+} from "@/scene/RendererStatsSampler";
 import { ViewportBridge } from "@/scene/viewportBridge";
 import { BestPracticesSubMenu } from "@/editor/BestPracticesMenu";
 import { Box as BoxIcon, Circle as CircleIcon, Cylinder as CylinderIcon, Square as SquareIcon, Lightbulb as LightIcon, Plus, Wand2, X } from "lucide-react";
@@ -395,6 +399,7 @@ function ScenePlayMode() {
 
   return (
     <Physics gravity={gravity} debug={physicsDebug}>
+      <RendererPhysicsSampler />
       <PlayScriptRuntime bodyRefs={bodyRefs} scripts={scripts} />
       <PlayCameraController bodyRefs={bodyRefs} />
       <RapierPlaySystems bodyRefs={bodyRefs} />
@@ -1122,6 +1127,7 @@ export function Viewport() {
             >
               {isPlaying && <PointerLockBridge onChange={setIsPointerLocked} />}
               <DevtoolsBridge label="Forge Â· Scene" />
+              <RendererStatsSampler />
               <ViewportBridge />
               <color attach="background" args={[env.skyColor ?? "#0a0a14"]} />
               {/*

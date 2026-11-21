@@ -337,6 +337,12 @@ export function MenuBar({
             <MenubarItem onSelect={() => useEditor.getState().setShowStats(!showStats)} data-testid="menu-view-stats">
               {showStats ? "Hide" : "Show"} FPS / Stats
             </MenubarItem>
+            <MenubarItem
+              onSelect={() => useEditor.getState().setBottomTab("renderer")}
+              data-testid="menu-view-renderer-inspector"
+            >
+              Show Renderer Inspector
+            </MenubarItem>
             <MenubarSeparator />
             <MenubarItem onSelect={() => useEditor.getState().setBottomTab("console")}>
               Show Console
