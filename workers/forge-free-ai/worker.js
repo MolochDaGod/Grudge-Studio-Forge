@@ -1137,7 +1137,11 @@ async function handleGrudgeAiChat(request, env, body) {
     request.headers.get("Authorization") ||
     request.headers.get("authorization") ||
     "";
-  const userJwt = auth.replace(/^Bearer\s+/i, "").trim();
+  const sessionHdr =
+    request.headers.get("X-Session-Token") ||
+    request.headers.get("x-session-token") ||
+    "";
+  const userJwt = (auth.replace(/^Bearer\s+/i, "").trim() || sessionHdr.trim());
   const serverKey = env.GRUDGE_AI_KEY || env.LEGION_API_KEY || "";
   const bearer = userJwt || serverKey;
   if (!bearer) {
@@ -1170,6 +1174,7 @@ async function handleGrudgeAiChat(request, env, body) {
       : `/v1/chat`;
 
   let upstream;
+  let authUsed = userJwt ? "grudge_jwt" : "guest";
   try {
     const puterTok = request.headers.get("X-Puter-Token") || request.headers.get("x-puter-token") || "";
     const model = body.model === "auto" ? undefined : body.model;
@@ -1203,11 +1208,25 @@ async function handleGrudgeAiChat(request, env, body) {
       if (body.tool_choice) legionBody.tool_choice = body.tool_choice;
     }
 
-    upstream = await legionFetch(env, apiPath, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(legionBody),
-    });
+    const callLegion = (token) =>
+      legionFetch(env, apiPath, {
+        method: "POST",
+        headers: { ...headers, Authorization: `Bearer ${token}` },
+        body: JSON.stringify(legionBody),
+      });
+    upstream = await callLegion(bearer);
+    // Stale or short launch token must not block unsigned guest chat.
+    if (
+      upstream &&
+      upstream.status === 401 &&
+      userJwt &&
+      serverKey &&
+      userJwt !== serverKey
+    ) {
+      try { await upstream.body?.cancel(); } catch { /* */ }
+      upstream = await callLegion(serverKey);
+      authUsed = "guest";
+    }
   } catch (err) {
     return json(
       { error: `Legion upstream failed: ${err.message || String(err)}` },
@@ -1262,6 +1281,7 @@ async function handleGrudgeAiChat(request, env, body) {
     object: "chat.completion",
     model: data.model || role,
     provider: data.provider || "grudge-ai-legion",
+    auth: authUsed,
     role: data.role || role,
     response: content,
     tool_calls: toolCalls || undefined,
@@ -1291,7 +1311,7 @@ async function handleFreeAi(path, request, env) {
     return json({
       ok: true,
       service: "grudge-forge-free-ai",
-      version: "1.5.6",
+      version: "1.5.7",
       providers: available,
       grudgeAi: legion.ok,
       legion: legion.ok,
